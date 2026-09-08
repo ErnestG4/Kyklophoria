@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kyklophoria</title>
+<style>
+  :root { --bg: #07090c; --ink: #cfd6dd; --dim: #5d6873; --line: #1a2028; --hot: #ffcc55; --l: #62d5ff; --r: #ff7a9e; --ok: #6ee7a0; --bad: #ff5c5c; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace; height: 100%; overflow: hidden; }
+  body { display: grid; grid-template-rows: auto 1fr auto auto; height: 100vh; }
+  header { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+  header .name { font-weight: 600; letter-spacing: .08em; color: var(--hot); }
+  header .sp { flex: 1; }
+  button { background: #0f141a; color: var(--ink); border: 1px solid #263039; border-radius: 3px; padding: 3px 9px; font: inherit; cursor: pointer; }
+  button:hover { border-color: #3a4855; } button.on { border-color: var(--hot); color: var(--hot); }
+  button:disabled { opacity: .4; cursor: default; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 34%); gap: 0; min-height: 0; }
+  .pane { position: relative; min-width: 0; min-height: 0; border-right: 1px solid var(--line); }
+  .pane:last-child { border-right: 0; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .overlay { position: absolute; left: 10px; top: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .overlay button { padding: 1px 6px; font-size: 11px; color: var(--dim); }
+  .overlay button.on { color: var(--hot); }
+  .label { position: absolute; right: 10px; top: 8px; color: var(--dim); font-size: 11px; letter-spacing: .1em; }
+  footer { display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 5px 12px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; }
+  footer b { color: var(--ink); font-weight: 500; }
+  footer .warn b { color: var(--bad); }
+  #drawer { border-top: 1px solid var(--line); padding: 6px 12px; display: none; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px 18px; font-size: 11px; color: var(--dim); max-height: 34vh; overflow: auto; }
+  #drawer.show { display: grid; }
+  #drawer label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  #drawer label span { flex: 0 0 72px; white-space: nowrap; overflow: hidden; }
+  #drawer label output { flex: 0 0 68px; text-align: right; color: var(--ink); white-space: nowrap; }
+  #drawer input[type=range] { flex: 1 1 60px; min-width: 60px; accent-color: var(--hot); height: 14px; margin: 0; }
+  #drawer h4 { grid-column: 1 / -1; margin: 4px 0 0; font-weight: 500; color: var(--dim); font-size: 11px; letter-spacing: .1em; }
+  #msg { color: var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <span class="name">Kyklophoria</span>
+  <span id="modinfo" style="color:var(--dim)">not connected</span>
+  <span class="sp"></span>
+  <span id="msg"></span>
+  <button id="btnSerial">Serial</button>
+  <button id="btnBridge">Bridge</button>
+  <button id="btnDrawer" hidden>Controls</button>
+  <button id="btnClose" hidden>Disconnect</button>
+</header>
+<main>
+  <div class="pane">
+    <canvas id="space"></canvas>
+    <div class="overlay" id="axes"></div>
+    <div class="label">SPACE</div>
+  </div>
+  <div class="pane">
+    <canvas id="sound"></canvas>
+    <div class="label">SOUND</div>
+  </div>
+</main>
+<div id="drawer"></div>
+<footer>
+  <span>module <b id="sMod">—</b></span>
+  <span>block <b id="sBlock">—</b></span>
+  <span>f0 <b id="sF0">—</b></span>
+  <span>kcut <b id="sKcut">—</b></span>
+  <span>spread <b id="sSpread">—</b></span>
+  <span>link <b id="sLink">—</b></span>
+  <span id="sCpuWrap">cpu <b id="sCpu">—</b></span>
+  <span>space <b id="sSpace">—</b></span>
+</footer>
+<script src="link.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const MVL = window.KYK;
+
+/* ── state ─────────────────────────────────────────────────────────── */
+let link = null, info = null, desc = null, space = null;   /* space: parsed 0x61 */
+let tel = null;                 /* latest telemetry */
+let stats = null;               /* latest 0x63 */
+let axes = [0, 1];              /* projection */
+const TRAIL_N = 600;
+const trail = { L: new Float32Array(TRAIL_N * 2), R: new Float32Array(TRAIL_N * 2), n: 0, head: 0 };
+let lastBlock = -1, framesSeen = 0, fpsWin = { t0: performance.now(), n: 0, fps: 0 };
+let polling = false;
+
+const say = (s, bad) => { $('msg').textContent = s || ''; $('msg').style.color = bad ? 'var(--bad)' : 'var(--dim)'; };
+
+/* ── connection ─────────────────────────────────────────────────────── */
+async function connect(transport) {
+  if (link) await disconnect();
+  link = new MVL.Link(transport);
+  link.onClose = () => { say('link closed'); disconnect(); };
+  link.onError = e => say('link error: ' + (e && e.message || e), true);
+  try {
+    await link.start();
+    info = await MVL.hello(link);
+    desc = await MVL.getDescriptor(link, info).catch(() => null);
+    space = MVL.parseSpaceInfo(await link.request(MVL.CMD.spaceInfo));
+  } catch (e) { say('connect failed: ' + e.message, true); await disconnect(); return; }
+  $('modinfo').textContent = `${info.name} · fw ${info.fw} (${info.git}) · ${transport.kind}`;
+  $('sMod').textContent = info.id + ' ' + info.fw;
+  $('sSpace').textContent = space ? `${space.name} N=${space.n} ${space.side}^${space.n} K=${space.k} P=${space.p} ${space.topo.join('/')}` : '?';
+  $('btnClose').hidden = false; $('btnSerial').hidden = true; $('btnBridge').hidden = true;
+  const dev = transport.kind === 'bridge';
+  $('btnDrawer').hidden = !dev;
+  if (dev) buildDrawer(); else $('drawer').classList.remove('show');
+  buildAxisButtons();
+  trail.n = 0; trail.head = 0; lastBlock = -1;
+  say('');
+  polling = true; pollTelemetry(); pollStats();
+}
+async function disconnect() {
+  polling = false;
+  const l = link; link = null; tel = null; stats = null; info = null;
+  if (l) { try { await l.close(); } catch {} }
+  $('modinfo').textContent = 'not connected';
+  $('btnClose').hidden = true; $('btnSerial').hidden = false; $('btnBridge').hidden = false; $('btnDrawer').hidden = true;
+  $('drawer').classList.remove('show');
+}
+$('btnClose').onclick = () => disconnect();
+$('btnSerial').onclick = async () => {
+  if (!navigator.serial) { say('Web Serial needs Chrome/Edge on desktop', true); return; }
+  try {
+    const port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x0483, usbProductId: 0x5740 }] });
+    await port.open({ baudRate: 115200 });
+    await connect(new MVL.SerialTransport(port));
+  } catch (e) { say('serial: ' + e.message, true); }
+};
+function bridgeUrl() { return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/link'; }
+$('btnBridge').onclick = () => connectBridge(true);
+function connectBridge(loud) {
+  say('bridge…');
+  const ws = new WebSocket(bridgeUrl());
+  ws.onopen = () => connect(new MVL.WsTransport(ws));
+  ws.onerror = () => { if (loud) say('no bridge at ' + bridgeUrl() + ' — run node tools/bridge/bridge.mjs', true); else say(''); };
+}
+$('btnDrawer').onclick = () => { $('drawer').classList.toggle('show'); resize(); };
+
+/* ── polling ────────────────────────────────────────────────────────── */
+async function pollTelemetry() {
+  while (polling && link) {
+    const t0 = performance.now();
+    try {
+      const b = await link.request(MVL.CMD.telemetry, MVL.telemetryReq(3), { key: 'tel', timeoutMs: 800 });
+      const t = MVL.parseTelemetry(b);
+      if (t) { tel = t; onTelemetry(t); }
+    } catch (e) { if (!link) break; if (!/timeout/.test(e.message)) say('telemetry: ' + e.message, true); }
+    const wait = 1000 / 60 - (performance.now() - t0);
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  }
+}
+async function pollStats() {
+  while (polling && link) {
+    try { stats = MVL.parseStats(await link.request(MVL.CMD.stats, new Uint8Array(0), { key: 'stats' })); } catch {}
+    await new Promise(r => setTimeout(r, 1000));
+  }
+}
+function onTelemetry(t) {
+  if (t.block !== lastBlock) {
+    lastBlock = t.block; framesSeen++;
+    const i = trail.head;
+    trail.L[2 * i] = t.posL[axes[0]]; trail.L[2 * i + 1] = t.posL[axes[1]];
+    trail.R[2 * i] = t.posR[axes[0]]; trail.R[2 * i + 1] = t.posR[axes[1]];
+    trail.head = (i + 1) % TRAIL_N; if (trail.n < TRAIL_N) trail.n++;
+  }
+  fpsWin.n++; const now = performance.now();
+  if (now - fpsWin.t0 > 1000) { fpsWin.fps = fpsWin.n * 1000 / (now - fpsWin.t0); fpsWin.t0 = now; fpsWin.n = 0; }
+}
+
+/* ── axis selector ──────────────────────────────────────────────────── */
+function buildAxisButtons() {
+  const n = tel ? tel.n : (space ? space.n : 4), box = $('axes'); box.innerHTML = '';
+  for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
+    const btn = document.createElement('button'); btn.textContent = a + '×' + b;
+    btn.classList.toggle('on', axes[0] === a && axes[1] === b);
+    btn.onclick = () => { axes = [a, b]; trail.n = 0; trail.head = 0; buildAxisButtons(); };
+    box.appendChild(btn);
+  }
+}
+buildAxisButtons();
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const n = tel ? tel.n : 4, pairs = []; for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) pairs.push([a, b]);
+  const i = pairs.findIndex(p => p[0] === axes[0] && p[1] === axes[1]);
+  if (e.key === 'ArrowRight' || e.key === ']') { axes = pairs[(i + 1) % pairs.length]; trail.n = 0; buildAxisButtons(); }
+  if (e.key === 'ArrowLeft' || e.key === '[') { axes = pairs[(i - 1 + pairs.length) % pairs.length]; trail.n = 0; buildAxisButtons(); }
+});
+
+/* ── drawing ────────────────────────────────────────────────────────── */
+const cs = $('space'), cx = cs.getContext('2d'), cn = $('sound'), cnx = cn.getContext('2d');
+function resize() {
+  for (const c of [cs, cn]) {
+    const r = c.parentElement.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    c.width = Math.max(1, Math.round(r.width * dpr)); c.height = Math.max(1, Math.round(r.height * dpr));
+    c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+}
+window.addEventListener('resize', resize); resize();
+
+const hueOf = pl => Math.round(220 - (pl ? pl[0] : 0.5) * 220);   /* cutoff: blue → yellow/red */
+const sizeOf = pl => 4 + (pl ? pl[3] : 0.3) * 10;                    /* drive */
+
+function fit(c) {
+  /* backing store follows the CSS box; clear the whole store, not just the CSS box */
+  const dpr = window.devicePixelRatio || 1, w = Math.max(1, Math.round(c.clientWidth * dpr)), h = Math.max(1, Math.round(c.clientHeight * dpr));
+  const g = c.getContext('2d');
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function drawSpace() {
+  const W = cs.clientWidth, H = cs.clientHeight;
+  fit(cs);
+  const n = tel ? tel.n : (space ? space.n : 4), side = space ? space.side : 4, planes = MVL.planeCount(n);
+  const arcRow = 34, m = 30;
+  const S = Math.max(40, Math.min(W - 2 * m, H - 2 * m - arcRow));
+  const ox = (W - S) / 2, oy = m + (H - 2 * m - arcRow - S) / 2;
+  const px = v => ox + v * S, py = v => oy + (1 - v) * S;
+  const [ax, ay] = axes;
+  /* lattice */
+  cx.strokeStyle = '#141b23'; cx.lineWidth = 1;
+  cx.strokeRect(ox + .5, oy + .5, S, S);
+  cx.fillStyle = '#2a3542';
+  for (let i = 0; i < side; i++) for (let j = 0; j < side; j++) { cx.beginPath(); cx.arc(px(i / (side - 1)), py(j / (side - 1)), 1.6, 0, 7); cx.fill(); }
+  cx.fillStyle = '#3b4756'; cx.font = '11px ui-monospace, monospace';
+  cx.fillText('axis ' + ax, ox + S - 44, oy + S - 6); cx.save(); cx.translate(ox + 13, oy + 52); cx.rotate(-Math.PI / 2); cx.fillText('axis ' + ay, 0, 0); cx.restore();
+  /* wrap seams */
+  if (space) for (const [a, edge] of [[ax, 'v'], [ay, 'h']]) if (space.topo[a] === 'wrap') {
+    cx.setLineDash([3, 5]); cx.strokeStyle = '#3a4757'; cx.beginPath();
+    if (edge === 'v') { cx.moveTo(px(0), py(0)); cx.lineTo(px(0), py(1)); cx.moveTo(px(1), py(0)); cx.lineTo(px(1), py(1)); }
+    else { cx.moveTo(px(0), py(0)); cx.lineTo(px(1), py(0)); cx.moveTo(px(0), py(1)); cx.lineTo(px(1), py(1)); }
+    cx.stroke(); cx.setLineDash([]);
+  }
+  if (!tel) { cx.fillStyle = '#3b4756'; cx.fillText('waiting for the module', ox + S / 2 - 70, oy + S / 2); drawArcs(n, planes, null, ox, oy + S + 18, S); return; }
+  /* active cell around L */
+  const cw = 1 / (side - 1), ci = Math.min(side - 2, Math.max(0, Math.floor(tel.posL[ax] * (side - 1)))), cj = Math.min(side - 2, Math.max(0, Math.floor(tel.posL[ay] * (side - 1))));
+  cx.fillStyle = 'rgba(98,213,255,0.06)'; cx.fillRect(px(ci * cw), py((cj + 1) * cw), cw * S, cw * S);
+  cx.strokeStyle = 'rgba(98,213,255,0.25)'; cx.strokeRect(px(ci * cw) + .5, py((cj + 1) * cw) + .5, cw * S, cw * S);
+  /* trail: oldest first, alpha by age */
+  const hue = hueOf(tel.payload);
+  for (let k = 0; k < trail.n; k++) {
+    const idx = (trail.head - trail.n + k + TRAIL_N) % TRAIL_N, age = 1 - k / trail.n;
+    const a = 0.02 + 0.5 * (1 - age) * (1 - age);
+    cx.fillStyle = `hsla(${hue},80%,65%,${a})`; cx.beginPath(); cx.arc(px(trail.L[2 * idx]), py(trail.L[2 * idx + 1]), 1.5, 0, 7); cx.fill();
+    if (tel.stereo) { cx.fillStyle = `hsla(${(hue + 40) % 360},80%,65%,${a})`; cx.beginPath(); cx.arc(px(trail.R[2 * idx]), py(trail.R[2 * idx + 1]), 1.5, 0, 7); cx.fill(); }
+  }
+  /* control frame (before rotation), faint cross */
+  cx.strokeStyle = 'rgba(207,214,221,0.18)'; cx.beginPath();
+  const cxp = px(clamp01(tel.ctl[ax])), cyp = py(clamp01(tel.ctl[ay]));
+  cx.moveTo(cxp - 6, cyp); cx.lineTo(cxp + 6, cyp); cx.moveTo(cxp, cyp - 6); cx.lineTo(cxp, cyp + 6); cx.stroke();
+  /* the dots */
+  const r = sizeOf(tel.payload);
+  const dot = (x, y, col, glow) => {
+    cx.shadowColor = glow; cx.shadowBlur = 18; cx.fillStyle = col; cx.beginPath(); cx.arc(px(x), py(y), r, 0, 7); cx.fill(); cx.shadowBlur = 0;
+  };
+  if (tel.stereo) {
+    cx.strokeStyle = 'rgba(207,214,221,0.25)'; cx.beginPath(); cx.moveTo(px(tel.posL[ax]), py(tel.posL[ay])); cx.lineTo(px(tel.posR[ax]), py(tel.posR[ay])); cx.stroke();
+    dot(tel.posR[ax], tel.posR[ay], `hsl(${(hue + 40) % 360},85%,70%)`, `hsl(${(hue + 40) % 360},85%,60%)`);
+  }
+  dot(tel.posL[ax], tel.posL[ay], `hsl(${hue},85%,72%)`, `hsl(${hue},85%,60%)`);
+  cx.fillStyle = '#9aa7b3'; cx.font = '11px ui-monospace, monospace';
+  cx.fillText(`${tel.stereo ? 'L' : 'pos'} ${fmtVec(tel.posL)}`, ox + 6, oy + S - (tel.stereo ? 20 : 8));
+  if (tel.stereo) cx.fillText(`R ${fmtVec(tel.posR)}`, ox + 6, oy + S - 8);
+  drawArcs(n, planes, tel, ox, oy + S + 18, S);
+}
+function drawArcs(n, planes, t, x0, y0, S) {
+  /* one small gauge per rotation plane, angle as an arc (turns) */
+  const gap = Math.min(52, S / planes), r = Math.min(9, gap * 0.32);
+  for (let p = 0; p < planes; p++) {
+    const [a, b] = MVL.planeAxes(n, p), cxp = x0 + gap * (p + 0.5), cyp = y0 + 10;
+    const isSpread = t && t.stereo && t.spreadPlane === p;
+    cx.strokeStyle = '#243040'; cx.lineWidth = 2; cx.beginPath(); cx.arc(cxp, cyp, r, 0, 7); cx.stroke();
+    const ang = t ? t.angle[p] : 0;
+    if (ang > 0) { cx.strokeStyle = isSpread ? 'var(--hot)' : '#62d5ff'; cx.strokeStyle = isSpread ? '#ffcc55' : '#62d5ff'; cx.beginPath(); cx.arc(cxp, cyp, r, -Math.PI / 2, -Math.PI / 2 + ang * 2 * Math.PI); cx.stroke(); }
+    if (t && t.stereo && isSpread) { cx.fillStyle = '#ffcc55'; cx.beginPath(); cx.arc(cxp, cyp, 2, 0, 7); cx.fill(); }
+    cx.lineWidth = 1; cx.fillStyle = '#4b5866'; cx.font = '10px ui-monospace, monospace'; cx.fillText(a + '' + b, cxp - 6, cyp + r + 11);
+  }
+}
+function drawSound() {
+  const W = cn.clientWidth, H = cn.clientHeight;
+  fit(cn);
+  const m = 14, font = '11px ui-monospace, monospace';
+  const frameTop = 26, frameH = Math.max(40, H * 0.36), mid = frameTop + frameH / 2;
+  const stripY = frameTop + frameH + 10;                       /* payload lanes row */
+  const specCap = stripY + 34;                                  /* "spectrum" caption baseline */
+  const specTop = specCap + 8, base = H - m - 12, h = Math.max(20, base - specTop);
+  cnx.font = font;
+  cnx.strokeStyle = '#141b23'; cnx.beginPath(); cnx.moveTo(m, mid); cnx.lineTo(W - m, mid); cnx.stroke();
+  cnx.fillStyle = '#3b4756';
+  cnx.fillText('frame', m, 18); cnx.fillText('spectrum', m, specCap);
+  if (!tel) return;
+  const hue = hueOf(tel.payload);
+  /* frame: 256 points, i8/127, ×40 scale means ±3.2 full scale */
+  if (tel.frame) {
+    cnx.strokeStyle = `hsl(${hue},80%,68%)`; cnx.lineWidth = 1.5; cnx.beginPath();
+    for (let i = 0; i < 256; i++) { const x = m + (W - 2 * m) * i / 255, y = mid - (tel.frame[i] / 127) * (frameH / 2 - 6); i ? cnx.lineTo(x, y) : cnx.moveTo(x, y); }
+    cnx.stroke(); cnx.lineWidth = 1;
+  }
+  /* payload lanes: one row of meters between frame and spectrum */
+  const P = tel.p, mw = (W - 2 * m) / Math.max(1, P);
+  for (let j = 0; j < P; j++) {
+    const x = m + j * mw + 2, w = Math.max(8, mw - 6);
+    cnx.fillStyle = '#3b4756'; cnx.fillText('pl' + j, x, stripY + 10);
+    cnx.fillStyle = '#1a2230'; cnx.fillRect(x, stripY + 14, w, 6);
+    cnx.fillStyle = `hsl(${hue},60%,55%)`; cnx.fillRect(x, stripY + 14, w * clamp01(tel.payload[j]), 6);
+  }
+  /* spectrum: K bars on a 0…−96 dB scale, cutoff marked on the bottom axis */
+  if (tel.mags) {
+    const k = tel.k, x0 = m, bw = (W - 2 * m) / k;
+    cnx.fillStyle = '#3b4756'; cnx.fillText('0 dB', W - m - 30, specCap); cnx.fillText('−96', W - m - 24, base - 2);
+    for (let i = 0; i < k; i++) {
+      const v = tel.mags[i] / 255, live = i < tel.kcut;
+      cnx.fillStyle = live ? `hsla(${hue},70%,60%,${0.35 + 0.65 * v})` : 'rgba(93,104,115,0.35)';
+      cnx.fillRect(x0 + i * bw + 0.5, base - v * h, Math.max(1, bw - 1.5), v * h);
+    }
+    const kx = x0 + tel.kcut * bw, label = 'nyq ' + tel.kcut, lw = cnx.measureText(label).width;
+    cnx.strokeStyle = '#ffcc55'; cnx.setLineDash([2, 3]); cnx.beginPath(); cnx.moveTo(kx, specTop); cnx.lineTo(kx, base + 4); cnx.stroke(); cnx.setLineDash([]);
+    cnx.fillStyle = '#3b4756'; cnx.fillText('1', x0, base + 12);
+    const kTick = String(k), kTickX = W - m - cnx.measureText(kTick).width;
+    /* the cutoff label sits on the bottom axis beside its marker; it steps left of the marker when it would run into the K tick */
+    const lx = (kx + 4 + lw > kTickX - 8) ? kx - lw - 4 : kx + 4;
+    cnx.fillStyle = '#ffcc55'; cnx.fillText(label, Math.max(x0 + 12, lx), base + 12);
+    if (tel.kcut < k) { cnx.fillStyle = '#3b4756'; cnx.fillText(kTick, kTickX, base + 12); }   /* the cutoff label already names K when nothing is cut */
+  }
+}
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const fmtVec = v => Array.from(v).map(x => x.toFixed(2)).join(' ');
+function drawStatus() {
+  if (!tel) return;
+  $('sBlock').textContent = tel.block;
+  $('sF0').textContent = tel.f0.toFixed(1) + ' Hz ' + MVL.noteName(tel.f0);
+  $('sKcut').textContent = tel.kcut + '/' + tel.k;
+  $('sSpread').textContent = tel.stereo ? `${tel.spread.toFixed(3)} turns · plane ${MVL.planeAxes(tel.n, tel.spreadPlane).join('')}` : 'mono';
+  if (link) { const s = link.stats; $('sLink').textContent = `${s.rttAvg.toFixed(1)} ms · ${fpsWin.fps.toFixed(0)} fps · ${s.kbps.toFixed(1)} KB/s${s.timeouts ? ' · ' + s.timeouts + ' timeouts' : ''}`; }
+  if (stats) {
+    const pct = v => stats.cyclesBudget ? (100 * v / stats.cyclesBudget).toFixed(0) + '%' : v;
+    $('sCpu').textContent = `${pct(stats.cyclesLast)} last · ${pct(stats.cyclesAvg)} avg · ${pct(stats.cyclesMax)} max · div ${stats.renderDiv}${stats.overruns ? ' · ' + stats.overruns + ' overruns' : ''}${stats.dropped ? ' · ' + stats.dropped + ' dropped' : ''}`;
+    $('sCpuWrap').classList.toggle('warn', stats.overruns > 0 || (stats.cyclesBudget && stats.cyclesMax > 0.7 * stats.cyclesBudget));
+  }
+}
+function frame() { drawSpace(); drawSound(); drawStatus(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+
+/* ── dev drawer (bridge only): 0x6E SET_CONTROL at ≤ 30 Hz ─────────── */
+const ctl = { f0: 110, c: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], ang: new Array(15).fill(0), spread: 0 };
+let sendPending = false, lastSend = 0;
+function sendControl() {
+  if (!link || link.kind !== 'bridge') return;
+  const now = performance.now();
+  if (now - lastSend < 33) { if (!sendPending) { sendPending = true; setTimeout(() => { sendPending = false; sendControl(); }, 33 - (now - lastSend)); } return; }
+  lastSend = now;
+  const n = tel ? tel.n : 4, planes = MVL.planeCount(n);
+  link.request(MVL.CMD.setControl, MVL.setControlReq(ctl.f0, ctl.c.slice(0, n), ctl.ang.slice(0, planes), ctl.spread), { urgent: true, key: 'ctl' }).catch(e => say('control: ' + e.message, true));
+}
+function buildDrawer() {
+  const d = $('drawer'); d.innerHTML = '';
+  const n = space ? space.n : 4, planes = MVL.planeCount(n);
+  if (tel) { ctl.f0 = tel.f0; for (let a = 0; a < n; a++) ctl.c[a] = tel.ctl[a]; for (let p = 0; p < planes; p++) ctl.ang[p] = tel.angle[p]; ctl.spread = tel.spread; }
+  const row = (name, min, max, step, get, set, fmt) => {
+    const l = document.createElement('label'); const s = document.createElement('span'); s.textContent = name;
+    const i = document.createElement('input'); i.type = 'range'; i.min = min; i.max = max; i.step = step; i.value = get();
+    const o = document.createElement('output'); o.textContent = fmt(get());
+    i.oninput = () => { set(parseFloat(i.value)); o.textContent = fmt(get()); sendControl(); };
+    l.append(s, i, o); d.appendChild(l);
+  };
+  const h = t => { const e = document.createElement('h4'); e.textContent = t; d.appendChild(e); };
+  h('PITCH · POSITION');
+  row('f0', Math.log2(20), Math.log2(2000), 0.001, () => Math.log2(ctl.f0), v => ctl.f0 = Math.pow(2, v), () => ctl.f0.toFixed(1) + ' Hz');
+  for (let a = 0; a < n; a++) row('axis ' + a, -0.2, 1.2, 0.001, () => ctl.c[a], v => ctl.c[a] = v, v => v.toFixed(3));
+  h('ROTATION (turns)');
+  for (let p = 0; p < planes; p++) { const [x, y] = MVL.planeAxes(n, p); row('plane ' + x + y, 0, 1, 0.001, () => ctl.ang[p], v => ctl.ang[p] = v, v => v.toFixed(3)); }
+  h('STEREO');
+  row('spread', 0, 0.12, 0.0005, () => ctl.spread, v => ctl.spread = v, v => v.toFixed(4));
+  d.classList.add('show'); resize();
+}
+
+/* auto-connect to the bridge when served from it */
+/* Auto-connect to the bridge when the page came from it — unless ?serial is
+ * in the URL, which keeps the link free for the module (the Serial button is
+ * hidden while any transport is connected). */
+if (!/[?&]serial\b/.test(location.search)
+    && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+    && location.protocol.startsWith('http')) connectBridge(false);
+if (!navigator.serial) $('btnSerial').title = 'Web Serial: Chrome/Edge desktop only';
+})();
+</script>
+</body>
+</html>

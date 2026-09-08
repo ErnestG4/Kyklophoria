@@ -1,0 +1,4 @@
+# M0 golden: one cell, one pitch. A saw-ish corner with the formant mid-way.
+0.0 f0 110
+0.0 pos 0.15 0.2 0.5 0.1
+1.0 dur
