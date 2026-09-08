@@ -48,16 +48,23 @@ public:
     {
         const float* a = frame_[cur_];
         const float* b = frame_[cur_ ^ 1];
-        const float  dt = 1.f / (float)n;
-        float        t  = 0.f;
+        /* t must run 0 → 1 *inclusive* across the block. Starting at 1/n left
+         * a step of (b−a)/n at the near edge, and stopping at (n−1)/n left one
+         * at the far edge where the next block starts from b. Either way every
+         * frame render put a discontinuity at a block boundary, scaled by how
+         * much the frame had changed: inaudible on a slow sweep, a broadband
+         * tick on a jump. Reaching exactly 1 on the last sample makes the
+         * hand-over to the next block continuous. */
+        const float dt = (n > 1) ? 1.f / (float)(n - 1) : 1.f;
+        float       t  = 0.f;
         for(int i = 0; i < n; i++)
         {
             const float sa = Read(a, phase_);
             if(new_frame)
             {
-                t += dt;
                 const float sb = Read(b, phase_);
                 out[i]         = sa + (sb - sa) * t;
+                t += dt;
             }
             else out[i] = sa;
             phase_ += inc_;

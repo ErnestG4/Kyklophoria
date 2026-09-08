@@ -12,7 +12,7 @@ LINK_FLAGS = -Ishell/common -I$(SDK_DIR)/framework/include -DALCHEMY_HOSTLINK_MA
 CORE_HDRS  = $(wildcard core/*.h) $(wildcard shell/common/*.h)
 
 .PHONY: host test tables clean
-host: build/host/kykdesk build/host/kykspace
+host: build/host/kykdesk build/host/kykspace build/host/kykeigen
 
 build/host/kykdesk: shell/desktop/main.cpp shell/desktop/wavio.h shell/desktop/script.h shell/desktop/serve.h $(CORE_HDRS)
 	@mkdir -p build/host
@@ -21,6 +21,12 @@ build/host/kykdesk: shell/desktop/main.cpp shell/desktop/wavio.h shell/desktop/s
 build/host/kykspace: tools/kykspace/main.cpp $(CORE_HDRS)
 	@mkdir -p build/host
 	$(CXX) $(CORE_FLAGS) tools/kykspace/main.cpp -o $@
+
+# kykeigen bakes a corpus into a space. Offline, so it may use libm and
+# exceptions; the core flags stay off it apart from the include path.
+build/host/kykeigen: tools/kykeigen/main.cpp shell/desktop/wavio.h $(CORE_HDRS)
+	@mkdir -p build/host
+	$(CXX) -std=gnu++17 -O2 -Wall -Wextra -Icore tools/kykeigen/main.cpp -o $@
 
 test: host
 	tests/run.sh

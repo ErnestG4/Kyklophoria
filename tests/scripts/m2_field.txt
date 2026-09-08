@@ -1,0 +1,10 @@
+# M2 golden: the correlated field, a rotated diagonal sweep, stereo spread
+# opening part way. Exercises the field generator, rotation and the pair.
+0.0 f0 110
+0.0 pos 0.1 0.1 0.1 0.1
+0.0 angle 0 0.08
+0.0 angle 4 0.17
+0.5 glide pos 0.9 0.9 0.9 0.9 1.5
+1.2 spread 0.025
+2.0 glide f0 220 0.5
+2.5 dur

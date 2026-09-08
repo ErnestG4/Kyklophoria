@@ -72,17 +72,28 @@ static VirtualKnob k_ang[6] = {
 };
 
 static const char* kPlaneNames[6] = {"0,1", "0,2", "0,3", "1,2", "1,3", "2,3"};
-static const char* kDivNames[4]   = {"1", "2", "3", "4"};
+/* Divider 1 (a frame every block, twice over in stereo) overran the block on
+ * the bench at 160% of budget and took the module down. The real IFFT bought
+ * about 2x, which is not yet enough headroom to offer it, so the knob starts
+ * at 2. Restore 1 when CMSIS lands and the bench says it fits. Musically this
+ * costs nothing measurable: the morph artifact at divider 4 is -82 dB and at
+ * 1 it is -98 dB, both far below anything audible (docs/m2-notes.md). */
+static const uint8_t kDivValues[4] = {2, 3, 4, 6};
+static const char*   kDivNames[4]  = {"2", "3", "4", "6"};
 static VirtualKnob k_spread = VirtualKnob(0, "Spread").Linear(0.f, 0.1f).Unit("turn").Ident("st.spread").Ring(Level(kStereo));
 static VirtualKnob k_plane  = VirtualKnob(1, "Stereo plane").Selector(6).Labels(kPlaneNames, 6).Ident("st.plane").Ring(Level(kStereo));
-static VirtualKnob k_cvdep  = VirtualKnob(2, "CV out A depth").Ident("lane.cva").Ring(Level(kStereo));
+/* P3 was CV-out depth, which only moves a voltage on J8 and reads as a dead
+ * knob to a player. Sharpness is the audible control the survey said to steal
+ * (Plaits' quantization ramp, Piston Honda's morph resolution): smooth morph
+ * at one end, a bank of discrete waves at the other. CV depth moved to P6. */
+static VirtualKnob k_sharp  = VirtualKnob(2, "Morph").Unit("sharp").Ident("morph.sharp").Ring(Level(kStereo));
 static VirtualKnob k_rdiv   = VirtualKnob(3, "Render div").Selector(4).Labels(kDivNames, 4).Ident("eng.rdiv").Ring(Level(kStereo));
 static VirtualKnob k_level  = VirtualKnob(4, "Level").Ident("out.level").Ring(Level(kStereo));
-static VirtualKnob k_spare  = VirtualKnob(5, "—").Ring(Level(kStereo));
+static VirtualKnob k_cvdep  = VirtualKnob(5, "CV out A depth").Ident("lane.cva").Ring(Level(kStereo));
 
 static Page page_play   = Page(0).Name("Play").Color("#67e8f9").Knobs(k_coarse, k_fine, k_pos0, k_pos1, k_pos2, k_pos3);
 static Page page_rotate = Page(1).Name("Rotate").Color("#fca5a5").Knobs(k_ang[0], k_ang[1], k_ang[2], k_ang[3], k_ang[4], k_ang[5]);
-static Page page_stereo = Page(2).Name("Stereo").Color("#c4b5fd").Knobs(k_spread, k_plane, k_cvdep, k_rdiv, k_level, k_spare);
+static Page page_stereo = Page(2).Name("Stereo").Color("#c4b5fd").Knobs(k_spread, k_plane, k_sharp, k_rdiv, k_level, k_cvdep);
 
 /* ── jacks (descriptor metadata; the web panel mirror reads these) ───────── */
 static const Jack kJacks[10] = {
@@ -94,15 +105,17 @@ static const Jack kJacks[10] = {
 };
 
 /* ── the space and the engine ────────────────────────────────────────────── */
-static uint8_t      KYK_SDRAM gBlob[Space::BlobSize(4, 64, 8, 4, false)];
+/* side 8, not 4: the field needs room for a correlation length, and the
+ * measured variety per unit of CV travel roughly doubles between them
+ * (docs/m2-notes.md). 1.18 MB of the 64 MB SDRAM. */
+static constexpr int kBootN = 4, kBootSide = 8, kBootK = 64, kBootP = 8;
+static uint8_t      KYK_SDRAM gBlob[Space::BlobSize(kBootN, kBootK, kBootP, kBootSide, false)];
 static Space        gSpace;
 static StereoEngine KYK_AXI gEng;
 
 /* ── audio ↔ control shared state ────────────────────────────────────────── */
-static volatile uint8_t  gTelReq   = 0;      /* control: please snapshot with these flags (+1) */
-static volatile uint8_t  gTelIdx   = 0;      /* audio: the buffer that holds the newest snapshot */
-static volatile uint16_t gTelLen[2] = {0, 0};
-static uint8_t           gTelBuf[2][hostlink::kMaxBody];
+/* Telemetry is encoded on the control thread now, so there is no snapshot
+ * buffer and nothing for the audio callback to do (see ModuleSource). */
 static volatile uint32_t gCycLast = 0, gCycMax = 0, gCycSum = 0, gCycN = 0;
 static volatile uint16_t gOverruns = 0, gDropped = 0;
 static volatile float    gPayloadA = 0.f;
@@ -131,27 +144,21 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     for(int p = 0; p < 6; p++) gEng.rot.SetAngle(p, k_ang[p].Norm());
     gEng.spread       = k_spread.Value();
     gEng.spread_plane = (int)k_plane.Value();
-    const int rdiv    = 1 + (int)k_rdiv.Value();
+    int sel = (int)k_rdiv.Value();
+    if(sel < 0) sel = 0;
+    if(sel > 3) sel = 3;
+    const int rdiv = (int)kDivValues[sel];
     if(rdiv != gEng.L.render_div) gEng.SetRenderDiv(rdiv);
-    gEng.SetGain(0.5f * k_level.Norm());
+    gEng.sharp = k_sharp.Norm();
+    /* 0.23 is the headroom the measured crest factor needs; the knob scales
+     * from silence to that, so a cell can no longer peak past full scale. */
+    gEng.SetGain(0.23f * k_level.Norm());
     if(gResetPhase) { gEng.L.ResetPhase(); gEng.R.ResetPhase(); gResetPhase = 0; }
 
     gEng.SetF0(f0);
     gEng.SetControl(c, 4);
     gEng.Process(out[0], out[1], (int)size);
     gPayloadA = gEng.Payload()[4];
-
-    /* telemetry snapshot, only when asked: ~5 µs */
-    const uint8_t req = gTelReq;
-    if(req)
-    {
-        const uint8_t wi = (uint8_t)(gTelIdx ^ 1u);
-        const int     n  = EncodeTelemetry(gEng, (uint8_t)(req - 1u), gTelBuf[wi], (int)sizeof(gTelBuf[wi]));
-        gTelLen[wi]      = (uint16_t)(n > 0 ? n : 0);
-        __asm__ volatile("dmb" ::: "memory");
-        gTelIdx = wi;
-        gTelReq = 0;
-    }
 
     const uint32_t cyc = Cycles() - t0;
     gCycLast = cyc;
@@ -169,13 +176,13 @@ struct ModuleSource : ExtSource
         /* hand out the newest snapshot; ask the audio thread for the next.
          * A request that arrives before the previous one was served counts
          * as dropped (the host polls faster than 2 kHz, which it never does). */
-        const uint8_t  ri = gTelIdx;
-        const uint16_t n  = gTelLen[ri];
-        if(gTelReq) gDropped++;
-        gTelReq = (uint8_t)(flags + 1u);
-        if(n == 0 || (int)n > cap) return 0;
-        std::memcpy(out, gTelBuf[ri], n);
-        return (int)n;
+        /* Encoded here, on the control thread, not in the audio callback.
+         * It used to be published from the ISR for a tear-free snapshot, but
+         * that put a few microseconds on top of whichever block happened to be
+         * rendering, which is exactly the block that sets the CPU maximum. A
+         * field or two may be torn instead; this is a display feed at 60 Hz
+         * and nobody can see a one-frame inconsistency. */
+        return EncodeTelemetry(gEng, flags, out, cap);
     }
     bool SpaceInfo(SpaceHeader& h, uint32_t& crc, uint16_t& stride) override
     {
@@ -242,9 +249,16 @@ int main()
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
-    /* the boot space: the Harmonic family, seed 1 (SD loading is M4) */
+    /* the boot space: the correlated field, seed 1 (SD loading is M4). The
+     * Harmonic family is still in the build and reachable from the card. */
     GenParams gp;
-    gp.seed = 1;
+    gp.family = Family::Field;
+    gp.n      = kBootN;
+    gp.side   = kBootSide;
+    gp.k      = kBootK;
+    gp.p      = kBootP;
+    gp.seed   = 1;
+    gp.name   = "boot field";
     const size_t n = BuildLattice(gp, gBlob, sizeof(gBlob));
     gSpace.Attach(gBlob, n);
     gSource.gBlobCrc = Crc32(gBlob, n);

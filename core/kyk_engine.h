@@ -20,9 +20,12 @@ class Engine
 {
 public:
     /* Tunables the shell may set between blocks. */
-    float gain         = 0.5f;   /* unit-RMS spectra peak near 1.7; keep the output sane */
+    /* Unit-RMS cells with a worst measured crest factor of 4.2, so this keeps
+     * even the peakiest cell inside full scale with the level knob wide open. */
+    float gain         = 0.23f;
     int   render_div   = 1;      /* render a new frame every render_div blocks */
-    int   rolloff_bins = 0;      /* raised-cosine taper over the top bins below the cutoff */
+    int   rolloff_bins = 0;
+    float sharp        = 0.f;   /* see SharpenWeights */      /* raised-cosine taper over the top bins below the cutoff */
 
     void Init(const Space* space, float sr)
     {
@@ -32,23 +35,47 @@ public:
         block_ = 0;
         f0_    = 110.f;
         kcut_  = 0;
-        for(int a = 0; a < kMaxN; a++) { c_[a] = 0.5f; p_[a] = 0.5f; }
+        for(int a = 0; a < kMaxN; a++) { c_[a] = 0.5f; p_[a] = 0.5f; rendered_[a] = 1e9f; }
         for(int k = 0; k < kMaxK; k++) { mags_[k] = 0.f; mags_bl_[k] = 0.f; }
         for(int j = 0; j < kMaxP; j++) payload_[j] = 0.f;
         DerivePhases();
         dirty_ = true;
     }
 
+    /* Position moves that are smaller than this are not worth a re-render.
+     * The pots and CVs are read through a 16-bit ADC, so a perfectly still
+     * knob still jitters by a few counts and every block was being marked
+     * dirty. At side 8 a cell spans 1/7 of the axis, so this deadband is
+     * about a third of a percent of a cell: far below anything audible, and
+     * it takes a held, unmodulated note from rendering forever down to
+     * rendering once. */
+    float move_eps = 5e-4f;
+
     /* Control-frame position, n ≤ kMaxN (axes beyond the space's N ignored). */
     void SetPosition(const float* c, int n)
     {
         for(int a = 0; a < n && a < kMaxN; a++) c_[a] = c[a];
-        dirty_ = true;
+        /* Compare against the position the current frame was rendered at, not
+         * the previous call. Comparing to the previous call loses slow drift
+         * entirely: a three-second sweep moves 1.7e-4 per block, every step
+         * falls under the threshold, and the frame never updates at all. */
+        for(int a = 0; a < n && a < kMaxN; a++)
+        {
+            const float d = c_[a] - rendered_[a];
+            if(d > move_eps || d < -move_eps) { dirty_ = true; break; }
+        }
     }
     void SetF0(float f0)
     {
-        if(f0 != f0_) dirty_ = true;
-        f0_ = f0;
+        /* Only a change that moves the band limit needs a new frame; pitch
+         * itself is the phase increment and costs nothing. Compare the band
+         * limit this f0 would give, not a proxy for it, or the comparison
+         * fails whenever K is the binding constraint rather than Nyquist. */
+        if(f0 != f0_)
+        {
+            f0_ = f0;
+            if(KcutFor(f0) != kcut_) dirty_ = true;
+        }
     }
 
     void Process(float* out, int n)
@@ -57,8 +84,10 @@ public:
         const bool render = due && dirty_ && space_ && space_->Attached();
         if(render)
         {
+            for(int a = 0; a < kMaxN; a++) rendered_[a] = c_[a];
             Fold(*space_, c_, p_);
             LatticeWeights(*space_, p_, wt_);
+            SharpenWeights(wt_, sharp);
             Blend(*space_, wt_, mags_, payload_);
             Bandlimit();
             RenderFrame(mags_bl_, cph_, sph_, kcut_, osc_.Back(), sc_);
@@ -66,6 +95,17 @@ public:
         }
         osc_.SetFreq(f0_, sr_);
         osc_.Process(out, n, render);
+        /* Cells are normalised to unit RMS, so peak depends on how the
+         * harmonics happen to line up. Measured crest factor across a baked
+         * space: median 2.5, p95 3.2, worst 4.2. The old default put peaks
+         * well past full scale and the module popped on the loud cells.
+         *
+         * The fix is headroom, not saturation. A soft clip was tried here and
+         * tests/alias_check rejected it outright: a memoryless nonlinearity
+         * multiplies the bandwidth of a signal that is bandlimited right up to
+         * Nyquist, and the aliasing figure fell from -88 to -27 dBFS. Any
+         * saturation stage has to be oversampled, which is an M3 job for the
+         * drive lane. Until then this path stays strictly linear. */
         for(int i = 0; i < n; i++) out[i] *= gain;
         block_++;
     }
@@ -120,6 +160,19 @@ private:
         }
     }
 
+    /* The band limit f0 implies, given the space's K. */
+    int KcutFor(float f0) const
+    {
+        if(!space_) return 0;
+        const int K = space_->K();
+        if(f0 <= 0.f) return K;
+        const float nyq   = 0.5f * sr_;
+        const float ratio = nyq / f0;
+        int         kmax  = ratio >= (float)K ? K : (int)ratio;
+        if(kmax > 0 && (float)kmax * f0 >= nyq) kmax--;
+        return kmax < K ? kmax : K;
+    }
+
     void Bandlimit()
     {
         const int K = space_->K();
@@ -155,7 +208,7 @@ private:
     float        cph_[kMaxK], sph_[kMaxK];
     float        mags_[kMaxK], mags_bl_[kMaxK];
     float        payload_[kMaxP];
-    float        c_[kMaxN], p_[kMaxN];
+    float        c_[kMaxN], p_[kMaxN], rendered_[kMaxN];
     float        f0_    = 110.f;
     int          kcut_  = 0;
     uint32_t     block_ = 0;

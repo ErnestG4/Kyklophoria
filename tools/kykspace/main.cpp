@@ -7,9 +7,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <fstream>
+#include "kyk_interp.h"
 #include "kyk_space.h"
 #include "kyk_gen.h"
 
@@ -50,6 +52,92 @@ static int Info(const std::string& path)
         for(int j = 0; j < s.P(); j++) if(!std::isfinite(s.Payload(i)[j])) bad++;
     }
     printf("  centroid  %.2f .. %.2f harmonics\n  bad values %zu\n", cmin, cmax, bad);
+
+    /* Is it worth exploring? Three numbers, all from docs/m2-notes.md.
+     *   shape distance / duplicates — is there material here at all
+     *   cell-centre dip             — does the level hold across a cell (raw)
+     *   direction spread            — the one that decides whether rotating
+     *                                 the control frame finds anything. A
+     *                                 space with privileged axes gives a wide
+     *                                 spread and most rotations land on a dead
+     *                                 direction. */
+    const int K = s.K(), N = s.N();
+    {
+        double sum = 0; long pairs = 0, dup = 0;
+        const uint32_t step = s.PointCount() > 512u ? s.PointCount() / 512u : 1u;
+        std::vector<std::vector<double>> u;
+        for(uint32_t i = 0; i < s.PointCount(); i += step)
+        {
+            std::vector<double> v((size_t)K); double n2 = 0;
+            for(int k = 0; k < K; k++) { v[k] = s.Mags(i)[k]; n2 += v[k] * v[k]; }
+            n2 = std::sqrt(n2 > 0 ? n2 : 1);
+            for(int k = 0; k < K; k++) v[k] /= n2;
+            u.push_back(std::move(v));
+        }
+        for(size_t i = 0; i < u.size(); i++)
+            for(size_t j = i + 1; j < u.size(); j++)
+            {
+                double d = 0;
+                for(int k = 0; k < K; k++) d += u[i][k] * u[j][k];
+                d = 1.0 - std::fmin(1.0, d);
+                sum += d; pairs++; if(d < 0.001) dup++;
+            }
+        printf("  variety   shape distance mean %.4f over %ld sampled pairs, near-duplicates %.1f%%\n",
+               sum / (double)(pairs ? pairs : 1), pairs, 100.0 * (double)dup / (double)(pairs ? pairs : 1));
+    }
+    {
+        float mags[kMaxK], pl[kMaxP];
+        double worst = 0;
+        int ix[kMaxN] = {0,0,0,0,0,0}; int cells = 1;
+        for(int a = 0; a < N; a++) cells *= (s.Side() - 1);
+        if(cells > 4096) cells = 4096;
+        for(int c = 0; c < cells; c++)
+        {
+            float p[kMaxN];
+            for(int a = 0; a < N; a++) p[a] = ((float)ix[a] + 0.5f) / (float)(s.Side() - 1);
+            Weights w; LatticeWeights(s, p, w); Blend(s, w, mags, pl, BlendLevel::Raw);
+            double n2 = 0; for(int k = 0; k < K; k++) n2 += (double)mags[k] * mags[k];
+            worst = std::fmin(worst, 20.0 * std::log10(std::sqrt(n2) / std::sqrt(2.0)));
+            for(int a = 0; a < N; a++) { if(++ix[a] < s.Side() - 1) break; ix[a] = 0; }
+        }
+        printf("  level     worst raw cell-centre dip %.2f dB (rescaled to 0 at runtime)\n", worst);
+    }
+    {
+        float ma[kMaxK], pl[kMaxP], prev[kMaxK];
+        auto per_unit = [&](const double* dir) {
+            const int M = 200; double len = 0; const double span = 0.9;
+            for(int i = 0; i <= M; i++)
+            {
+                double t = ((double)i / M - 0.5) * span; float p[kMaxN];
+                for(int a = 0; a < N; a++) p[a] = (float)std::fmin(1.0, std::fmax(0.0, 0.5 + t * dir[a]));
+                Weights w; LatticeWeights(s, p, w); Blend(s, w, ma, pl);
+                if(i)
+                {
+                    double na = 0, nb = 0, d = 0;
+                    for(int k = 0; k < K; k++) { na += (double)prev[k]*prev[k]; nb += (double)ma[k]*ma[k]; }
+                    na = std::sqrt(na > 0 ? na : 1); nb = std::sqrt(nb > 0 ? nb : 1);
+                    for(int k = 0; k < K; k++) { double x = prev[k]/na - ma[k]/nb; d += x*x; }
+                    len += std::sqrt(d);
+                }
+                std::memcpy(prev, ma, sizeof(float) * (size_t)K);
+            }
+            return len / span;
+        };
+        Rng r; r.Seed(2026); std::vector<double> v;
+        for(int t = 0; t < 200; t++)
+        {
+            double d[kMaxN], n2 = 0;
+            for(int a = 0; a < N; a++) { double u1 = r.Uniform() + 1e-9, u2 = r.Uniform();
+                d[a] = std::sqrt(-2 * std::log(u1)) * std::cos(2 * M_PI * u2); n2 += d[a] * d[a]; }
+            n2 = std::sqrt(n2 > 0 ? n2 : 1);
+            for(int a = 0; a < N; a++) d[a] /= n2;
+            v.push_back(per_unit(d));
+        }
+        std::sort(v.begin(), v.end());
+        double mean = 0; for(double x : v) mean += x; mean /= v.size();
+        printf("  isotropy  variety/unit mean %.3f, spread across directions %.2fx (p95/p5 %.2f)\n",
+               mean, v.back() / (v.front() > 0 ? v.front() : 1e-9), v[189] / (v[9] > 0 ? v[9] : 1e-9));
+    }
     return bad ? 1 : 0;
 }
 
@@ -71,6 +159,17 @@ int main(int argc, char** argv)
         else if(a == "--P") gp.p = atoi(next());
         else if(a == "--seed") gp.seed = (uint32_t)strtoul(next(), nullptr, 0);
         else if(a == "--name") name = next();
+        else if(a == "--family")
+        {
+            const std::string f = next();
+            if(f == "field") gp.family = Family::Field;
+            else if(f == "harmonic") gp.family = Family::Harmonic;
+            else { fprintf(stderr, "unknown family %s (harmonic|field)\n", f.c_str()); return 2; }
+            if(name == "harmonic" && gp.family == Family::Field) name = "field";
+        }
+        else if(a == "--rough") gp.rough = (float)atof(next());
+        else if(a == "--smooth") gp.smooth = atoi(next());
+        else if(a == "--tilt") gp.tilt = (float)atof(next());
         else if(a == "--wrap") { int ax = atoi(next()); if(ax >= 0 && ax < kMaxN) gp.topo[ax] = (uint8_t)Topo::Wrap; }
         else { fprintf(stderr, "unknown option %s\n", a.c_str()); return 2; }
     }

@@ -110,7 +110,9 @@ static void TestInterp()
         Weights w0, w1, wm;
         LatticeWeights(s, p0, w0); LatticeWeights(s, p1, w1); LatticeWeights(s, pm, wm);
         float m0[kMaxK], m1[kMaxK], mm[kMaxK], pl[kMaxP];
-        Blend(s, w0, m0, pl); Blend(s, w1, m1, pl); Blend(s, wm, mm, pl);
+        /* geometry of the interpolator: the raw blend, before the level
+         * rescale that Blend applies by default (see morph_check) */
+        Blend(s, w0, m0, pl, BlendLevel::Raw); Blend(s, w1, m1, pl, BlendLevel::Raw); Blend(s, wm, mm, pl, BlendLevel::Raw);
         float maxd = 0;
         for(int k = 0; k < s.K(); k++) maxd = std::fmax(maxd, std::fabs(mm[k] - 0.5f * (m0[k] + m1[k])));
         CHECK(maxd < 1e-5f, "midpoint not the average of the ends (%g)", maxd);
@@ -138,7 +140,7 @@ static void TestInterp()
         Weights wa, wb, wm;
         LatticeWeights(s, pa, wa); LatticeWeights(s, pb, wb); LatticeWeights(s, pm, wm);
         float ma[kMaxK], mb[kMaxK], mm[kMaxK], pl[kMaxP];
-        Blend(s, wa, ma, pl); Blend(s, wb, mb, pl); Blend(s, wm, mm, pl);
+        Blend(s, wa, ma, pl, BlendLevel::Raw); Blend(s, wb, mb, pl, BlendLevel::Raw); Blend(s, wm, mm, pl, BlendLevel::Raw);
         float maxd = 0;
         for(int k = 0; k < s.K(); k++) maxd = std::fmax(maxd, std::fabs(mm[k] - 0.5f * (ma[k] + mb[k])));
         CHECK(maxd < 1e-5f, "wrap seam midpoint (%g)", maxd);
@@ -150,7 +152,7 @@ static void TestInterp()
         Weights w1, wz;
         LatticeWeights(s, f1, w1); LatticeWeights(s, fz, wz);
         float m1[kMaxK], mz[kMaxK];
-        Blend(s, w1, m1, pl); Blend(s, wz, mz, pl);
+        Blend(s, w1, m1, pl, BlendLevel::Raw); Blend(s, wz, mz, pl, BlendLevel::Raw);
         maxd = 0;
         for(int k = 0; k < s.K(); k++) maxd = std::fmax(maxd, std::fabs(m1[k] - mz[k]));
         CHECK(maxd < 1e-3f, "seam continuity (%g)", maxd);

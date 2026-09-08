@@ -83,6 +83,10 @@ struct Rng
 
 /* ── Small deterministic helpers ─────────────────────────────────────────── */
 inline float Clamp01(float x) { return x < 0.f ? 0.f : (x > 1.f ? 1.f : x); }
+/* IEEE-754 requires square root to be correctly rounded, so unlike sin, cos and
+ * pow it is bit-identical on every target: the M7's VSQRT and x86's sqrtss give
+ * the same bits. Safe in the core where libm's transcendentals are not. */
+inline float Sqrt(float x) { return __builtin_sqrtf(x); }
 inline float Fract(float x)
 {
     /* x - floor(x) without libm; exact for |x| < 2^23 */

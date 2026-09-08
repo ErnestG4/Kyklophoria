@@ -121,6 +121,7 @@ static void TestStereo()
     static StereoEngine st;
     static Engine       mono;
     st.Init(&s, 48000.f);
+    st.slew_ms = 0.f;   /* comparing against the bare Engine, which has no slew */
     mono.Init(&s, 48000.f);
     static float l[24], r[24], m[24];
     Rng rng;

@@ -34,8 +34,9 @@ int main(int argc, char** argv)
     bool        gen = false, stereo = false, serve = false, loop = false;
     GenParams   gp;
     int         sr = 48000, block = 24, render_div = 1, rolloff = 0;
-    float       gain = 0.5f;
+    float       gain = 0.23f, slew_ms = 5.f;   /* headroom for the crest factor, see kyk_engine.h */
     double      dur_override = -1;
+    float       sharp = 0.f, deadband = 5e-4f;
     for(int i = 1; i < argc; i++)
     {
         std::string a = argv[i];
@@ -48,6 +49,17 @@ int main(int argc, char** argv)
         else if(a == "--K") gp.k = atoi(next());
         else if(a == "--P") gp.p = atoi(next());
         else if(a == "--wrap") { int ax = atoi(next()); if(ax >= 0 && ax < kMaxN) gp.topo[ax] = (uint8_t)Topo::Wrap; }
+        else if(a == "--family")
+        {
+            const std::string f = next();
+            gp.family = (f == "field") ? Family::Field : Family::Harmonic;
+            if(gp.family == Family::Field) gp.name = "field";   /* the header names the space */
+        }
+        else if(a == "--rough") gp.rough = (float)atof(next());
+        else if(a == "--smooth") gp.smooth = atoi(next());
+        else if(a == "--slew") slew_ms = (float)atof(next());
+        else if(a == "--sharp") sharp = (float)atof(next());
+        else if(a == "--deadband") deadband = (float)atof(next());
         else if(a == "--script") script_path = next();
         else if(a == "--out") out_path = next();
         else if(a == "--telemetry") telem_path = next();
@@ -102,6 +114,10 @@ int main(int argc, char** argv)
     eng.SetGain(gain);
     eng.SetRenderDiv(render_div);
     eng.SetRolloff(rolloff);
+    eng.slew_ms = slew_ms;
+    eng.sharp   = sharp;
+    eng.L.move_eps = deadband;
+    eng.R.move_eps = deadband;
 
     if(serve) return Serve(eng, blob.data(), blob.size(), have_script ? &script : nullptr, loop, sr, block);
 

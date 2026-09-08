@@ -2,11 +2,13 @@
 # Host test suite. Run from the repo root: tests/run.sh [--update]
 #   1. core_check   — unit suite under ASan/UBSan (space, interp, fft, osc, engine)
 #   2. rotate_check — rotation identity/permutation, the stereo pair, telemetry
-#   3. alias_check  — spec §7 aliasing sweep, fails above -80 dBFS
-#   5. link_check   — python3 tests/link_check.py: the HostLink extension over stdio
+#   3. morph_check  — morph linearity, level across a cell, band-limit continuity,
+#                     and a diversity report on the generated space
+#   4. alias_check  — spec §7 aliasing sweep, fails above -80 dBFS
+#   6. link_check   — python3 tests/link_check.py: the HostLink extension over stdio
 #                     and through tools/bridge/bridge.py (stdlib only; KYK_NODE=1 adds
 #                     the node selftest, which needs node but never npm)
-#   4. golden       — kykdesk renders tests/scripts/*.txt and diffs against
+#   5. golden       — kykdesk renders tests/scripts/*.txt and diffs against
 #                     tests/golden/*.wav (tolerance 1e-6; --update rewrites)
 # Same params + same seed must give the same CRC on every machine of the same
 # arch; the CRC is printed so it can be compared against the module (M1).
@@ -29,6 +31,10 @@ echo "== rotate_check =="
 $CXX $CORE_FLAGS $SAN tests/rotate_check.cpp -o "$OUT/rotate_check" || fail=1
 "$OUT/rotate_check" || fail=1
 
+echo "== morph_check =="
+$CXX $CORE_FLAGS $SAN tests/morph_check.cpp -o "$OUT/morph_check" || fail=1
+"$OUT/morph_check" || fail=1
+
 echo "== alias_check =="
 $CXX $CORE_FLAGS -O2 tests/alias_check.cpp -o "$OUT/alias_check" || fail=1
 "$OUT/alias_check" --csv "$OUT/alias.csv" || fail=1
@@ -38,7 +44,9 @@ make -s host || fail=1
 $CXX -std=gnu++17 -O2 -Icore tests/wavdiff.cpp -o "$OUT/wavdiff" || fail=1
 for script in tests/scripts/*.txt; do
     name=$(basename "$script" .txt)
-    build/host/kykdesk --gen --seed 1 --script "$script" --out "$OUT/$name.wav" --telemetry "$OUT/$name.csv" || { fail=1; continue; }
+    args="--gen --seed 1"
+    case "$name" in m2_field*) args="--gen --seed 1 --family field --side 8";; esac
+    build/host/kykdesk $args --script "$script" --out "$OUT/$name.wav" --telemetry "$OUT/$name.csv" || { fail=1; continue; }
     if [ $update = 1 ] || [ ! -f "tests/golden/$name.wav" ]; then
         cp "$OUT/$name.wav" "tests/golden/$name.wav"
         echo "  wrote tests/golden/$name.wav"
