@@ -104,6 +104,44 @@ static void TestRotation()
     CHECK(std::fabs(r.Angle(2) - 0.2f) < 1e-6f, "AddAngle wraps: %g", r.Angle(2));
 }
 
+/* The firmware writes the static angle from its pot every single block while
+ * an orbit is running. The first orbit build stored both in one variable, so
+ * each write wiped the motion and the orbit did nothing on the module — while
+ * the desktop script, which sets an angle once, worked fine and the golden
+ * passed. This is that case. */
+static void TestOrbit()
+{
+    printf("orbit\n");
+    Rotation r;
+    r.Init(4);
+    r.SetRate(0, 0.25f);                    /* a quarter turn per second */
+    const float dt = 24.f / 48000.f;
+    for(int block = 0; block < 2000; block++)
+    {
+        r.SetAngle(0, 0.1f);                /* the pot, rewritten every block */
+        r.Advance(dt);
+    }
+    const float expected = Fract(0.1f + 0.25f * 2000.f * dt);   /* 0.1 + 0.25 turn */
+    printf("  after 1 s at 0.25 turn/s with the pot rewritten each block: %.4f (want %.4f)\n",
+           r.Angle(0), expected);
+    CHECK(std::fabs(r.Angle(0) - expected) < 1e-3f,
+          "orbit does not accumulate under a repeated SetAngle (%g vs %g)", r.Angle(0), expected);
+    CHECK(std::fabs(r.BaseAngle(0) - 0.1f) < 1e-6f, "base angle should still be the pot value");
+    CHECK(r.Orbiting(), "should report orbiting");
+
+    /* a zero rate must leave the angle exactly where the pot puts it */
+    Rotation q;
+    q.Init(4);
+    q.SetAngle(2, 0.37f);
+    for(int b = 0; b < 100; b++) { q.SetAngle(2, 0.37f); q.Advance(dt); }
+    CHECK(q.Angle(2) == 0.37f, "a stopped orbit must not drift (%g)", q.Angle(2));
+    CHECK(!q.Orbiting(), "no rates set, so not orbiting");
+
+    /* ResetOrbit parks the motion without disturbing the pot */
+    r.ResetOrbit();
+    CHECK(std::fabs(r.Angle(0) - 0.1f) < 1e-6f, "ResetOrbit should leave the base angle (%g)", r.Angle(0));
+}
+
 static std::vector<uint8_t> MakeSpace()
 {
     GenParams gp;
@@ -197,6 +235,7 @@ int main()
 {
     TestTrig();
     TestRotation();
+    TestOrbit();
     TestStereo();
     printf(fails ? "rotate_check: %d FAILURES\n" : "rotate_check: all passed\n", fails);
     return fails ? 1 : 0;

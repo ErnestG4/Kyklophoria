@@ -60,7 +60,7 @@ public:
     void Init(int n)
     {
         n_ = n < 1 ? 1 : (n > kMaxN ? kMaxN : n);
-        for(int p = 0; p < kMaxPlanes; p++) { angle_[p] = 0.f; rate_[p] = 0.f; }
+        for(int p = 0; p < kMaxPlanes; p++) { angle_[p] = 0.f; base_[p] = 0.f; orbit_[p] = 0.f; rate_[p] = 0.f; }
         SetIdentity();
         dirty_ = false;
     }
@@ -70,14 +70,25 @@ public:
     float Angle(int plane) const { return angle_[plane]; }
     const float* Angles() const { return angle_; }
 
+    /* The *static* part of a plane's angle, as a knob sets it. The effective
+     * angle is this plus whatever the orbit has accumulated, which is why the
+     * two are stored separately: the shell writes this every block from the
+     * pot, and if the orbit shared the same variable each write would wipe out
+     * the motion. That is exactly the bug the first orbit build shipped with. */
     void SetAngle(int plane, float turns)
     {
         if(plane < 0 || plane >= Planes()) return;
-        turns = Fract(turns);
-        if(turns != angle_[plane]) { angle_[plane] = turns; dirty_ = true; }
+        base_[plane] = Fract(turns);
+        Recompute(plane);
     }
-    /* Advance a plane's angle by hand. */
-    void AddAngle(int plane, float dturns) { SetAngle(plane, angle_[plane] + dturns); }
+    float BaseAngle(int plane) const { return plane >= 0 && plane < kMaxPlanes ? base_[plane] : 0.f; }
+    /* Nudge the orbit phase by hand. */
+    void AddAngle(int plane, float dturns)
+    {
+        if(plane < 0 || plane >= Planes()) return;
+        orbit_[plane] = Fract(orbit_[plane] + dturns);
+        Recompute(plane);
+    }
 
     /* ── Orbit ──────────────────────────────────────────────────────────
      * A rate per plane, in turns per second, signed. With one plane turning
@@ -106,7 +117,18 @@ public:
     void Advance(float dt_seconds)
     {
         for(int p = 0; p < Planes(); p++)
-            if(rate_[p] != 0.f) SetAngle(p, angle_[p] + rate_[p] * dt_seconds);
+            if(rate_[p] != 0.f)
+            {
+                orbit_[p] = Fract(orbit_[p] + rate_[p] * dt_seconds);
+                Recompute(p);
+            }
+    }
+
+    /* Park every orbit back where it started without touching the knobs. */
+    void ResetOrbit()
+    {
+        for(int p = 0; p < kMaxPlanes; p++) orbit_[p] = 0.f;
+        for(int p = 0; p < Planes(); p++) Recompute(p);
     }
 
     bool IsIdentity() const
@@ -171,8 +193,16 @@ private:
             for(int k = 0; k < kMaxN; k++) m_[r][k] = (r == k) ? 1.f : 0.f;
     }
 
+    void Recompute(int plane)
+    {
+        const float a = Fract(base_[plane] + orbit_[plane]);
+        if(a != angle_[plane]) { angle_[plane] = a; dirty_ = true; }
+    }
+
     int   n_ = 4;
-    float angle_[kMaxPlanes];
+    float angle_[kMaxPlanes];    /* effective = base + orbit */
+    float base_[kMaxPlanes];
+    float orbit_[kMaxPlanes];
     float rate_[kMaxPlanes];
     float m_[kMaxN][kMaxN];
     bool  dirty_ = false;

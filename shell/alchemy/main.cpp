@@ -37,7 +37,13 @@
 using namespace alchemy;
 using namespace kyk;
 
-#define KYK_FW_VERSION "0.1.0-m1"
+/* Bumped when the panel or the sound changes in a way you would notice.
+ * 0.2.0: stereo pair, rotation, the orbit page, field and eigen spaces, the
+ * real-valued transform, level headroom, morph sharpness. */
+#define KYK_FW_VERSION "0.2.0"
+#ifndef KYK_GIT_HASH
+#define KYK_GIT_HASH "local"
+#endif
 
 /* ── memory placement ─────────────────────────────────────────────────────
  * The engine (two voices, ~40 KB) lives in AXI SRAM: fast, DMA-irrelevant.
@@ -255,7 +261,7 @@ struct ModuleSource : ExtSource
 };
 static ModuleSource  gSource;
 static KykExt         gExt(gSource);
-static hostlink::Host host(presets, "kyk", "Kyklophoria", KYK_FW_VERSION, "m1");
+static hostlink::Host host(presets, "kyk", "Kyklophoria", KYK_FW_VERSION, KYK_GIT_HASH);
 
 /* one-second stats window and the CV out, from the control loop (~40 Hz) */
 static void OnFrame()

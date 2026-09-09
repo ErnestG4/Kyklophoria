@@ -35,6 +35,12 @@ C_DEFS += -DALCHEMY_LOCK_INLINE_RAM_LIMIT=0
 endif
 # Telemetry with spectrum + frame is ~460 bytes: 1024-byte bodies, one request per frame.
 C_DEFS += -DALCHEMY_HOSTLINK_MAX_BODY=1024
+# Stamp the build so the module can say which one it is. Without this every
+# flash reported the same string and there was no way to tell from the panel
+# or the web page whether the binary in front of you was the new one.
+GIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+GIT_DIRTY := $(shell git diff --quiet 2>/dev/null || echo -dirty)
+C_DEFS += -DKYK_GIT_HASH=\"$(GIT_HASH)$(GIT_DIRTY)\"
 # Core determinism: no FMA contraction (docs/spec.md §2).
 C_DEFS += -ffp-contract=off
 
