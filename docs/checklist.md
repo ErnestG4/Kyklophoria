@@ -10,9 +10,11 @@ not a dependency chain.
       telemetry encoding moved off the audio callback). Last measured was 33%
       average and 97% max, and both cuts came after that. The number decides
       whether render divider 1 can go back on the knob.
-- [ ] **Licence.** README and `LICENSE` both say "to be confirmed".
-      Audiothurgist is AGPL-3.0. Nothing else can be settled about
-      distribution until this is.
+- [x] **Licence** — AGPL-3.0, decided 2026-09-08. `LICENSE` added,
+      `THIRD_PARTY.md` records that the SDK, libDaisy and the Braids corpus
+      are all MIT and all build-time or bake-time rather than vendored, so the
+      combination is distributable. Optional follow-up nobody has asked for:
+      an `SPDX-License-Identifier` line per source file.
 - [ ] **Does the eigenspace sound better than the field in the rack?** They
       grade differently on paper (field is more even, eigen is made of real
       waves) and only playing them settles it. Whichever wins should become

@@ -193,6 +193,7 @@ Status 2026-09-08 evening — Will confirmed 1–4; 5 is open:
 3. **Phases** ✅ derived from a seed; iterate once there is content to judge.
 4. **Sphere chart** ✅ cube-map; iterate at M2.
 5. **Name** ✅ Kyklophoria.
+6. **Licence** ✅ AGPL-3.0 (2026-09-08), matching Audiothurgist.
 
 ## 10. Prior art
 

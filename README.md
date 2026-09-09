@@ -141,5 +141,6 @@ layer come from [Audiothurgist](https://codeberg.org/combust/Audiothurgist).
 
 ## License
 
-To be confirmed; Audiothurgist is AGPL-3.0. Third-party material and its terms
-are listed as it lands.
+**AGPL-3.0** (`LICENSE`). Third-party terms in `THIRD_PARTY.md`: the Alchemy
+SDK and libDaisy are MIT and are build-time siblings rather than vendored
+here, and the Braids wave bank the eigenspace is baked from is MIT too.
