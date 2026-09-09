@@ -206,7 +206,9 @@ int main(int argc, char** argv)
                     : e.kind == World::Kind::Vertices ? "vertices"
                     : e.kind == World::Kind::Fm ? "fm"
                     : e.kind == World::Kind::Formant ? "formant"
-                    : e.kind == World::Kind::Table ? "table" : "analytic";
+                    : e.kind == World::Kind::Table ? "table"
+                    : e.kind == World::Kind::Lock ? "lock"
+                    : e.kind == World::Kind::Unison ? "unison" : "analytic";
         row.variety = mean;
         row.spread  = spread;
         row.twins   = total ? 100.0 * (double)close / (double)total : 0.0;
@@ -217,6 +219,15 @@ int main(int argc, char** argv)
              * cloud sampled the same way for every world so the rows compare.
              * The measure is one minus the cosine similarity, matching
              * kykspace's `cover`, and under 0.02 counts as recognisable. */
+            /* Coverage is measured on *magnitudes*, on both sides.
+             *
+             * The corpus is analysed to magnitudes and carries no phase, while
+             * a sine-phase world's coefficients are signed. Comparing the two
+             * directly counts a triangle's alternating signs as distance from
+             * a triangle, which is nonsense: it put the Shapes worlds — which
+             * contain an exact saw, square and triangle — at 12% coverage.
+             * Variety, spread and twins stay signed, because those measure the
+             * space of waveforms and the sign is part of the waveform. */
             const int C = 8000;
             std::vector<std::vector<double>> cloud;
             cloud.reserve((size_t)C);
@@ -228,6 +239,10 @@ int main(int argc, char** argv)
                 for(int ax = 0; ax < N; ax++) p[ax] = cr.Uniform();
                 std::vector<double> sv((size_t)K);
                 at(p, sv.data());
+                double e = 0;
+                for(int i2 = 0; i2 < K; i2++) { sv[i2] = std::fabs(sv[i2]); e += sv[i2] * sv[i2]; }
+                const double iv = e > 0 ? 1.0 / std::sqrt(e) : 0.0;
+                for(int i2 = 0; i2 < K; i2++) sv[i2] *= iv;
                 cloud.push_back(std::move(sv));
             }
             std::vector<double> dists;

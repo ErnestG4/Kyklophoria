@@ -600,3 +600,100 @@ so that rotating the control frame finds new ground. This one is trying to be
 **legible** — to put a saw where you can find it and let you fold it — and
 those are different jobs. It is the world you reach for when you want to know
 what you are hearing.
+
+---
+
+# Two more, added rather than retrofitted (2026-09-09)
+
+Will's instruction after the shape tables landed: *"Let's add more instead of
+changing the ones that are there."* So Braids, the three vertex worlds, Stack
+and the fields all still render at random phase and are untouched. These two
+are new.
+
+## Lock — the 24-cell, with waveforms you can name
+
+The vertex worlds exist for one sentence: *"if you align on any given plane you
+catch that waveform locking into a familiar shape, and as quickly as you cross
+it you're pulled back into the mire."* They have never delivered it, and the
+reason is now known — they render at random phase, so the "saw" on a vertex has
+a saw's spectrum and none of a saw's shape.
+
+Same polytope, same distance weighting, rendered at sine phase with signed
+coefficients. And the placement now does the other half of the sentence. The
+24-cell's vertices are every permutation of (±1, ±1, 0, 0), which falls into
+six groups of four — one group per coordinate plane, and those are exactly the
+six Givens planes the rotation turns in. So each plane carries a **family**:
+
+| plane | family |
+|---|---|
+| (0,1) | square, and pulses at 35%, 22%, 12% |
+| (0,2) | the saw, brighter and darker |
+| (0,3) | the triangle, sharpening toward a parabola |
+| (1,2) | sine, and stacks of two, three, four partials |
+| (1,3) | bigger stacks: six, eight, twelve, sixteen |
+| (2,3) | combs — every second, third, fourth, fifth harmonic |
+
+Which plane you line up on decides what kind of thing you find there, which is
+a great deal more interesting than twenty-four unrelated waves scattered over a
+solid. All four canonical shapes are on it, one at the head of each of the
+first four groups.
+
+Its basins were opened too wide at first, at sigma 0.26: everything averaged
+into everything and the world measured 0.37 variety, below the old 24-cell's
+0.66. At 0.17 it measures 0.82, and its four axes are the most evenly matched
+of any legible world here at **1.6x**.
+
+## Unison — one wave stacked on itself
+
+From the original brief: *"one dimension is saw waves, stacking on themselves
+in one direction."*
+
+A voice at root r contributes to harmonics r, 2r, 3r… When r is a whole number
+those land on harmonics and the stack is one thick tone. When it is not, they
+land between harmonics — which a frame periodic at f0 cannot hold — so each
+partial is split across the two bins it falls between, the same trick the FM
+world uses. That is not a detuned oscillator, which this engine cannot produce,
+but it is what a detuned stack *sounds* like: energy smeared onto neighbouring
+partials, beating against what is already there. Deposits are signed, so voices
+cancel where they should.
+
+Axes are voices (one to seven, the last fading in), interval, detune, and the
+copied waveform from saw through square to a narrow pulse. The interval axis
+moves every partial of every voice at once, so at its first range of 1 to 4 it
+did **eight times** the work of any other axis and the world measured 18.6x
+lopsided; narrowed to 2.6, and with the wave axis given the full saw-to-pulse
+range instead of only saw-to-square, it is 7.2x.
+
+Both worlds are free of transcendentals per harmonic — the lesson from the
+vowel world and then again from the shape tables. Evaluate costs 0.81 µs for
+Lock and 0.80 for Unison, against 4.1 µs for the transform they feed.
+
+## The table, with everything on it
+
+| world | backend | variety | spread | twins | covers | median |
+|---|---|---|---|---|---|---|
+| Braids | analytic | 1.466 | 2.14x | 0.4% | 32% | 0.0505 |
+| 24-cell | vertices | 0.658 | 3.64x | 0.4% | 16% | 0.1766 |
+| 16-cell | vertices | 0.382 | 3.14x | 2.3% | 14% | 0.2148 |
+| Tesseract | vertices | 0.469 | 4.22x | 1.2% | 16% | 0.1667 |
+| Stack | lattice | 3.433 | 3.69x | 0.1% | 27% | 0.0492 |
+| Field | lattice | 2.813 | 1.31x | 0.0% | 9% | 0.0907 |
+| Field II | lattice | 5.869 | 1.39x | 0.0% | 10% | 0.0838 |
+| Torus | lattice | 4.325 | 1.26x | 0.0% | 11% | 0.0935 |
+| Harmonic | lattice | 0.199 | 6.13x | 12.8% | 15% | 0.2401 |
+| FM | fm | 12.758 | 1.83x | 0.0% | 11% | 0.0695 |
+| Vowel | formant | 1.503 | 2.87x | 0.0% | 29% | 0.0358 |
+| Shapes | table | 0.986 | 8.47x | 2.7% | 12% | 0.2045 |
+| Shapes R | table | 0.986 | 8.47x | 2.7% | 12% | 0.2045 |
+| **Lock** | lock | 0.820 | 4.72x | 0.1% | 18% | 0.1079 |
+| **Unison** | unison | 3.988 | 4.42x | 0.0% | 2% | 0.0953 |
+
+Two notes on reading it. The shape tables' spread covers their first two axes
+only, since the other two drive frame shapers this tool cannot see. And
+coverage is now measured on **magnitudes** on both sides: the corpus is
+analysed to magnitudes and carries no phase, so comparing it against signed
+coefficients would count a triangle's alternating signs as distance from a
+triangle. As it happens the numbers did not move, because coverage takes a
+minimum over eight thousand points and the nearest is almost always an
+all-positive spectrum — but the metric was ill-defined for signed worlds and
+now is not.

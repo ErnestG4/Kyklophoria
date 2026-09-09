@@ -28,6 +28,8 @@
 #include "kyk_fm.h"
 #include "kyk_formant.h"
 #include "kyk_shapes.h"
+#include "kyk_lock.h"
+#include "kyk_unison.h"
 
 namespace kyk {
 
@@ -56,7 +58,7 @@ struct VertexField
 class World
 {
 public:
-    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3, Fm = 4, Formant = 5, Table = 6 };
+    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3, Fm = 4, Formant = 5, Table = 6, Lock = 7, Unison = 8 };
     /* Which phase spectrum the engine should render this world's coefficients
      * against. This is not a detail — it decides whether the instrument can
      * produce a recognisable waveform at all.
@@ -139,16 +141,40 @@ public:
         shapes_.axis2 = a2;
         shapes_.axis3 = a3;
         shapes_.pulse_min = pulse_min;
-        detail::BuildShapeNodes(shapes_);
+        detail::BuildShapeNodes(shapes_, nodes_);
         phase_ = Phase::Sine;       /* the entire point: real waveforms */
+        p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
+        for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
+    }
+
+    /* Real waveforms on the 24-cell's vertices, one family per Givens plane. */
+    void UseLock(int n, int k, float sigma, int p, const uint8_t* topo)
+    {
+        kind_ = (n >= 1 && n <= kMaxN && k >= 1 && k <= kShapeK) ? Kind::Lock : Kind::None;
+        if(kind_ == Kind::None) return;
+        lock_ = LockField();
+        lock_.n = n; lock_.k = k; lock_.sigma = sigma;
+        detail::BuildLockNodes(lock_, nodes_);
+        phase_ = Phase::Sine;
+        p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
+        for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
+    }
+
+    void UseUnison(int n, int k, int p, const uint8_t* topo)
+    {
+        kind_ = (n >= 1 && n <= kMaxN && k >= 1 && k <= kShapeK) ? Kind::Unison : Kind::None;
+        if(kind_ == Kind::None) return;
+        uni_ = UnisonField();
+        uni_.n = n; uni_.k = k;
+        phase_ = Phase::Sine;
         p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }
 
     Kind Which() const { return kind_; }
     bool Ready() const { return kind_ != Kind::None; }
-    int  N() const { return kind_ == Kind::Lattice ? space_->N() : (kind_ == Kind::Vertices ? verts_.n : (kind_ == Kind::Fm ? fm_.n : (kind_ == Kind::Formant ? form_.n : (kind_ == Kind::Table ? shapes_.n : basis_.n)))); }
-    int  K() const { return kind_ == Kind::Lattice ? space_->K() : (kind_ == Kind::Vertices ? verts_.k : (kind_ == Kind::Fm ? fm_.k : (kind_ == Kind::Formant ? form_.k : (kind_ == Kind::Table ? shapes_.k : basis_.k)))); }
+    int  N() const { return kind_ == Kind::Lattice ? space_->N() : (kind_ == Kind::Vertices ? verts_.n : (kind_ == Kind::Fm ? fm_.n : (kind_ == Kind::Formant ? form_.n : (kind_ == Kind::Table ? shapes_.n : (kind_ == Kind::Lock ? lock_.n : (kind_ == Kind::Unison ? uni_.n : basis_.n)))))); }
+    int  K() const { return kind_ == Kind::Lattice ? space_->K() : (kind_ == Kind::Vertices ? verts_.k : (kind_ == Kind::Fm ? fm_.k : (kind_ == Kind::Formant ? form_.k : (kind_ == Kind::Table ? shapes_.k : (kind_ == Kind::Lock ? lock_.k : (kind_ == Kind::Unison ? uni_.k : basis_.k)))))); }
     const VertexField& Verts() const { return verts_; }
     int  P() const { return kind_ == Kind::Lattice ? space_->P() : p_; }
     Topo TopoOf(int a) const { return kind_ == Kind::Lattice ? space_->TopoOf(a) : (Topo)topo_[a]; }
@@ -160,6 +186,8 @@ public:
     const FmField&      Fm() const { return fm_; }
     const FormantField& Formant() const { return form_; }
     const ShapeField&   Shapes() const { return shapes_; }
+    const LockField&    Lock() const { return lock_; }
+    const UnisonField&  Unison() const { return uni_; }
 
     /* ── the frame shapers ───────────────────────────────────────────────
      * A wavefolder has no closed form in the harmonics, so these run on the
@@ -227,6 +255,8 @@ public:
         if(kind_ == Kind::Fm) { EvalFm(p01, mags, payload); return; }
         if(kind_ == Kind::Formant) { EvalFormant(p01, mags, payload); return; }
         if(kind_ == Kind::Table) { EvalShapes(p01, sharp, mags, payload); return; }
+        if(kind_ == Kind::Lock) { EvalLock(p01, sharp, mags, payload); return; }
+        if(kind_ == Kind::Unison) { EvalUnison(p01, mags, payload); return; }
         for(int k = 0; k < kMaxK; k++) mags[k] = 0.f;
     }
 
@@ -343,6 +373,83 @@ private:
         for(int j = 0; j < p_; j++) payload[j] = pl[j];
     }
 
+    /* Softmax over minus the squared distance to each vertex, blending the
+     * stored spectra. Same weighting as the older vertex worlds; the
+     * difference is entirely that these spectra are signed and get rendered at
+     * sine phase, so a vertex is the waveform rather than its spectrum. */
+    void EvalLock(const float* p01, float sharp, float* mags, float* payload) const
+    {
+        const int n = lock_.n, k = lock_.k, m = lock_.count;
+        if(sharp < 0.f) sharp = 0.f;
+        if(sharp > 1.f) sharp = 1.f;
+        const float sigma  = lock_.sigma * (1.f - 0.7f * sharp);
+        const float inv2s2 = 1.f / (2.f * sigma * sigma);
+        float       w[kWorldNodes];
+        float       best = -1e30f;
+        for(int v = 0; v < m; v++)
+        {
+            float d2 = 0.f;
+            for(int a = 0; a < n; a++)
+            {
+                const float dd = p01[a] - lock_.pos[v][a];
+                d2 += dd * dd;
+            }
+            w[v] = -d2 * inv2s2;
+            if(w[v] > best) best = w[v];
+        }
+        float sum = 0.f;
+        for(int v = 0; v < m; v++) { w[v] = detail::Exp(w[v] - best); sum += w[v]; }
+        const float inv = sum > 0.f ? 1.f / sum : 0.f;
+        for(int i = 0; i < k; i++) mags[i] = 0.f;
+        float top = 0.f;
+        for(int v = 0; v < m; v++)
+        {
+            const float wv = w[v] * inv;
+            if(wv > top) top = wv;
+            if(wv < 1e-4f) continue;
+            const float* sv = nodes_[v];
+            for(int i = 0; i < k; i++) mags[i] += wv * sv[i];
+        }
+        Finish(mags, k, top, 1.f - top, payload);
+    }
+
+    void EvalUnison(const float* p01, float* mags, float* payload) const
+    {
+        const UnisonPoint q = UnisonAt(uni_, p01);
+        UnisonSpectrum(uni_, q.voices, q.span, q.detune, q.wave, uni_.k, mags);
+        /* how near the roots are to whole numbers, which is how harmonic the
+         * stack currently is — the CV out fires when it locks up */
+        const float off = q.detune - (float)(int)q.detune;
+        Finish(mags, uni_.k, 1.f - 2.f * (off < 0.5f ? off : 1.f - off),
+               q.voices / uni_.voices_max, payload);
+    }
+
+    /* Normalise and fill the payload lanes. Shared by the worlds whose
+     * coefficients are signed, so the flatness sum takes magnitudes. */
+    void Finish(float* mags, int k, float lane4, float lane5, float* payload) const
+    {
+        float acc = 0.f, lin = 0.f, kw = 0.f, hf = 0.f;
+        for(int i = 0; i < k; i++)
+        {
+            const float a  = mags[i] < 0.f ? -mags[i] : mags[i];
+            const float p2 = mags[i] * mags[i];
+            acc += p2; lin += a;
+            kw += (float)(i + 1) * p2;
+            if(i >= k / 4) hf += p2;
+        }
+        const float g = acc > 0.f ? Sqrt(2.f) / Sqrt(acc) : 0.f;
+        for(int i = 0; i < k; i++) mags[i] *= g;
+        const float centroid = acc > 0.f ? (kw / acc - 1.f) / (float)(k - 1) : 0.f;
+        const float bright   = acc > 0.f ? hf / acc : 0.f;
+        const float flat     = acc > 0.f ? (lin * lin) / ((float)k * acc) : 0.f;
+        auto        sat      = [](float x) { return x < 0.f ? 0.f : (x > 1.f ? 1.f : x); };
+        const float pl[kMaxP] = {
+            sat(Sqrt(centroid)), sat(1.f - flat), sat(bright), sat(0.3f + 0.7f * bright),
+            sat(lane4), sat(lane5), sat(centroid), sat(flat),
+        };
+        for(int j = 0; j < p_; j++) payload[j] = pl[j];
+    }
+
     static void Apply(Shaper s, float* dst, const float* src, int n, float d)
     {
         switch(s)
@@ -382,7 +489,7 @@ private:
         for(int q = 0; q < 4; q++)
         {
             if(w[q] <= 0.f) continue;
-            const float* node = shapes_.node[id[q]];
+            const float* node = nodes_[id[q]];
             for(int i = 0; i < k; i++) mags[i] += w[q] * node[i];
         }
 
@@ -491,6 +598,12 @@ private:
     FmField      fm_;
     FormantField form_;
     ShapeField   shapes_;
+    LockField    lock_;
+    UnisonField  uni_;
+    /* One node buffer, lent to whichever table-shaped world is live. 24 rows
+     * because that is the 24-cell's vertex count; a shape table uses 16 of
+     * them. Six kilobytes, in DTCM with the World. */
+    float        nodes_[kWorldNodes][kShapeK];
     int          p_ = 0;
     Phase        phase_ = Phase::Random;
     uint8_t      topo_[kMaxN] = {0, 0, 0, 0, 0, 0};

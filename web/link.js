@@ -24,7 +24,7 @@ const CMD = {
   worlds: 0x65, basis: 0x66, setControl: 0x6e,
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4 };
-const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5, table: 6 };
+const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5, table: 6, lock: 7, unison: 8 };
 const TEL = { spectrum: 1, frame: 2, motion: 4 };
 const STATUS = ['OK', 'UNSUPPORTED', 'BAD_ARGS', 'BAD_STATE', 'BAD_CRC', 'BAD_SLOT', 'TOO_LARGE',
   'SCHEMA_MISMATCH', 'FLASH_FAIL', 'BUSY', 'FRAME_ERROR'];
@@ -309,7 +309,8 @@ function parseWorlds(b) {
     /* `analytic` here means the page can evaluate it: a world with a
      * formula small enough to hold, whichever formula it is. */
     list.push({ index: i, kind, analytic: kind === WORLD_KIND.analytic || kind === WORLD_KIND.fm || kind === WORLD_KIND.formant
-                 || kind === WORLD_KIND.table, name, note });
+                 || kind === WORLD_KIND.table || kind === WORLD_KIND.lock
+                 || kind === WORLD_KIND.unison, name, note });
   }
   return { current, list };
 }
@@ -334,6 +335,15 @@ function parseBasis(all) {
       indexMax: d.getFloat32(4, true), ratioMin: d.getFloat32(8, true), ratioMax: d.getFloat32(12, true),
       carrierMin: d.getFloat32(16, true), carrierMax: d.getFloat32(20, true),
       secondMax: d.getFloat32(24, true), ratioLock: d.getFloat32(28, true),
+    };
+    if (all[1] === WORLD_KIND.lock && all.length >= 12) return {
+      lock: true, n: all[2], k: all[3], count: all[4], sigma: d.getFloat32(8, true),
+    };
+    if (all[1] === WORLD_KIND.unison && all.length >= 24) return {
+      unison: true, n: all[2], k: all[3],
+      voicesMax: d.getFloat32(4, true), spanMin: d.getFloat32(8, true),
+      spanMax: d.getFloat32(12, true), detuneMax: d.getFloat32(16, true),
+      tilt: d.getFloat32(20, true),
     };
     if (all[1] === WORLD_KIND.table && all.length >= 32) return {
       table: true, n: all[2], k: all[3], cols: all[4], rows: all[5],
@@ -494,6 +504,106 @@ function evalShapes(basis, p01, out, sharp = 0) {
   return m;
 }
 
+/* Real waveforms on the 24-cell — a port of core/kyk_lock.h. One family per
+ * Givens plane, in the order the polytope is walked. */
+function lockWave(k, v, out) {
+  for (let i = 0; i < k; i++) out[i] = 0;
+  const g = Math.floor(v / 4) % 6, m = v % 4;
+  if (g === 0) {
+    const duty = [0.5, 0.35, 0.22, 0.12][m];
+    for (let h = 1; h <= k; h++) out[h - 1] = 2 * (1 - Math.cos(2 * Math.PI * h * duty)) / (Math.PI * h);
+  } else if (g === 1) {
+    const p = [1.0, 0.82, 0.70, 1.25][m];
+    for (let h = 1; h <= k; h++) out[h - 1] = Math.pow(h, -p);
+  } else if (g === 2) {
+    const p = [2.0, 1.75, 1.5, 2.4][m];
+    for (let h = 1; h <= k; h += 2) out[h - 1] = ((((h - 1) / 2) & 1) ? -1 : 1) * Math.pow(h, -p);
+  } else if (g === 3 || g === 4) {
+    const n = g === 3 ? [1, 2, 3, 4][m] : [6, 8, 12, 16][m];
+    for (let h = 1; h <= n && h <= k; h++) out[h - 1] = 1 / h;
+  } else {
+    const st = [2, 3, 4, 5][m];
+    for (let h = st; h <= k; h += st) out[h - 1] = 1 / h;
+  }
+  let e = 0; for (let i = 0; i < k; i++) e += out[i] * out[i];
+  const gg = e > 0 ? Math.SQRT2 / Math.sqrt(e) : 0;
+  for (let i = 0; i < k; i++) out[i] *= gg;
+  return out;
+}
+let lockCache = null;
+function lockNodes(b) {
+  if (lockCache && lockCache.k === b.k) return lockCache;
+  const pos = [], spec = [], r = 0.70710678;
+  let c = 0;
+  for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++)
+    for (let si = 0; si < 2; si++) for (let sj = 0; sj < 2; sj++) {
+      const v = [0, 0, 0, 0];
+      v[i] = si ? r : -r; v[j] = sj ? r : -r;
+      pos.push(v.map(x => 0.5 + 0.42 * x));
+      spec.push(lockWave(b.k, c, new Float32Array(b.k)));
+      c++;
+    }
+  lockCache = { k: b.k, pos, spec, count: c };
+  return lockCache;
+}
+function evalLock(basis, p01, out, sharp = 0) {
+  const k = basis.k, n = basis.n, t = lockNodes(basis);
+  const m = out && out.length >= k ? out : new Float32Array(k);
+  const sigma = basis.sigma * (1 - 0.7 * Math.max(0, Math.min(1, sharp)));
+  const inv2s2 = 1 / (2 * sigma * sigma);
+  const w = new Float64Array(t.count);
+  let best = -1e30;
+  for (let v = 0; v < t.count; v++) {
+    let d2 = 0;
+    for (let a = 0; a < n; a++) { const dd = p01[a] - t.pos[v][a]; d2 += dd * dd; }
+    w[v] = -d2 * inv2s2; if (w[v] > best) best = w[v];
+  }
+  let sum = 0;
+  for (let v = 0; v < t.count; v++) { w[v] = Math.exp(w[v] - best); sum += w[v]; }
+  const inv = sum > 0 ? 1 / sum : 0;
+  for (let i = 0; i < k; i++) m[i] = 0;
+  for (let v = 0; v < t.count; v++) {
+    const wv = w[v] * inv; if (wv < 1e-4) continue;
+    const sv = t.spec[v];
+    for (let i = 0; i < k; i++) m[i] += wv * sv[i];
+  }
+  return m;
+}
+
+/* One wave stacked on itself — a port of core/kyk_unison.h. */
+function evalUnison(basis, p01, out) {
+  const k = basis.k, n = basis.n;
+  const m = out && out.length >= k ? out : new Float32Array(k);
+  for (let i = 0; i < k; i++) m[i] = 0;
+  const voices = 1 + p01[0] * (basis.voicesMax - 1);
+  const span = basis.spanMin + p01[1] * (basis.spanMax - basis.spanMin);
+  const detune = n > 2 ? p01[2] * basis.detuneMax : 0;
+  const wave = n > 3 ? p01[3] : 0;
+  const whole = Math.floor(voices), frac = voices - whole, invPi = 1 / Math.PI;
+  let gain = 1;
+  for (let j = 0; j <= whole && j < 16; j++) {
+    let g = gain;
+    if (j === whole) { if (!(frac > 0)) break; g *= frac; }
+    const root = 1 + j * span + j * detune;
+    if (root > k) break;
+    for (let q = 1; q <= k; q++) {
+      const fh = root * q;
+      if (fh > k) break;
+      const im = 1 / q;
+      let bm;
+      if (wave <= 0.5) { const sq = (q & 1) ? 4 * invPi * im : 0; bm = im + 2 * wave * (sq - im); }
+      else { const d = 0.5 - (2 * wave - 1) * 0.38; bm = 2 * (1 - Math.cos(2 * Math.PI * q * d)) * invPi * im; }
+      if (bm === 0) continue;
+      const a = g * bm, h = fh - 1;
+      const i0 = Math.floor(h), fr = h - i0;
+      if (i0 >= 0 && i0 < k) m[i0] += a * (1 - fr);
+      if (i0 + 1 >= 0 && i0 + 1 < k) m[i0 + 1] += a * fr;
+    }
+    gain *= basis.tilt;
+  }
+  return m;
+}
+
 /* Three resonances over a falling source — a port of core/kyk_formant.h, the
  * same shape of thing as evalFm and for the same reason. */
 function evalFormant(basis, p01, out) {
@@ -549,7 +659,7 @@ const planeCount = n => n * (n - 1) / 2;
 const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
-  parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
+  parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, basisReq, parseBasis, fetchBasis, evalBasis,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };

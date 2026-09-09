@@ -381,6 +381,26 @@ struct ModuleSource : ExtSource
         if(!worlds::IsAnalytic(world)) return 0;
         World w;
         if(!worlds::Point(world, w, kBootP, nullptr)) return 0;
+        if(w.Which() == World::Kind::Lock)
+        {
+            uint8_t blob[kLockBlobBytes];
+            total = (uint32_t)LockBlob(w.Lock(), blob);
+            if(offset >= total) return 0;
+            uint32_t n = total - offset;
+            if(n > (uint32_t)max) n = (uint32_t)max;
+            std::memcpy(out, blob + offset, n);
+            return (int)n;
+        }
+        if(w.Which() == World::Kind::Unison)
+        {
+            uint8_t blob[kUnisonBlobBytes];
+            total = (uint32_t)UnisonBlob(w.Unison(), blob);
+            if(offset >= total) return 0;
+            uint32_t n = total - offset;
+            if(n > (uint32_t)max) n = (uint32_t)max;
+            std::memcpy(out, blob + offset, n);
+            return (int)n;
+        }
         if(w.Which() == World::Kind::Table)
         {
             uint8_t blob[kShapeBlobBytes];

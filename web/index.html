@@ -426,7 +426,9 @@ function buildTerrain() {
    * summarising. */
   const nonlinear = basis.fm ? MVL.evalFm
                   : basis.formant ? MVL.evalFormant
-                  : basis.table ? MVL.evalShapes : null;
+                  : basis.table ? MVL.evalShapes
+                  : basis.lock ? MVL.evalLock
+                  : basis.unison ? MVL.evalUnison : null;
   if (nonlinear) {
     const p = new Float32Array(6), spec = new Float32Array(k);
     for (let a = 0; a < n; a++) p[a] = clamp01(tel.posL[a]);

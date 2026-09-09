@@ -1,0 +1,11 @@
+# M3 golden: the Unison world.
+#
+# Voices climb, then the interval opens, then the stack detunes off whole
+# numbers and starts beating. The detune leg is the one that would change if
+# the fractional-harmonic deposit were ever quietly replaced by rounding.
+0.0 f0 110
+0.0 pos 0.05 0.1 0.0 0.2
+0.0 glide pos 0.9 0.1 0.0 0.2 3.0
+3.0 glide pos 0.9 0.8 0.0 0.2 3.0
+6.0 glide pos 0.9 0.8 1.0 0.75 3.0
+9.5 dur

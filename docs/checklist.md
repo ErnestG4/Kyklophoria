@@ -174,6 +174,13 @@ meaningful axis and stacking four banks makes rotation meaningless.
       phase renders a saw's spectrum at 0.79 correlation to a saw. Sine phase
       plus signed coefficients gives 1.0000 at a *better* crest factor. Opt-in
       per world, so nothing existing moved. See docs/worlds.md.
+- [x] **A phase-correct vertex world** — `Lock`, world 13. The 24-cell with
+      real waveforms and one family per Givens plane, so which plane you align
+      on decides what kind of thing you find. Added beside the old 24-cell
+      rather than replacing it, per Combust: add rather than change.
+- [x] **Stacks of saws** — `Unison`, world 14, from the original brief. Voices,
+      interval, detune and the copied waveform. Non-integer roots deposit
+      across two bins, so a stack detunes continuously instead of stepping.
 - [ ] **The other worlds are still phase-blind.** Braids, Stack, the vertex
       worlds and the fields all still render at random phase, and the vertex
       worlds in particular put a "saw" and a "square" on their vertices that

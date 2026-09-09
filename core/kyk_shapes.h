@@ -61,10 +61,14 @@ enum class Shaper : uint8_t { None = 0, Fold = 1, Ring = 2, Warp = 3 };
  * every Evaluate. Sixteen nodes of 64 coefficients is 4 KB, which lives in
  * DTCM with the World and is built once when the world is selected. */
 constexpr int kShapeMaxNodes = 16;
+constexpr int kWorldNodes    = 24;   /* the 24-cell needs the most */
 constexpr int kShapeK        = 64;
 
 struct ShapeField
 {
+    /* No node storage here. The World owns one node buffer and lends it to
+     * whichever table-shaped world is live, so two of them do not each carry a
+     * copy through DTCM. */
     int    cols = 4, rows = 4;
     Shaper axis2 = Shaper::Fold;
     Shaper axis3 = Shaper::Warp;
@@ -74,7 +78,6 @@ struct ShapeField
      * thinner. Measured, not guessed. */
     float  pulse_min = 0.08f;
     int    n = 4, k = kShapeK;
-    float  node[kShapeMaxNodes][kShapeK];
 };
 
 namespace detail {
@@ -174,13 +177,13 @@ inline void ShapeNode(const ShapeField& f, int col, int row, int k, float* c)
 
 /* Fill in every node of the grid. Called once, off the audio thread, when a
  * world is selected. */
-inline void BuildShapeNodes(ShapeField& f)
+inline void BuildShapeNodes(ShapeField& f, float (*node)[kShapeK])
 {
     if(f.k > kShapeK) f.k = kShapeK;
     if(f.cols * f.rows > kShapeMaxNodes) { f.cols = 4; f.rows = 4; }
     for(int r = 0; r < f.rows; r++)
         for(int c = 0; c < f.cols; c++)
-            ShapeNode(f, c, r, f.k, f.node[r * f.cols + c]);
+            ShapeNode(f, c, r, f.k, node[r * f.cols + c]);
 }
 
 /* Bias a fractional grid coordinate toward the nearer node.

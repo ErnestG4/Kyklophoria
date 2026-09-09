@@ -16,7 +16,7 @@ namespace kyk {
 namespace worlds {
 
 enum : uint8_t { kBraids = 0, kCell24 = 1, kCell16 = 2, kTesseract = 3, kStack = 4,
-                 kFieldCalm = 5, kFieldWild = 6, kFieldTorus = 7, kHarmonic = 8, kFm = 9, kVowel = 10, kShapes = 11, kShapesRing = 12, kCount = 13 };
+                 kFieldCalm = 5, kFieldWild = 6, kFieldTorus = 7, kHarmonic = 8, kFm = 9, kVowel = 10, kShapes = 11, kShapesRing = 12, kLock = 13, kUnison = 14, kCount = 15 };
 
 struct Entry
 {
@@ -41,6 +41,8 @@ inline const Entry& Get(uint8_t i)
         {"Vowel",    "three resonances over a falling source; the peaks ride the pitch", World::Kind::Formant},
         {"Shapes",   "the real saw, square, triangle and pulse on a grid; fold and phase distortion", World::Kind::Table},
         {"Shapes R", "the same grid, with wavefolding and ring modulation instead", World::Kind::Table},
+        {"Lock",     "real waveforms on the 24-cell, one family per rotation plane", World::Kind::Lock},
+        {"Unison",   "one wave stacked on itself; interval, detune and beating", World::Kind::Unison},
     };
     return kEntries[i < kCount ? i : 0];
 }
@@ -78,6 +80,8 @@ inline bool Point(uint8_t i, World& w, int p, const uint8_t* topo, solids::Verte
                     0.08f, p, topo);
         return true;
     }
+    if(i == kLock) { w.UseLock(4, kShapeK, 0.17f, p, topo); return true; }
+    if(i == kUnison) { w.UseUnison(4, kShapeK, p, topo); return true; }
     const int sol = SolidOf(i);
     if(sol >= 0)
     {

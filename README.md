@@ -98,6 +98,8 @@ cost 1.18 MB to approximate what it just threw away.
 | **Vowel** | three chained resonances over a falling source | 1.50 | 2.87x | **29%** |
 | **Shapes** | a 4×4 grid of *real* waveforms, plus fold and phase modulation | — | — | — |
 | **Shapes R** | the same grid, with fold and ring modulation | — | — | — |
+| **Lock** | real waveforms on the 24-cell, a family per rotation plane | 0.82 | 4.72x | 18% |
+| **Unison** | one wave stacked on itself; interval, detune, beating | 3.99 | 4.42x | 2% |
 
 **Spread** is the number that decides whether rotating the control frame was
 worth building: the most varied direction through the space over the least. At

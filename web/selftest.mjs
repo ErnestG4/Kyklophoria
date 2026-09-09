@@ -92,13 +92,18 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
     check(!!fm, 'an FM world is registered');
     check(!!vw, 'a formant world is registered');
     const tb = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.table);
+    const lk = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.lock);
+    const un = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.unison);
     check(!!tb, 'a shape-table world is registered');
+    check(!!lk && !!un, 'the lock and unison worlds are registered');
     for (const { w, evalFn, label } of [{ w: fm, evalFn: KYK.evalFm, label: 'FM' },
                                         { w: vw, evalFn: KYK.evalFormant, label: 'Vowel' },
-                                        { w: tb, evalFn: KYK.evalShapes, label: 'Shapes' }]) {
+                                        { w: tb, evalFn: KYK.evalShapes, label: 'Shapes' },
+                                        { w: lk, evalFn: KYK.evalLock, label: 'Lock' },
+                                        { w: un, evalFn: KYK.evalUnison, label: 'Unison' }]) {
       if (!w) continue;
       const b = await KYK.fetchBasis(link, w.index, info.maxBody);
-      check(b && (b.fm || b.formant || b.table) && b.n === 4 && b.k === 64, label + ' formula arrives');
+      check(b && (b.fm || b.formant || b.table || b.lock || b.unison) && b.n === 4 && b.k === 64, label + ' formula arrives');
       /* switch to it, park at a known position, compare spectra */
       await link.request(KYK.CMD.action, KYK.actionReq(KYK.ACT.selectWorld, [w.index]));
       for (let i = 0; i < 60; i++) {
@@ -166,10 +171,15 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   let badAct = false; try { await link.request(KYK.CMD.action, KYK.actionReq(200)); } catch (e) { badAct = /BAD_ARGS|UNSUPPORTED/.test(e.message); }
   check(badAct, 'unknown action refused');
 
-  /* a burst of keyed polls collapses */
+  /* A burst of keyed polls collapses. Measured as the delta across the burst,
+   * not the running total: the total grows whenever anything is added earlier
+   * in this file, which made the check fail for a reason that had nothing to
+   * do with coalescing. */
+  const before = link.stats.reqs;
   const ps = []; for (let i = 0; i < 20; i++) ps.push(link.request(KYK.CMD.telemetry, KYK.telemetryReq(1), { key: 'tel' }));
   await Promise.all(ps);
-  check(link.stats.reqs < 40, 'keyed polls coalesce (' + link.stats.reqs + ' requests total)');
+  const spent = link.stats.reqs - before;
+  check(spent < 20, 'keyed polls coalesce (' + spent + ' requests for 20 polls)');
   console.log(`  link: ${link.stats.reqs} requests, rtt avg ${link.stats.rttAvg.toFixed(2)} ms`);
 });
 
