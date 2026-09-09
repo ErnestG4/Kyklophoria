@@ -39,7 +39,7 @@ f32 posL[n]          left voice, folded (what was interpolated)
 f32 posR[n]          right voice, folded (= posL when mono)
 f32 angle[planes]    turns
 f32 payload[p]       interpolated at the centre, 0..1
-u8  mags[k]          if flags&1: left voice, pre-bandlimit; 0 = ≤ −96 dB, 255 = 0 dB
+u8  mags[k]          if flags&1: left voice, pre-bandlimit; 0 = ≤ −96 dB, 255 = +6 dB
 i8  frame[256]       if flags&2: left voice's frame, decimated, ×40 clipped
 u8  kep_running      if flags&4 ─┐
 u8  kep_plane                    │

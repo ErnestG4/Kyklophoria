@@ -419,17 +419,20 @@ function buildTerrain() {
     vals[gy * R + gx] = val;
     if (val < lo) lo = val; if (val > hi) hi = val;
   };
-  if (basis.fm) {
-    /* FM has no linear structure to precompute — the Bessel amplitudes
-     * depend on the index and the sideband positions on the ratio, which is
-     * exactly why the world is not separable and why it is worth drawing. */
+  /* Worlds with no linear structure to precompute. FM's Bessel amplitudes
+   * depend on the index and its sideband positions on the ratio; the vowel
+   * world's peaks are chained multiples of each other. That is exactly why
+   * neither is separable, and why both are worth drawing rather than
+   * summarising. */
+  const nonlinear = basis.fm ? MVL.evalFm : basis.formant ? MVL.evalFormant : null;
+  if (nonlinear) {
     const p = new Float32Array(6), spec = new Float32Array(k);
     for (let a = 0; a < n; a++) p[a] = clamp01(tel.posL[a]);
     for (let gy = 0; gy < R; gy++) {
       p[ay] = gy / (R - 1);
       for (let gx = 0; gx < R; gx++) {
         p[ax] = gx / (R - 1);
-        note(gx, gy, shadeOf(MVL.evalFm(basis, p, spec)));
+        note(gx, gy, shadeOf(nonlinear(basis, p, spec)));
       }
     }
     paintTerrain(vals, R, lo, hi);
@@ -667,10 +670,10 @@ function drawSound() {
     cnx.fillStyle = '#1a2230'; cnx.fillRect(x, stripY + 14, w, 6);
     cnx.fillStyle = `hsl(${hue},60%,55%)`; cnx.fillRect(x, stripY + 14, w * clamp01(tel.payload[j]), 6);
   }
-  /* spectrum: K bars on a 0…−96 dB scale, cutoff marked on the bottom axis */
+  /* spectrum: K bars on a +6…−96 dB scale, cutoff marked on the bottom axis */
   if (tel.mags) {
     const k = tel.k, x0 = m, bw = (W - 2 * m) / k;
-    cnx.fillStyle = '#3b4756'; cnx.fillText('0 dB', W - m - 30, specCap); cnx.fillText('−96', W - m - 24, base - 2);
+    cnx.fillStyle = '#3b4756'; cnx.fillText('+6 dB', W - m - 36, specCap); cnx.fillText('−96', W - m - 24, base - 2);
     for (let i = 0; i < k; i++) {
       const v = tel.mags[i] / 255, live = i < tel.kcut;
       cnx.fillStyle = live ? `hsla(${hue},70%,60%,${0.35 + 0.65 * v})` : 'rgba(93,104,115,0.35)';

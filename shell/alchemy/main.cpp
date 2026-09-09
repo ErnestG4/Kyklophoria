@@ -367,6 +367,16 @@ struct ModuleSource : ExtSource
         if(!worlds::IsAnalytic(world)) return 0;
         World w;
         if(!worlds::Point(world, w, kBootP, nullptr)) return 0;
+        if(w.Which() == World::Kind::Formant)
+        {
+            uint8_t blob[kFormantBlobBytes];
+            total = (uint32_t)FormantBlob(w.Formant(), blob);
+            if(offset >= total) return 0;
+            uint32_t n = total - offset;
+            if(n > (uint32_t)max) n = (uint32_t)max;
+            std::memcpy(out, blob + offset, n);
+            return (int)n;
+        }
         if(w.Which() == World::Kind::Fm)
         {
             uint8_t blob[kFmBlobBytes];

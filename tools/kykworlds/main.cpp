@@ -204,7 +204,8 @@ int main(int argc, char** argv)
         row.name    = e.name;
         row.kind    = e.kind == World::Kind::Lattice ? "lattice"
                     : e.kind == World::Kind::Vertices ? "vertices"
-                    : e.kind == World::Kind::Fm ? "fm" : "analytic";
+                    : e.kind == World::Kind::Fm ? "fm"
+                    : e.kind == World::Kind::Formant ? "formant" : "analytic";
         row.variety = mean;
         row.spread  = spread;
         row.twins   = total ? 100.0 * (double)close / (double)total : 0.0;

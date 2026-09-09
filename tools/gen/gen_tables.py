@@ -28,5 +28,33 @@ for i in range(SIZE):
         out.append('    ' + ', '.join(row) + ',')
         row = []
 out.append('};')
+
+# Natural logs and reciprocals of the harmonic numbers 1..kMaxK.
+#
+# The vowel world needs ln(h) and 1/h for every harmonic on every evaluation,
+# and the core's Ln and Exp are series: computing them cost 256 series
+# evaluations per spectrum and made that world twelve times more expensive
+# than any other. They are the same 64 numbers every time, so they are
+# constants, and constants belong here with the sine table where both targets
+# see identical bits.
+MAXK = 128
+out.append('')
+out.append('/* ln(h) and 1/h for harmonics h = 1..kMaxK, rounded to float32. */')
+out.append('static const float kLnHarm[%d] = {' % MAXK)
+row = []
+for i in range(MAXK):
+    row.append(f32(math.log(i + 1)).hex() + 'f')
+    if len(row) == 4:
+        out.append('    ' + ', '.join(row) + ',')
+        row = []
+out.append('};')
+out.append('static const float kInvHarm[%d] = {' % MAXK)
+row = []
+for i in range(MAXK):
+    row.append(f32(1.0 / (i + 1)).hex() + 'f')
+    if len(row) == 4:
+        out.append('    ' + ', '.join(row) + ',')
+        row = []
+out.append('};')
 out.append('} // namespace kyk')
 sys.stdout.write('\n'.join(out) + '\n')

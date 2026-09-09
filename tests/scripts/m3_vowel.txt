@@ -1,0 +1,11 @@
+# M3 golden: the vowel world.
+#
+# The three resonance peaks are chained — the second is a multiple of the
+# first, the third a multiple of the second — so moving the first axis moves
+# all three. This sweep moves all four at once and would change if that
+# chaining were ever quietly replaced by independent peaks, which is the
+# change that would make the world separable again.
+0.0 f0 110
+0.0 pos 0.05 0.95 0.10 0.90
+0.0 glide pos 0.95 0.05 0.90 0.10 5.0
+5.5 dur

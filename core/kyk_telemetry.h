@@ -7,7 +7,7 @@
  *   u32 block · f32 f0 · u8 n · u8 k · u8 kcut · u8 p · u8 planes · u8 flags
  *   u8 stereo · u8 spread_plane · f32 spread
  *   f32 ctl[n] · f32 centre[n] · f32 posL[n] · f32 posR[n] · f32 angle[planes] · f32 payload[p]
- *   [flags&1] u8 mags[k]   — left voice, pre-bandlimit, dB: 0 = ≤ −96 dB, 255 = 0 dB (m = 1)
+ *   [flags&1] u8 mags[k]   — left voice, pre-bandlimit, dB: 0 = ≤ −96 dB, 255 = +6 dB
  *   [flags&2] i8 frame[256] — left voice's frame, decimated, ×40 clipped
  *   [flags&4] u8 kep_running · u8 kep_plane · f32 kep_x · f32 kep_y
  *             f32 kep_rush · f32 couple · f32 lock
@@ -39,10 +39,18 @@ inline float FastLog2(float x)
     const float m = 1.f + (float)(b & 0x7FFFFFu) * (1.0f / 8388608.0f);   /* [1,2) */
     return (float)e + (-0.33333333f * m * m + 2.f * m - 1.66666667f);
 }
+/* The byte runs from −96 dB to +6 dB, not to 0.
+ *
+ * The engine normalises a spectrum so its sum of squares is 2, which means a
+ * single partial can legitimately reach +3 dB, and a peaky world's tallest
+ * partial routinely does. Topping the scale out at 0 dB clipped exactly that
+ * partial — measured 1.4 dB of error on the vowel world's second harmonic,
+ * against a quantisation step of 0.4 — so the page drew its most important
+ * bar short. Six dB of headroom costs 0.024 dB of resolution. */
 inline uint8_t MagToU8(float m)
 {
     const float db = 6.0205999f * FastLog2(m);          /* 20·log10 */
-    const float v  = 255.f + db * (255.f / 96.f);
+    const float v  = 255.f + (db - 6.f) * (255.f / 102.f);
     return v <= 0.f ? 0u : (v >= 255.f ? 255u : (uint8_t)(v + 0.5f));
 }
 inline int8_t ToI8(float v)

@@ -230,9 +230,14 @@ static void TestStereo()
     std::memcpy(&blk, buf, 4);
     CHECK(blk == st.L.Block(), "block field");
     CHECK(buf[8] == 4 && buf[9] == 64 && buf[11] == 8 && buf[12] == 6, "header fields %d %d %d %d", buf[8], buf[9], buf[11], buf[12]);
-    /* dB scale: m=1 → 255, m=0.5 → 255 − 6.02·2.66 ≈ 239, tiny → 0 */
-    CHECK(detail::MagToU8(1.f) == 255, "0 dB");
-    CHECK(std::abs((int)detail::MagToU8(0.5f) - 239) <= 2, "-6 dB → %d", detail::MagToU8(0.5f));
+    /* dB scale: the byte spans −96 to +6 dB, so unity is 15 steps below the
+     * top and the six dB of headroom is there because the engine normalises
+     * to a sum of squares of two — one partial can legitimately exceed unity
+     * and a peaky world's tallest one does. */
+    CHECK(std::abs((int)detail::MagToU8(1.f) - 240) <= 1, "0 dB → %d", detail::MagToU8(1.f));
+    CHECK(std::abs((int)detail::MagToU8(0.5f) - 225) <= 2, "-6 dB → %d", detail::MagToU8(0.5f));
+    CHECK(detail::MagToU8(2.f) == 255, "+6 dB tops out");
+    CHECK(std::abs((int)detail::MagToU8(1.4142f) - 248) <= 2, "+3 dB fits → %d", detail::MagToU8(1.4142f));
     CHECK(detail::MagToU8(1e-6f) == 0, "floor");
 }
 

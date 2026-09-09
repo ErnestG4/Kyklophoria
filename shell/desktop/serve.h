@@ -130,6 +130,16 @@ public:
         if(!kyk::worlds::IsAnalytic(w)) return 0;
         kyk::World tmp;
         if(!kyk::worlds::Point(w, tmp, 8, nullptr, &vtable)) return 0;
+        if(tmp.Which() == kyk::World::Kind::Formant)
+        {
+            uint8_t blob[kyk::kFormantBlobBytes];
+            total = (uint32_t)kyk::FormantBlob(tmp.Formant(), blob);
+            if(offset >= total) return 0;
+            uint32_t n = total - offset;
+            if(n > (uint32_t)max) n = (uint32_t)max;
+            std::memcpy(out, blob + offset, n);
+            return (int)n;
+        }
         if(tmp.Which() == kyk::World::Kind::Fm)
         {
             uint8_t blob[kyk::kFmBlobBytes];
