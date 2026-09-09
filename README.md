@@ -99,7 +99,10 @@ cost 1.18 MB to approximate what it just threw away.
 | **Shapes** | a 4×4 grid of *real* waveforms, plus fold and phase modulation | — | — | — |
 | **Shapes R** | the same grid, with fold and ring modulation | — | — | — |
 | **Lock** | real waveforms on the 24-cell, a family per rotation plane | 0.82 | 4.72x | 18% |
-| **Unison** | one wave stacked on itself; interval, detune, beating | 3.99 | 4.42x | 2% |
+| **Unison** | one wave stacked on itself; interval, detune | 3.95 | 4.39x | 2% |
+| **Plate** | a struck plate; the side ratio reorders its modes | 1.04 | **2.28x** | 20% |
+| **Bar** | a struck bar, tuned onto the harmonic grid | 1.22 | 3.83x | 19% |
+| **Drum** | a struck membrane, tuned; dense and low-ordered | 0.65 | 4.06x | 24% |
 
 **Spread** is the number that decides whether rotating the control frame was
 worth building: the most varied direction through the space over the least. At

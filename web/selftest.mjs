@@ -86,7 +86,9 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
    * mean the picture stops being the space that is playing. GET_CELL asks the
    * module for the spectrum it actually computed at a position. */
   {
-    const ws = KYK.parseWorlds(await link.request(KYK.CMD.worlds, new Uint8Array(0)));
+    const ws = await KYK.fetchWorlds(link);
+    check(ws && ws.list.length === ws.count, 'the world list pages completely ('
+          + (ws ? ws.list.length + ' of ' + ws.count : '?') + ')');
     const fm = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.fm);
     const vw = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.formant);
     check(!!fm, 'an FM world is registered');
@@ -94,20 +96,23 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
     const tb = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.table);
     const lk = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.lock);
     const un = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.unison);
+    const md = ws && ws.list.filter(w => w.kind === KYK.WORLD_KIND.modal);
+    check(md && md.length === 3, 'three modal worlds are registered');
     check(!!tb, 'a shape-table world is registered');
     check(!!lk && !!un, 'the lock and unison worlds are registered');
     for (const { w, evalFn, label } of [{ w: fm, evalFn: KYK.evalFm, label: 'FM' },
                                         { w: vw, evalFn: KYK.evalFormant, label: 'Vowel' },
                                         { w: tb, evalFn: KYK.evalShapes, label: 'Shapes' },
                                         { w: lk, evalFn: KYK.evalLock, label: 'Lock' },
-                                        { w: un, evalFn: KYK.evalUnison, label: 'Unison' }]) {
+                                        { w: un, evalFn: KYK.evalUnison, label: 'Unison' },
+                                        ...(md || []).map(w => ({ w, evalFn: KYK.evalModal, label: w.name }))]) {
       if (!w) continue;
       const b = await KYK.fetchBasis(link, w.index, info.maxBody);
-      check(b && (b.fm || b.formant || b.table || b.lock || b.unison) && b.n === 4 && b.k === 64, label + ' formula arrives');
+      check(b && (b.fm || b.formant || b.table || b.lock || b.unison || b.modal) && b.n === 4 && b.k === 64, label + ' formula arrives');
       /* switch to it, park at a known position, compare spectra */
       await link.request(KYK.CMD.action, KYK.actionReq(KYK.ACT.selectWorld, [w.index]));
       for (let i = 0; i < 60; i++) {
-        const w2 = KYK.parseWorlds(await link.request(KYK.CMD.worlds, new Uint8Array(0)));
+        const w2 = KYK.parseWorlds(await link.request(KYK.CMD.worlds, Uint8Array.of(0)));
         if (w2 && w2.current === w.index) break;
         await new Promise(r => setTimeout(r, 20));
       }

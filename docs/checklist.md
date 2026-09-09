@@ -209,6 +209,16 @@ meaningful axis and stacking four banks makes rotation meaningless.
       Worth a `tools/` script that greps the ELF's `.init_array` reach for
       stores into `0xc0000000`, so it is caught in CI rather than in the rack.
 
+- [x] **Modal worlds** — Plate, Bar and Drum, worlds 15 to 17. Physical models
+      run as formulas, never as integrators. Frequencies are harmonicised, so
+      these are tuned objects in the sense a vibraphone maker means it; the
+      physics that survives is the amplitude structure, which is where a struck
+      object's character lives anyway. Plate measures 2.28x, the most isotropic
+      legible world here.
+- [ ] **True inharmonicity** still needs the M-period frame or a per-partial
+      additive renderer. A circular membrane's modes sit 25.5% off the harmonic
+      grid, over four semitones, so no amount of baking reaches it.
+
 ## Audio-path rules, learned the hard way
 
 - [x] **Never call `SinCosTurns` per sample.** It computes sine and cosine,
@@ -223,6 +233,13 @@ meaningful axis and stacking four banks makes rotation meaningless.
       counts instructions the target compiler emits for the audio-path inner
       loops; use it before claiming an audio-path change is cheap. It does not
       model latency or memory, so it is a smell test, not a budget.
+- [x] **Every axis of every world must be continuous**, and `tests/cont_check`
+      now proves it for all seventy-two of them. A threshold on step size
+      cannot tell a cliff from a steep slope, which is why every earlier test
+      passed a wavefolder that stepped the band limit by a whole harmonic.
+      Sweeping the same axis at two step sizes can: a continuous function
+      halves its largest step when the step halves, a discontinuity does not
+      move. It caught three shipped bugs within an hour of existing.
 - [ ] **There is still no cycle number from the module in any test.** Every
       CPU claim in this repo is a desktop proxy. `GET_STATS` reports cycles
       and the page shows them, but nothing records them, so a regression is

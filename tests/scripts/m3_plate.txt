@@ -1,0 +1,13 @@
+# M3 golden: the plate world, a struck object harmonicised onto the grid.
+#
+# Strike position, then geometry, then the mallet, then the fourth axis —
+# a second strike coordinate for the plate, temper for the one-dimensional
+# bodies. Modes are deposited across two bins, never rounded; rounding makes
+# them hop as the geometry moves and tests/cont_check now refuses it.
+0.0 f0 110
+0.0 pos 0.05 0.2 0.3 0.1
+0.0 glide pos 0.9 0.2 0.3 0.1 2.5
+2.5 glide pos 0.9 0.9 0.3 0.1 2.5
+5.0 glide pos 0.9 0.9 0.9 0.1 2.0
+7.0 glide pos 0.9 0.9 0.9 0.95 2.0
+9.5 dur

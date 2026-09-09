@@ -98,7 +98,7 @@ public:
     uint8_t     LastCmd() const override { return 0x6Fu; }
     const char* DescriptorRootJson() const override
     {
-        return "\"kyk\":{\"ext\":3,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,"
+        return "\"kyk\":{\"ext\":4,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,"
                "\"worlds\":101,\"basis\":102,\"control\":110}";
     }
 
@@ -146,16 +146,51 @@ public:
             }
             case kCmdWorlds:
             {
-                const char* names[16];
-                const char* notes[16];
-                uint8_t     kinds[16];
+                /* Paged, because the list outgrew a frame.
+                 *
+                 * At eighteen worlds the names and notes came to about 1160
+                 * bytes against a 1024-byte body. FrameWriter refuses to
+                 * overflow, Encode then returns zero, and the reply is simply
+                 * never sent — so the host sat waiting for a frame that would
+                 * never come. Nothing reported an error anywhere; it just
+                 * hung. The list only grows, so it is paged rather than
+                 * merely made to fit.
+                 *
+                 * The request's start index is optional: an empty body means
+                 * zero, which is what every host sent before this existed. */
+                constexpr int kCap = 32;
+                const char* names[kCap];
+                const char* notes[kCap];
+                uint8_t     kinds[kCap];
                 uint8_t     count = 0, current = 0;
-                src_.Worlds(count, current, names, notes, kinds, 16);
+                src_.Worlds(count, current, names, notes, kinds, kCap);
                 if(count == 0) { w.U8(1u); return; }
+                const uint8_t start = f.len >= 1 ? f.body[0] : 0u;
+                if(start >= count) { w.U8(2u); return; }
+
                 w.U8(0u);
                 w.U8(count);
                 w.U8(current);
-                for(int i = 0; i < (int)count; i++)
+                w.U8(start);
+                const int sent_at = 0;   /* patched below via a second pass */
+                (void)sent_at;
+                /* Count how many fit before writing any of them, so the
+                 * `sent` field is right the first time. */
+                const int budget = (int)alchemy::hostlink::kMaxBody - 24;
+                int       sent = 0, used = 0;
+                for(int i = (int)start; i < (int)count; i++)
+                {
+                    int n = 1;
+                    for(const char* c = names[i]; c && *c; c++) n++;
+                    for(const char* c = notes[i]; c && *c; c++) n++;
+                    n += 2;                      /* the two length bytes */
+                    if(used + n > budget) break;
+                    used += n;
+                    sent++;
+                }
+                if(sent == 0) sent = 1;          /* always make progress */
+                w.U8((uint8_t)sent);
+                for(int i = (int)start; i < (int)start + sent; i++)
                 {
                     w.U8(kinds[i]);
                     w.Str(names[i] ? names[i] : "");

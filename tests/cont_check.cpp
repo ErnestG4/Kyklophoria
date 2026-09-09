@@ -94,6 +94,16 @@ int main()
         }
         else if(!worlds::Point(wi, w, 8, nullptr, &tbl)) continue;
         if(!w.Ready()) continue;
+        /* A world that reports no dimensions is not a world this test can
+         * skip quietly: the engine reads K as its band limit, so zero is
+         * silence. Registering a kind and forgetting to teach N() and K()
+         * about it is exactly how that happens. */
+        if(w.N() < 1 || w.K() < 1)
+        {
+            printf("  %-10s reports N=%d K=%d   <-- BROKEN\n", e.name, w.N(), w.K());
+            fails++;
+            continue;
+        }
 
         for(int ax = 0; ax < w.N() && ax < 4; ax++)
         {

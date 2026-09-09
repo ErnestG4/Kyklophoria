@@ -765,3 +765,69 @@ Which object families to ship, and whether to keep a decay axis at all given
 it duplicates hammer width. The obvious four axes are strike position, aspect
 ratio, hammer width and stiffness — no decay — with the object family either a
 fifth axis or a set of separate worlds.
+
+---
+
+# The modal worlds, built (2026-09-09)
+
+Three struck objects: **Plate**, **Bar**, **Drum**. The design note above said
+what to watch for and all three warnings paid off.
+
+| world | variety | spread | twins | covers | median |
+|---|---|---|---|---|---|
+| Plate | 1.037 | **2.28x** | 0.4% | 20% | 0.0784 |
+| Bar | 1.223 | 3.83x | 0.2% | 19% | 0.1617 |
+| Drum | 0.654 | 4.06x | 3.9% | 24% | 0.0837 |
+
+The Plate is the second most isotropic world in the instrument, behind only
+the featureless correlated-noise fields, and unlike them it is legible.
+
+## What the design note predicted, and what it missed
+
+**Deposit, never round** — correct, and now enforced by `tests/cont_check`.
+
+**Decay and mallet hardness are collinear** — correct, so there is no decay
+axis.
+
+What it got wrong was the replacement. It proposed *stiffness* as a fourth
+axis, and stiffness turned out to be collinear with geometry for the same
+reason decay was collinear with the mallet: both stretch the ratio set. It
+measured 0.03 against 0.64 on the drum.
+
+**Temper** replaced it — how hard the modes are pulled onto whole numbers,
+which is this world's own premise made playable. One pass of the smooth
+attractor moves a mode by at most 1/2π of a harmonic, and a bar's second mode
+needs a quarter of one to reach a whole number, so a single pass measured 0.012
+and was still a dead knob. The map's fixed points are the whole numbers, so
+iterating walks a mode home: 2.756 → 2.907 → 2.990 → 3.000. Three passes, and
+each is monotone below a temper of one so the composition stays continuous.
+
+And temper is still dead on the Plate, because its modes are a 2-D grid whose
+(1,1) member sits at exactly one harmonic and dominates. The plate got the axis
+it should always have had: **a second strike coordinate**. You strike a plate
+at a point, and a point on a plate is two numbers. That took it from 38x
+per-axis imbalance to 3.1x.
+
+| world | strike | geometry | mallet | fourth |
+|---|---|---|---|---|
+| Plate | 1.256 | 1.588 | 0.716 | 0.509 (strike y) |
+| Bar | 0.996 | 1.641 | 0.588 | 0.246 (temper) |
+| Drum | 0.723 | 0.689 | 0.740 | 0.249 (temper) |
+
+Worst crest over 4000 random points is 2.81, 2.92 and 2.75, all inside the 4.3
+the output gain allows. Evaluate costs 1.25 µs for the Plate and about 0.55 for
+the other two, against 4.1 µs for the transform they feed.
+
+## A protocol bug they exposed
+
+Adding three worlds took the list to eighteen, and `GET_WORLDS` writes every
+name and note into one frame: about 1160 bytes against a 1024-byte body.
+`FrameWriter` refuses to overflow, `Encode` then returns zero, and the reply is
+simply **never sent**. Nothing reported an error anywhere — the page and the
+selftest just hung waiting for a frame that would never arrive.
+
+The list only grows, so it is paged rather than merely made to fit. The request
+takes an optional start index, empty meaning zero, which is what every host
+sent before this existed; the reply carries the total, the current world, the
+start and how many it managed. `fetchWorlds` walks the pages. Descriptor
+extension version 4.

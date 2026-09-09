@@ -30,6 +30,7 @@
 #include "kyk_shapes.h"
 #include "kyk_lock.h"
 #include "kyk_unison.h"
+#include "kyk_modal.h"
 
 namespace kyk {
 
@@ -58,7 +59,7 @@ struct VertexField
 class World
 {
 public:
-    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3, Fm = 4, Formant = 5, Table = 6, Lock = 7, Unison = 8 };
+    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3, Fm = 4, Formant = 5, Table = 6, Lock = 7, Unison = 8, Modal = 9 };
     /* Which phase spectrum the engine should render this world's coefficients
      * against. This is not a detail — it decides whether the instrument can
      * produce a recognisable waveform at all.
@@ -171,10 +172,58 @@ public:
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }
 
+    void UseModal(Body b, int n, int k, int p, const uint8_t* topo)
+    {
+        kind_ = (n >= 1 && n <= kMaxN && k >= 1 && k <= kShapeK) ? Kind::Modal : Kind::None;
+        if(kind_ == Kind::None) return;
+        modal_ = ModalField();
+        modal_.body = b; modal_.n = n; modal_.k = k;
+        if(b == Body::Bar)  { modal_.geom_min = 0.55f; modal_.geom_max = 1.35f; }
+        if(b == Body::Drum) { modal_.geom_min = 0.45f; modal_.geom_max = 1.60f; }
+        phase_ = Phase::Sine;
+        p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
+        for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
+    }
+
     Kind Which() const { return kind_; }
     bool Ready() const { return kind_ != Kind::None; }
-    int  N() const { return kind_ == Kind::Lattice ? space_->N() : (kind_ == Kind::Vertices ? verts_.n : (kind_ == Kind::Fm ? fm_.n : (kind_ == Kind::Formant ? form_.n : (kind_ == Kind::Table ? shapes_.n : (kind_ == Kind::Lock ? lock_.n : (kind_ == Kind::Unison ? uni_.n : basis_.n)))))); }
-    int  K() const { return kind_ == Kind::Lattice ? space_->K() : (kind_ == Kind::Vertices ? verts_.k : (kind_ == Kind::Fm ? fm_.k : (kind_ == Kind::Formant ? form_.k : (kind_ == Kind::Table ? shapes_.k : (kind_ == Kind::Lock ? lock_.k : (kind_ == Kind::Unison ? uni_.k : basis_.k)))))); }
+    /* A switch, not a ternary chain. This was seven levels of nested `?:`
+     * and adding a world to it silently missed — the new kind fell through to
+     * the eigenbasis and reported zero dimensions, which the engine reads as a
+     * band limit of zero, which is silence. A switch makes the compiler
+     * complain instead. */
+    int N() const
+    {
+        switch(kind_)
+        {
+            case Kind::Lattice:  return space_->N();
+            case Kind::Vertices: return verts_.n;
+            case Kind::Fm:       return fm_.n;
+            case Kind::Formant:  return form_.n;
+            case Kind::Table:    return shapes_.n;
+            case Kind::Lock:     return lock_.n;
+            case Kind::Unison:   return uni_.n;
+            case Kind::Modal:    return modal_.n;
+            case Kind::Analytic: return basis_.n;
+            default:             return 0;
+        }
+    }
+    int K() const
+    {
+        switch(kind_)
+        {
+            case Kind::Lattice:  return space_->K();
+            case Kind::Vertices: return verts_.k;
+            case Kind::Fm:       return fm_.k;
+            case Kind::Formant:  return form_.k;
+            case Kind::Table:    return shapes_.k;
+            case Kind::Lock:     return lock_.k;
+            case Kind::Unison:   return uni_.k;
+            case Kind::Modal:    return modal_.k;
+            case Kind::Analytic: return basis_.k;
+            default:             return 0;
+        }
+    }
     const VertexField& Verts() const { return verts_; }
     int  P() const { return kind_ == Kind::Lattice ? space_->P() : p_; }
     Topo TopoOf(int a) const { return kind_ == Kind::Lattice ? space_->TopoOf(a) : (Topo)topo_[a]; }
@@ -188,6 +237,7 @@ public:
     const ShapeField&   Shapes() const { return shapes_; }
     const LockField&    Lock() const { return lock_; }
     const UnisonField&  Unison() const { return uni_; }
+    const ModalField&   Modal() const { return modal_; }
 
     /* ── the frame shapers ───────────────────────────────────────────────
      * A wavefolder has no closed form in the harmonics, so these run on the
@@ -257,6 +307,7 @@ public:
         if(kind_ == Kind::Table) { EvalShapes(p01, sharp, mags, payload); return; }
         if(kind_ == Kind::Lock) { EvalLock(p01, sharp, mags, payload); return; }
         if(kind_ == Kind::Unison) { EvalUnison(p01, mags, payload); return; }
+        if(kind_ == Kind::Modal) { EvalModal(p01, mags, payload); return; }
         for(int k = 0; k < kMaxK; k++) mags[k] = 0.f;
     }
 
@@ -411,6 +462,15 @@ private:
             for(int i = 0; i < k; i++) mags[i] += wv * sv[i];
         }
         Finish(mags, k, top, 1.f - top, payload);
+    }
+
+    void EvalModal(const float* p01, float* mags, float* payload) const
+    {
+        const ModalPoint q = ModalAt(modal_, p01);
+        ModalSpectrum(modal_, q.strike, q.geom, q.width, q.stiff, modal_.k, mags);
+        /* lane 4 is how hard the mallet is, lane 5 the geometry, because those
+         * are the two a player is most likely to want out on a jack */
+        Finish(mags, modal_.k, 1.f - q.width, q.geom, payload);
     }
 
     void EvalUnison(const float* p01, float* mags, float* payload) const
@@ -600,6 +660,7 @@ private:
     ShapeField   shapes_;
     LockField    lock_;
     UnisonField  uni_;
+    ModalField   modal_;
     /* One node buffer, lent to whichever table-shaped world is live. 24 rows
      * because that is the 24-cell's vertex count; a shape table uses 16 of
      * them. Six kilobytes, in DTCM with the World. */

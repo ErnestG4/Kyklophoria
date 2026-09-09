@@ -208,7 +208,8 @@ int main(int argc, char** argv)
                     : e.kind == World::Kind::Formant ? "formant"
                     : e.kind == World::Kind::Table ? "table"
                     : e.kind == World::Kind::Lock ? "lock"
-                    : e.kind == World::Kind::Unison ? "unison" : "analytic";
+                    : e.kind == World::Kind::Unison ? "unison"
+                    : e.kind == World::Kind::Modal ? "modal" : "analytic";
         row.variety = mean;
         row.spread  = spread;
         row.twins   = total ? 100.0 * (double)close / (double)total : 0.0;

@@ -16,7 +16,7 @@ namespace kyk {
 namespace worlds {
 
 enum : uint8_t { kBraids = 0, kCell24 = 1, kCell16 = 2, kTesseract = 3, kStack = 4,
-                 kFieldCalm = 5, kFieldWild = 6, kFieldTorus = 7, kHarmonic = 8, kFm = 9, kVowel = 10, kShapes = 11, kShapesRing = 12, kLock = 13, kUnison = 14, kCount = 15 };
+                 kFieldCalm = 5, kFieldWild = 6, kFieldTorus = 7, kHarmonic = 8, kFm = 9, kVowel = 10, kShapes = 11, kShapesRing = 12, kLock = 13, kUnison = 14, kPlate = 15, kBar = 16, kDrum = 17, kCount = 18 };
 
 struct Entry
 {
@@ -43,6 +43,9 @@ inline const Entry& Get(uint8_t i)
         {"Shapes R", "the same grid, with wavefolding and ring modulation instead", World::Kind::Table},
         {"Lock",     "real waveforms on the 24-cell, one family per rotation plane", World::Kind::Lock},
         {"Unison",   "one wave stacked on itself; interval, detune and beating", World::Kind::Unison},
+        {"Plate",     "a struck rectangular plate; the side ratio reorders its modes", World::Kind::Modal},
+        {"Bar",       "a struck bar, tuned onto the harmonic grid", World::Kind::Modal},
+        {"Drum",      "a struck membrane, tuned; dense and low-ordered", World::Kind::Modal},
     };
     return kEntries[i < kCount ? i : 0];
 }
@@ -82,6 +85,9 @@ inline bool Point(uint8_t i, World& w, int p, const uint8_t* topo, solids::Verte
     }
     if(i == kLock) { w.UseLock(4, kShapeK, 0.17f, p, topo); return true; }
     if(i == kUnison) { w.UseUnison(4, kShapeK, p, topo); return true; }
+    if(i == kPlate) { w.UseModal(Body::Plate, 4, kShapeK, p, topo); return true; }
+    if(i == kBar) { w.UseModal(Body::Bar, 4, kShapeK, p, topo); return true; }
+    if(i == kDrum) { w.UseModal(Body::Drum, 4, kShapeK, p, topo); return true; }
     const int sol = SolidOf(i);
     if(sol >= 0)
     {

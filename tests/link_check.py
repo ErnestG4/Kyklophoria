@@ -163,9 +163,9 @@ def stdio_tests():
     # the world list, the formula, and switching between them
     ty, seq, r, ok = link.request(0x65)
     check(ok and r[0] == 0 and r[1] >= 2, f'GET_WORLDS returns a list ({r[1] if len(r)>1 else "?"})')
-    n_worlds, cur, at = r[1], r[2], 3
+    n_worlds, cur, at = r[1], r[2], 5      # ext 4: total, current, start, sent
     names = []
-    for _ in range(n_worlds):
+    for _ in range(r[4]):                  # only this page
         kind = r[at]; at += 1
         ln = r[at]; nm = r[at+1:at+1+ln].decode(); at += 1 + ln
         ln2 = r[at]; at += 1 + ln2
