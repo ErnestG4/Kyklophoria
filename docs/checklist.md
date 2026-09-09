@@ -107,6 +107,12 @@ meaningful axis and stacking four banks makes rotation meaningless.
       wrong: 4.5-5.9x spread, better than the other legible families and far
       off the random field's 1.5x. It does deliver the lock-and-mire
       behaviour that was the actual request. Numbers in docs/worlds.md.
+- [x] **Audio-rate rotation, measured.** Usable to about 200 Hz; the damage
+      starts there and it is broken by 800, because the position is only
+      sampled at the 2 kHz block rate. Numbers in docs/worlds.md.
+- [ ] **Orbit rate as a ratio of v/oct**, so at those rates the sidebands land
+      on harmonics rather than between them. Same ratio-lock machinery the
+      Ptolemaic orbits want.
 - [ ] **An FM or waveshaping axis** — the untested route to genuine
       non-separability, since the spectrum would stop being a product of
       per-axis factors. FM of integer-ratio partials lands on harmonics, so it

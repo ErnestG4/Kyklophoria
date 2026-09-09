@@ -124,6 +124,43 @@ mire everywhere and the high end lands on named waveforms most of the time,
 with the interesting settings in between. Below about 0.10 the space stops
 blending and becomes a Voronoi switch, which is the other failure.
 
+## Rotating at audio speed
+
+Will asked for worlds designed to be rotated through at audio rate. There is
+a hard ceiling on that and it is worth stating before designing for it.
+
+The frame is rendered once per block, so the position is sampled at 2 kHz at
+48 kHz and 24 samples. Rendering the same orbit with the position updated
+every 4 samples and comparing against every 24 isolates what the block rate
+costs:
+
+| orbit rate | error against a 12 kHz reference |
+|---|---|
+| 2 to 200 Hz | −32 dB, flat |
+| 400 Hz | −28 dB |
+| 800 Hz | −20 dB |
+
+The flat part is not the orbit at all — it is the two renders having
+different crossfade lengths, a fixed offset that does not grow with rate. The
+rate-dependent damage starts around 200 Hz, which is 10 position updates per
+orbit cycle, and by 800 Hz there are barely two.
+
+**So the usable ceiling is roughly 200 Hz**, which is the bottom of the audio
+band rather than the middle of it. Enough for growl, sidebands and rhythmic
+grain; not enough for true audio-rate scanning. Going higher needs the
+position evaluated per sample, which for an analytic world is not absurd —
+it is one basis evaluation, not an inverse transform — but it is a different
+render architecture and a much larger CPU bill.
+
+**A world designed for this should tie its orbit rate to the pitch.** At
+these rates the modulation puts sidebands at multiples of the orbit rate
+around every harmonic. At an arbitrary rate those land between harmonics and
+the result is clangorous, which is ring modulation rather than timbre. At a
+rational ratio of f0 they land *on* harmonics and it reads as a waveform
+instead. That argues for an orbit mode whose rate follows v/oct with a
+rational multiplier, which is the same ratio-lock machinery already wanted
+for the Ptolemaic orbits.
+
 ## Modes
 
 Also Will's, and a separate axis from worlds. Three named:
