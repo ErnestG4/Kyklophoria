@@ -75,11 +75,24 @@ inline void UnisonSpectrum(const UnisonField& f, float voices, float span,
             g *= frac;
         }
         const float root = 1.f + (float)j * span + (float)j * detune;
-        if(root > (float)k) break;
+        if(root > (float)(k + 1)) break;
         for(int m = 1; m <= k; m++)
         {
             const float fh = root * (float)m;
-            if(fh > (float)k) break;
+            /* Runs to k+1, not k, and that one is load-bearing.
+             *
+             * A partial at exactly harmonic k deposits its whole weight into
+             * bin k-1; stopping there cuts it off at full amplitude the
+             * instant the interval nudges it past. Letting it run to k+1 lets
+             * the two-bin split finish the job: the share going into bin k-1
+             * fades to nothing while the rest falls into bin k and is
+             * discarded, so the partial leaves the spectrum smoothly.
+             *
+             * Shipped without this, and tests/cont_check caught it: the
+             * interval and detune axes both measured a step that did not
+             * shrink when the sweep was made four times finer, which is the
+             * signature of a cliff rather than a steep slope. */
+            if(fh > (float)(k + 1)) break;
             /* The copied waveform, saw through square to a narrow pulse. The
              * first half crossfades saw into square, the second narrows the
              * duty; continuous across the join, and all of it out of the

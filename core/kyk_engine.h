@@ -261,14 +261,35 @@ private:
          * left the tone dull until the slow climb caught up, and the two
          * mechanisms fought each other on every block. A mitigation, not a
          * cure: the residual aliasing is measured in docs/m3-notes.md. */
+        /* The shaper's cutoff is *fractional*, and the taper below is what
+         * makes that mean anything.
+         *
+         * The first version truncated it to an integer, which drops a whole
+         * harmonic the instant the knob crosses a boundary. At full band that
+         * is one part in 64 and nobody notices; with a folder pulling the
+         * limit down to 16 it is one part in 16, and measured it put a step of
+         * 0.46 into the rendered cycle — against 0.002 for the smooth axes of
+         * the same world. That is a click, and turning the fold knob walks
+         * through a series of them.
+         *
+         * So the cut is a smooth window instead. A harmonic fades out over
+         * three bins of travel rather than vanishing, and by the time the
+         * integer limit drops it the bin is already at zero, which makes the
+         * remaining step harmless. */
+        shape_fc_ = 0.f;
         if(world_->HasShaper())
         {
             const float sc = world_->BandScale(p_);
             if(sc > 1.f)
             {
-                int lim = (int)((float)kcut_ / sc);
-                if(lim < 4) lim = 4;
-                if(lim < kcut_) kcut_ = lim;
+                float fc = (float)kcut_ / sc;
+                if(fc < 4.f) fc = 4.f;
+                if(fc < (float)kcut_)
+                {
+                    shape_fc_ = fc;
+                    int lim = (int)(fc + 1.f);
+                    if(lim < kcut_) kcut_ = lim;
+                }
             }
         }
         for(int k = 0; k < kcut_; k++) mags_bl_[k] = mags_[k];
@@ -281,6 +302,20 @@ private:
             const int   idx = ((int)(t * (float)(kTableSize / 2)) + kTableSize / 4) & (kTableSize - 1);
             const float w   = 0.5f * (1.f + kSinTable[idx]);   /* 0.5(1+cos πt) */
             mags_bl_[kcut_ - rb + i] *= w;
+        }
+        /* the shaper's smooth cutoff, applied last */
+        if(shape_fc_ > 0.f)
+        {
+            const float W = 3.f;
+            for(int k = 0; k < kcut_; k++)
+            {
+                const float h = (float)(k + 1);
+                const float u = (h - (shape_fc_ - W)) / W;
+                if(u <= 0.f) continue;
+                if(u >= 1.f) { mags_bl_[k] = 0.f; continue; }
+                const int   idx = ((int)(u * (float)(kTableSize / 2)) + kTableSize / 4) & (kTableSize - 1);
+                mags_bl_[k] *= 0.5f * (1.f + kSinTable[idx]);
+            }
         }
     }
 
@@ -296,6 +331,7 @@ private:
      * cannot work in place. A member, not a stack array: the audio callback
      * is not the place to put four kilobytes. */
     float        shape_[kFrame];
+    float        shape_fc_ = 0.f;   /* fractional cutoff a frame shaper asked for */
     uint32_t     renders_ = 0;
     float        payload_[kMaxP];
     float        c_[kMaxN], p_[kMaxN], rendered_[kMaxN];

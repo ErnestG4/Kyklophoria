@@ -4,7 +4,10 @@
 #   2. rotate_check — rotation identity/permutation, the stereo pair, telemetry
 #   3. morph_check  — morph linearity, level across a cell, band-limit continuity,
 #                     and a diversity report on the generated space
-#   4. alias_check  — spec §7 aliasing sweep, fails above -80 dBFS
+#   4. cont_check   — every axis of every world must be continuous. Measures
+#                    the same sweep at two step sizes: a smooth axis halves
+#                    its largest step when the step halves, a cliff does not.
+#   5. alias_check  — spec §7 aliasing sweep, fails above -80 dBFS
 #   6. link_check   — python3 tests/link_check.py: the HostLink extension over stdio
 #                     and through tools/bridge/bridge.py (stdlib only; KYK_NODE=1 adds
 #                     the node selftest, which needs node but never npm)
@@ -34,6 +37,11 @@ $CXX $CORE_FLAGS $SAN tests/rotate_check.cpp -o "$OUT/rotate_check" || fail=1
 echo "== morph_check =="
 $CXX $CORE_FLAGS $SAN tests/morph_check.cpp -o "$OUT/morph_check" || fail=1
 "$OUT/morph_check" || fail=1
+
+echo "== cont_check =="
+$CXX $CORE_FLAGS $SAN tests/cont_check.cpp -o "$OUT/cont_check" || fail=1
+"$OUT/cont_check" > "$OUT/cont.txt" || { cat "$OUT/cont.txt"; fail=1; }
+tail -1 "$OUT/cont.txt"
 
 echo "== alias_check =="
 $CXX $CORE_FLAGS -O2 tests/alias_check.cpp -o "$OUT/alias_check" || fail=1

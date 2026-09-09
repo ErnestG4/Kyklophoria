@@ -250,14 +250,26 @@ inline void FoldFrame(float* dst, const float* src, int n, float d)
  * ratio walks with depth, which is what makes the axis worth turning. */
 inline void RingFrame(float* dst, const float* src, int n, float d)
 {
-    const int m = 1 + (int)(d * 6.99f);             /* 1..7 */
-    /* cos(2·pi·m·i/n) at integer i is a table entry, not a computation: the
-     * frame length divides the sine table, so the index is exact and no
-     * interpolation is needed. */
+    /* The ratio has to be a whole number or the modulator is not periodic over
+     * the cycle and the frame stops being a frame. But stepping it as the knob
+     * moves is a cliff: measured, going from six to seven put a jump of 1.10
+     * into the rendered cycle — larger than the cycle's own norm, and the
+     * loudest discontinuity anywhere in this instrument.
+     *
+     * Crossfading the two neighbouring *carriers* fixes it without giving up
+     * periodicity, because each of them is still a whole number and a sum of
+     * periodic things is periodic. Ring modulation is a multiply, so the
+     * crossfade collapses into the cosine and costs one extra table read. */
+    const float mm = 1.f + d * 5.99f;              /* 1..7, continuously */
+    const int   m0 = (int)mm;
+    const float fr = mm - (float)m0;
+    const int   m1 = m0 + 1;
     const int step = kTableSize / n, q = kTableSize / 4, mask = kTableSize - 1;
     for(int i = 0; i < n; i++)
     {
-        const float cs = kSinTable[(m * i * step + q) & mask];
+        const float c0 = kSinTable[(m0 * i * step + q) & mask];
+        const float c1 = kSinTable[(m1 * i * step + q) & mask];
+        const float cs = c0 + (c1 - c0) * fr;
         const float v  = src[i];
         dst[i] = v + d * (v * cs - v);
     }
