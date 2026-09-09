@@ -16,10 +16,20 @@
   button:hover { border-color: #3a4855; } button.on { border-color: var(--hot); color: var(--hot); }
   button:disabled { opacity: .4; cursor: default; }
   /* world strip: which space the module is indexing, and how the terrain is shaded */
-  #worldbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 12px;
-              border-bottom: 1px solid var(--line); font-size: 11px; color: var(--dim); min-height: 26px; }
-  #worldbar .cap { letter-spacing: .1em; }
+  /* Two rows, not one wrapping row. With nine worlds the chips fitted beside
+     the description and it read fine; at eighteen they wrap, and a single flex
+     row wraps the description in among them — names and notes jumbled
+     together. The list only grows, so the chips get a line of their own. */
+  #worldbar { display: flex; flex-direction: column; gap: 3px; padding: 4px 12px;
+              border-bottom: 1px solid var(--line); font-size: 11px; color: var(--dim); }
+  #worldbar .wrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 20px; }
+  #worldbar .cap { letter-spacing: .1em; flex: none; }
   #worldbar .sp { flex: 1; }
+  #worldChips, #shadeChips { display: flex; gap: 6px; flex-wrap: wrap; }
+  /* one line, clipped rather than pushing the row taller */
+  #worldNote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+               white-space: nowrap; font-style: italic; }
+  #worldNote.peek { color: var(--ink); font-style: normal; }
   .chip { background: #0f141a; color: var(--dim); border: 1px solid #263039; border-radius: 3px;
           padding: 1px 8px; font: inherit; cursor: pointer; white-space: nowrap; }
   .chip:hover { border-color: #3a4855; color: var(--ink); }
@@ -59,12 +69,16 @@
   <button id="btnClose" hidden>Disconnect</button>
 </header>
 <nav id="worldbar">
-  <span class="cap">WORLD</span>
-  <span id="worldChips" style="display:flex;gap:6px;flex-wrap:wrap"></span>
-  <span id="worldNote"></span>
-  <span class="sp"></span>
-  <span class="cap">SHADE</span>
-  <span id="shadeChips" style="display:flex;gap:6px"></span>
+  <div class="wrow">
+    <span class="cap" id="worldCap">WORLD</span>
+    <span id="worldChips"></span>
+  </div>
+  <div class="wrow">
+    <span id="worldNote"></span>
+    <span class="sp"></span>
+    <span class="cap">SHADE</span>
+    <span id="shadeChips"></span>
+  </div>
 </nav>
 <main>
   <div class="pane">
@@ -257,20 +271,42 @@ async function selectWorld(i) {
   switching = -1;
   renderWorldBar();
 }
+function worldNoteFor(w) {
+  if (!w) return '';
+  return w.name + ' — ' + w.note + (w.analytic ? ' (a formula, drawn here)' : ' (a lattice, expanded on the module)');
+}
 function renderWorldBar() {
   const box = $('worldChips'); box.innerHTML = '';
-  if (!worlds) { $('worldNote').textContent = link ? '—' : ''; renderShadeChips(); return; }
+  const note = $('worldNote');
+  if (!worlds) {
+    $('worldCap').textContent = 'WORLD';
+    note.textContent = link ? '—' : ''; note.classList.remove('peek');
+    renderShadeChips(); return;
+  }
+  /* the count is here because with this many worlds you cannot tell at a
+     glance whether they all arrived — and for a while they did not, because
+     the list outgrew one frame and the tail was silently dropped */
+  const formulae = worlds.list.filter(w => w.analytic).length;
+  $('worldCap').textContent = 'WORLD ' + worlds.list.length + '/' + worlds.count
+                            + ' · ' + formulae + 'ƒ';
+  const showCurrent = () => {
+    note.classList.remove('peek');
+    note.textContent = worldNoteFor(worlds.list.find(w => w.index === worlds.current));
+  };
   for (const w of worlds.list) {
     const b = document.createElement('button');
     b.className = 'chip' + (w.index === worlds.current ? ' on' : '') + (w.analytic ? ' analytic' : '');
     b.textContent = switching === w.index ? 'expanding…' : w.name;
-    b.title = w.note + (w.analytic ? ' — a formula, evaluated here' : ' — a lattice, expanded on the module');
+    b.title = worldNoteFor(w);
     b.disabled = switching >= 0;
     b.onclick = () => selectWorld(w.index);
+    /* hovering reads out that world without selecting it, which is the only
+       way to find your way around eighteen of them */
+    b.onmouseenter = () => { note.classList.add('peek'); note.textContent = worldNoteFor(w); };
+    b.onmouseleave = showCurrent;
     box.appendChild(b);
   }
-  const cur = worlds.list[worlds.current];
-  $('worldNote').textContent = cur ? cur.note : '';
+  showCurrent();
   renderShadeChips();
 }
 function renderShadeChips() {

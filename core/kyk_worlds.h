@@ -42,7 +42,7 @@ inline const Entry& Get(uint8_t i)
         {"Shapes",   "the real saw, square, triangle and pulse on a grid; fold and phase distortion", World::Kind::Table},
         {"Shapes R", "the same grid, with wavefolding and ring modulation instead", World::Kind::Table},
         {"Lock",     "real waveforms on the 24-cell, one family per rotation plane", World::Kind::Lock},
-        {"Unison",   "one wave stacked on itself; interval, detune and beating", World::Kind::Unison},
+        {"Unison",   "one wave stacked on itself; interval, detune, comb", World::Kind::Unison},
         {"Plate",     "a struck rectangular plate; the side ratio reorders its modes", World::Kind::Modal},
         {"Bar",       "a struck bar, tuned onto the harmonic grid", World::Kind::Modal},
         {"Drum",      "a struck membrane, tuned; dense and low-ordered", World::Kind::Modal},
