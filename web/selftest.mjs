@@ -63,6 +63,9 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   const t = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(3)));
   check(t && t.n === 4 && t.k === 64 && t.p === 8 && t.planes === 6, 'telemetry header');
   check(t && t.bytes === 461, 'telemetry body 460 B + status (got ' + (t && t.bytes) + ')');
+  const tk = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
+  check(tk && tk.bytes === 475, 'kepler block appends 14 B (got ' + (tk && tk.bytes) + ')');
+  check(tk && tk.kepler && tk.kepler.plane < 6 && tk.kepler.rush >= 0, 'kepler fields parse');
   check(t && t.mags && t.mags.length === 64 && t.frame && t.frame.length === 256, 'spectrum + frame present');
   check(t && t.kcut >= 1 && t.kcut <= 64, 'kcut range');
   const finite = a => Array.from(a).every(Number.isFinite);

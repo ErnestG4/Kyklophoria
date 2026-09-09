@@ -99,6 +99,9 @@ def telemetry(link, flags):
     t['payload'] = struct.unpack(f"<{t['p']}f", b[at:at + 4 * t['p']]); at += 4 * t['p']
     if flags & 1: t['mags'] = b[at:at + t['k']]; at += t['k']
     if flags & 2: t['frame'] = b[at:at + 256]; at += 256
+    if flags & 4:
+        t['kep_run'], t['kep_plane'] = b[at], b[at+1]
+        t['kep_x'], t['kep_y'], t['kep_rush'] = struct.unpack('<3f', b[at+2:at+14]); at += 14
     t['size'] = len(b)
     check(at == len(b), f'telemetry body consumed exactly ({at} of {len(b)})')
     return t
@@ -127,6 +130,9 @@ def stdio_tests():
     time.sleep(0.2)
     t = telemetry(link, 3)
     check((t['n'], t['k'], t['p'], t['planes']) == (4, 64, 8, 6), 'telemetry dims')
+    t7 = telemetry(link, 7)
+    check(t7['size'] == 460 + 14, f"kepler block appends 14 bytes (size {t7['size']})")
+    check(t7['kep_plane'] < 6 and 0.0 <= t7['kep_rush'] <= 1.0, 'kepler fields sane')
     check(t['size'] == 460, f"telemetry size {t['size']}")
     check(t['kcut'] == 64 and 100 < t['f0'] < 120, f"f0 {t['f0']} kcut {t['kcut']}")
     check(max(t['mags']) > 200 and any(v != 0 for v in t['frame']), 'spectrum and frame present')

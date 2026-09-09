@@ -115,6 +115,12 @@ let shadeIdx = 0;
 const terrain = { key: '', canvas: null, res: 72, lo: 0, hi: 1, at: 0 };
 const TRAIL_N = 600;
 const trail = { L: new Float32Array(TRAIL_N * 2), R: new Float32Array(TRAIL_N * 2), n: 0, head: 0 };
+/* The falling body, kept separately from the position trail: it lives in the
+ * control frame, before rotation, and is stored relative to its attractor. So
+ * it stays a clean conic even while the rotation is dragging the position
+ * trail somewhere else entirely. */
+const KEP_N = 900;
+const kepTrail = { xy: new Float32Array(KEP_N * 2), n: 0, head: 0, plane: -1 };
 let lastBlock = -1, framesSeen = 0, fpsWin = { t0: performance.now(), n: 0, fps: 0 };
 let polling = false;
 
@@ -291,7 +297,7 @@ async function pollTelemetry() {
   while (polling && link) {
     const t0 = performance.now();
     try {
-      const b = await link.request(MVL.CMD.telemetry, MVL.telemetryReq(3), { key: 'tel', timeoutMs: 800 });
+      const b = await link.request(MVL.CMD.telemetry, MVL.telemetryReq(7), { key: 'tel', timeoutMs: 800 });
       const t = MVL.parseTelemetry(b);
       if (t) { tel = t; onTelemetry(t); }
     } catch (e) { if (!link) break; if (!/timeout/.test(e.message)) say('telemetry: ' + e.message, true); }
@@ -313,6 +319,13 @@ function onTelemetry(t) {
     trail.L[2 * i] = t.posL[axes[0]]; trail.L[2 * i + 1] = t.posL[axes[1]];
     trail.R[2 * i] = t.posR[axes[0]]; trail.R[2 * i + 1] = t.posR[axes[1]];
     trail.head = (i + 1) % TRAIL_N; if (trail.n < TRAIL_N) trail.n++;
+    const kp = t.kepler;
+    if (kp && kp.running) {
+      if (kp.plane !== kepTrail.plane) { kepTrail.plane = kp.plane; kepTrail.n = 0; kepTrail.head = 0; }
+      const j = kepTrail.head;
+      kepTrail.xy[2 * j] = kp.x; kepTrail.xy[2 * j + 1] = kp.y;
+      kepTrail.head = (j + 1) % KEP_N; if (kepTrail.n < KEP_N) kepTrail.n++;
+    } else if (kepTrail.n) { kepTrail.n = 0; kepTrail.head = 0; kepTrail.plane = -1; }
   }
   fpsWin.n++; const now = performance.now();
   if (now - fpsWin.t0 > 1000) { fpsWin.fps = fpsWin.n * 1000 / (now - fpsWin.t0); fpsWin.t0 = now; fpsWin.n = 0; }
@@ -512,10 +525,64 @@ function drawSpace() {
     dot(tel.posR[ax], tel.posR[ay], `hsl(${(hue + 40) % 360},85%,70%)`, `hsl(${(hue + 40) % 360},85%,60%)`);
   }
   dot(tel.posL[ax], tel.posL[ay], `hsl(${hue},85%,72%)`, `hsl(${hue},85%,60%)`);
+  drawKepler(tel, n, ox, oy, S, px, py);
   cx.fillStyle = '#9aa7b3'; cx.font = '11px ui-monospace, monospace';
   cx.fillText(`${tel.stereo ? 'L' : 'pos'} ${fmtVec(tel.posL)}`, ox + 6, oy + S - (tel.stereo ? 20 : 8));
   if (tel.stereo) cx.fillText(`R ${fmtVec(tel.posR)}`, ox + 6, oy + S - 8);
   drawArcs(n, planes, tel, ox, oy + S + 18, S);
+}
+/* The orbit, drawn twice over.
+ *
+ * The faint cross in the main view is already the control frame, and the
+ * control frame already has the body's offset added to it — so in that view
+ * the body is the cross and the only thing missing is the attractor it is
+ * falling toward. When the Kepler plane happens to be the pair of axes on
+ * screen, that ring goes straight in.
+ *
+ * The inset is the honest one and is always drawn. The orbit is a plane in the
+ * *unrotated* frame, so once the rotation is doing anything the main view is
+ * showing a shadow of it rather than the orbit itself. The inset shows the
+ * conic in its own plane where it is a conic. Brightness follows `rush`, which
+ * peaks at periapsis, so the trail is brightest exactly where the timbre is
+ * moving fastest. */
+function drawKepler(t, n, ox, oy, S, px, py) {
+  const kp = t.kepler;
+  if (!kp || !kp.running) return;
+  const [ki, kj] = MVL.planeAxes(n, kp.plane);
+  const hot = `hsl(${28 + 40 * (1 - kp.rush)},90%,${45 + 25 * kp.rush}%)`;
+
+  if (ki === axes[0] && kj === axes[1]) {
+    const axp = px(clamp01(t.ctl[ki] - kp.x)), ayp = py(clamp01(t.ctl[kj] - kp.y));
+    cx.strokeStyle = 'rgba(255,176,86,0.55)'; cx.lineWidth = 1;
+    cx.beginPath(); cx.arc(axp, ayp, 4.5, 0, 7); cx.stroke();
+    cx.beginPath(); cx.arc(axp, ayp, 1.2, 0, 7); cx.fillStyle = 'rgba(255,176,86,0.9)'; cx.fill();
+  }
+
+  /* inset, bottom-right, autoscaled to the widest excursion we have seen */
+  const D = Math.round(Math.min(96, S * 0.30)), bx = ox + S - D - 8, by = oy + 8;
+  let rmax = 0.12;
+  for (let k = 0; k < kepTrail.n; k++) {
+    const x = kepTrail.xy[2 * k], y = kepTrail.xy[2 * k + 1];
+    const m = Math.max(Math.abs(x), Math.abs(y)); if (m > rmax) rmax = m;
+  }
+  const sc = (D * 0.44) / rmax, mx = bx + D / 2, my = by + D / 2;
+  cx.fillStyle = 'rgba(12,16,22,0.55)'; cx.fillRect(bx, by, D, D);
+  cx.strokeStyle = 'rgba(120,134,150,0.28)'; cx.strokeRect(bx + .5, by + .5, D, D);
+  for (let k = 1; k < kepTrail.n; k++) {
+    const i0 = (kepTrail.head - kepTrail.n + k - 1 + KEP_N) % KEP_N;
+    const i1 = (kepTrail.head - kepTrail.n + k + KEP_N) % KEP_N;
+    const x0 = kepTrail.xy[2 * i0], y0 = kepTrail.xy[2 * i0 + 1];
+    const x1 = kepTrail.xy[2 * i1], y1 = kepTrail.xy[2 * i1 + 1];
+    /* a wrapped orbit jumps the seam; do not draw the chord across it */
+    if (Math.abs(x1 - x0) > 0.5 || Math.abs(y1 - y0) > 0.5) continue;
+    cx.strokeStyle = `rgba(255,176,86,${0.05 + 0.5 * (k / kepTrail.n)})`;
+    cx.beginPath(); cx.moveTo(mx + x0 * sc, my - y0 * sc); cx.lineTo(mx + x1 * sc, my - y1 * sc); cx.stroke();
+  }
+  cx.strokeStyle = 'rgba(255,176,86,0.5)'; cx.beginPath(); cx.arc(mx, my, 3, 0, 7); cx.stroke();
+  cx.shadowColor = hot; cx.shadowBlur = 10 + 14 * kp.rush; cx.fillStyle = hot;
+  cx.beginPath(); cx.arc(mx + kp.x * sc, my - kp.y * sc, 2.5 + 1.5 * kp.rush, 0, 7); cx.fill(); cx.shadowBlur = 0;
+  cx.fillStyle = '#7d8896'; cx.font = '9px ui-monospace, monospace';
+  cx.fillText(`kepler ${ki}${kj}`, bx + 4, by + D - 4);
 }
 function drawArcs(n, planes, t, x0, y0, S) {
   /* one small gauge per rotation plane, angle as an arc (turns) */

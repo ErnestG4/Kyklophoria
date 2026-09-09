@@ -117,6 +117,13 @@ public:
             rot.Advance(dt);
             if(kepler.Running())
             {
+                /* Gravity should match the space it lives in: if the orbit
+                 * plane's axes wrap, so does the attractor. Derived rather
+                 * than switched, because a toroidal potential in a clamped
+                 * space would pull toward an image that is not there. */
+                int ki, kj;
+                Rotation::PlaneAxes(N, kepler.plane, ki, kj);
+                kepler.wrap = world_->TopoOf(ki) == Topo::Wrap || world_->TopoOf(kj) == Topo::Wrap;
                 kepler.Step(dt);
                 kepler.Apply(c_, N);      /* the control frame is the centre */
             }

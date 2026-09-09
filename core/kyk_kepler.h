@@ -46,6 +46,13 @@ public:
     float damp    = 0.f;     /* 0 keeps it going forever; a little spirals in  */
     float vmax    = 6.f;     /* speed clamp, space units per second            */
     int   plane   = 0;       /* which Givens plane the orbit lives in          */
+    /* Gravity on a torus. Under Wrap the space has no edges, so the attractor
+     * has an image in every direction and the body should feel the nearest
+     * one. Folding the displacement into ±half a turn does exactly that, and
+     * it changes the character completely: a body that escapes one way
+     * arrives back from the other, and there is no far radius to fall off.
+     * Will's idea, and it is stranger than the flat version. */
+    bool  wrap    = false;
 
     void Init(int n)
     {
@@ -82,12 +89,15 @@ public:
     void Step(float dt)
     {
         if(!running_ || dt <= 0.f) return;
-        /* a = -G r / (|r|² + eps²)^{3/2} */
+        /* a = -G r / (|r|² + eps²)^{3/2}, toward the nearest image of the
+         * centre when the space wraps */
+        float fx = r_[0], fy = r_[1];
+        if(wrap) { fx = Wrapped(fx); fy = Wrapped(fy); }
         const float e2 = soften * soften;
-        const float d2 = r_[0] * r_[0] + r_[1] * r_[1] + e2;
+        const float d2 = fx * fx + fy * fy + e2;
         const float inv = 1.f / (d2 * Sqrt(d2));
-        const float ax = -gravity * r_[0] * inv;
-        const float ay = -gravity * r_[1] * inv;
+        const float ax = -gravity * fx * inv;
+        const float ay = -gravity * fy * inv;
         v_[0] += ax * dt;
         v_[1] += ay * dt;
         if(damp > 0.f)
@@ -100,11 +110,20 @@ public:
         if(sp > vmax) { const float k = vmax / sp; v_[0] *= k; v_[1] *= k; }
         r_[0] += v_[0] * dt;
         r_[1] += v_[1] * dt;
-        /* Anything that wanders far past the playable cube is not coming back
-         * on its own within a useful time, so fold it in rather than let the
-         * sound sit at a clamped edge. */
-        const float far = 1.5f;
-        if(r_[0] * r_[0] + r_[1] * r_[1] > far * far) Reset(0.30f, 0.55f);
+        if(wrap)
+        {
+            /* keep the stored offset in one turn so it cannot drift away */
+            r_[0] = Wrapped(r_[0]);
+            r_[1] = Wrapped(r_[1]);
+        }
+        else
+        {
+            /* Anything far past the playable cube is not coming back on its
+             * own within a useful time, so relaunch rather than let the sound
+             * sit against a clamped edge. */
+            const float far = 1.5f;
+            if(r_[0] * r_[0] + r_[1] * r_[1] > far * far) Reset(0.30f, 0.55f);
+        }
     }
 
     /* Add the body's offset to the control frame, in the chosen plane. */
@@ -130,6 +149,15 @@ public:
     }
 
 private:
+    /* fold into [-0.5, +0.5): the shortest way round a unit torus */
+    static float Wrapped(float x)
+    {
+        x = x - (float)(int)x;
+        if(x >= 0.5f) x -= 1.f;
+        else if(x < -0.5f) x += 1.f;
+        return x;
+    }
+
     int   n_ = 4;
     float r_[2] = {0.3f, 0.f};
     float v_[2] = {0.f, 0.f};

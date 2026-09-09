@@ -9,6 +9,11 @@
  *   f32 ctl[n] · f32 centre[n] · f32 posL[n] · f32 posR[n] · f32 angle[planes] · f32 payload[p]
  *   [flags&1] u8 mags[k]   — left voice, pre-bandlimit, dB: 0 = ≤ −96 dB, 255 = 0 dB (m = 1)
  *   [flags&2] i8 frame[256] — left voice's frame, decimated, ×40 clipped
+ *   [flags&4] u8 running · u8 plane · f32 x · f32 y · f32 rush
+ *
+ * The Kepler block is last on purpose: a host that does not know about it
+ * reads everything it does know by offset and ignores the tail, so adding it
+ * did not break the page that was already running.
  */
 #pragma once
 #include "kyk_stereo.h"
@@ -17,6 +22,7 @@ namespace kyk {
 
 constexpr uint8_t kTelSpectrum   = 0x01;
 constexpr uint8_t kTelFrame      = 0x02;
+constexpr uint8_t kTelKepler     = 0x04;
 constexpr int     kTelFramePts   = 256;
 
 namespace detail {
@@ -78,6 +84,14 @@ inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, i
         const int    step = kFrame / kTelFramePts;
         for(int i = 0; i < kTelFramePts; i++) w.U8((uint8_t)detail::ToI8(f[i * step]));
     }
+    if(flags & kTelKepler)
+    {
+        w.U8(e.kepler.Running() ? 1u : 0u);
+        w.U8((uint8_t)e.kepler.plane);
+        w.F32(e.kepler.X());
+        w.F32(e.kepler.Y());
+        w.F32(e.kepler.Rush());
+    }
     return w.ok ? w.n : 0;
 }
 
@@ -88,6 +102,7 @@ inline int TelemetrySize(int n, int k, int p, uint8_t flags)
     int       sz     = 4 + 4 + 6 + 2 + 4 + 4 * (4 * n + planes + p);
     if(flags & kTelSpectrum) sz += k;
     if(flags & kTelFrame) sz += kTelFramePts;
+    if(flags & kTelKepler) sz += 2 + 12;
     return sz;
 }
 

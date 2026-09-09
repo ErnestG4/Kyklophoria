@@ -15,7 +15,7 @@ namespace kyk {
 namespace worlds {
 
 enum : uint8_t { kBraids = 0, kCell24 = 1, kCell16 = 2, kTesseract = 3, kStack = 4,
-                 kFieldCalm = 5, kFieldWild = 6, kHarmonic = 7, kCount = 8 };
+                 kFieldCalm = 5, kFieldWild = 6, kFieldTorus = 7, kHarmonic = 8, kCount = 9 };
 
 struct Entry
 {
@@ -34,6 +34,7 @@ inline const Entry& Get(uint8_t i)
         {"Stack",    "one waveform idea per axis: stacking, tilt, width, parity", World::Kind::Lattice},
         {"Field",    "correlated noise, even in every direction",   World::Kind::Lattice},
         {"Field II", "the same, rougher and less correlated",       World::Kind::Lattice},
+        {"Torus",    "a field with no edges: wraps on every axis, and gravity wraps with it", World::Kind::Lattice},
         {"Harmonic", "one parameter per axis, legible but lopsided", World::Kind::Lattice},
     };
     return kEntries[i < kCount ? i : 0];
@@ -92,6 +93,14 @@ inline size_t Expand(uint8_t i, int n, int side, int k, int p, uint8_t* out, siz
             break;
         case kFieldWild:
             g.family = Family::Field; g.rough = 1.5f; g.smooth = 0; g.seed = 7; g.name = "field II";
+            break;
+        case kFieldTorus:
+            /* Every axis wraps, so the space has no edges at all: a sweep
+             * that runs off one side arrives back on the other, the field
+             * generator smooths across the seam so there is no join, and a
+             * Kepler orbit here is toroidal. */
+            g.family = Family::Field; g.rough = 1.0f; g.smooth = 1; g.seed = 3; g.name = "torus";
+            for(int a = 0; a < kMaxN; a++) g.topo[a] = (uint8_t)Topo::Wrap;
             break;
         case kHarmonic:
         default:
