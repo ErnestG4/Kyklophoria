@@ -108,5 +108,39 @@ Also Will's, and a separate axis from worlds. Three named:
    The design work is choosing the natural-frequency spread and how coupling
    maps to a knob, both of which want listening rather than theory.
 
-Modes are a page-level idea, not an engine one: all three drive the same
-angles, so the engine does not need to know which is running.
+4. **Shaped orbits.** Today a plane's angle advances at a constant rate,
+   which is a ramp: uniform circular motion. Put any LFO shape in place of
+   that ramp and the character changes completely — a sine makes the angle
+   swing back and forth, a pendulum rather than an orbit; a triangle sweeps
+   linearly and reverses; sample-and-hold jumps between orientations. Cheap:
+   the phase accumulator per plane already exists, this only reshapes the map
+   from phase to angle. The catch is that a shape needs a depth as well as a
+   rate, so six planes become eighteen controls.
+
+5. **Gravitational orbit.** A different thing from the rotation orbits, and
+   arguably more direct: let the *position* fall through a softened central
+   potential rather than the frame rotate. `a = −G·r/(|r|²+ε²)^{3/2}`,
+   integrated per block. Kepler's second law then does the musical work, since
+   the position rushes through periapsis and lingers at apoapsis, so the
+   timbre dwells unevenly instead of sweeping at constant speed. Softening
+   breaks the inverse-square closure, so ellipses precess and the path is
+   quasi-periodic without needing two incommensurate rates.
+
+   Wants care rather than compute: a bare 1/r² potential has a singularity at
+   the centre and unbounded escape, so it needs the softening, a speed clamp
+   and probably light damping to stay playable. Under `Wrap` the attractor is
+   periodic, which makes the trajectory genuinely strange — that is the
+   topology-meets-gravity idea and it is worth trying once the plain version
+   is stable.
+
+**Compute is not the constraint.** Gravity is about ten operations per axis
+per block against a budget of 240,000 cycles; the Kuramoto coupling is six
+sines. Every modulation idea here is free next to one inverse transform. What
+is scarce is the panel: six pots already vanish into the six rotation planes,
+and rate-plus-shape-plus-depth per plane is eighteen controls. So the
+bottleneck is the mode idea below, not the arithmetic.
+
+Modes are a page-level idea, not an engine one: they all drive the same
+angles or the same position, so the engine does not need to know which is
+running. That is also what makes them affordable — a mode reinterprets the
+same six pots rather than asking for more.

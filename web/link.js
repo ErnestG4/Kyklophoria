@@ -20,9 +20,11 @@
 const PROTO = 1;
 const CMD = {
   hello: 0x01, getDescriptor: 0x02,
-  telemetry: 0x60, spaceInfo: 0x61, cell: 0x62, stats: 0x63, action: 0x64, setControl: 0x6e,
+  telemetry: 0x60, spaceInfo: 0x61, cell: 0x62, stats: 0x63, action: 0x64,
+  worlds: 0x65, basis: 0x66, setControl: 0x6e,
 };
-const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3 };
+const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4 };
+const WORLD_KIND = { lattice: 1, analytic: 2 };
 const TEL = { spectrum: 1, frame: 2 };
 const STATUS = ['OK', 'UNSUPPORTED', 'BAD_ARGS', 'BAD_STATE', 'BAD_CRC', 'BAD_SLOT', 'TOO_LARGE',
   'SCHEMA_MISMATCH', 'FLASH_FAIL', 'BUSY', 'FRAME_ERROR'];
@@ -283,6 +285,71 @@ function parseStats(b) {
 }
 /* 0x64 ACTION */
 function actionReq(op, args = []) { return Uint8Array.of(op & 0xff, ...args); }
+
+/* 0x65 GET_WORLDS: u8 count, u8 current, then per world u8 kind, str name,
+ * str note. kind 2 is analytic — a formula the host can evaluate itself —
+ * and kind 1 is tabulated, a lattice with no closed form (core/kyk_world.h). */
+function parseWorlds(b) {
+  if (b.length < 3) return null;
+  const count = b[1], current = b[2]; let at = 3; const list = [];
+  for (let i = 0; i < count && at < b.length; i++) {
+    const kind = b[at++]; let name, note;
+    [name, at] = readStr(b, at); [note, at] = readStr(b, at);
+    list.push({ index: i, kind, analytic: kind === WORLD_KIND.analytic, name, note });
+  }
+  return { current, list };
+}
+/* 0x66 GET_BASIS: u8 world, u32 offset, u16 max → u32 total, u32 offset,
+ * u16 n, bytes. Status 1 means the world is tabulated and has no formula. */
+function basisReq(world, offset, max) {
+  const r = new Uint8Array(7), dv = new DataView(r.buffer);
+  r[0] = world & 0xff; dv.setUint32(1, offset >>> 0, true); dv.setUint16(5, max, true);
+  return r;
+}
+/* The assembled blob: u8 n, u8 k, f32 extent, f32 floor, f32 mean[k],
+ * f32 comp[n][k] row-major. About 1.3 KB for a whole world, which is the
+ * point — the page can hold it and evaluate the space anywhere. */
+function parseBasis(all) {
+  if (!all || all.length < 10) return null;
+  const n = all[0], k = all[1];
+  if (!(n > 0 && k > 0) || all.length < 10 + 4 * k * (n + 1)) return null;
+  const dv = new DataView(all.buffer, all.byteOffset, all.byteLength);
+  const extent = dv.getFloat32(2, true), floor = dv.getFloat32(6, true);
+  const mean = new Float32Array(k), comp = new Float32Array(n * k);
+  let at = 10;
+  for (let i = 0; i < k; i++) { mean[i] = dv.getFloat32(at, true); at += 4; }
+  for (let i = 0; i < n * k; i++) { comp[i] = dv.getFloat32(at, true); at += 4; }
+  return { n, k, extent, floor, mean, comp };
+}
+async function fetchBasis(link, world, maxBody = 512) {
+  const chunk = Math.max(64, Math.min(900, (maxBody || 512) - 16));
+  const parts = []; let off = 0, total = 0;
+  for (let guard = 0; guard < 256; guard++) {
+    const b = await link.request(CMD.basis, basisReq(world, off, chunk), { urgent: true });
+    total = u32(b, 1); const n = u16(b, 9);
+    if (!n) break;
+    parts.push(b.slice(11, 11 + n)); off += n;
+    if (off >= total) break;
+  }
+  return parseBasis(concat(parts));
+}
+
+/* Evaluate an analytic world at a coordinate: coord[a] in ±extent, out of
+ * which comes an unnormalised magnitude spectrum. Every shading measure the
+ * page draws is a ratio, so it is invariant to the missing normalisation. */
+function evalBasis(basis, coord, out) {
+  const { n, k, extent, floor, mean, comp } = basis;
+  const m = out && out.length >= k ? out : new Float32Array(k);
+  for (let i = 0; i < k; i++) m[i] = mean[i];
+  for (let a = 0; a < n; a++) {
+    const c = coord[a]; if (!c) continue;
+    const base = a * k;
+    for (let i = 0; i < k; i++) m[i] += c * comp[base + i];
+  }
+  for (let i = 0; i < k; i++) { const v = Math.exp(m[i]) - floor; m[i] = v > 0 ? v : 0; }
+  void extent;
+  return m;
+}
 /* 0x6E SET_CONTROL: f32 f0, u8 n, f32 c[n], u8 planes, f32 angle[planes], f32 spread */
 function setControlReq(f0, ctl, angles, spread) {
   const n = ctl.length, planes = angles.length;
@@ -299,9 +366,10 @@ function planeAxes(n, plane) { let p = 0; for (let a = 0; a < n; a++) for (let b
 const planeCount = n => n * (n - 1) / 2;
 
 const api = {
-  CMD, ACT, TEL, STATUS, PROTO, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
+  CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
   parseTelemetry, telemetryReq, magDb, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
+  parseWorlds, basisReq, parseBasis, fetchBasis, evalBasis,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KYK = api;
