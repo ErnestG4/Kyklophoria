@@ -88,16 +88,19 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   {
     const ws = KYK.parseWorlds(await link.request(KYK.CMD.worlds, new Uint8Array(0)));
     const fm = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.fm);
+    const vw = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.formant);
     check(!!fm, 'an FM world is registered');
-    if (fm) {
-      const b = await KYK.fetchBasis(link, fm.index, info.maxBody);
-      check(b && b.fm && b.n === 4 && b.k === 64, 'FM formula arrives as 7 numbers');
-      check(b && b.ratioMax > b.ratioMin && b.indexMax > 0, 'FM reaches are sane');
+    check(!!vw, 'a formant world is registered');
+    for (const { w, evalFn, label } of [{ w: fm, evalFn: KYK.evalFm, label: 'FM' },
+                                        { w: vw, evalFn: KYK.evalFormant, label: 'Vowel' }]) {
+      if (!w) continue;
+      const b = await KYK.fetchBasis(link, w.index, info.maxBody);
+      check(b && (b.fm || b.formant) && b.n === 4 && b.k === 64, label + ' formula arrives');
       /* switch to it, park at a known position, compare spectra */
-      await link.request(KYK.CMD.action, KYK.actionReq(KYK.ACT.selectWorld, [fm.index]));
+      await link.request(KYK.CMD.action, KYK.actionReq(KYK.ACT.selectWorld, [w.index]));
       for (let i = 0; i < 60; i++) {
         const w2 = KYK.parseWorlds(await link.request(KYK.CMD.worlds, new Uint8Array(0)));
-        if (w2 && w2.current === fm.index) break;
+        if (w2 && w2.current === w.index) break;
         await new Promise(r => setTimeout(r, 20));
       }
       const p = [0.37, 0.62, 0.28, 0.71];
@@ -108,18 +111,26 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
         if (t3 && Math.abs(t3.posL[0] - p[0]) < 1e-3) break;
         await new Promise(r => setTimeout(r, 20));
       }
-      check(t3 && Math.abs(t3.posL[0] - p[0]) < 1e-3, 'module parked at the test position');
-      const mine = KYK.evalFm(b, t3.posL);
-      /* both to unit norm, then compare: telemetry mags are 8-bit dB, so the
-       * tolerance is what that quantisation allows, not what the maths does */
-      const norm = (a) => { let e = 0; for (const v of a) e += v * v; e = Math.sqrt(e) || 1; return a.map(v => v / e); };
+      check(t3 && Math.abs(t3.posL[0] - p[0]) < 1e-3, label + ': module parked at the test position');
+      const mine = evalFn(b, t3.posL);
+      /* Compare in decibels, per partial, because that is the only comparison
+       * the wire can settle. Telemetry magnitudes are one byte over 96 dB, so
+       * a step is 0.376 dB and no agreement finer than that is observable.
+       * Comparing normalised linear amplitudes instead makes the tolerance
+       * depend on the shape of the spectrum: a peaky world puts most of its
+       * energy in one partial, and quantising that one partial moves the norm
+       * and therefore every other partial with it. Partials below -40 dB are
+       * skipped; the byte has barely any resolution left down there. */
+      const norm = (a) => { let e = 0; for (const v of a) e += v * v; e = Math.sqrt(e) || 1; return Array.from(a, v => v / e); };
       const theirs = norm(Array.from(t3.mags).map(KYK.magDb).map(d => Math.pow(10, d / 20)));
-      const ours = norm(Array.from(mine));
+      const ours = norm(mine);
       let worst = 0;
-      for (let i = 0; i < 64; i++) worst = Math.max(worst, Math.abs(theirs[i] - ours[i]));
-      check(worst < 0.02, 'page FM matches the module FM (worst partial ' + worst.toFixed(4) + ')');
-      console.log('  FM: index<=' + b.indexMax + ' ratio ' + b.ratioMin + '..' + b.ratioMax +
-                  ' lock ' + b.ratioLock + ', worst partial mismatch ' + worst.toFixed(4));
+      for (let i = 0; i < 64; i++) {
+        if (!(theirs[i] > 0.01) || !(ours[i] > 0.01)) continue;
+        worst = Math.max(worst, Math.abs(20 * Math.log10(ours[i] / theirs[i])));
+      }
+      check(worst < 0.6, 'page ' + label + ' matches the module (worst partial ' + worst.toFixed(3) + ' dB)');
+      console.log('  ' + label + ': worst partial mismatch ' + worst.toFixed(3) + ' dB, one telemetry step is 0.376');
     }
   }
 

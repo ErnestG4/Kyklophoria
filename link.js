@@ -24,7 +24,7 @@ const CMD = {
   worlds: 0x65, basis: 0x66, setControl: 0x6e,
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4 };
-const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4 };
+const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5 };
 const TEL = { spectrum: 1, frame: 2, motion: 4 };
 const STATUS = ['OK', 'UNSUPPORTED', 'BAD_ARGS', 'BAD_STATE', 'BAD_CRC', 'BAD_SLOT', 'TOO_LARGE',
   'SCHEMA_MISMATCH', 'FLASH_FAIL', 'BUSY', 'FRAME_ERROR'];
@@ -245,7 +245,7 @@ async function getDescriptor(link, info) {
 /* 0x60 GET_TELEMETRY body after status (core/kyk_telemetry.h):
  *   u32 block · f32 f0 · u8 n k kcut p planes flags stereo spreadPlane · f32 spread
  *   f32 ctl[n] centre[n] posL[n] posR[n] angle[planes] payload[p]
- *   [flags&1] u8 mags[k] (0 = ≤ −96 dB, 255 = 0 dB) · [flags&2] i8 frame[256] (×40)
+ *   [flags&1] u8 mags[k] (0 = ≤ −96 dB, 255 = +6 dB) · [flags&2] i8 frame[256] (×40)
  *   [flags&4] u8 kep_running · u8 kep_plane · f32 kep_x · f32 kep_y · f32
  *   kep_rush · f32 couple · f32 lock — how the position is moving on its own.
  *   Appended last, so a host that predates it just ignores the tail. */
@@ -266,7 +266,10 @@ function parseTelemetry(b) {
   return t;
 }
 function telemetryReq(flags = TEL.spectrum | TEL.frame) { return Uint8Array.of(flags & 0xff); }
-const magDb = v => v === 0 ? -96 : (v - 255) * 96 / 255;   /* u8 → dBFS-ish */
+/* The top of the scale is +6 dB, not 0: the engine normalises to a sum of
+ * squares of 2, so one partial can legitimately sit above unity and a
+ * peaky world's tallest one does. See MagToU8 in core/kyk_telemetry.h. */
+const magDb = v => v === 0 ? -96 : (v - 255) * 102 / 255 + 6;
 
 /* 0x61 GET_SPACE_INFO: the 64-byte header, u32 crc, u16 stride */
 function parseSpaceInfo(b) {
@@ -305,7 +308,7 @@ function parseWorlds(b) {
     [name, at] = readStr(b, at); [note, at] = readStr(b, at);
     /* `analytic` here means the page can evaluate it: a world with a
      * formula small enough to hold, whichever formula it is. */
-    list.push({ index: i, kind, analytic: kind === WORLD_KIND.analytic || kind === WORLD_KIND.fm, name, note });
+    list.push({ index: i, kind, analytic: kind === WORLD_KIND.analytic || kind === WORLD_KIND.fm || kind === WORLD_KIND.formant, name, note });
   }
   return { current, list };
 }
@@ -324,14 +327,22 @@ function parseBasis(all) {
   /* 0xFF where a dimension count should be marks a different shape of
    * formula. Today that is only FM, whose whole world is seven numbers. */
   if (all[0] === 0xff) {
-    if (all.length < 32 || all[1] !== WORLD_KIND.fm) return null;
     const d = new DataView(all.buffer, all.byteOffset, all.byteLength);
-    return {
+    if (all[1] === WORLD_KIND.fm && all.length >= 32) return {
       fm: true, n: all[2], k: all[3],
       indexMax: d.getFloat32(4, true), ratioMin: d.getFloat32(8, true), ratioMax: d.getFloat32(12, true),
       carrierMin: d.getFloat32(16, true), carrierMax: d.getFloat32(20, true),
       secondMax: d.getFloat32(24, true), ratioLock: d.getFloat32(28, true),
     };
+    if (all[1] === WORLD_KIND.formant && all.length >= 44) return {
+      formant: true, n: all[2], k: all[3],
+      f1Min: d.getFloat32(4, true), f1Max: d.getFloat32(8, true),
+      r2Min: d.getFloat32(12, true), r2Max: d.getFloat32(16, true),
+      r3Min: d.getFloat32(20, true), r3Max: d.getFloat32(24, true),
+      qMin: d.getFloat32(28, true), qMax: d.getFloat32(32, true),
+      amp2: d.getFloat32(36, true), amp3: d.getFloat32(40, true),
+    };
+    return null;
   }
   const n = all[0], k = all[1];
   if (!(n > 0 && k > 0) || all.length < 10 + 4 * k * (n + 1)) return null;
@@ -412,6 +423,27 @@ function evalFm(basis, p01, out) {
   return m;
 }
 
+/* Three resonances over a falling source — a port of core/kyk_formant.h, the
+ * same shape of thing as evalFm and for the same reason. */
+function evalFormant(basis, p01, out) {
+  const k = basis.k, m = out && out.length >= k ? out : new Float32Array(k);
+  const f1 = basis.f1Min + p01[0] * (basis.f1Max - basis.f1Min);
+  const r2 = basis.r2Min + p01[1] * (basis.r2Max - basis.r2Min);
+  const r3 = basis.r3Min + p01[2] * (basis.r3Max - basis.r3Min);
+  const q = basis.n > 3 ? basis.qMax - p01[3] * (basis.qMax - basis.qMin) : 0.35;
+  const l1 = Math.log(Math.max(1e-3, f1)), l2 = Math.log(Math.max(1e-3, f1 * r2));
+  const l3 = Math.log(Math.max(1e-3, f1 * r2 * r3));
+  const w = q * Math.LN2, iw = 1 / (2 * w * w);
+  for (let i = 0; i < k; i++) {
+    const h = i + 1, lh = Math.log(h);
+    const d1 = lh - l1, d2 = lh - l2, d3 = lh - l3;
+    const bump = Math.exp(-d1 * d1 * iw) + basis.amp2 * Math.exp(-d2 * d2 * iw)
+               + basis.amp3 * Math.exp(-d3 * d3 * iw);
+    m[i] = (1 / h) * (0.06 + bump);
+  }
+  return m;
+}
+
 /* Evaluate an analytic world at a coordinate: coord[a] in ±extent, out of
  * which comes an unnormalised magnitude spectrum. Every shading measure the
  * page draws is a ratio, so it is invariant to the missing normalisation. */
@@ -446,7 +478,7 @@ const planeCount = n => n * (n - 1) / 2;
 const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
-  parseTelemetry, telemetryReq, magDb, evalFm, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
+  parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, basisReq, parseBasis, fetchBasis, evalBasis,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };
