@@ -201,7 +201,7 @@ function describeSpace() {
 async function refreshWorlds() {
   if (!link) return;
   try {
-    worlds = MVL.parseWorlds(await link.request(MVL.CMD.worlds, new Uint8Array(0), { urgent: true }));
+    worlds = await MVL.fetchWorlds(link);
   } catch { worlds = null; }
   renderWorldBar();
   describeSpace();
@@ -243,7 +243,7 @@ async function selectWorld(i) {
     for (;;) {
       await new Promise(r => setTimeout(r, 60));
       let w = null;
-      try { w = MVL.parseWorlds(await link.request(MVL.CMD.worlds, new Uint8Array(0), { urgent: true })); } catch { /* keep waiting */ }
+      try { w = await MVL.fetchWorlds(link); } catch { /* keep waiting */ }
       if (w) worlds = w;
       if (w && w.current === i) break;
       if (Date.now() > deadline) { say('world: the module did not switch', true); break; }
@@ -428,7 +428,8 @@ function buildTerrain() {
                   : basis.formant ? MVL.evalFormant
                   : basis.table ? MVL.evalShapes
                   : basis.lock ? MVL.evalLock
-                  : basis.unison ? MVL.evalUnison : null;
+                  : basis.unison ? MVL.evalUnison
+                  : basis.modal ? MVL.evalModal : null;
   if (nonlinear) {
     const p = new Float32Array(6), spec = new Float32Array(k);
     for (let a = 0; a < n; a++) p[a] = clamp01(tel.posL[a]);

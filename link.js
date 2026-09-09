@@ -24,7 +24,7 @@ const CMD = {
   worlds: 0x65, basis: 0x66, setControl: 0x6e,
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4 };
-const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5, table: 6, lock: 7, unison: 8 };
+const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5, table: 6, lock: 7, unison: 8, modal: 9 };
 const TEL = { spectrum: 1, frame: 2, motion: 4 };
 const STATUS = ['OK', 'UNSUPPORTED', 'BAD_ARGS', 'BAD_STATE', 'BAD_CRC', 'BAD_SLOT', 'TOO_LARGE',
   'SCHEMA_MISMATCH', 'FLASH_FAIL', 'BUSY', 'FRAME_ERROR'];
@@ -300,22 +300,39 @@ function actionReq(op, args = []) { return Uint8Array.of(op & 0xff, ...args); }
 /* 0x65 GET_WORLDS: u8 count, u8 current, then per world u8 kind, str name,
  * str note. kind 2 is analytic — a formula the host can evaluate itself —
  * and kind 1 is tabulated, a lattice with no closed form (core/kyk_world.h). */
+/* Paged since ext 4: the list outgrew a 1024-byte body at eighteen worlds and
+ * the reply was silently never sent. Reply is total, current, start, sent,
+ * then `sent` entries — use fetchWorlds, which walks the pages. */
 function parseWorlds(b) {
-  if (b.length < 3) return null;
-  const count = b[1], current = b[2]; let at = 3; const list = [];
-  for (let i = 0; i < count && at < b.length; i++) {
+  if (b.length < 5) return null;
+  const count = b[1], current = b[2], start = b[3], sent = b[4];
+  let at = 5; const list = [];
+  for (let i = 0; i < sent && at < b.length; i++) {
     const kind = b[at++]; let name, note;
     [name, at] = readStr(b, at); [note, at] = readStr(b, at);
     /* `analytic` here means the page can evaluate it: a world with a
      * formula small enough to hold, whichever formula it is. */
-    list.push({ index: i, kind, analytic: kind === WORLD_KIND.analytic || kind === WORLD_KIND.fm || kind === WORLD_KIND.formant
+    list.push({ index: start + i, kind, analytic: kind === WORLD_KIND.analytic || kind === WORLD_KIND.fm || kind === WORLD_KIND.formant
                  || kind === WORLD_KIND.table || kind === WORLD_KIND.lock
-                 || kind === WORLD_KIND.unison, name, note });
+                 || kind === WORLD_KIND.unison || kind === WORLD_KIND.modal, name, note });
   }
-  return { current, list };
+  return { current, count, start, sent, list };
 }
 /* 0x66 GET_BASIS: u8 world, u32 offset, u16 max → u32 total, u32 offset,
  * u16 n, bytes. Status 1 means the world is tabulated and has no formula. */
+/* Walk every page of the world list. */
+async function fetchWorlds(link) {
+  let at = 0, current = 0, count = 0; const all = [];
+  for (let guard = 0; guard < 64; guard++) {
+    const r = parseWorlds(await link.request(CMD.worlds, Uint8Array.of(at)));
+    if (!r || !r.list.length) break;
+    current = r.current; count = r.count;
+    for (const w of r.list) all.push(w);
+    at = r.start + r.sent;
+    if (at >= r.count) break;
+  }
+  return { current, count, list: all };
+}
 function basisReq(world, offset, max) {
   const r = new Uint8Array(7), dv = new DataView(r.buffer);
   r[0] = world & 0xff; dv.setUint32(1, offset >>> 0, true); dv.setUint16(5, max, true);
@@ -335,6 +352,12 @@ function parseBasis(all) {
       indexMax: d.getFloat32(4, true), ratioMin: d.getFloat32(8, true), ratioMax: d.getFloat32(12, true),
       carrierMin: d.getFloat32(16, true), carrierMax: d.getFloat32(20, true),
       secondMax: d.getFloat32(24, true), ratioLock: d.getFloat32(28, true),
+    };
+    if (all[1] === WORLD_KIND.modal && all.length >= 24) return {
+      modal: true, n: all[2], k: all[3],
+      body: Math.round(d.getFloat32(4, true)),
+      geomMin: d.getFloat32(8, true), geomMax: d.getFloat32(12, true),
+      widthMin: d.getFloat32(16, true), widthMax: d.getFloat32(20, true),
     };
     if (all[1] === WORLD_KIND.lock && all.length >= 12) return {
       lock: true, n: all[2], k: all[3], count: all[4], sigma: d.getFloat32(8, true),
@@ -504,6 +527,60 @@ function evalShapes(basis, p01, out, sharp = 0) {
   return m;
 }
 
+/* Struck objects — a port of core/kyk_modal.h. Body 0 is a plate, whose
+ * fourth axis is a second strike coordinate; 1 and 2 are a bar and a drum
+ * head, whose fourth axis is temper. */
+const BAR_R = [1, 2.756, 5.404, 8.933, 13.34, 18.64, 24.80, 31.80, 39.80, 48.70, 58.50];
+const DRUM_R = [1, 1.593, 2.135, 2.295, 2.653, 2.917, 3.155, 3.500, 3.598, 3.647, 4.060, 4.154];
+function msinc(x) {
+  const a = Math.abs(x);
+  return a < 1e-4 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x);
+}
+function mtemper(fh, t) {
+  if (!(t > 0)) return fh;
+  for (let i = 0; i < 3; i++) fh -= t * Math.sin(2 * Math.PI * fh) / (2 * Math.PI);
+  return fh;
+}
+function mdeposit(m, fh, a, k) {
+  if (a === 0 || fh <= 0 || fh > k + 1) return;
+  const h = fh - 1, i0 = Math.floor(h), fr = h - i0;
+  if (i0 >= 0 && i0 < k) m[i0] += a * (1 - fr);
+  if (i0 + 1 >= 0 && i0 + 1 < k) m[i0 + 1] += a * fr;
+}
+function evalModal(basis, p01, out) {
+  const k = basis.k, n = basis.n;
+  const m = out && out.length >= k ? out : new Float32Array(k);
+  for (let i = 0; i < k; i++) m[i] = 0;
+  const x = 0.04 + 0.42 * p01[0];
+  const g = basis.geomMin + (basis.geomMax - basis.geomMin) * p01[1];
+  const w = basis.widthMin + (basis.widthMax - basis.widthMin) * (n > 2 ? p01[2] : 0.4);
+  const p4 = n > 3 ? p01[3] : 0;
+  if (basis.body === 0) {
+    const norm = 1 / Math.sqrt(g * g + 1 / (g * g));
+    const y = 0.04 + 0.42 * p4;
+    for (let a = 1; a <= 6; a++) {
+      const hit = Math.abs(Math.sin(Math.PI * a * x)) * msinc(a * w);
+      if (hit < 1e-4) continue;
+      for (let b = 1; b <= 6; b++) {
+        const hit2 = hit * Math.abs(Math.sin(Math.PI * b * y));
+        if (hit2 < 1e-4) continue;
+        const mm = a * g, nn = b / g;
+        mdeposit(m, Math.sqrt(mm * mm + nn * nn) * norm, hit2 / Math.sqrt(a * b), k);
+      }
+    }
+    return m;
+  }
+  const r = basis.body === 1 ? BAR_R : DRUM_R;
+  const t = p4 * 0.95;
+  for (let i = 0; i < r.length; i++) {
+    const b = i + 1;
+    const hit = Math.abs(Math.sin(Math.PI * b * x)) * msinc(b * w);
+    if (hit < 1e-4) continue;
+    mdeposit(m, mtemper(1 + (r[i] - 1) * g, t), hit / b, k);
+  }
+  return m;
+}
+
 /* Real waveforms on the 24-cell — a port of core/kyk_lock.h. One family per
  * Givens plane, in the order the polytope is walked. */
 function lockWave(k, v, out) {
@@ -659,8 +736,8 @@ const planeCount = n => n * (n - 1) / 2;
 const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
-  parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
-  parseWorlds, basisReq, parseBasis, fetchBasis, evalBasis,
+  parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
+  parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KYK = api;
