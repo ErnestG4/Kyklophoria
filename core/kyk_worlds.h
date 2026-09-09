@@ -14,7 +14,8 @@
 namespace kyk {
 namespace worlds {
 
-enum : uint8_t { kBraids = 0, kCell24 = 1, kStack = 2, kFieldCalm = 3, kFieldWild = 4, kHarmonic = 5, kCount = 6 };
+enum : uint8_t { kBraids = 0, kCell24 = 1, kCell16 = 2, kTesseract = 3, kStack = 4,
+                 kFieldCalm = 5, kFieldWild = 6, kHarmonic = 7, kCount = 8 };
 
 struct Entry
 {
@@ -28,6 +29,8 @@ inline const Entry& Get(uint8_t i)
     static const Entry kEntries[kCount] = {
         {"Braids",   "eigenspace of Emilie Gillet's 256-wave bank", World::Kind::Analytic},
         {"24-cell",  "a waveform on each vertex of the 4-D solid; Morph tightens the lock", World::Kind::Vertices},
+        {"16-cell",  "only 8 vertices, on the axes: wide open, mostly mire", World::Kind::Vertices},
+        {"Tesseract","16 vertices on the cube corners, so the axes aim straight at them", World::Kind::Vertices},
         {"Stack",    "one waveform idea per axis: stacking, tilt, width, parity", World::Kind::Lattice},
         {"Field",    "correlated noise, even in every direction",   World::Kind::Lattice},
         {"Field II", "the same, rougher and less correlated",       World::Kind::Lattice},
@@ -39,20 +42,35 @@ inline const Entry& Get(uint8_t i)
 inline bool IsAnalytic(uint8_t i) { return Get(i).kind != World::Kind::Lattice; }
 
 /* The 24-cell's vertex table, built once and kept for the life of the app. */
-inline solids::VertexTable& Cell24Table()
+/* Which solid a world is built on, or -1 if it is not a vertex world. */
+inline int SolidOf(uint8_t i)
 {
-    static solids::VertexTable t;
-    static bool built = false;
-    if(!built) { solids::Build(solids::Solid::Cell24, 64, t); built = true; }
-    return t;
+    if(i == kCell24) return (int)solids::Solid::Cell24;
+    if(i == kCell16) return (int)solids::Solid::Cell16;
+    if(i == kTesseract) return (int)solids::Solid::Tesseract;
+    return -1;
 }
 
-/* Analytic worlds: point the World at a formula. Nothing to expand, nothing
- * to allocate, and switching is a pointer write. */
-inline bool Point(uint8_t i, World& w, int p, const uint8_t* topo)
+/* Analytic worlds: point the World at a formula. Nothing to expand and
+ * nothing to wait for, so switching is a pointer write.
+ *
+ * A vertex world needs somewhere to keep its table, and that is the caller's
+ * to provide rather than a static in here: at K = 128 a table is 17 KB, and
+ * three of them as file statics overflowed the module's DTCM. The shell knows
+ * which memory it can afford; this header does not. Pass the table that
+ * belongs to the World being built, so a world still playing out of the other
+ * buffer keeps its own. */
+inline bool Point(uint8_t i, World& w, int p, const uint8_t* topo, solids::VertexTable* table = nullptr)
 {
     if(i == kBraids) { w.UseAnalytic(BraidsBasis(), p, topo); return true; }
-    if(i == kCell24) { solids::Use(Cell24Table(), w, p, topo); return true; }
+    const int sol = SolidOf(i);
+    if(sol >= 0)
+    {
+        if(!table) return false;
+        solids::Build((solids::Solid)sol, 64, *table);
+        solids::Use(*table, w, p, topo);
+        return true;
+    }
     return false;
 }
 

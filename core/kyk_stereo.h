@@ -13,6 +13,7 @@
 #pragma once
 #include "kyk_engine.h"
 #include "kyk_rotate.h"
+#include "kyk_kepler.h"
 
 namespace kyk {
 
@@ -41,6 +42,12 @@ public:
 
     /* 0 smooth multilinear morph, 1 nearly hard stepping between cells. */
     float sharp = 0.f;
+
+    /* Kepler mode: the position falls through a central potential rather than
+     * being carried round at constant speed. The control frame becomes the
+     * centre of attraction and the body orbits it, so a still hand still
+     * moves — unevenly, which is the point. */
+    Kepler kepler;
 
     void Init(const World* world, float sr)
     {
@@ -104,7 +111,16 @@ public:
             }
         }
         else for(int a = 0; a < N; a++) c_[a] = target_[a];
-        if(sr_ > 0.f) rot.Advance((float)n / sr_);
+        if(sr_ > 0.f)
+        {
+            const float dt = (float)n / sr_;
+            rot.Advance(dt);
+            if(kepler.Running())
+            {
+                kepler.Step(dt);
+                kepler.Apply(c_, N);      /* the control frame is the centre */
+            }
+        }
         rot.Update();
         if(rot.IsIdentity()) for(int a = 0; a < N; a++) pc_[a] = c_[a];
         else rot.Apply(c_, pc_, pivot);

@@ -117,7 +117,8 @@ int main(int argc, char** argv)
     world.UseLattice(&space);
     if(world_sel >= 0 && world_sel < (int)worlds::kCount)
     {
-        if(!worlds::Point((uint8_t)world_sel, world, gp.p, gp.topo))
+        static solids::VertexTable vtable;
+        if(!worlds::Point((uint8_t)world_sel, world, gp.p, gp.topo, &vtable))
         {
             const size_t n = worlds::Expand((uint8_t)world_sel, gp.n, gp.side, gp.k, gp.p, blob.data(), blob.size());
             if(n && space.Attach(blob.data(), n) == SpaceError::Ok) world.UseLattice(&space);

@@ -8,6 +8,7 @@
  *   angle <plane> <turns>        rotation angle of a plane
  *   rate <plane> <turns/sec>     orbit rate of a plane, signed
  *   spread <turns>               stereo spread ±δ in the stereo plane
+ *   kepler <G> <ecc> <plane>     launch a Kepler orbit; G 0 stops it
  *   plane <idx>                  the stereo plane
  *   <secs> dur                   total length (default: last event + 1 s)
  * Events apply at the first block whose start time ≥ their time.
@@ -74,7 +75,7 @@ struct Script
                 vals.pop_back();
             }
             if(vals.empty()) { fprintf(stderr, "%s:%d: %s needs a value\n", path.c_str(), ln, cmd.c_str()); return false; }
-            if(e.cmd == "angle" || e.cmd == "spread" || e.cmd == "rate") uses_stereo = true;
+            if(e.cmd == "angle" || e.cmd == "spread" || e.cmd == "rate" || e.cmd == "kepler") uses_stereo = true;
             e.v = vals;
             ev.push_back(e);
         }
@@ -111,6 +112,16 @@ public:
                 else if(e.cmd == "angle") { if(e.v.size() >= 2) eng.rot.SetAngle((int)e.v[0], e.v[1]); }
                 else if(e.cmd == "rate") { if(e.v.size() >= 2) eng.rot.SetRate((int)e.v[0], e.v[1]); }
                 else if(e.cmd == "spread") eng.spread = e.v[0];
+                else if(e.cmd == "kepler")
+                {
+                    if(e.v[0] <= 0.f) eng.kepler.Stop();
+                    else
+                    {
+                        eng.kepler.gravity = e.v[0];
+                        eng.kepler.plane   = e.v.size() > 2 ? (int)e.v[2] : 0;
+                        eng.kepler.Reset(0.35f, e.v.size() > 1 ? e.v[1] : 0.5f);
+                    }
+                }
                 else if(e.cmd == "plane") eng.spread_plane = (int)e.v[0];
                 else if(e.cmd == "glide_f0") { gf0_ = true; f0_from_ = f0_; f0_to_ = e.v[0]; f0_t0_ = t; f0_t1_ = t + e.dur; }
                 else if(e.cmd == "glide_pos")

@@ -6,6 +6,8 @@
  *   Page Play    P1 coarse (octaves)  P2 fine (±1 st)  P3–P6 position 0–3 offsets
  *   Page Rotate  P1–P6 the six plane angles (turns)
  *   Page Orbit   P1–P6 the six plane rates, centre stopped, exponential out
+ *   Page Kepler  P1 gravity (bottom = off) P2 eccentricity P3 orbit plane
+ *                P4 softening P5 damping P6 radius
  *   Page Stereo  P1 spread  P2 stereo plane  P3 CV out A depth  P4 render div  P5 level
  *   B1 taps through the pages · B2+B3 held: Settings (SDK)
  *
@@ -53,7 +55,7 @@ using namespace kyk;
 
 static AlchemyLab  hw;
 static ControlLoop loop(hw);
-static Pager       pager(hw.buttons[kButtonB1], 4, kNumPots);
+static Pager       pager(hw.buttons[kButtonB1], 5, kNumPots);
 static Presets     presets(hw.seed.qspi);
 static Settings    settings(hw, &pager);
 
@@ -62,6 +64,7 @@ static constexpr LedPanel::Rgb kPlay   = {0x67, 0xE8, 0xF9};
 static constexpr LedPanel::Rgb kRotate = {0xFC, 0xA5, 0xA5};
 static constexpr LedPanel::Rgb kStereo = {0xC4, 0xB5, 0xFD};
 static constexpr LedPanel::Rgb kOrbit  = {0xFD, 0xE0, 0x68};
+static constexpr LedPanel::Rgb kKepler = {0x9A, 0xE6, 0xB4};
 
 static VirtualKnob k_coarse = VirtualKnob(0, "Coarse").Linear(-3.f, 3.f).Unit("oct").Ident("pitch.coarse").Ring(Level(kPlay));
 static VirtualKnob k_fine   = VirtualKnob(1, "Fine").Linear(-1.f, 1.f).Unit("st").Ident("pitch.fine").Ring(Level(kPlay));
@@ -103,7 +106,17 @@ static float RateFromKnob(float norm)
     return u < 0.f ? -r : r;
 }
 
+/* ── Kepler page ──────────────────────────────────────────────────────
+ * Gravity at the bottom of its travel means off, and winding it up from
+ * there launches the body. Radius re-launches too, with a deadband so ADC
+ * jitter does not re-launch it forty times a second. */
 static const char* kPlaneNames[6] = {"0,1", "0,2", "0,3", "1,2", "1,3", "2,3"};
+static VirtualKnob k_grav   = VirtualKnob(0, "Gravity").Ident("kep.g").Ring(Level(kKepler));
+static VirtualKnob k_ecc    = VirtualKnob(1, "Eccentricity").Ident("kep.ecc").Ring(Level(kKepler));
+static VirtualKnob k_kplane = VirtualKnob(2, "Orbit plane").Selector(6).Labels(kPlaneNames, 6).Ident("kep.plane").Ring(Level(kKepler));
+static VirtualKnob k_soft   = VirtualKnob(3, "Softening").Linear(0.02f, 0.30f).Ident("kep.soft").Ring(Level(kKepler));
+static VirtualKnob k_damp   = VirtualKnob(4, "Damping").Linear(0.f, 1.2f).Unit("/s").Ident("kep.damp").Ring(Level(kKepler));
+static VirtualKnob k_radius = VirtualKnob(5, "Radius").Linear(0.08f, 0.55f).Ident("kep.r").Ring(Level(kKepler));
 /* Divider 1 (a frame every block, twice over in stereo) overran the block on
  * the bench at 160% of budget and took the module down. The real IFFT bought
  * about 2x, which is not yet enough headroom to offer it, so the knob starts
@@ -126,6 +139,7 @@ static VirtualKnob k_cvdep  = VirtualKnob(5, "CV out A depth").Ident("lane.cva")
 static Page page_play   = Page(0).Name("Play").Color("#67e8f9").Knobs(k_coarse, k_fine, k_pos0, k_pos1, k_pos2, k_pos3);
 static Page page_rotate = Page(1).Name("Rotate").Color("#fca5a5").Knobs(k_ang[0], k_ang[1], k_ang[2], k_ang[3], k_ang[4], k_ang[5]);
 static Page page_orbit  = Page(3).Name("Orbit").Color("#fde068").Knobs(k_rate[0], k_rate[1], k_rate[2], k_rate[3], k_rate[4], k_rate[5]);
+static Page page_kepler = Page(4).Name("Kepler").Color("#9ae6b4").Knobs(k_grav, k_ecc, k_kplane, k_soft, k_damp, k_radius);
 static Page page_stereo = Page(2).Name("Stereo").Color("#c4b5fd").Knobs(k_spread, k_plane, k_sharp, k_rdiv, k_level, k_cvdep);
 
 /* ── jacks (descriptor metadata; the web panel mirror reads these) ───────── */
@@ -149,6 +163,10 @@ static constexpr int kBootN = 4, kBootSide = 8, kBootK = 64, kBootP = 8;
 static uint8_t KYK_SDRAM gBlob[2][Space::BlobSize(kBootN, kBootK, kBootP, kBootSide, false)];
 static Space   gSpace[2];
 static World   gWorlds[2];
+/* A vertex world's table, one per world buffer so a switch never rewrites
+ * the table the other one is still playing from. SDRAM: at K=128 each is
+ * 17 KB, which DTCM cannot spare. */
+static solids::VertexTable KYK_SDRAM gVertTable[2];
 static uint8_t gBufIdx    = 0;
 static volatile uint8_t gWorldIdx = worlds::kBraids;
 static volatile uint8_t gWorldReq = 0xFFu;   /* 0xFF: nothing pending */
@@ -162,6 +180,8 @@ static volatile uint32_t gCycLast = 0, gCycMax = 0, gCycSum = 0, gCycN = 0;
 static volatile uint16_t gOverruns = 0, gDropped = 0;
 static volatile float    gPayloadA = 0.f;
 static volatile uint8_t  gResetPhase = 0;
+static bool              gKepOn      = false;
+static float             gKepRadius  = 0.f;
 static constexpr uint32_t kCpuHz     = 480000000u;
 static constexpr uint32_t kCycBudget = kCpuHz / 48000u * kEngineBlockSamples;   /* 240 000 */
 
@@ -195,6 +215,29 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     if(sel > 3) sel = 3;
     const int rdiv = (int)kDivValues[sel];
     if(rdiv != gEng.L.render_div) gEng.SetRenderDiv(rdiv);
+    /* Kepler: gravity's bottom quarter-turn is off. Crossing into it launches
+     * the body; so does moving the radius knob meaningfully. */
+    {
+        const float gk = k_grav.Norm();
+        const bool  on = gk > 0.02f;
+        /* Exponential, because the period goes as 1/sqrt(G) and the long
+         * orbits are the interesting end. This spans about half a minute per
+         * revolution at the bottom to well under a second at the top, and a
+         * high eccentricity stretches the slow end much further still. */
+        gEng.kepler.gravity = 0.002f * exp2f(gk * 11.f);
+        gEng.kepler.soften  = k_soft.Value();
+        gEng.kepler.damp    = k_damp.Value();
+        gEng.kepler.plane   = (int)k_kplane.Value();
+        const float rad = k_radius.Value();
+        const bool  moved = (rad > gKepRadius + 0.02f) || (rad < gKepRadius - 0.02f);
+        if(on && (!gKepOn || moved))
+        {
+            gKepRadius = rad;
+            gEng.kepler.Reset(rad, k_ecc.Norm());
+        }
+        else if(!on && gKepOn) gEng.kepler.Stop();
+        gKepOn = on;
+    }
     gEng.sharp = k_sharp.Norm();
     /* 0.23 is the headroom the measured crest factor needs; the knob scales
      * from silence to that, so a cell can no longer peak past full scale. */
@@ -339,7 +382,7 @@ static void ServeWorldRequest()
     const uint8_t wi = (uint8_t)(gBufIdx ^ 1u);
     if(worlds::IsAnalytic(req))
     {
-        worlds::Point(req, gWorlds[wi], kBootP, nullptr);
+        worlds::Point(req, gWorlds[wi], kBootP, nullptr, &gVertTable[wi]);
     }
     else
     {
@@ -381,7 +424,7 @@ int main()
 
     /* Boot into an analytic world: it is a formula, so there is nothing to
      * expand and the module makes sound immediately. */
-    worlds::Point(worlds::kBraids, gWorlds[0], kBootP, nullptr);
+    worlds::Point(worlds::kBraids, gWorlds[0], kBootP, nullptr, &gVertTable[0]);
     gEng.Init(&gWorlds[0], hw.SampleRate());
 
     hw.j8.EnableCvOutput();
@@ -396,7 +439,7 @@ int main()
     host.Jacks(kJacks);
     host.Extend(gExt);
 
-    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(host).OnFrame(OnFrame);
+    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(host).OnFrame(OnFrame);
 
     presets.Init();
     presets.BootLoad();   /* HostLink starts here: descriptor + panel USB up */

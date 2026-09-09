@@ -32,6 +32,17 @@ not a dependency chain.
       with two planes at unrelated rates the path never returns closer than
       0.15 to its start over six seconds, which is the quasi-periodic
       behaviour the whole design is for.
+- [x] **Kepler mode** — `core/kyk_kepler.h`, its own panel page. A body falls
+      through a softened central potential and the space is read wherever it
+      is, so the second law does the work: it rushes through periapsis and
+      lingers at apoapsis. Verified: equal areas in equal times, constant to
+      one part in ten thousand. Orbits are planar, as a central force
+      requires, in one of the same Givens planes the rotation uses. Gravity
+      spans about half a second to a hundred seconds per revolution.
+- [ ] **Kepler under Wrap** — the attractor becomes periodic on the torus,
+      which is Will's topology-meets-gravity idea and should be strange.
+- [ ] **Kepler in the telemetry and on the page** — the body's position and
+      its rush are not sent, so the terrain cannot draw the orbit yet.
 - [ ] **Kuramoto coupling** on those orbit rates, so ratio lock is emergent
       rather than a menu (`docs/worlds.md`). Six oscillators, one sine per
       pair, negligible cost. Wants listening rather than theory to tune.
@@ -90,6 +101,9 @@ meaningful axis and stacking four banks makes rotation meaningless.
 - [ ] **Plaits corpus extractor.** Plaits generates its tables from
       `wavetables.py` rather than shipping an array, so it needs a few lines
       that Braids did not.
+- [x] **Three vertex worlds** — 24-cell, 16-cell and tesseract. The tesseract
+      puts its vertices on the cube corners, so axis-aligned motion aims
+      straight at them, which is the most direct form of the lock.
 - [ ] **AKWF**, several thousand CC0 single cycles. 256 waves is thin for
       four principal components.
 - [x] **The Erica-like world** — shipped as `Family::Stack`, world 1. One

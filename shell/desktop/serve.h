@@ -49,8 +49,9 @@ public:
     uint8_t              world_idx = kNoWorld;
     /* Its own buffer for expanding tabulated worlds, sized for the largest,
      * so switching never disturbs whatever space was loaded at startup. */
-    std::vector<uint8_t> scratch;
-    kyk::Space           scratch_space;
+    std::vector<uint8_t>      scratch;
+    kyk::Space                scratch_space;
+    kyk::solids::VertexTable  vtable;
     const uint8_t*      blob = nullptr;
     size_t              blob_len = 0;
     kyk::ExtStats      stats;
@@ -92,7 +93,7 @@ public:
                 const uint8_t i = args[0];
                 if(kyk::worlds::IsAnalytic(i))
                 {
-                    if(!kyk::worlds::Point(i, *world, 8, nullptr)) return 2u;
+                    if(!kyk::worlds::Point(i, *world, 8, nullptr, &vtable)) return 2u;
                 }
                 else
                 {
@@ -128,7 +129,7 @@ public:
         total = 0;
         if(!kyk::worlds::IsAnalytic(w)) return 0;
         kyk::World tmp;
-        if(!kyk::worlds::Point(w, tmp, 8, nullptr)) return 0;
+        if(!kyk::worlds::Point(w, tmp, 8, nullptr, &vtable)) return 0;
         const kyk::EigenBasis& b = tmp.Basis();
         std::vector<uint8_t>   raw;
         raw.push_back((uint8_t)b.n);
