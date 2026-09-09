@@ -42,23 +42,31 @@ and the stereo plane are P1/P2 of the Stereo page.
 
 ## Pots and pages (B1 taps through the pages)
 
-Four pages ship: Play, Rotate, Stereo and Orbit. Ratio lock and Kuramoto
-coupling on the orbit rates are still to come, and Lanes arrives with M3.
+Six pages ship: Play, Rotate, Stereo, Orbit, Kepler and Couple. Lanes arrives
+with M3.
 
-| | Page Play (M1) | Page Rotate (M1) | Page Stereo (M1) | Page Orbit (M2) | Page Lanes (M3) |
-|---|---|---|---|---|---|
-| P1 | Coarse pitch (±3 octaves) | plane (0,1) angle | Spread δ (0–0.1 turn) | plane (0,1) rate ✅ | cutoff depth |
-| P2 | Fine (±1 semitone) | plane (0,2) | Stereo plane (6 zones) | plane (0,2) | resonance depth |
-| P3 | Position 0 offset | plane (0,3) | CV out A depth | plane (0,3) | FM depth |
-| P4 | Position 1 offset | plane (1,2) | Render div (1–4) | plane (1,2) | drive depth |
-| P5 | Position 2 offset | plane (1,3) | Level | plane (1,3) | CV out A curve |
-| P6 | Position 3 offset | plane (2,3) | — | plane (2,3) | CV out A slew |
+| | Page Play | Page Rotate | Page Stereo | Page Orbit | Page Kepler | Page Couple | Page Lanes (M3) |
+|---|---|---|---|---|---|---|---|
+| P1 | Coarse pitch (±3 octaves) | plane (0,1) angle | Spread δ (0–0.1 turn) | plane (0,1) rate | Gravity (bottom = off) | Coupling | cutoff depth |
+| P2 | Fine (±1 semitone) | plane (0,2) | Stereo plane (6 zones) | plane (0,2) | Eccentricity | Reach (1–5) | resonance depth |
+| P3 | Position 0 offset | plane (0,3) | Morph (smooth to stepped) | plane (0,3) | Orbit plane (6 zones) | Rate ×, detent at 1 | FM depth |
+| P4 | Position 1 offset | plane (1,2) | Render div (2–6) | plane (1,2) | Softening | — | drive depth |
+| P5 | Position 2 offset | plane (1,3) | Level | plane (1,3) | Damping | — | CV out A curve |
+| P6 | Position 3 offset | plane (2,3) | CV out A depth | plane (2,3) | Radius | — | CV out A slew |
+
+The Couple page is three knobs rather than six, and is not padded out. Reach
+caps the integers a locking ratio may use: at 1 the only lock is unison, at 5
+the whole staircase is open. Rate × scales all six orbit rates at once, three
+octaves either side of unity with a detent at the centre — its stored value is
+seeded at that detent, because a stored zero would run every orbit at an
+eighth speed on a fresh boot and read as the orbit doing nothing.
 
 N=4 has exactly six rotation planes, one per pot. For N=5–6 the extra
 planes and position axes get a second Rotate/Orbit page each.
 
 Buttons: **B1** tap: next page (ring tints per page). **B2** tap: ratio lock
-on/off · hold + turn an Orbit pot: pick the rational (M2). **B3** tap: next
+on/off · hold + turn an Orbit pot: pick the rational — superseded by the
+Couple page, where lock is emergent rather than chosen. **B3** tap: next
 space on the card · hold: reload / reset phases (M4). **B2+B3** 2 s: Settings
 (SDK). Param locks (SDK, B1 hold + turn) come for free on every pot.
 

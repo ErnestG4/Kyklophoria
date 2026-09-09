@@ -29,7 +29,7 @@ landed a CV on a nearly dead axis. Fixing that drove the content work below.
 
 ## Controls
 
-**B1** taps through three pages. **B2 + B3** held opens Settings.
+**B1** taps through six pages. **B2 + B3** held opens Settings.
 
 | | Play | Rotate | Stereo |
 |---|---|---|---|
@@ -43,6 +43,30 @@ landed a CV on a nearly dead axis. Fixing that drove the content work below.
 Four dimensions give six rotation planes, and the panel has six pots. That is
 a coincidence, and a lucky one.
 
+Three more pages move the position without you.
+
+| | Orbit | Kepler | Couple |
+|---|---|---|---|
+| P1 | plane (0,1) rate | Gravity, off at the bottom | **Coupling** |
+| P2 | plane (0,2) | Eccentricity | Reach, 1 to 5 |
+| P3 | plane (0,3) | Orbit plane | Rate ×, detent at 1 |
+| P4 | plane (1,2) | Softening | — |
+| P5 | plane (1,3) | Damping | — |
+| P6 | plane (2,3) | Radius | — |
+
+**Orbit** turns the rotation planes at rates you set, which never close into a
+repeating figure. **Kepler** drops the position into a softened central
+potential and reads the space wherever it falls, so the second law does the
+work: it rushes through periapsis and lingers at apoapsis, and the timbre
+dwells unevenly rather than gliding. On a world whose axes wrap, gravity wraps
+with them, and the body leaves one side of the space to arrive from the other.
+
+**Couple** is the one that changes what the instrument is. Turn it up and each
+pair of orbits pulls the other toward the nearest simple ratio, the figure
+closes, and the waveform snaps into shape. Over a sweep of rate settings, 2.7%
+land on a simple ratio at zero coupling — chance — and 88% at the top of the
+knob. Reach says how exotic a ratio it will settle for.
+
 **Jacks.** J3 v/oct · J4 to J7 position 0 to 3 · J8 CV out A · J9/J10 stereo
 out. J1 and J2 are reserved for FM and sync and are not read yet.
 
@@ -51,24 +75,46 @@ either side of centre, so width is an *angular* spread, and an orbit moves
 your ears through the space slightly out of step. At zero spread the output is
 mono, bit for bit.
 
-## Spaces
+## Worlds
 
-A space is a lattice of single-cycle spectra plus a payload vector per node,
-in one `*.kyk` file (`docs/space-format.md`). Three ways to fill one:
+Eleven ship. A world is either a **formula**, evaluated wherever you happen to
+be standing, or a **lattice** of sampled spectra, interpolated between. Which
+one a world is is a property of the world, not a storage decision: a formula
+that exists is 1.3 KB and exact everywhere, and baking it out to a grid would
+cost 1.18 MB to approximate what it just threw away.
 
-- **Field** — a correlated random field, which by construction has no
-  privileged directions. This is what the module boots.
-- **Eigen** — a corpus of real waves, analysed to log magnitudes and reduced
-  by PCA to four whitened axes. Braids' 256-wave bank is the first corpus.
-  Whitening is the load-bearing step: raw PCA is maximally lopsided, and
-  lopsided is the one thing rotation cannot survive.
-- **Harmonic** — one legible synthesis parameter per axis. Easiest to reason
-  about, worst to rotate through, kept for that contrast.
+| world | what it is | variety | spread | covers Braids |
+|---|---|---|---|---|
+| Braids | eigenspace of Emilie Gillet's 256-wave bank | 1.47 | 2.14x | 32% |
+| 24-cell | a waveform on each vertex of the 4-D solid | 0.66 | 3.64x | 16% |
+| 16-cell | eight vertices, on the axes: mostly mire | 0.38 | 3.14x | 14% |
+| Tesseract | sixteen, on the cube corners | 0.47 | 4.22x | 16% |
+| Stack | one waveform idea per axis | 3.43 | 3.69x | 27% |
+| Field | correlated noise, even in every direction | 2.81 | 1.31x | 9% |
+| Field II | the same, rougher | 5.87 | 1.39x | 10% |
+| Torus | a field with no edges; gravity wraps with it | 4.33 | 1.26x | 11% |
+| Harmonic | one parameter per axis, legible but lopsided | 0.20 | 6.13x | 15% |
+| **FM** | index, ratio, carrier, and a second carrier that interferes | **13.32** | **1.81x** | 11% |
+| **Vowel** | three chained resonances over a falling source | 1.50 | 2.87x | **29%** |
+
+**Spread** is the number that decides whether rotating the control frame was
+worth building: the most varied direction through the space over the least. At
+1.0 every direction is as interesting as every other. Most legible worlds
+measure badly at it, and the reason is structural rather than a failure of
+taste — they weight the harmonic series multiplicatively, multiplicative
+weights add in log magnitude, and a sum of per-axis terms is separable. A
+separable space already has natural axes, so a rotation finds nothing new.
+
+FM is the exception. The k'th sideband is a Bessel function of the modulation
+index, which does not factor, and the sidebands *move* with the ratio, so one
+axis relocates energy another axis put down. The vowel world escapes the same
+way, by chaining its three resonances so the first axis moves all three.
 
 ```sh
-build/host/kykspace gen space.kyk --family field --side 8 --seed 7
+build/host/kykworlds --braids ../../Mutable/Streams/eurorack/braids/resources.cc
+tools/renderpack.sh                       # 16 wavs to listen to before flashing
+build/host/kykspace info space.kyk        # grade a baked lattice file
 build/host/kykeigen space.kyk --braids ../../Mutable/Streams/eurorack/braids/resources.cc
-build/host/kykspace info space.kyk        # variety, level, isotropy
 ```
 
 ## The morph does not click

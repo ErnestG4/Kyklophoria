@@ -39,10 +39,8 @@
 using namespace alchemy;
 using namespace kyk;
 
-/* Bumped when the panel or the sound changes in a way you would notice.
- * 0.2.0: stereo pair, rotation, the orbit page, field and eigen spaces, the
- * real-valued transform, level headroom, morph sharpness. */
-#define KYK_FW_VERSION "0.2.0"
+/* KYK_FW_VERSION and its history live in shell/common/kyk_ext.h, so the
+ * desktop bridge and the module cannot introduce themselves differently. */
 #ifndef KYK_GIT_HASH
 #define KYK_GIT_HASH "local"
 #endif

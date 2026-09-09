@@ -39,13 +39,25 @@ not a dependency chain.
       one part in ten thousand. Orbits are planar, as a central force
       requires, in one of the same Givens planes the rotation uses. Gravity
       spans about half a second to a hundred seconds per revolution.
-- [ ] **Kepler under Wrap** — the attractor becomes periodic on the torus,
-      which is Will's topology-meets-gravity idea and should be strange.
-- [ ] **Kepler in the telemetry and on the page** — the body's position and
-      its rush are not sent, so the terrain cannot draw the orbit yet.
-- [ ] **Kuramoto coupling** on those orbit rates, so ratio lock is emergent
-      rather than a menu (`docs/worlds.md`). Six oscillators, one sine per
-      pair, negligible cost. Wants listening rather than theory to tune.
+- [x] **Kepler under Wrap** — done, and it is strange. Whether the attractor
+      wraps is derived from the world's topology on the orbit plane's axes
+      rather than switched. At high eccentricity the body stops swinging out
+      to a far apoapsis and starts leaving one side to arrive from the other:
+      23 laps in 200 s flat, 166 on the torus. A Torus world (all four axes
+      Wrap) exists so it is reachable.
+- [x] **Kepler in the telemetry and on the page** — a motion block at the end
+      of the telemetry frame behind a new flags bit, carrying the body, its
+      rush, the coupling and the lock. The page draws the attractor in the
+      main view when the orbit plane is the pair of axes on screen, and always
+      draws an inset of the conic in its own unrotated plane, because once the
+      rotation is doing anything the main view shows a shadow of the orbit
+      rather than the orbit.
+- [x] **Kuramoto coupling** — done, but not the textbook equation. Plain
+      Kuramoto locks phase as well as frequency, which collapses six planes
+      into one rotation. The coupling is on q·θᵢ − p·θⱼ for the nearest simple
+      ratio instead, so ratio lock is what emerges: 2.7% of rate settings land
+      on a simple ratio at zero coupling and 87.9% at 0.80. Numbers in
+      docs/m3-notes.md.
 - [ ] **Payload lanes.** Eight are computed per node and exactly one is used
       (CV out A). The filter, drive and FM index are the difference between a
       space of waveforms and an instrument. Note the drive stage must be
@@ -125,12 +137,22 @@ meaningful axis and stacking four banks makes rotation meaningless.
       starts there and it is broken by 800, because the position is only
       sampled at the 2 kHz block rate. Numbers in docs/worlds.md.
 - [ ] **Orbit rate as a ratio of v/oct**, so at those rates the sidebands land
-      on harmonics rather than between them. Same ratio-lock machinery the
-      Ptolemaic orbits want.
-- [ ] **An FM or waveshaping axis** — the untested route to genuine
-      non-separability, since the spectrum would stop being a product of
-      per-axis factors. FM of integer-ratio partials lands on harmonics, so it
-      fits the representation; it needs Bessel weights.
+      on harmonics rather than between them. The ratio-lock machinery now
+      exists (`Rotation::SetCouple`), so this is the remaining half: a rate
+      mode that multiplies f0 instead of seconds.
+- [x] **An FM axis** — `core/kyk_fm.h`, world 9. It was the right guess.
+      J_k(I) does not factor and the sideband positions move with the ratio,
+      so it is the first legible world that is not separable: 1.81x direction
+      spread against 2.1x to 6.1x for everything else legible, and twice the
+      variety of any world at any price. Bessel amplitudes by Miller's
+      downward recurrence, 0.84 µs an evaluation.
+- [x] **A formant world** — `core/kyk_formant.h`, world 10. Three resonances
+      chained so the first axis moves all three, which is what keeps it from
+      being three separable filters. Lands closest to real material of
+      anything here. The peaks ride the pitch rather than staying at fixed
+      frequencies, because a World is told nothing about f0 on purpose.
+- [ ] **A waveshaping axis** is still untried, and is the other route to
+      non-separability that was named.
 - [ ] **General MIDI world**, the big one. Sampled instruments are not single
       cycles, so it needs pitch tracking and cycle extraction before analysis.
 
@@ -158,10 +180,29 @@ meaningful axis and stacking four banks makes rotation meaningless.
       faster on x86, so the gain no longer obviously justifies losing
       desktop-and-module bit-identity. Revisit only if CPU stays tight.
 - [ ] Render divider 1 is off the knob. See the first item.
+- [ ] **A control frame at the exact centre of the cube cannot be rotated.**
+      The rotation pivots about 0.5 on every axis, so the centre is a fixed
+      point of every rotation: the angles turn and the position does not move.
+      Gravity is exempt, since it adds an offset rather than turning the
+      frame. Unreachable from a physical pot but easy from the page or a
+      script, and it looks exactly like a broken orbit. No fix proposed; a
+      pivot anywhere else would be worse.
+- [ ] **The FM world's variety is 13.3**, twice anything else. Its worst
+      one-render step is proportionate and shows no discontinuity, so it is
+      not a defect, but a space that changes that fast may be hard to steer.
+      Only playing it settles that.
 
 ## Web
 
-- [ ] Orbit trail and the rotation arcs, once orbit mode exists.
+- [x] Orbit trail and the rotation arcs. The Kepler body gets its own inset
+      showing the conic in its own unrotated plane, and the coupling lock has
+      a bar beside the plane gauges.
+- [x] The page evaluates the FM and vowel worlds itself, so both draw a
+      terrain rather than a blank field. Their formulas ship over GET_BASIS
+      behind a 0xFF marker where a dimension count would be, so a page that
+      predates them draws nothing rather than garbage. The web selftest
+      compares the page's evaluation against the module's own spectrum in
+      decibels, which is the only comparison the wire can settle.
 - [ ] Panel mirror (spec §8 view 4) reading the jack list from the descriptor.
 - [ ] Attract mode: replay a recorded telemetry log so the page demos itself
       with no module attached.

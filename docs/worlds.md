@@ -222,3 +222,127 @@ Modes are a page-level idea, not an engine one: they all drive the same
 angles or the same position, so the engine does not need to know which is
 running. That is also what makes them affordable — a mode reinterprets the
 same six pots rather than asking for more.
+
+---
+
+# What got built, and what the design note got wrong (2026-09-09)
+
+Both halves above are now built, and the table below is the first time every
+world has been measured the same way. `tools/kykworlds` walks the registry and
+asks each one the question the engine asks it — given a folded coordinate,
+what is the spectrum there — so a formula and a lattice are graded on equal
+terms.
+
+| world | backend | variety | spread | twins | covers Braids | median |
+|---|---|---|---|---|---|---|
+| Braids | analytic | 1.466 | 2.14x | 0.4% | 32% | 0.0505 |
+| 24-cell | vertices | 0.658 | 3.64x | 0.4% | 16% | 0.1766 |
+| 16-cell | vertices | 0.382 | 3.14x | 2.3% | 14% | 0.2148 |
+| Tesseract | vertices | 0.469 | 4.22x | 1.2% | 16% | 0.1667 |
+| Stack | lattice | 3.433 | 3.69x | 0.1% | 27% | 0.0492 |
+| Field | lattice | 2.813 | 1.31x | 0.0% | 9% | 0.0907 |
+| Field II | lattice | 5.869 | 1.39x | 0.0% | 10% | 0.0838 |
+| Torus | lattice | 4.325 | 1.26x | 0.0% | 11% | 0.0935 |
+| Harmonic | lattice | 0.199 | 6.13x | 12.8% | 15% | 0.2401 |
+| FM | fm | 13.317 | 1.81x | 0.0% | 11% | 0.0695 |
+| Vowel | formant | 1.503 | 2.87x | 0.0% | 29% | 0.0358 |
+
+**Variety** is timbral change per unit of travel, averaged over 200 random
+directions. **Spread** is the most varied direction over the least, which is
+the number that says whether rotating the control frame is worth having: at
+1.0 every direction is as interesting as every other. **Twins** is the
+fraction of random point pairs whose spectra sit within 5% of each other, so
+it counts the places a sweep stalls. **Covers** is how much of Emilie
+Gillet's 256-wave bank the world lands recognisably close to, and **median**
+the typical distance to the nearest thing in it.
+
+## Separability was the whole story
+
+The design note above guessed that the legible parametric families would be
+lopsided and it was right, but the reason is sharper than "they were designed
+by hand". Every one of them weights the harmonic series *multiplicatively* —
+a tilt, a width, a formant bump — and multiplicative weights **add in log
+magnitude**. A sum of per-axis terms is separable, and a separable space has
+natural axes by construction, so there is nothing for a rotation to find. That
+is why Harmonic measures 6.1x and why no amount of tuning was going to save
+it.
+
+Two worlds escape it, and both do so the same way: by making one axis change
+*where* another axis put its energy.
+
+- **FM.** The k'th sideband is J_k(I), and a Bessel function is not a product
+  of a function of k with a function of I. Better still, the sideband
+  positions move with the ratio. Measured 1.81x, the least lopsided world with
+  any legible structure in it; only the featureless correlated-noise fields
+  beat it, and they have nothing to recognise.
+- **Vowel.** Three resonances would be three multiplicative filters and
+  therefore separable. Chaining them — the second peak a multiple of the
+  first, the third a multiple of the second — means the first axis moves all
+  three. 2.87x.
+
+The vertex worlds were supposed to escape it too, since a squared distance
+couples every axis at once. They did not: 3.1x to 4.2x. Distance couples the
+axes but the *waveforms at the vertices* still differ mostly along one
+direction, and that dominates.
+
+## Ranges were swept, not chosen
+
+Both new worlds had their reaches picked by measurement. FM's first setting
+measured 3.6x; every setting under 1.9x turned out to have the ratio axis
+capped near 2.5, because the ratio moves every sideband at once and left wide
+it does five times the work of any other axis. The vowel world with textbook
+proportions measured 6.0x, with the third formant's axis moving the spectrum
+a thirty-fifth as far as the first's — a knob doing nothing at all. Levelling
+the peaks fixed both numbers at once.
+
+## Modes, as built
+
+**Kuramoto is in, but not the equation in the design note.** Plain Kuramoto
+drags every oscillator to one frequency *and one phase*, which collapses the
+six planes into a single rotation and throws away the reason for having more
+than one. What is wanted is for the ratio to lock. So the coupling is on a
+harmonic combination: for each pair the nearest simple rational p/q to their
+rate ratio is found, and they are coupled through ψ = q·θᵢ − p·θⱼ, which is
+stationary exactly at that ratio. The pair reduces to
+
+    dψ/dt = (q·ωᵢ − p·ωⱼ) − K·sin(2πψ)
+
+so a lock exists whenever the ratio detuning is within K. That is an Arnold
+tongue, and complex ratios get narrower tongues for free because their
+detuning term carries the larger integers.
+
+| coupling | 0.00 | 0.05 | 0.10 | 0.25 | 0.40 | 0.80 |
+|---|---|---|---|---|---|---|
+| settings landing on a simple ratio | 2.7% | 9.8% | 18.9% | 46.2% | 65.3% | 87.9% |
+
+2.7% at zero coupling is chance. Measured over 1200 rate settings between
+0.4x and 3x, 300 s each.
+
+**Gravity on a torus works and is stranger than the flat version**, as the
+note guessed. Whether it wraps is derived from the world's own topology on the
+orbit plane's two axes rather than being a switch, because a toroidal
+potential in a clamped space would pull toward an image that is not there.
+
+| space | ecc | r min | r max | v max/min | laps in 200 s |
+|---|---|---|---|---|---|
+| flat | 0.50 | 0.2007 | 0.3500 | 1.74 | 121 |
+| flat | 1.00 | 0.3500 | 1.3594 | 3.88 | 23 |
+| torus | 0.50 | 0.2007 | 0.3500 | 1.74 | 121 |
+| torus | 1.00 | 0.0020 | 0.7065 | 3.81 | 166 |
+
+**Shaped orbits are not built**, and the note's own objection stands: a shape
+needs a depth as well as a rate, so six planes become eighteen controls.
+
+**The panel was the constraint, exactly as predicted.** Coupling needed a
+sixth page rather than a spare pot, and that page carries three knobs rather
+than being padded out to six.
+
+## One thing to know before playing it
+
+The rotation pivots about 0.5 on every axis, so a control frame sitting
+exactly at the centre of the cube is a fixed point of *every* rotation. The
+angles turn, the orbit accumulates, and the position does not move. Gravity is
+the exception, because it adds an offset rather than turning the frame. In
+practice a pot never sits exactly at 0.5, but it is reachable from the page
+and from a script, and it produces a convincing impression that the orbit is
+broken.

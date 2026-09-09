@@ -17,6 +17,18 @@
 
 namespace kyk {
 
+/* One version string for both shells.
+ *
+ * It lived in two places, hardcoded, and had already drifted: the module said
+ * 0.3.0 while the desktop bridge introduced itself as 0.2.0 to the same page.
+ * Bump it when the panel or the sound changes in a way a player would notice.
+ *   0.2.0  stereo pair, rotation, the orbit page, field and eigen spaces, the
+ *          real-valued transform, level headroom, morph sharpness
+ *   0.3.0  Kepler and Couple pages, gravity that wraps when the space does,
+ *          Kuramoto coupling on the orbit ratios, the FM and vowel worlds, a
+ *          Torus world, six decibels of headroom in the magnitude byte */
+#define KYK_FW_VERSION "0.3.0"
+
 constexpr uint8_t kCmdTelemetry  = 0x60;
 constexpr uint8_t kCmdSpaceInfo  = 0x61;
 constexpr uint8_t kCmdCell       = 0x62;

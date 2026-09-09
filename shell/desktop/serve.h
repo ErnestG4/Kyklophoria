@@ -273,7 +273,7 @@ inline int Serve(kyk::StereoEngine& eng, kyk::World& world, std::vector<uint8_t>
                         for(int k = 0; k < 12; k++) w.U8(0u);
                         w.U32(0u); w.U32(0u); w.U32((uint32_t)dlen); w.U32(dcrc);
                         w.U16(kMaxBody); w.U16(0u);
-                        w.Str("kyk"); w.Str("Kyklophoria"); w.Str("0.2.0"); w.Str("desktop"); w.Str("bridge");
+                        w.Str("kyk"); w.Str("Kyklophoria"); w.Str(KYK_FW_VERSION); w.Str("desktop"); w.Str("bridge");
                     }
                     else if(f.type == 0x02u)
                     {
