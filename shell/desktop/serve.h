@@ -42,7 +42,11 @@ class DesktopSource : public kyk::ExtSource
 public:
     kyk::StereoEngine* eng  = nullptr;
     kyk::World*          world = nullptr;   /* the live one */
-    uint8_t              world_idx = 0;
+    /* 0xFF: what is live came from --gen or --space and is not one of the
+     * built-in worlds. Reporting 0 instead made the page draw the Braids
+     * terrain over a lattice it was not built from. */
+    static constexpr uint8_t kNoWorld = 0xFFu;
+    uint8_t              world_idx = kNoWorld;
     /* Its own buffer for expanding tabulated worlds, sized for the largest,
      * so switching never disturbs whatever space was loaded at startup. */
     std::vector<uint8_t> scratch;
@@ -179,7 +183,7 @@ inline int Serve(kyk::StereoEngine& eng, kyk::World& world, std::vector<uint8_t>
     if(eng.SpacePtr()) { h = eng.SpacePtr()->Header(); std::memcpy(name, h.name, 32); name[32] = 0; }
     else { h.n = (uint8_t)eng.WorldPtr()->N(); h.side = 0; h.k = (uint8_t)eng.WorldPtr()->K(); h.p = (uint8_t)eng.WorldPtr()->P(); }
     const int dlen = snprintf(desc, sizeof(desc),
-        "{\"dv\":1,\"module\":{\"id\":\"kyk\",\"name\":\"kyklophoria\",\"fw\":\"0.1.0-m1\",\"git\":\"desktop\",\"sdk\":\"bridge\",\"board\":\"desktop\"},"
+        "{\"dv\":1,\"module\":{\"id\":\"kyk\",\"name\":\"kyklophoria\",\"fw\":\"0.2.0\",\"git\":\"desktop\",\"sdk\":\"bridge\",\"board\":\"desktop\"},"
         "\"schemaHash\":0,\"size\":0,\"components\":[],%s,\"space\":{\"name\":\"%s\",\"n\":%d,\"side\":%d,\"k\":%d,\"p\":%d},\"iomap\":%s}",
         ext.DescriptorRootJson(), name, h.n, h.side, h.k, h.p, kIoMapJson);
     const uint32_t dcrc = kyk::Crc32(reinterpret_cast<const uint8_t*>(desc), (size_t)dlen);
@@ -248,7 +252,7 @@ inline int Serve(kyk::StereoEngine& eng, kyk::World& world, std::vector<uint8_t>
                         for(int k = 0; k < 12; k++) w.U8(0u);
                         w.U32(0u); w.U32(0u); w.U32((uint32_t)dlen); w.U32(dcrc);
                         w.U16(kMaxBody); w.U16(0u);
-                        w.Str("kyk"); w.Str("Kyklophoria"); w.Str("0.1.0-m1"); w.Str("desktop"); w.Str("bridge");
+                        w.Str("kyk"); w.Str("Kyklophoria"); w.Str("0.2.0"); w.Str("desktop"); w.Str("bridge");
                     }
                     else if(f.type == 0x02u)
                     {

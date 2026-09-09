@@ -49,7 +49,10 @@ struct ExtSource
     virtual void Stats(ExtStats& s) = 0;
     /* Returns a protocol status (0 ok, 2 bad args, 3 bad state, 1 unsupported). */
     virtual uint8_t Action(uint8_t op, const uint8_t* args, int len) = 0;
-    /* The world list: how many, which is live, and a name and note each. */
+    /* The world list: how many, which is live, and a name and note each.
+     * `current` may be 0xFF, meaning what is playing did not come from this
+     * list — a space loaded from a file, say. A host should mark nothing
+     * rather than guess. */
     virtual int Worlds(uint8_t& count, uint8_t& current, const char** names, const char** notes,
                        uint8_t* kinds, int max)
     {
