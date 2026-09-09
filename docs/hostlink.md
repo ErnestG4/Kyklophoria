@@ -22,7 +22,7 @@ All replies start with `u8 status` (0 OK, 1 UNSUPPORTED, 2 BAD_ARGS,
 ## Commands
 
 ### 0x60 GET_TELEMETRY
-Request: `u8 flags` (bit0 spectrum, bit1 frame).
+Request: `u8 flags` (bit0 spectrum, bit1 frame, bit2 motion).
 Reply (`core/kyk_telemetry.h`, `EncodeTelemetry`):
 
 ```
@@ -41,8 +41,19 @@ f32 angle[planes]    turns
 f32 payload[p]       interpolated at the centre, 0..1
 u8  mags[k]          if flags&1: left voice, pre-bandlimit; 0 = ≤ −96 dB, 255 = 0 dB
 i8  frame[256]       if flags&2: left voice's frame, decimated, ×40 clipped
+u8  kep_running      if flags&4 ─┐
+u8  kep_plane                    │
+f32 kep_x, kep_y                 │  how the position is moving on its own:
+f32 kep_rush         0..1, 1 at periapsis
+f32 couple           Kuramoto coupling strength as set
+f32 lock             0..1, how closed the orbit figure is ─┘
 ```
-N=4, K=64, P=8 with both: 460 bytes.
+N=4, K=64, P=8 with spectrum and frame: 460 bytes; with motion as well, 482.
+
+The motion block is deliberately last. A host written against an earlier
+firmware reads every field it knows by fixed offset and ignores the tail, so
+the block could be added without a protocol version bump — which is the whole
+reason for putting growth at the end rather than in the middle.
 
 ### 0x61 GET_SPACE_INFO
 Reply: the 64-byte `SpaceHeader` (docs/space-format.md), `u32 crc32` of the

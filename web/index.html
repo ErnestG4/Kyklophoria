@@ -596,6 +596,19 @@ function drawArcs(n, planes, t, x0, y0, S) {
     if (t && t.stereo && isSpread) { cx.fillStyle = '#ffcc55'; cx.beginPath(); cx.arc(cxp, cyp, 2, 0, 7); cx.fill(); }
     cx.lineWidth = 1; cx.fillStyle = '#4b5866'; cx.font = '10px ui-monospace, monospace'; cx.fillText(a + '' + b, cxp - 6, cyp + r + 11);
   }
+  /* Coupling, to the right of the gauges. The bar is how closed the figure
+   * is: near zero the six planes are drifting independently and the path
+   * never repeats, near one they have found simple ratios and it does. That
+   * is the whole difference between the wash and a shape you can recognise,
+   * so it is worth a readout even though it is one number. */
+  if (!t || !(t.couple > 0)) return;
+  const bx = x0 + gap * planes + 10, bw = Math.max(40, x0 + S - bx - 4), by = y0 + 6;
+  cx.fillStyle = '#1a2230'; cx.fillRect(bx, by, bw, 8);
+  const L = Math.max(0, Math.min(1, t.lock || 0));
+  cx.fillStyle = `hsl(${310 - 30 * L},${45 + 40 * L}%,${40 + 25 * L}%)`;
+  cx.fillRect(bx, by, bw * L, 8);
+  cx.fillStyle = '#4b5866'; cx.font = '10px ui-monospace, monospace';
+  cx.fillText(`lock ${L.toFixed(2)}  couple ${t.couple.toFixed(2)}`, bx, by + 20);
 }
 function drawSound() {
   const W = cn.clientWidth, H = cn.clientHeight;

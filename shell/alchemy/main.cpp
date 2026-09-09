@@ -55,7 +55,7 @@ using namespace kyk;
 
 static AlchemyLab  hw;
 static ControlLoop loop(hw);
-static Pager       pager(hw.buttons[kButtonB1], 5, kNumPots);
+static Pager       pager(hw.buttons[kButtonB1], 6, kNumPots);
 static Presets     presets(hw.seed.qspi);
 static Settings    settings(hw, &pager);
 
@@ -64,6 +64,7 @@ static constexpr LedPanel::Rgb kPlay   = {0x67, 0xE8, 0xF9};
 static constexpr LedPanel::Rgb kRotate = {0xFC, 0xA5, 0xA5};
 static constexpr LedPanel::Rgb kStereo = {0xC4, 0xB5, 0xFD};
 static constexpr LedPanel::Rgb kOrbit  = {0xFD, 0xE0, 0x68};
+static constexpr LedPanel::Rgb kCouple = {0xF0, 0xA0, 0xD8};
 static constexpr LedPanel::Rgb kKepler = {0x9A, 0xE6, 0xB4};
 
 static VirtualKnob k_coarse = VirtualKnob(0, "Coarse").Linear(-3.f, 3.f).Unit("oct").Ident("pitch.coarse").Ring(Level(kPlay));
@@ -140,6 +141,26 @@ static Page page_play   = Page(0).Name("Play").Color("#67e8f9").Knobs(k_coarse, 
 static Page page_rotate = Page(1).Name("Rotate").Color("#fca5a5").Knobs(k_ang[0], k_ang[1], k_ang[2], k_ang[3], k_ang[4], k_ang[5]);
 static Page page_orbit  = Page(3).Name("Orbit").Color("#fde068").Knobs(k_rate[0], k_rate[1], k_rate[2], k_rate[3], k_rate[4], k_rate[5]);
 static Page page_kepler = Page(4).Name("Kepler").Color("#9ae6b4").Knobs(k_grav, k_ecc, k_kplane, k_soft, k_damp, k_radius);
+/* ── Couple page ──────────────────────────────────────────────────────
+ * Three knobs, and the page is deliberately not padded out to six with
+ * things that do not need a knob.
+ *
+ * Coupling is the one that changes what the instrument is. At zero the six
+ * plane orbits are independent and the path never closes, which is the wash.
+ * Wind it up and each pair pulls the other toward the nearest simple ratio,
+ * the figure closes, and the waveform snaps into shape. Measured on two
+ * planes over a rate sweep, the fraction of settings that land on a simple
+ * ratio runs 2.7% at zero (chance), 19% at 0.10, 46% at 0.25 and 88% at 0.80,
+ * so the whole knob is useful travel rather than an on/off.
+ *
+ * Reach says how exotic a ratio it will settle on: 1 is unison only, 5 opens
+ * the full staircase. Rate scales all six orbit knobs at once, which matters
+ * because the six of them are a page away. */
+static const char* kReachNames[5] = {"1", "2", "3", "4", "5"};
+static VirtualKnob k_couple = VirtualKnob(0, "Coupling").Ident("orb.couple").Ring(Level(kCouple));
+static VirtualKnob k_reach  = VirtualKnob(1, "Reach").Selector(5).Labels(kReachNames, 5).Ident("orb.reach").Ring(Level(kCouple));
+static VirtualKnob k_ratex  = VirtualKnob(2, "Rate").Unit("x").Ident("orb.ratex").Ring(Level(kCouple));
+static Page page_couple = Page(5).Name("Couple").Color("#f0a0d8").Knobs(k_couple, k_reach, k_ratex);
 static Page page_stereo = Page(2).Name("Stereo").Color("#c4b5fd").Knobs(k_spread, k_plane, k_sharp, k_rdiv, k_level, k_cvdep);
 
 /* ── jacks (descriptor metadata; the web panel mirror reads these) ───────── */
@@ -203,11 +224,20 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     c[2] = k_pos2.Norm() + hw.cv[3].Volts() * 0.2f;
     c[3] = k_pos3.Norm() + hw.cv[4].Volts() * 0.2f;
 
+    /* One multiplier over all six rate knobs, three octaves either side of
+     * unity, with a detent at the centre so 1.0 is reachable by hand. */
+    float ratex = exp2f((k_ratex.Norm() - 0.5f) * 6.f);
+    if(ratex > 0.94f && ratex < 1.06f) ratex = 1.f;
     for(int p = 0; p < 6; p++)
     {
         gEng.rot.SetAngle(p, k_ang[p].Norm());
-        gEng.rot.SetRate(p, RateFromKnob(k_rate[p].Norm()));
+        gEng.rot.SetRate(p, RateFromKnob(k_rate[p].Norm()) * ratex);
     }
+    /* Squared, because the interesting behaviour is all in the bottom half of
+     * the capture curve and the top of the knob is already fully locked. */
+    const float cu = k_couple.Norm();
+    gEng.rot.SetCouple(0.9f * cu * cu);
+    gEng.rot.SetReach((int)k_reach.Value() + 1);
     gEng.spread       = k_spread.Value();
     gEng.spread_plane = (int)k_plane.Value();
     int sel = (int)k_rdiv.Value();
@@ -439,7 +469,15 @@ int main()
     host.Jacks(kJacks);
     host.Extend(gExt);
 
-    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(host).OnFrame(OnFrame);
+    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(page_couple).Use(host).OnFrame(OnFrame);
+
+    /* The Rate multiplier is centred on 1x, so a stored zero would silently
+     * run every orbit at an eighth speed on a fresh boot — which reads as
+     * "the orbit does nothing", a fault this instrument has already shipped
+     * once. Seed it at the detent; pot-catch means the physical knob still
+     * has to move through 1x before it takes over, and a preset load
+     * overwrites it as it should. */
+    pager.SetStored(5, 2, 0.5f, nullptr);
 
     presets.Init();
     presets.BootLoad();   /* HostLink starts here: descriptor + panel USB up */

@@ -7,6 +7,7 @@
  *   glide pos <x0…> <secs>       linear glide to a position (N values)
  *   angle <plane> <turns>        rotation angle of a plane
  *   rate <plane> <turns/sec>     orbit rate of a plane, signed
+ *   couple <K> [reach]           Kuramoto ratio coupling; 0 is independent
  *   spread <turns>               stereo spread ±δ in the stereo plane
  *   kepler <G> <ecc> <plane>     launch a Kepler orbit; G 0 stops it
  *   plane <idx>                  the stereo plane
@@ -75,7 +76,8 @@ struct Script
                 vals.pop_back();
             }
             if(vals.empty()) { fprintf(stderr, "%s:%d: %s needs a value\n", path.c_str(), ln, cmd.c_str()); return false; }
-            if(e.cmd == "angle" || e.cmd == "spread" || e.cmd == "rate" || e.cmd == "kepler") uses_stereo = true;
+            if(e.cmd == "angle" || e.cmd == "spread" || e.cmd == "rate" || e.cmd == "kepler"
+               || e.cmd == "couple") uses_stereo = true;
             e.v = vals;
             ev.push_back(e);
         }
@@ -111,6 +113,11 @@ public:
                 else if(e.cmd == "pos") { for(size_t a = 0; a < e.v.size() && a < (size_t)kyk::kMaxN; a++) pos_[a] = e.v[a]; gpos_ = false; }
                 else if(e.cmd == "angle") { if(e.v.size() >= 2) eng.rot.SetAngle((int)e.v[0], e.v[1]); }
                 else if(e.cmd == "rate") { if(e.v.size() >= 2) eng.rot.SetRate((int)e.v[0], e.v[1]); }
+                else if(e.cmd == "couple")
+                {
+                    eng.rot.SetCouple(e.v[0]);
+                    if(e.v.size() > 1) eng.rot.SetReach((int)e.v[1]);
+                }
                 else if(e.cmd == "spread") eng.spread = e.v[0];
                 else if(e.cmd == "kepler")
                 {
