@@ -41,50 +41,6 @@ struct GenParams
     const char* name  = "harmonic";
 };
 
-namespace detail {
-constexpr float kLn2 = 0.69314718056f;
-
-/* ln(x) for x > 0, by the atanh series on the reduced mantissa. No libm, so
- * the desktop and the module generate byte-identical spaces. */
-inline float Ln(float x)
-{
-    if(x <= 0.f) return -87.f;              /* keeps the series finite */
-    int   e = 0;
-    float m = x;
-    while(m >= 2.f) { m *= 0.5f; e++; }
-    while(m < 1.f) { m *= 2.f; e--; }
-    const float z = (m - 1.f) / (m + 1.f), z2 = z * z;
-    float       term = z, sum = 0.f;
-    for(int i = 1; i < 40; i += 2) { sum += term / (float)i; term *= z2; }
-    return (float)e * kLn2 + 2.f * sum;
-}
-
-/* exp(y): range-reduce by ln2, then Taylor on the remainder. */
-inline float Exp(float y)
-{
-    if(y > 88.f) y = 88.f;
-    if(y < -88.f) y = -88.f;
-    int   q = (int)(y / kLn2);
-    float r = y - (float)q * kLn2;
-    float t = 1.f, s = 1.f;
-    for(int i = 1; i < 20; i++) { t *= r / (float)i; s += t; }
-    while(q > 0) { s *= 2.f; q--; }
-    while(q < 0) { s *= 0.5f; q++; }
-    return s;
-}
-
-inline float Powf01(float base, float e) { return Exp(e * Ln(base)); }
-
-/* Approximately normal, mean 0, variance 1, from the same xorshift the rest of
- * the core uses. Twelve uniforms rather than Box-Muller: no log, no cos, and
- * the tails past ±6 sigma do not matter for content. */
-inline float Gauss(Rng& r)
-{
-    float s = 0.f;
-    for(int i = 0; i < 12; i++) s += r.Uniform();
-    return s - 6.f;
-}
-} // namespace detail
 
 /* One hyperpoint of the Harmonic family at lattice position u[a] ∈ [0,1]. */
 inline void HarmonicPoint(const GenParams& g, const float* u, float* mags, float* payload)

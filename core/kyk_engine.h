@@ -9,8 +9,7 @@
  * accessors expose what the web surface draws (docs/hostlink.md).
  */
 #pragma once
-#include "kyk_space.h"
-#include "kyk_interp.h"
+#include "kyk_world.h"
 #include "kyk_fft.h"
 #include "kyk_osc.h"
 
@@ -27,9 +26,9 @@ public:
     int   rolloff_bins = 0;
     float sharp        = 0.f;   /* see SharpenWeights */      /* raised-cosine taper over the top bins below the cutoff */
 
-    void Init(const Space* space, float sr)
+    void Init(const World* world, float sr)
     {
-        space_ = space;
+        world_ = world;
         sr_    = sr;
         osc_.Init();
         block_ = 0;
@@ -81,14 +80,12 @@ public:
     void Process(float* out, int n)
     {
         const bool due    = (block_ % (uint32_t)(render_div < 1 ? 1 : render_div)) == 0u;
-        const bool render = due && dirty_ && space_ && space_->Attached();
+        const bool render = due && dirty_ && world_ && world_->Ready();
         if(render)
         {
             for(int a = 0; a < kMaxN; a++) rendered_[a] = c_[a];
-            Fold(*space_, c_, p_);
-            LatticeWeights(*space_, p_, wt_);
-            SharpenWeights(wt_, sharp);
-            Blend(*space_, wt_, mags_, payload_);
+            world_->Fold(c_, p_);
+            world_->Evaluate(p_, sharp, mags_, payload_, wt_);
             Bandlimit();
             RenderFrame(mags_bl_, cph_, sph_, kcut_, osc_.Back(), sc_);
             dirty_ = false;
@@ -141,7 +138,8 @@ public:
     const float*   MagsBandlimited() const { return mags_bl_; }
     const float*   Payload() const { return payload_; }
     const float*   Frame() const { return osc_.Front(); }
-    const Space*   SpacePtr() const { return space_; }
+    const World*   WorldPtr() const { return world_; }
+    const Space*   SpacePtr() const { return world_ ? world_->SpacePtr() : nullptr; }
 
 private:
     void DerivePhases()
@@ -150,7 +148,7 @@ private:
          * fixed random phase per harmonic, quantised to the sine table so
          * the module and the desktop agree bit for bit. */
         Rng rng;
-        const uint32_t seed = space_ ? space_->Header().phase_seed : 0u;
+        const uint32_t seed = world_ ? world_->PhaseSeed() : 0u;
         rng.Seed(seed);
         for(int k = 0; k < kMaxK; k++)
         {
@@ -163,8 +161,8 @@ private:
     /* The band limit f0 implies, given the space's K. */
     int KcutFor(float f0) const
     {
-        if(!space_) return 0;
-        const int K = space_->K();
+        if(!world_ || !world_->Ready()) return 0;
+        const int K = world_->K();
         if(f0 <= 0.f) return K;
         const float nyq   = 0.5f * sr_;
         const float ratio = nyq / f0;
@@ -175,7 +173,7 @@ private:
 
     void Bandlimit()
     {
-        const int K = space_->K();
+        const int K = world_->K();
         int       kmax;
         if(f0_ <= 0.f) kmax = K;
         else
@@ -200,7 +198,7 @@ private:
         }
     }
 
-    const Space* space_ = nullptr;
+    const World* world_ = nullptr;
     float        sr_    = 48000.f;
     Osc          osc_;
     FftScratch   sc_;

@@ -48,9 +48,12 @@
 #include <vector>
 #include <algorithm>
 #include "kyk_stereo.h"
+#include "kyk_world.h"
 #include "kyk_gen.h"
 
 using namespace kyk;
+
+static World gWorld;   /* the tests all drive a lattice world */
 
 static int fails = 0;
 #define CHECK(cond, ...) do { if(!(cond)) { fails++; printf("  FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while(0)
@@ -172,7 +175,8 @@ static void TestBandlimit()
     Space     s;
     s.Attach(b.data(), b.size());
     static Engine eng;
-    eng.Init(&s, 48000.f);
+    gWorld.UseLattice(&s);
+    eng.Init(&gWorld, 48000.f);
     eng.gain = 1.f;
     const float pos[4] = {0.f, 0.f, 1.f, 0.f};   /* brightest cell: formant at the top */
     eng.SetPosition(pos, 4);
@@ -221,7 +225,8 @@ static void TestJump()
     for(int trial = 0; trial < 2; trial++)
     {
         static StereoEngine eng;
-        eng.Init(&s, 48000.f);
+        gWorld.UseLattice(&s);
+    eng.Init(&gWorld, 48000.f);
         eng.SetGain(1.f);
         eng.slew_ms = trial ? 5.f : 0.f;
         std::vector<float> x((size_t)block * blocks), r((size_t)block * blocks);
@@ -310,12 +315,96 @@ static void ReportDiversity()
     }
 }
 
+/* An analytic world is a formula; a lattice is that formula sampled. This
+ * measures what the sampling costs, which is the number the whole two-backend
+ * design rests on: exact where the grid lands, and a few percent between. */
+static void TestAnalytic()
+{
+    printf("analytic world\n");
+    World w;
+    w.UseAnalytic(BraidsBasis(), 8, nullptr);
+    CHECK(w.Ready() && w.Which() == World::Kind::Analytic, "analytic world should be ready");
+    CHECK(w.N() == 4 && w.K() == 64 && w.P() == 8, "dims %d %d %d", w.N(), w.K(), w.P());
+
+    float   mags[kMaxK], pl[kMaxP];
+    Weights wt;
+    Rng     rng;
+    rng.Seed(808);
+    double worstNorm = 0;
+    for(int t = 0; t < 400; t++)
+    {
+        float p[kMaxN];
+        for(int a = 0; a < 4; a++) p[a] = rng.Uniform();
+        w.Evaluate(p, 0.f, mags, pl, wt);
+        CHECK(wt.n_corners == 0, "an analytic world has no corners to report");
+        double e = 0;
+        for(int k = 0; k < w.K(); k++)
+        {
+            CHECK(std::isfinite(mags[k]) && mags[k] >= 0.f, "bad magnitude");
+            e += (double)mags[k] * mags[k];
+        }
+        worstNorm = std::max(worstNorm, std::fabs(std::sqrt(e) - std::sqrt(2.0)));
+        for(int j = 0; j < w.P(); j++)
+            CHECK(pl[j] >= 0.f && pl[j] <= 1.f, "payload %d out of range (%g)", j, pl[j]);
+    }
+    printf("  unit RMS everywhere to %.3g\n", worstNorm);
+    CHECK(worstNorm < 1e-4, "analytic spectra are not unit RMS (%g)", worstNorm);
+
+    /* sample it onto a lattice and see what tabulating costs */
+    const int side = 8, K = w.K(), P = w.P();
+    std::vector<uint8_t> blob(Space::BlobSize(4, K, P, side, false));
+    SpaceHeader h;
+    std::memset(&h, 0, sizeof(h));
+    h.magic = kSpaceMagic; h.version = kSpaceVersion; h.n = 4; h.mode = kModeLattice;
+    h.k = (uint8_t)K; h.p = (uint8_t)P; h.side = (uint8_t)side; h.phase_seed = 1;
+    uint32_t count = 1;
+    for(int a = 0; a < 4; a++) count *= (uint32_t)side;
+    h.point_count = count;
+    std::memcpy(blob.data(), &h, sizeof(h));
+    float* out = reinterpret_cast<float*>(blob.data() + sizeof(h));
+    int    ix[kMaxN] = {0, 0, 0, 0, 0, 0};
+    for(uint32_t i = 0; i < count; i++)
+    {
+        float p[kMaxN];
+        for(int a = 0; a < 4; a++) p[a] = (float)ix[a] / (float)(side - 1);
+        w.Evaluate(p, 0.f, mags, pl, wt);
+        std::memcpy(out + (size_t)i * (K + P), mags, sizeof(float) * (size_t)K);
+        std::memcpy(out + (size_t)i * (K + P) + K, pl, sizeof(float) * (size_t)P);
+        for(int a = 0; a < 4; a++) { if(++ix[a] < side) break; ix[a] = 0; }
+    }
+    Space s;
+    CHECK(s.Attach(blob.data(), blob.size()) == SpaceError::Ok, "sampled lattice attaches");
+    World tab;
+    tab.UseLattice(&s);
+
+    double atNode = 0, between = 0;
+    float  lm[kMaxK];
+    for(int t = 0; t < 300; t++)
+    {
+        float p[kMaxN];
+        for(int a = 0; a < 4; a++) p[a] = (float)(rng.Next() % (uint32_t)side) / (float)(side - 1);
+        w.Evaluate(p, 0.f, mags, pl, wt);
+        tab.Evaluate(p, 0.f, lm, pl, wt);
+        for(int k = 0; k < K; k++) atNode = std::max(atNode, (double)std::fabs(mags[k] - lm[k]));
+        for(int a = 0; a < 4; a++) p[a] = rng.Uniform();
+        w.Evaluate(p, 0.f, mags, pl, wt);
+        tab.Evaluate(p, 0.f, lm, pl, wt);
+        for(int k = 0; k < K; k++) between = std::max(between, (double)std::fabs(mags[k] - lm[k]));
+    }
+    printf("  formula vs its own side-%d sampling: %.2g at a grid point, %.4f between\n", side, atNode, between);
+    CHECK(atNode < 1e-5, "a lattice must reproduce its source exactly at a node (%g)", atNode);
+    printf("  memory: formula %zu bytes, lattice %zu bytes (%.0fx)\n",
+           sizeof(float) * (size_t)(w.K() * (w.N() + 1)), blob.size(),
+           (double)blob.size() / (double)(sizeof(float) * (size_t)(w.K() * (w.N() + 1))));
+}
+
 int main()
 {
     TestLinearity();
     TestLevel();
     TestBandlimit();
     TestJump();
+    TestAnalytic();
     ReportDiversity();
     printf(fails ? "morph_check: %d FAILURES\n" : "morph_check: all passed\n", fails);
     return fails ? 1 : 0;

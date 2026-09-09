@@ -11,9 +11,12 @@
 #include <vector>
 #include <cstring>
 #include "kyk_engine.h"
+#include "kyk_world.h"
 #include "kyk_gen.h"
 
 using namespace kyk;
+
+static World gWorld;   /* the tests all drive a lattice world */
 
 static int fails = 0;
 #define CHECK(cond, ...) do { if(!(cond)) { fails++; printf("  FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while(0)
@@ -237,8 +240,10 @@ static void TestEngine()
     Space     s;
     s.Attach(b.data(), b.size());
     static Engine e1, e2;
-    e1.Init(&s, 48000.f);
-    e2.Init(&s, 48000.f);
+    gWorld.UseLattice(&s);
+    e1.Init(&gWorld, 48000.f);
+    gWorld.UseLattice(&s);
+    e2.Init(&gWorld, 48000.f);
     const float pos[4] = {0.1f, 0.7f, 0.4f, 0.9f};
     static float o1[24], o2[24];
     /* bandlimit: kcut = floor(24000/f0 - ε), capped at K */
@@ -252,8 +257,10 @@ static void TestEngine()
         for(int k = e1.Kcut(); k < s.K(); k++) CHECK(e1.MagsBandlimited()[k] == 0.f, "bin %d above cutoff not zero", k);
     }
     /* two engines, same script, bit-identical; output finite */
-    e1.Init(&s, 48000.f);
-    e2.Init(&s, 48000.f);
+    gWorld.UseLattice(&s);
+    e1.Init(&gWorld, 48000.f);
+    gWorld.UseLattice(&s);
+    e2.Init(&gWorld, 48000.f);
     Rng rng;
     rng.Seed(99);
     bool   same = true, finite = true;
@@ -274,12 +281,14 @@ static void TestEngine()
     CHECK(finite, "non-finite output");
     CHECK(rms > 0.1 && rms < 1.0, "rms %.3f out of range", rms);
     /* render_div > 1 holds the frame and still fades */
-    e1.Init(&s, 48000.f);
+    gWorld.UseLattice(&s);
+    e1.Init(&gWorld, 48000.f);
     e1.render_div = 4;
     e1.SetPosition(pos, 4);
     for(int blk = 0; blk < 8; blk++) { e1.Process(o1, 24); CHECK(std::isfinite(o1[0]), "render_div output"); }
     /* the payload follows the position: cutoff lane = 1 - tilt (axis 1) */
-    e1.Init(&s, 48000.f);
+    gWorld.UseLattice(&s);
+    e1.Init(&gWorld, 48000.f);
     const float p2[4] = {0.f, 1.f, 0.f, 0.f};
     e1.SetPosition(p2, 4);
     e1.Process(o1, 24);

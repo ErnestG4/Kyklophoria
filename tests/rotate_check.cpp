@@ -12,10 +12,13 @@
 #include <cstring>
 #include <vector>
 #include "kyk_stereo.h"
+#include "kyk_world.h"
 #include "kyk_telemetry.h"
 #include "kyk_gen.h"
 
 using namespace kyk;
+
+static World gWorld;   /* the tests all drive a lattice world */
 
 static int fails = 0;
 #define CHECK(cond, ...) do { if(!(cond)) { fails++; printf("  FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while(0)
@@ -158,9 +161,11 @@ static void TestStereo()
     s.Attach(b.data(), b.size());
     static StereoEngine st;
     static Engine       mono;
-    st.Init(&s, 48000.f);
+    gWorld.UseLattice(&s);
+    st.Init(&gWorld, 48000.f);
     st.slew_ms = 0.f;   /* comparing against the bare Engine, which has no slew */
-    mono.Init(&s, 48000.f);
+    gWorld.UseLattice(&s);
+    mono.Init(&gWorld, 48000.f);
     static float l[24], r[24], m[24];
     Rng rng;
     rng.Seed(11);

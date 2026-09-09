@@ -20,9 +20,12 @@
 #include <complex>
 #include <string>
 #include "kyk_engine.h"
+#include "kyk_world.h"
 #include "kyk_gen.h"
 
 using namespace kyk;
+
+static World gWorld;   /* the tests all drive a lattice world */
 typedef std::complex<double> cd;
 
 static void Fft(std::vector<cd>& a)
@@ -112,7 +115,8 @@ int main(int argc, char** argv)
     for(int step = 0; step <= octaves * spo; step++)
     {
         const double f0 = f0lo * std::pow(2.0, (double)step / spo);
-        eng.Init(&s, sr);
+        gWorld.UseLattice(&s);
+    eng.Init(&gWorld, sr);
         eng.gain = 1.f; eng.render_div = render_div; eng.rolloff_bins = rolloff;
         eng.SetF0((float)f0);
         eng.SetPosition(pos, 4);

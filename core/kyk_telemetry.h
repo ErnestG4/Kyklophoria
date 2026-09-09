@@ -54,8 +54,8 @@ struct Put
 /* Returns bytes written, or 0 if cap is too small. */
 inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, int cap)
 {
-    const Space* s = e.SpacePtr();
-    if(!s) return 0;
+    const World* s = e.WorldPtr();
+    if(!s || !s->Ready()) return 0;
     const int    N = s->N(), K = s->K(), P = s->P(), planes = e.rot.Planes();
     detail::Put  w{out, cap};
     w.U32(e.L.Block());

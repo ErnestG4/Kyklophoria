@@ -40,6 +40,43 @@ The four Will named, and what each needs:
    near large n. Nothing else gives you both multiplicative and additive
    neighbours on one straight line. This is a parametric world, no corpus.
 
+### Analytic or tabulated, and why it matters
+
+Settled 2026-09-08 after Will asked why a world could not simply be swapped in
+the way weights are. It can, and the first cut of this had it wrong.
+
+An eigenspace *is* a matrix: a mean log-spectrum plus N component vectors,
+about 1.3 KB for the whole Braids bank. Given a coordinate the spectrum is
+`mean + Σ coord·comp`, exponentiated. The first implementation took that
+formula, evaluated it at 4096 grid points, discarded the formula, and
+interpolated between the samples — approximating the thing it had just thrown
+away.
+
+Measured on that exact world:
+
+| | formula | its own side-8 sampling |
+|---|---|---|
+| memory | 1.3 KB | 1.18 MB (922x) |
+| cost per render | 1.58 µs | 0.84 µs |
+| at a grid point | — | exact |
+| between grid points | — | up to 5.6% of peak magnitude |
+| switching worlds | a pointer write | expand a megabyte |
+
+Both costs are noise beside the transform, which is several microseconds in
+the same units. So `core/kyk_world.h` has two backends and a world declares
+which one answers for it:
+
+- **Analytic** where a formula exists — the eigenspace, and the parametric
+  families. Continuous everywhere, no tabulation error, no expansion pause.
+- **Lattice** where one does not — a correlated random field is *defined* by
+  its samples, and so is any imported corpus. Multilinear as before.
+
+This also answers the "closed-form axes" argument from the parametric
+proposal: our eigenspace was always a closed-form function of its coordinates,
+and the lattice was hiding that rather than being required by it. A field
+could join the analytic side too if it were rebuilt as gradient noise, which
+is a closed-form function of position rather than a smoothed grid.
+
 **What to build**: a world manifest, one small text file per world, naming
 corpus, representation, extrapolation and parameters, that `kykspace` and
 `kykeigen` can execute to produce a `.kyk`. Then the module browses worlds by

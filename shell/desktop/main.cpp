@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <fstream>
 #include "kyk_stereo.h"
+#include "kyk_world.h"
 #include "kyk_gen.h"
 #include "wavio.h"
 #include "script.h"
@@ -110,7 +111,9 @@ int main(int argc, char** argv)
     if(script.uses_stereo) stereo = true;
 
     static StereoEngine eng;   /* two voices, ~40 KB with 1024-sample frames: static, as on the module */
-    eng.Init(&space, (float)sr);
+    static World world;
+    world.UseLattice(&space);
+    eng.Init(&world, (float)sr);
     eng.SetGain(gain);
     eng.SetRenderDiv(render_div);
     eng.SetRolloff(rolloff);

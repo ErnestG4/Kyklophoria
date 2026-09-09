@@ -42,13 +42,13 @@ public:
     /* 0 smooth multilinear morph, 1 nearly hard stepping between cells. */
     float sharp = 0.f;
 
-    void Init(const Space* space, float sr)
+    void Init(const World* world, float sr)
     {
-        space_ = space;
+        world_ = world;
         sr_    = sr;
-        L.Init(space, sr);
-        R.Init(space, sr);
-        rot.Init(space ? space->N() : 4);
+        L.Init(world, sr);
+        R.Init(world, sr);
+        rot.Init(world ? world->N() : 4);
         for(int a = 0; a < kMaxN; a++) { c_[a] = 0.5f; target_[a] = 0.5f; pc_[a] = 0.5f; }
         for(int j = 0; j < kMaxP; j++) payload_[j] = 0.f;
         stereo_ = false;
@@ -74,8 +74,8 @@ public:
 
     void Process(float* outL, float* outR, int n)
     {
-        if(!space_) { for(int i = 0; i < n; i++) { outL[i] = 0.f; outR[i] = 0.f; } return; }
-        const int N = space_->N();
+        if(!world_ || !world_->Ready()) { for(int i = 0; i < n; i++) { outL[i] = 0.f; outR[i] = 0.f; } return; }
+        const int N = world_->N();
         /* rate-limit the control frame toward its target */
         if(slew_ms > 0.f && sr_ > 0.f)
         {
@@ -102,7 +102,7 @@ public:
             L.SetPosition(pc_, N);
             L.Process(outL, n);
             for(int i = 0; i < n; i++) outR[i] = outL[i];
-            for(int j = 0; j < space_->P(); j++) payload_[j] = L.Payload()[j];
+            for(int j = 0; j < world_->P(); j++) payload_[j] = L.Payload()[j];
             R.FollowPhase(L);   /* keep the idle ear in step */
         }
         else
@@ -120,13 +120,11 @@ public:
             R.SetPosition(pr, N);
             L.Process(outL, n);
             R.Process(outR, n);
-            /* payload at the centre */
-            float   pf[kMaxN];
-            Fold(*space_, pc_, pf);
+            /* payload at the centre, single-valued whichever backend answers */
+            float   pf[kMaxN], scratch[kMaxK];
             Weights w;
-            LatticeWeights(*space_, pf, w);
-            SharpenWeights(w, sharp);
-            BlendPayload(*space_, w, payload_);
+            world_->Fold(pc_, pf);
+            world_->Evaluate(pf, sharp, scratch, payload_, w);
         }
         stereo_ = stereo;
     }
@@ -137,26 +135,14 @@ public:
     const float* Centre() const { return pc_; }     /* rotated, unfolded */
     const float* Payload() const { return payload_; }
     bool         IsStereo() const { return stereo_; }
-    const Space* SpacePtr() const { return space_; }
+    const World* WorldPtr() const { return world_; }
+    const Space* SpacePtr() const { return world_ ? world_->SpacePtr() : nullptr; }
 
     Engine   L, R;
     Rotation rot;
 
 private:
-    static void BlendPayload(const Space& s, const Weights& wt, float* payload)
-    {
-        const int P = s.P();
-        for(int j = 0; j < P; j++) payload[j] = 0.f;
-        for(int c = 0; c < wt.n_corners; c++)
-        {
-            const float w = wt.w[c];
-            if(w == 0.f) continue;
-            const float* pl = s.Payload(wt.idx[c]);
-            for(int j = 0; j < P; j++) payload[j] += w * pl[j];
-        }
-    }
-
-    const Space* space_ = nullptr;
+    const World* world_ = nullptr;
     float        sr_    = 48000.f;
     float        c_[kMaxN], target_[kMaxN], pc_[kMaxN];
     float        payload_[kMaxP];
