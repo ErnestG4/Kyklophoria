@@ -169,6 +169,24 @@ meaningful axis and stacking four banks makes rotation meaningless.
 - [ ] **General MIDI world**, the big one. Sampled instruments are not single
       cycles, so it needs pitch tracking and cycle extraction before analysis.
 
+## Boot-path rules, learned the hard way
+
+- [x] **Nothing in SDRAM may have a default member initialiser.** `.init_array`
+      runs before `main()`, and `main()` is where `hw.Init()` brings up the FMC
+      that makes SDRAM addressable. A non-trivially-constructible type in
+      `.sdram_bss` gets a constructor call from there, which stores into a
+      controller that is not up: bus fault, hard fault, dead on every boot
+      before a line of our code runs. `solids::VertexTable` shipped that way in
+      0.3.0 and bricked the module. Now guarded by a `static_assert` at the
+      point of declaration in the shell, so it is a compile error rather than a
+      brick. Internal SRAM (DTCM, AXI) is fine — it is live at reset, which is
+      why `gEng` and `gWorlds` never had the problem.
+- [ ] **Nothing else checks the boot path.** The desktop build cannot catch
+      this class at all: the same object is ordinary memory there, every test
+      passes, and the first sign of trouble is a module that will not boot.
+      Worth a `tools/` script that greps the ELF's `.init_array` reach for
+      stores into `0xc0000000`, so it is caught in CI rather than in the rack.
+
 ## Known warts
 
 - [ ] **v/oct is read at control rate, not audio rate.** `hw.cv[0].Volts()`

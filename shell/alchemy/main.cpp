@@ -33,6 +33,7 @@
 
 #include "kyk_stereo.h"
 #include "kyk_worlds.h"
+#include <type_traits>
 #include "kyk_telemetry.h"
 #include "kyk_ext.h"
 
@@ -186,6 +187,21 @@ static World   gWorlds[2];
  * the table the other one is still playing from. SDRAM: at K=128 each is
  * 17 KB, which DTCM cannot spare. */
 static solids::VertexTable KYK_SDRAM gVertTable[2];
+/* Anything in SDRAM must be trivially constructible.
+ *
+ * .init_array runs before main(), and main() is where hw.Init() brings up the
+ * FMC that makes SDRAM addressable at all. A type with any default member
+ * initialiser gets a constructor call from there, which stores into an SDRAM
+ * controller that is not up, which bus-faults, which hard-faults before a
+ * single line of this file executes. That is not a subtle failure — the module
+ * is dead on every boot and has to be dropped back to the bootloader — and it
+ * is completely invisible on the desktop build, where the same object is
+ * ordinary memory. These two lines turn a brick into a compile error. */
+static_assert(std::is_trivially_default_constructible<solids::VertexTable>::value,
+              "SDRAM objects must not have default member initialisers: "
+              ".init_array would write SDRAM before hw.Init() brings up the FMC");
+static_assert(std::is_trivially_default_constructible<decltype(gBlob)>::value,
+              "SDRAM objects must not have default member initialisers");
 static uint8_t gBufIdx    = 0;
 static volatile uint8_t gWorldIdx = worlds::kBraids;
 static volatile uint8_t gWorldReq = 0xFFu;   /* 0xFF: nothing pending */

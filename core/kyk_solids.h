@@ -44,14 +44,29 @@ enum class Solid : uint8_t
 
 constexpr int kMaxVerts = World::kMaxVerts;
 
+/* Deliberately has no default member initialisers, and must keep none.
+ *
+ * A table is 17 KB, so the shell puts it in SDRAM. Giving this struct a
+ * non-zero default — n = 4, k = 64, sigma = 0.20f, as it had — makes it
+ * non-trivially-constructible, and the compiler then emits a constructor call
+ * into .init_array. That runs before main(), which is before hw.Init()
+ * configures the FMC, so it stores to an SDRAM controller that is not up yet
+ * and the module hard-faults before it reaches a single line of our code. It
+ * shipped that way and bricked every boot until it was flashed back.
+ *
+ * Trivial means it lands in real .bss and nothing writes it before main.
+ * Build() sets count, n, k and sigma on every path, so nothing is lost; a
+ * table that was never built reads count 0, and World::UseVertices rejects
+ * that as Kind::None rather than misbehaving. The shell static_asserts the
+ * triviality at the point of declaration. */
 struct VertexTable
 {
-    int   count = 0;
-    int   n = 4, k = 64;
+    int   count;
+    int   n, k;
     float pos[kMaxVerts][kMaxN];    /* in [0,1]^N, the engine's own coordinates */
     float spec[kMaxVerts][kMaxK];   /* unit-RMS magnitudes */
 
-    float sigma = 0.20f;            /* at sharp = 0; the Morph knob tightens it */
+    float sigma;                    /* at sharp = 0; the Morph knob tightens it */
 };
 
 /* ── the waveforms that sit on the vertices ──────────────────────────────
