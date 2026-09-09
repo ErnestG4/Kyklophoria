@@ -66,7 +66,7 @@ at 0.80. It needed a sixth panel page, exactly as the design note predicted
 the panel would be the constraint.
 
 **3. Two worlds.** FM was the identified route to genuine non-separability and
-it delivered: 1.81x direction spread against 2.1x to 6.1x for every other
+it delivered: 1.83x direction spread against 2.1x to 6.1x for every other
 legible world, twice the variety of anything at any price, no near-duplicates.
 The vowel world was the one expected to sound good rather than measure well,
 and it did both — 2.87x, and the closest world to real material in the

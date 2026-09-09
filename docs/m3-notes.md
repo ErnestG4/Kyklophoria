@@ -80,7 +80,7 @@ direction spread, and no tuning was going to fix it.
 
 **FM** escapes it. J_k(I) does not factor into a function of k times a
 function of I, and the sideband *positions* move with the ratio, so one axis
-relocates what another put down. 13.3 variety — twice the next — 1.81x spread,
+relocates what another put down. 12.8 variety — twice the next — 1.83x spread,
 and no near-duplicates anywhere.
 
 **Vowel** escapes it by chaining: the second resonance is a multiple of the
@@ -92,6 +92,13 @@ eigenspace baked from that bank.
 Full table in `docs/worlds.md`.
 
 ### Three things measurement caught that listening would have missed
+
+(The FM row was measured twice. The first table, and the commit that
+introduced the world, carry 13.317 variety and 1.81x spread — those are the
+numbers *before* the DC-crossing fix below, when a full-strength sideband
+vanishing in one render was inflating the measured variety with a
+discontinuity. The corrected figures, 12.758 and 1.83x, are what the docs
+carry now.)
 
 **A hard cutoff, worth a factor of thirty.** FM sidebands crossing between DC
 and the fundamental were dropped outright. A full-strength first sideband
@@ -140,7 +147,7 @@ vowel world, both inside one quantisation step.
   next to a transform, but the M7 has surprised this project twice — most
   recently with float division costing fourteen cycles in a loop that was
   invisible on x86.
-- **Whether the FM world's variety is too high to play.** 13.3 is twice
+- **Whether the FM world's variety is too high to play.** 12.8 is twice
   anything else. The worst one-render step is proportionate to that and shows
   no discontinuity, so it is not a defect, but a space that changes that fast
   may simply be hard to steer.

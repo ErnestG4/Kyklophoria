@@ -142,7 +142,7 @@ meaningful axis and stacking four banks makes rotation meaningless.
       mode that multiplies f0 instead of seconds.
 - [x] **An FM axis** — `core/kyk_fm.h`, world 9. It was the right guess.
       J_k(I) does not factor and the sideband positions move with the ratio,
-      so it is the first legible world that is not separable: 1.81x direction
+      so it is the first legible world that is not separable: 1.83x direction
       spread against 2.1x to 6.1x for everything else legible, and twice the
       variety of any world at any price. Bessel amplitudes by Miller's
       downward recurrence, 0.84 µs an evaluation.

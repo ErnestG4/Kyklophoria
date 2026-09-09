@@ -94,7 +94,7 @@ cost 1.18 MB to approximate what it just threw away.
 | Field II | the same, rougher | 5.87 | 1.39x | 10% |
 | Torus | a field with no edges; gravity wraps with it | 4.33 | 1.26x | 11% |
 | Harmonic | one parameter per axis, legible but lopsided | 0.20 | 6.13x | 15% |
-| **FM** | index, ratio, carrier, and a second carrier that interferes | **13.32** | **1.81x** | 11% |
+| **FM** | index, ratio, carrier, and a second carrier that interferes | **12.76** | **1.83x** | 11% |
 | **Vowel** | three chained resonances over a falling source | 1.50 | 2.87x | **29%** |
 
 **Spread** is the number that decides whether rotating the control frame was

@@ -244,7 +244,7 @@ terms.
 | Field II | lattice | 5.869 | 1.39x | 0.0% | 10% | 0.0838 |
 | Torus | lattice | 4.325 | 1.26x | 0.0% | 11% | 0.0935 |
 | Harmonic | lattice | 0.199 | 6.13x | 12.8% | 15% | 0.2401 |
-| FM | fm | 13.317 | 1.81x | 0.0% | 11% | 0.0695 |
+| FM | fm | 12.758 | 1.83x | 0.0% | 11% | 0.0695 |
 | Vowel | formant | 1.503 | 2.87x | 0.0% | 29% | 0.0358 |
 
 **Variety** is timbral change per unit of travel, averaged over 200 random
@@ -272,7 +272,7 @@ Two worlds escape it, and both do so the same way: by making one axis change
 
 - **FM.** The k'th sideband is J_k(I), and a Bessel function is not a product
   of a function of k with a function of I. Better still, the sideband
-  positions move with the ratio. Measured 1.81x, the least lopsided world with
+  positions move with the ratio. Measured 1.83x, the least lopsided world with
   any legible structure in it; only the featureless correlated-noise fields
   beat it, and they have nothing to recognise.
 - **Vowel.** Three resonances would be three multiplicative filters and
