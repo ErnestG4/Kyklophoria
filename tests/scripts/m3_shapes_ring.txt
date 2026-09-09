@@ -1,0 +1,5 @@
+# M3 golden: the same grid with ring modulation on the top axis.
+0.0 f0 110
+0.0 pos 0.33 0.33 0.0 0.0
+0.0 glide pos 1.0 0.66 0.4 1.0 6.0
+6.5 dur

@@ -424,7 +424,9 @@ function buildTerrain() {
    * world's peaks are chained multiples of each other. That is exactly why
    * neither is separable, and why both are worth drawing rather than
    * summarising. */
-  const nonlinear = basis.fm ? MVL.evalFm : basis.formant ? MVL.evalFormant : null;
+  const nonlinear = basis.fm ? MVL.evalFm
+                  : basis.formant ? MVL.evalFormant
+                  : basis.table ? MVL.evalShapes : null;
   if (nonlinear) {
     const p = new Float32Array(6), spec = new Float32Array(k);
     for (let a = 0; a < n; a++) p[a] = clamp01(tel.posL[a]);

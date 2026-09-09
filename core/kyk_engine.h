@@ -107,6 +107,11 @@ public:
             world_->Evaluate(p_, sharp, mags_, payload_, wt_);
             Bandlimit();
             RenderFrame(mags_bl_, cph_, sph_, kcut_, osc_.Back(), sc_);
+            /* Wavefold, ring mod, phase distortion — whichever the world puts
+             * on its upper axes. Each is the identity at zero, so a node of a
+             * shape table with both shaper axes down is exactly the waveform
+             * the table names. */
+            if(world_->HasShaper()) world_->Shape(osc_.Back(), shape_, kFrame, p_);
             dirty_ = false;
         }
         osc_.SetFreq(f0_, sr_);
@@ -173,15 +178,28 @@ public:
 private:
     void DerivePhases()
     {
-        /* seed 0: zero phases (every cell a cosine stack, peaky). Otherwise a
-         * fixed random phase per harmonic, quantised to the sine table so
-         * the module and the desktop agree bit for bit. */
+        /* Three conventions, chosen by the world (World::Phase).
+         *
+         * Sine phase puts every harmonic a quarter turn along, which is the
+         * basis in which saw, square, pulse and triangle are all exact — the
+         * measured correlation against an ideal band-limited saw is 1.0000,
+         * against 0.79 for the random phase everything used to get. A world
+         * that wants recognisable waveforms asks for this one.
+         *
+         * Seed 0 means zero phase, a cosine stack, which is peaky: crest 5.26
+         * against 2.02 for sine phase. Kept because the lattice format can
+         * carry it, not because anything should choose it.
+         *
+         * Otherwise a fixed random phase per harmonic, quantised to the sine
+         * table so the module and the desktop agree bit for bit. */
         Rng rng;
+        const bool     sine = world_ && world_->PhaseMode() == World::Phase::Sine;
         const uint32_t seed = world_ ? world_->PhaseSeed() : 0u;
         rng.Seed(seed);
         for(int k = 0; k < kMaxK; k++)
         {
-            const int idx = seed ? (int)(rng.Next() & (uint32_t)(kTableSize - 1)) : 0;
+            const int idx = sine ? (kTableSize / 4)
+                                 : (seed ? (int)(rng.Next() & (uint32_t)(kTableSize - 1)) : 0);
             sph_[k]       = kSinTable[idx];
             cph_[k]       = kSinTable[(idx + kTableSize / 4) & (kTableSize - 1)];
         }
@@ -216,6 +234,21 @@ private:
             if(kmax > 0 && (float)kmax * f0_ >= nyq) kmax--;
         }
         kcut_ = kmax < K ? kmax : K;
+        /* A world with a frame shaper needs headroom above the harmonics it
+         * asks for, because a memoryless nonlinearity multiplies bandwidth and
+         * the frame it is handed is band-limited to exactly Nyquist. Pulling
+         * the limit in first gives the folder somewhere to put what it makes.
+         * A mitigation, not a cure — the residual is measured in m3-notes. */
+        if(world_->HasShaper())
+        {
+            const float sc = world_->BandScale(p_);
+            if(sc > 1.f)
+            {
+                int lim = (int)((float)kcut_ / sc);
+                if(lim < 4) lim = 4;
+                if(lim < kcut_) kcut_ = lim;
+            }
+        }
         if(kcut_want_ < kcut_) kcut_ = kcut_want_;   /* honour the held limit */
         kcut_want_ = kcut_;
         for(int k = 0; k < kcut_; k++) mags_bl_[k] = mags_[k];
@@ -238,6 +271,11 @@ private:
     Weights      wt_;
     float        cph_[kMaxK], sph_[kMaxK];
     float        mags_[kMaxK], mags_bl_[kMaxK];
+    /* Somewhere for a shaper that reads the cycle out of order — phase
+     * modulation runs the read pointer backwards where the warp does, so it
+     * cannot work in place. A member, not a stack array: the audio callback
+     * is not the place to put four kilobytes. */
+    float        shape_[kFrame];
     float        payload_[kMaxP];
     float        c_[kMaxN], p_[kMaxN], rendered_[kMaxN];
     float        f0_    = 110.f;

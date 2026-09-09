@@ -164,8 +164,23 @@ meaningful axis and stacking four banks makes rotation meaningless.
       being three separable filters. Lands closest to real material of
       anything here. The peaks ride the pitch rather than staying at fixed
       frequencies, because a World is told nothing about f0 on purpose.
-- [ ] **A waveshaping axis** is still untried, and is the other route to
-      non-separability that was named.
+- [x] **A waveshaping axis** — `core/kyk_shapes.h`, worlds 11 and 12. Fold,
+      phase modulation and ring modulation, running on the rendered cycle
+      because a folder has no closed form in the harmonics. Aliasing at full
+      depth: fold -32.2 dB, phase modulation -62.1, ring mod -59.3, against
+      -67.5 dry.
+- [x] **Real waveforms.** The instrument could not produce a recognisable saw
+      or square, and it was the representation, not a missing world: random
+      phase renders a saw's spectrum at 0.79 correlation to a saw. Sine phase
+      plus signed coefficients gives 1.0000 at a *better* crest factor. Opt-in
+      per world, so nothing existing moved. See docs/worlds.md.
+- [ ] **The other worlds are still phase-blind.** Braids, Stack, the vertex
+      worlds and the fields all still render at random phase, and the vertex
+      worlds in particular put a "saw" and a "square" on their vertices that
+      are neither. Switching them over is not free — their spectra are
+      magnitudes, so a triangle or a pulse would need signs adding — but the
+      24-cell was built to give exactly the lock-onto-a-shape behaviour that
+      phase is currently denying it.
 - [ ] **General MIDI world**, the big one. Sampled instruments are not single
       cycles, so it needs pitch tracking and cycle extraction before analysis.
 

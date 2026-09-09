@@ -96,6 +96,8 @@ cost 1.18 MB to approximate what it just threw away.
 | Harmonic | one parameter per axis, legible but lopsided | 0.20 | 6.13x | 15% |
 | **FM** | index, ratio, carrier, and a second carrier that interferes | **12.76** | **1.83x** | 11% |
 | **Vowel** | three chained resonances over a falling source | 1.50 | 2.87x | **29%** |
+| **Shapes** | a 4×4 grid of *real* waveforms, plus fold and phase modulation | — | — | — |
+| **Shapes R** | the same grid, with fold and ring modulation | — | — | — |
 
 **Spread** is the number that decides whether rotating the control frame was
 worth building: the most varied direction through the space over the least. At
@@ -109,6 +111,19 @@ FM is the exception. The k'th sideband is a Bessel function of the modulation
 index, which does not factor, and the sidebands *move* with the ratio, so one
 axis relocates energy another axis put down. The vowel world escapes the same
 way, by chaining its three resonances so the first axis moves all three.
+
+The two **Shapes** worlds are not playing that game and have no spread number,
+because they are after something else. Every world above renders against a
+random phase spectrum, which keeps the morph click-free but throws the
+*waveform* away: a saw's spectrum at random phase correlates 0.79 with a saw,
+so the instrument could never lock onto one. Rendering at sine phase with
+signed coefficients gives the real thing — sine, triangle, saw and square all
+at 1.0000 against the textbook series, at a slightly better crest factor than
+the random phase cost. Those four sit on the top row of a 4×4 grid you scan
+with two axes, the Erica GraphicVCO's wavetable matrix, and the Morph knob
+decides how hard you land on a node. The other two axes fold, phase-modulate
+or ring-modulate the cycle. It is the world for knowing what you are hearing,
+where the rest are for not knowing.
 
 ```sh
 build/host/kykworlds --braids ../../Mutable/Streams/eurorack/braids/resources.cc

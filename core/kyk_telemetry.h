@@ -49,6 +49,11 @@ inline float FastLog2(float x)
  * bar short. Six dB of headroom costs 0.024 dB of resolution. */
 inline uint8_t MagToU8(float m)
 {
+    /* Coefficients are signed for a sine-phase world — a negative one is a
+     * half turn of phase, not a negative level — so the display takes the
+     * magnitude. Without this a triangle's alternating partials would all
+     * read as silence. */
+    if(m < 0.f) m = -m;
     const float db = 6.0205999f * FastLog2(m);          /* 20·log10 */
     const float v  = 255.f + (db - 6.f) * (255.f / 102.f);
     return v <= 0.f ? 0u : (v >= 255.f ? 255u : (uint8_t)(v + 0.5f));

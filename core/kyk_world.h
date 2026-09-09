@@ -27,6 +27,7 @@
 #include "kyk_eigen_basis.h"
 #include "kyk_fm.h"
 #include "kyk_formant.h"
+#include "kyk_shapes.h"
 
 namespace kyk {
 
@@ -55,7 +56,32 @@ struct VertexField
 class World
 {
 public:
-    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3, Fm = 4, Formant = 5 };
+    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3, Fm = 4, Formant = 5, Table = 6 };
+    /* Which phase spectrum the engine should render this world's coefficients
+     * against. This is not a detail — it decides whether the instrument can
+     * produce a recognisable waveform at all.
+     *
+     *   Random   a fixed random phase per harmonic. Two spectra can be blended
+     *            freely and the result never clicks, but a saw's magnitudes
+     *            rendered at random phase are not a saw: measured, the best
+     *            circular correlation against an ideal band-limited saw is
+     *            0.79. The edges are gone. This is why the instrument has
+     *            never locked onto a hard square or saw — it renders stacks of
+     *            sines that happen to have the right spectrum.
+     *
+     *   Sine     every harmonic at a quarter turn. Saw, square, pulse and
+     *            triangle are all odd-symmetric, so all of them are exact in
+     *            this one basis: measured 1.0000 against the ideal, with a
+     *            crest factor of 2.02, slightly *better* than the random
+     *            phase we ship. Blending stays linear in the coefficients, so
+     *            it is exactly as click-free as Random.
+     *
+     * The catch is that Sine only pays off with *signed* coefficients: a
+     * triangle alternates sign and a pulse needs sin(h·pi·w), which goes
+     * negative. Taking magnitudes puts a 25% pulse at 0.83 against the ideal.
+     * Signed coefficients render correctly and keep blending linear, since a
+     * negative coefficient is just a half-turn of phase. */
+    enum class Phase : uint8_t { Random = 0, Sine = 1 };
     static constexpr int kMaxVerts = 32;
 
     void UseLattice(const Space* s)
@@ -96,18 +122,54 @@ public:
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }
 
+    void UseShapes(const ShapeField& f, int p, const uint8_t* topo)
+    {
+        kind_   = (f.n >= 1 && f.n <= kMaxN && f.k >= 1 && f.k <= kMaxK
+                   && f.cols >= 2 && f.rows >= 2) ? Kind::Table : Kind::None;
+        shapes_ = f;
+        phase_  = Phase::Sine;      /* the entire point: real waveforms */
+        p_      = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
+        for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
+    }
+
     Kind Which() const { return kind_; }
     bool Ready() const { return kind_ != Kind::None; }
-    int  N() const { return kind_ == Kind::Lattice ? space_->N() : (kind_ == Kind::Vertices ? verts_.n : (kind_ == Kind::Fm ? fm_.n : (kind_ == Kind::Formant ? form_.n : basis_.n))); }
-    int  K() const { return kind_ == Kind::Lattice ? space_->K() : (kind_ == Kind::Vertices ? verts_.k : (kind_ == Kind::Fm ? fm_.k : (kind_ == Kind::Formant ? form_.k : basis_.k))); }
+    int  N() const { return kind_ == Kind::Lattice ? space_->N() : (kind_ == Kind::Vertices ? verts_.n : (kind_ == Kind::Fm ? fm_.n : (kind_ == Kind::Formant ? form_.n : (kind_ == Kind::Table ? shapes_.n : basis_.n)))); }
+    int  K() const { return kind_ == Kind::Lattice ? space_->K() : (kind_ == Kind::Vertices ? verts_.k : (kind_ == Kind::Fm ? fm_.k : (kind_ == Kind::Formant ? form_.k : (kind_ == Kind::Table ? shapes_.k : basis_.k)))); }
     const VertexField& Verts() const { return verts_; }
     int  P() const { return kind_ == Kind::Lattice ? space_->P() : p_; }
     Topo TopoOf(int a) const { return kind_ == Kind::Lattice ? space_->TopoOf(a) : (Topo)topo_[a]; }
     uint32_t PhaseSeed() const { return kind_ == Kind::Lattice ? space_->Header().phase_seed : 1u; }
+    Phase    PhaseMode() const { return phase_; }
+    void     SetPhase(Phase p) { phase_ = p; }
     const Space*      SpacePtr() const { return kind_ == Kind::Lattice ? space_ : nullptr; }
     const EigenBasis&   Basis() const { return basis_; }
     const FmField&      Fm() const { return fm_; }
     const FormantField& Formant() const { return form_; }
+    const ShapeField&   Shapes() const { return shapes_; }
+
+    /* ── the frame shapers ───────────────────────────────────────────────
+     * A wavefolder has no closed form in the harmonics, so these run on the
+     * rendered single cycle. The engine calls Shape() straight after the
+     * transform; BandScale() tells it how much to pull the band limit in
+     * first, because a memoryless nonlinearity multiplies bandwidth and the
+     * frame arrives band-limited to exactly Nyquist. */
+    bool HasShaper() const { return kind_ == Kind::Table; }
+    float BandScale(const float* p01) const
+    {
+        if(kind_ != Kind::Table) return 1.f;
+        const float a2 = shapes_.n > 2 ? p01[2] : 0.f;
+        const float a3 = shapes_.n > 3 ? p01[3] : 0.f;
+        return ShapeBandScale(shapes_, a2, a3);
+    }
+    void Shape(float* frame, float* scratch, int n, const float* p01) const
+    {
+        if(kind_ != Kind::Table) return;
+        const float a2 = shapes_.n > 2 ? p01[2] : 0.f;
+        const float a3 = shapes_.n > 3 ? p01[3] : 0.f;
+        Apply(shapes_.axis2, frame, scratch, n, a2);
+        Apply(shapes_.axis3, frame, scratch, n, a3);
+    }
 
     void Fold(const float* c, float* p) const
     {
@@ -133,6 +195,7 @@ public:
         if(kind_ == Kind::Vertices) { EvalVertices(p01, sharp, mags, payload); return; }
         if(kind_ == Kind::Fm) { EvalFm(p01, mags, payload); return; }
         if(kind_ == Kind::Formant) { EvalFormant(p01, mags, payload); return; }
+        if(kind_ == Kind::Table) { EvalShapes(p01, sharp, mags, payload); return; }
         for(int k = 0; k < kMaxK; k++) mags[k] = 0.f;
     }
 
@@ -249,6 +312,76 @@ private:
         for(int j = 0; j < p_; j++) payload[j] = pl[j];
     }
 
+    static void Apply(Shaper s, float* frame, float* scratch, int n, float d)
+    {
+        switch(s)
+        {
+            case Shaper::Fold: FoldFrame(frame, n, d); break;
+            case Shaper::Ring: RingFrame(frame, n, d); break;
+            case Shaper::Warp: WarpFrame(frame, scratch, n, d); break;
+            default: break;
+        }
+    }
+
+    /* Bilinear over a grid of real waveforms. `sharp` biases each fractional
+     * coordinate toward the nearer node, so the Morph knob decides how much of
+     * the travel you spend sitting on a recognisable shape rather than between
+     * two of them. Coefficients are signed and rendered at sine phase, which
+     * is what makes a node an actual square rather than a spectrum that
+     * measures like one. */
+    void EvalShapes(const float* p01, float sharp, float* mags, float* payload) const
+    {
+        const int k = shapes_.k, C = shapes_.cols, R = shapes_.rows;
+        if(sharp < 0.f) sharp = 0.f;
+        if(sharp > 1.f) sharp = 1.f;
+        const float gx = p01[0] * (float)(C - 1), gy = p01[1] * (float)(R - 1);
+        int   c0 = (int)gx, r0 = (int)gy;
+        if(c0 > C - 2) c0 = C - 2;
+        if(c0 < 0) c0 = 0;
+        if(r0 > R - 2) r0 = R - 2;
+        if(r0 < 0) r0 = 0;
+        const float u = detail::SnapTo(gx - (float)c0, sharp);
+        const float v = detail::SnapTo(gy - (float)r0, sharp);
+
+        float node[kMaxK];
+        const float w[4] = {(1.f - u) * (1.f - v), u * (1.f - v), (1.f - u) * v, u * v};
+        const int   cc[4] = {c0, c0 + 1, c0, c0 + 1};
+        const int   rr[4] = {r0, r0, r0 + 1, r0 + 1};
+        for(int i = 0; i < k; i++) mags[i] = 0.f;
+        for(int q = 0; q < 4; q++)
+        {
+            if(w[q] <= 0.f) continue;
+            detail::ShapeNode(shapes_, cc[q], rr[q], k, node);
+            for(int i = 0; i < k; i++) mags[i] += w[q] * node[i];
+        }
+
+        float acc = 0.f, lin = 0.f, kw = 0.f, hf = 0.f;
+        for(int i = 0; i < k; i++)
+        {
+            const float a  = mags[i] < 0.f ? -mags[i] : mags[i];   /* signed now */
+            const float p2 = mags[i] * mags[i];
+            acc += p2; lin += a;
+            kw += (float)(i + 1) * p2;
+            if(i >= k / 4) hf += p2;
+        }
+        const float g = acc > 0.f ? Sqrt(2.f) / Sqrt(acc) : 0.f;
+        for(int i = 0; i < k; i++) mags[i] *= g;
+
+        const float centroid = acc > 0.f ? (kw / acc - 1.f) / (float)(k - 1) : 0.f;
+        const float bright   = acc > 0.f ? hf / acc : 0.f;
+        const float flat     = acc > 0.f ? (lin * lin) / ((float)k * acc) : 0.f;
+        auto        sat      = [](float x) { return x < 0.f ? 0.f : (x > 1.f ? 1.f : x); };
+        /* lane 4 is how near a node we are, so the CV out fires when the
+         * waveform locks onto a shape you can name */
+        const float du = u < 0.5f ? u : 1.f - u, dv = v < 0.5f ? v : 1.f - v;
+        const float onnode = 1.f - 2.f * (du > dv ? du : dv);
+        const float pl[kMaxP] = {
+            sat(Sqrt(centroid)), sat(1.f - flat), sat(bright), sat(0.3f + 0.7f * bright),
+            sat(onnode), sat(shapes_.n > 2 ? p01[2] : 0.f), sat(centroid), sat(flat),
+        };
+        for(int j = 0; j < p_; j++) payload[j] = pl[j];
+    }
+
     /* Softmax over minus the squared distance to each vertex: the Gaussian
      * mixture weight. At a vertex one term dominates and you hear that
      * waveform; step off and the neighbours crowd in. `sigma` decides how
@@ -326,7 +459,9 @@ private:
     VertexField  verts_;
     FmField      fm_;
     FormantField form_;
+    ShapeField   shapes_;
     int          p_ = 0;
+    Phase        phase_ = Phase::Random;
     uint8_t      topo_[kMaxN] = {0, 0, 0, 0, 0, 0};
 };
 

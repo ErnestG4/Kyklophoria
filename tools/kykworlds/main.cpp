@@ -205,7 +205,8 @@ int main(int argc, char** argv)
         row.kind    = e.kind == World::Kind::Lattice ? "lattice"
                     : e.kind == World::Kind::Vertices ? "vertices"
                     : e.kind == World::Kind::Fm ? "fm"
-                    : e.kind == World::Kind::Formant ? "formant" : "analytic";
+                    : e.kind == World::Kind::Formant ? "formant"
+                    : e.kind == World::Kind::Table ? "table" : "analytic";
         row.variety = mean;
         row.spread  = spread;
         row.twins   = total ? 100.0 * (double)close / (double)total : 0.0;
@@ -258,6 +259,10 @@ int main(int argc, char** argv)
     printf("Spread is the isotropy number: 1.0 would mean every direction through\n"
            "the space is as interesting as every other, which is the condition\n"
            "under which rotating the control frame finds new ground.\n\n");
+    printf("  A `table` world's numbers cover its first two axes only. The other\n"
+           "  two drive shapers that act on the rendered cycle, not on the\n"
+           "  spectrum, so this tool cannot see them and reads them as dead —\n"
+           "  which is most of why those rows show a large spread.\n\n");
     printf("  %-10s %-9s %8s %8s %7s", "world", "backend", "variety", "spread", "twins");
     if(!rows.empty() && rows[0].covered) printf(" %8s %8s", "covers", "median");
     printf("\n");

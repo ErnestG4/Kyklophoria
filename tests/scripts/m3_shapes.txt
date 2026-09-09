@@ -1,0 +1,13 @@
+# M3 golden: the Shapes table.
+#
+# A diagonal across the 4x4 grid of real waveforms, so it passes through or
+# beside every one of them, then the two shaper axes are brought up. Rendered
+# at sine phase with signed coefficients — the whole point of the world — so
+# this is the render that would change if either of those were ever quietly
+# dropped back to random phase or to magnitudes.
+0.0 f0 110
+0.0 pos 0.0 0.0 0.0 0.0
+0.0 glide pos 1.0 1.0 0.0 0.0 5.0
+5.0 glide pos 0.66 0.0 1.0 0.0 3.0
+8.0 glide pos 0.66 0.0 0.0 1.0 3.0
+11.5 dur

@@ -441,3 +441,135 @@ part — any R in SO(4) splits into a left and a right quaternion factor, so the
 page could show how much of the current rotation is left-handed against
 right-handed, which is a direct display of how near the player is to a
 fibration. Nothing here is built.
+
+---
+
+# The shape tables, and why nothing ever locked onto a saw (2026-09-09)
+
+Will, after playing every world in the rack: *"I never see things lock into
+hard square or saws or other known base shapes, only stacks of sines rolling
+through triangles, their walls sometimes stiffening."*
+
+That is an exact description of the defect, and the cause was not a missing
+world. It was the representation.
+
+## Random phase was throwing the waveform away
+
+Every world up to this point renders against a fixed **random** phase
+spectrum. That choice bought the click-free morph — the frame is linear in the
+magnitude vector, so partials cannot cancel — and nobody noticed what it cost,
+because the spectrum is right. Measured, rendering the saw magnitude series
+1/h at each phase convention and asking how much the result actually *is* a
+saw:
+
+| phase convention | crest | match to saw | match to square |
+|---|---|---|---|
+| random (shipped everywhere until now) | 2.14 | 0.789 | 0.789 |
+| zero / cosine (the `seed 0` path) | 5.26 | 0.623 | 0.747 |
+| **sine, a quarter turn** | **2.02** | **1.0000** | **1.0000** |
+
+Match is the best circular cross-correlation against an ideal band-limited
+target. At random phase a saw's discontinuity is smeared into a noise burst:
+stacks of sines with the right spectrum, walls that stiffen where the spectrum
+tilts and never become walls. Sine phase reproduces the shape *exactly*, and
+its crest factor is slightly better than the random phase we were paying for.
+
+The catch is that sine phase only pays off with **signed** coefficients. A
+triangle alternates sign and a bipolar pulse needs a sign change part-way up
+the series:
+
+| wave | crest | match |
+|---|---|---|
+| triangle, signed | 1.72 | 1.0000 |
+| triangle, magnitudes only | 1.29 | 0.9746 |
+| 25% pulse, signed | — | 1.0000 |
+| 25% pulse, magnitudes only | — | 0.8296 |
+
+A negative coefficient is a half turn of phase and nothing more, so blending
+stays linear and the morph stays exactly as click-free as it was. Both changes
+are opt-in per world (`World::Phase`), so every existing golden is unmoved.
+
+## The table
+
+`Shapes` and `Shapes R` are the Erica GraphicVCO's wavetable matrix, which is
+where this instrument started: a 4×4 grid of real waveforms on axes 0 and 1,
+bilinear between them, with the Morph knob deciding how hard you land on a
+node. Row 0 is the four everybody knows, and they are exact:
+
+| node | vs textbook series | crest | ideal |
+|---|---|---|---|
+| (0,0) sine | 1.0000 | 1.414 | √2 |
+| (1,0) triangle | 1.0000 | 1.721 | √3 |
+| (2,0) saw | 1.0000 | 2.024 | ~2.0 with Gibbs |
+| (3,0) square | 1.0000 | 1.183 | ~1.1 with Gibbs |
+
+Each column then travels to a genuinely different destination rather than a
+brighter copy of itself: one partial to eight; triangle to a rounded square,
+by moving the sign pattern rather than the spectrum; saw to a resonant saw;
+square to an 8% pulse. The first version had rows as brightness only and the
+whole row axis measured 0.18 against 1.85 for the columns — a knob that did
+nothing. Worst crest across the grid is 4.00, inside the 4.3 the output gain
+allows.
+
+Morph decides how much of the travel sits on a named shape: 79% at zero, 92%
+at half, 97% at full.
+
+## The shaper axes
+
+Axes 2 and 3 run on the rendered cycle rather than the spectrum, because a
+wavefolder has no closed form in the harmonics. Which shapers is a property of
+the world, which is the "set of worlds" half of the request: `Shapes` is fold
+and phase modulation, `Shapes R` is fold and ring modulation.
+
+Aliasing, measured the way `tests/alias_check` measures it — worst
+non-harmonic bin, dB below the loudest harmonic, at the saw node:
+
+| shaper | dry | full depth |
+|---|---|---|
+| wavefold | −67.5 | −32.2 |
+| phase modulation | −67.5 | −62.1 |
+| ring mod | −67.5 | −59.3 |
+
+Ring modulation is nearly free of it because it lands on harmonics by
+construction. The folder is the dirty one, which is what a folder is for.
+
+**Casio's phase distortion had to be thrown away.** The first version was the
+real thing: a two-segment warp that hurries through the first part of the
+cycle and dawdles through the rest. It measured **0.0 dB** — the worst
+non-harmonic bin as loud as the loudest harmonic. Two linear segments meet in
+a kink, a derivative discontinuity radiates energy falling off only as 1/h²,
+and that is broadband, so pulling the band limit in ahead of it does nothing:
+capping the knee moved 0.0 dB to −3.2 and no further. Replacing it with a
+*sine* warp — phase modulation of the read pointer, which is also exactly
+single-operator FM — has no discontinuity in any derivative, spreads a
+harmonic h to about h·(1+A), and measures −62.1 dB. Casio shipped the
+aliasing; that is not a reason to.
+
+## Cost
+
+Per render, x86, against a 500 µs block:
+
+| stage | µs |
+|---|---|
+| Evaluate (the table) | 1.44 |
+| RenderFrame (the transform) | 4.14 |
+| wavefold | 2.72 |
+| phase modulation | 1.75 |
+| ring modulation | 0.49 |
+
+The table's Evaluate first measured **7.8 µs**, nearly twice the transform it
+feeds, from a series exp and log per harmonic — the identical mistake the
+vowel world made. The node spectra do not depend on position at all, so every
+one of those became a lookup in the harmonic tables, and the two index-driven
+shapers index the sine table directly instead of calling into it.
+
+## What this world is not
+
+It measures 1.80 / 0.38 / 5.89 / 5.30 across its four axes in *frame* space,
+a spread of 15x, and `kykworlds` reads it worse still because that tool only
+sees the spectrum and the shaper axes do not touch the spectrum. That is not a
+failure to fix. Every other world in this instrument is trying to be isotropic
+so that rotating the control frame finds new ground. This one is trying to be
+**legible** — to put a saw where you can find it and let you fold it — and
+those are different jobs. It is the world you reach for when you want to know
+what you are hearing.
