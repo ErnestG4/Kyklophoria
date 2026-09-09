@@ -25,7 +25,7 @@ const CMD = {
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4 };
 const WORLD_KIND = { lattice: 1, analytic: 2 };
-const TEL = { spectrum: 1, frame: 2, kepler: 4 };
+const TEL = { spectrum: 1, frame: 2, motion: 4 };
 const STATUS = ['OK', 'UNSUPPORTED', 'BAD_ARGS', 'BAD_STATE', 'BAD_CRC', 'BAD_SLOT', 'TOO_LARGE',
   'SCHEMA_MISMATCH', 'FLASH_FAIL', 'BUSY', 'FRAME_ERROR'];
 const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
@@ -246,8 +246,9 @@ async function getDescriptor(link, info) {
  *   u32 block · f32 f0 · u8 n k kcut p planes flags stereo spreadPlane · f32 spread
  *   f32 ctl[n] centre[n] posL[n] posR[n] angle[planes] payload[p]
  *   [flags&1] u8 mags[k] (0 = ≤ −96 dB, 255 = 0 dB) · [flags&2] i8 frame[256] (×40)
- *   [flags&4] u8 running · u8 plane · f32 x · f32 y · f32 rush — the falling
- *   body, appended last so a host that predates it just ignores the tail. */
+ *   [flags&4] u8 kep_running · u8 kep_plane · f32 kep_x · f32 kep_y · f32
+ *   kep_rush · f32 couple · f32 lock — how the position is moving on its own.
+ *   Appended last, so a host that predates it just ignores the tail. */
 function parseTelemetry(b) {
   if (b.length < 21) return null;
   const t = { block: u32(b, 1), f0: f32(b, 5), n: b[9], k: b[10], kcut: b[11], p: b[12], planes: b[13], flags: b[14], stereo: b[15] !== 0, spreadPlane: b[16], spread: f32(b, 17) };
@@ -256,9 +257,10 @@ function parseTelemetry(b) {
   t.ctl = arr(t.n); t.centre = arr(t.n); t.posL = arr(t.n); t.posR = arr(t.n); t.angle = arr(t.planes); t.payload = arr(t.p);
   if (t.flags & TEL.spectrum) { t.mags = b.slice(at, at + t.k); at += t.k; }
   if (t.flags & TEL.frame) { t.frame = new Int8Array(256); for (let i = 0; i < 256; i++) t.frame[i] = i8(b[at + i]); at += 256; }
-  if (t.flags & TEL.kepler) {
+  if (t.flags & TEL.motion) {
     t.kepler = { running: b[at] !== 0, plane: b[at + 1], x: f32(b, at + 2), y: f32(b, at + 6), rush: f32(b, at + 10) };
-    at += 14;
+    t.couple = f32(b, at + 14); t.lock = f32(b, at + 18);
+    at += 22;
   }
   t.bytes = b.length;
   return t;
