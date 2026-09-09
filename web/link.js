@@ -24,7 +24,7 @@ const CMD = {
   worlds: 0x65, basis: 0x66, setControl: 0x6e,
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4 };
-const WORLD_KIND = { lattice: 1, analytic: 2 };
+const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4 };
 const TEL = { spectrum: 1, frame: 2, motion: 4 };
 const STATUS = ['OK', 'UNSUPPORTED', 'BAD_ARGS', 'BAD_STATE', 'BAD_CRC', 'BAD_SLOT', 'TOO_LARGE',
   'SCHEMA_MISMATCH', 'FLASH_FAIL', 'BUSY', 'FRAME_ERROR'];
@@ -303,7 +303,9 @@ function parseWorlds(b) {
   for (let i = 0; i < count && at < b.length; i++) {
     const kind = b[at++]; let name, note;
     [name, at] = readStr(b, at); [note, at] = readStr(b, at);
-    list.push({ index: i, kind, analytic: kind === WORLD_KIND.analytic, name, note });
+    /* `analytic` here means the page can evaluate it: a world with a
+     * formula small enough to hold, whichever formula it is. */
+    list.push({ index: i, kind, analytic: kind === WORLD_KIND.analytic || kind === WORLD_KIND.fm, name, note });
   }
   return { current, list };
 }
@@ -319,6 +321,18 @@ function basisReq(world, offset, max) {
  * point — the page can hold it and evaluate the space anywhere. */
 function parseBasis(all) {
   if (!all || all.length < 10) return null;
+  /* 0xFF where a dimension count should be marks a different shape of
+   * formula. Today that is only FM, whose whole world is seven numbers. */
+  if (all[0] === 0xff) {
+    if (all.length < 32 || all[1] !== WORLD_KIND.fm) return null;
+    const d = new DataView(all.buffer, all.byteOffset, all.byteLength);
+    return {
+      fm: true, n: all[2], k: all[3],
+      indexMax: d.getFloat32(4, true), ratioMin: d.getFloat32(8, true), ratioMax: d.getFloat32(12, true),
+      carrierMin: d.getFloat32(16, true), carrierMax: d.getFloat32(20, true),
+      secondMax: d.getFloat32(24, true), ratioLock: d.getFloat32(28, true),
+    };
+  }
   const n = all[0], k = all[1];
   if (!(n > 0 && k > 0) || all.length < 10 + 4 * k * (n + 1)) return null;
   const dv = new DataView(all.buffer, all.byteOffset, all.byteLength);
@@ -340,6 +354,62 @@ async function fetchBasis(link, world, maxBody = 512) {
     if (off >= total) break;
   }
   return parseBasis(concat(parts));
+}
+
+/* ── FM, evaluated here ───────────────────────────────────────────────
+ * A port of core/kyk_fm.h, close enough that the terrain the page draws is
+ * the space the module plays. Miller's downward recurrence for the Bessel
+ * amplitudes, then each sideband's amplitude split between the two harmonic
+ * bins it falls between, signed so reflected partials cancel where they
+ * should. See the C++ for why each of those is the way it is. */
+const FM_ORDERS = 48;
+function besselJ(x, nmax, J) {
+  for (let n = 0; n <= nmax; n++) J[n] = 0;
+  if (x < 1e-5) { J[0] = 1; return J; }
+  const M = nmax + 20 + Math.floor(4 * Math.sqrt(x)), inx = 2 / x;
+  let bjp = 0, bj = 1e-20, norm = 0;
+  for (let n = M; n >= 1; n--) {
+    const bjm = inx * n * bj - bjp;
+    bjp = bj; bj = bjm;
+    if (Math.abs(bj) > 1e10) {
+      bj *= 1e-10; bjp *= 1e-10; norm *= 1e-10;
+      for (let i = 0; i <= nmax; i++) J[i] *= 1e-10;
+    }
+    const m = n - 1;
+    if (m <= nmax) J[m] = bj;
+    if ((m & 1) === 0) norm += m === 0 ? bj : 2 * bj;
+  }
+  const inv = norm !== 0 ? 1 / norm : 0;
+  for (let n = 0; n <= nmax; n++) J[n] *= inv;
+  return J;
+}
+const fmJ = new Float64Array(FM_ORDERS + 1);
+/* p01[a] in [0,1] — the folded coordinate, the same input the engine gets. */
+function evalFm(basis, p01, out) {
+  const k = basis.k, m = out && out.length >= k ? out : new Float32Array(k);
+  for (let i = 0; i < k; i++) m[i] = 0;
+  const index = p01[0] * basis.indexMax;
+  let ratio = basis.ratioMin + p01[1] * (basis.ratioMax - basis.ratioMin);
+  if (basis.ratioLock > 0) ratio -= basis.ratioLock * (1 / (2 * Math.PI)) * Math.sin(2 * Math.PI * ratio);
+  const carrier = basis.carrierMin + p01[2] * (basis.carrierMax - basis.carrierMin);
+  const second = basis.n > 3 ? p01[3] * basis.secondMax : 0;
+  besselJ(index, FM_ORDERS, fmJ);
+  for (let c = 0; c < 2; c++) {
+    const cc = c ? carrier + second : carrier;
+    for (let ord = -FM_ORDERS; ord <= FM_ORDERS; ord++) {
+      const a = ord < 0 ? -ord : ord;
+      let amp = fmJ[a];
+      if (ord < 0 && (a & 1)) amp = -amp;
+      if (Math.abs(amp) < 1e-4) continue;
+      let f = cc + ord * ratio;
+      if (f < 0) { f = -f; amp = -amp; }
+      const h = f - 1, i0 = Math.floor(h), fr = h - i0;
+      if (i0 >= 0 && i0 < k) m[i0] += amp * (1 - fr);
+      if (i0 + 1 >= 0 && i0 + 1 < k) m[i0 + 1] += amp * fr;
+    }
+  }
+  for (let i = 0; i < k; i++) if (m[i] < 0) m[i] = -m[i];
+  return m;
 }
 
 /* Evaluate an analytic world at a coordinate: coord[a] in ±extent, out of
@@ -376,7 +446,7 @@ const planeCount = n => n * (n - 1) / 2;
 const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
-  parseTelemetry, telemetryReq, magDb, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
+  parseTelemetry, telemetryReq, magDb, evalFm, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, basisReq, parseBasis, fetchBasis, evalBasis,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };

@@ -1,0 +1,16 @@
+# M3 golden: the FM world.
+#
+# A slow diagonal across all four axes, so index, ratio, carrier and the
+# second carrier all move at once and their sidebands walk through each
+# other. The point of the world is that those four cannot be undone
+# independently, and this is the render that would change if that stopped
+# being true.
+#
+# It also guards the fix that made the world usable. Sidebands crossing
+# between DC and the fundamental used to be dropped outright, which put a
+# 0.25 step into a single render where every other world's worst was 0.008.
+# The sweep below crosses that line several times.
+0.0 f0 110
+0.0 pos 0.02 0.98 0.02 0.98
+0.0 glide pos 0.98 0.02 0.98 0.02 6.0
+6.5 dur

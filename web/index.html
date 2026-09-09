@@ -396,9 +396,46 @@ function buildTerrain() {
   const now = performance.now();
   if (now - terrain.at < 150) return;
   terrain.at = now; terrain.key = key;
-  const { n, k, extent, floor, mean, comp } = basis;
+  const { n, k } = basis;
   const R = terrain.res, ax = axes[0], ay = axes[1];
   if (ax >= n || ay >= n) return;
+  const vals = new Float32Array(R * R), hiStart = k >> 2;
+  let lo = Infinity, hi = -Infinity;
+  /* One shading measure out of one spectrum. Every measure is a ratio, so
+   * the missing normalisation cancels and neither backend has to do it. */
+  const shadeOf = (m) => {
+    let s = 0, s2 = 0, kw = 0, hf = 0;
+    for (let i = 0; i < k; i++) {
+      const v = m[i], p2 = v * v;
+      s += v; s2 += p2; kw += (i + 1) * p2;
+      if (i >= hiStart) hf += p2;
+    }
+    if (!(s2 > 0)) return 0;
+    return shadeIdx === 0 ? (kw / s2 - 1) / (k - 1)
+         : shadeIdx === 1 ? (s * s) / (k * s2)
+         : hf / s2;
+  };
+  const note = (gx, gy, val) => {
+    vals[gy * R + gx] = val;
+    if (val < lo) lo = val; if (val > hi) hi = val;
+  };
+  if (basis.fm) {
+    /* FM has no linear structure to precompute — the Bessel amplitudes
+     * depend on the index and the sideband positions on the ratio, which is
+     * exactly why the world is not separable and why it is worth drawing. */
+    const p = new Float32Array(6), spec = new Float32Array(k);
+    for (let a = 0; a < n; a++) p[a] = clamp01(tel.posL[a]);
+    for (let gy = 0; gy < R; gy++) {
+      p[ay] = gy / (R - 1);
+      for (let gx = 0; gx < R; gx++) {
+        p[ax] = gx / (R - 1);
+        note(gx, gy, shadeOf(MVL.evalFm(basis, p, spec)));
+      }
+    }
+    paintTerrain(vals, R, lo, hi);
+    return;
+  }
+  const { extent, floor, mean, comp } = basis;
   /* fold the axes we are not drawing into a constant term */
   const base = new Float32Array(k); base.set(mean);
   for (let a = 0; a < n; a++) {
@@ -409,29 +446,21 @@ function buildTerrain() {
     for (let i = 0; i < k; i++) base[i] += c * comp[o + i];
   }
   const cX = comp.subarray(ax * k, ax * k + k), cY = comp.subarray(ay * k, ay * k + k);
-  const vals = new Float32Array(R * R), hiStart = k >> 2;
-  let lo = Infinity, hi = -Infinity;
+  const spec = new Float32Array(k);
   for (let gy = 0; gy < R; gy++) {
     const coy = (2 * (gy / (R - 1)) - 1) * extent;
     for (let gx = 0; gx < R; gx++) {
       const cox = (2 * (gx / (R - 1)) - 1) * extent;
-      let s = 0, s2 = 0, kw = 0, hf = 0;
       for (let i = 0; i < k; i++) {
-        let v = Math.exp(base[i] + cox * cX[i] + coy * cY[i]) - floor;
-        if (v < 0) v = 0;
-        const p2 = v * v;
-        s += v; s2 += p2; kw += (i + 1) * p2;
-        if (i >= hiStart) hf += p2;
+        const v = Math.exp(base[i] + cox * cX[i] + coy * cY[i]) - floor;
+        spec[i] = v > 0 ? v : 0;
       }
-      /* every measure is a ratio, so the missing normalisation cancels */
-      let val = 0;
-      if (s2 > 0) val = shadeIdx === 0 ? (kw / s2 - 1) / (k - 1)
-                      : shadeIdx === 1 ? (s * s) / (k * s2)
-                      : hf / s2;
-      vals[gy * R + gx] = val;
-      if (val < lo) lo = val; if (val > hi) hi = val;
+      note(gx, gy, shadeOf(spec));
     }
   }
+  paintTerrain(vals, R, lo, hi);
+}
+function paintTerrain(vals, R, lo, hi) {
   const span = (hi - lo) > 1e-9 ? hi - lo : 1;
   if (!terrain.canvas) terrain.canvas = document.createElement('canvas');
   terrain.canvas.width = R; terrain.canvas.height = R;

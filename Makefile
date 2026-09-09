@@ -2,7 +2,8 @@
 # shell/alchemy/Makefile at M1 (it expects ../alchemy-sdk like Audiothurgist).
 #
 #   make host    — build/host/kykdesk (desktop shell), kykspace (generate and
-#                  grade spaces) and kykeigen (bake a corpus into one)
+#                  grade spaces), kykeigen (bake a corpus into one) and
+#                  kykworlds (grade every built-in world on one table)
 #   make test    — tests/run.sh (unit, aliasing, golden)
 #   make tables  — regenerate core/kyk_tables.h
 CXX      ?= g++
@@ -13,7 +14,7 @@ LINK_FLAGS = -Ishell/common -I$(SDK_DIR)/framework/include -DALCHEMY_HOSTLINK_MA
 CORE_HDRS  = $(wildcard core/*.h) $(wildcard shell/common/*.h)
 
 .PHONY: host test tables clean
-host: build/host/kykdesk build/host/kykspace build/host/kykeigen
+host: build/host/kykdesk build/host/kykspace build/host/kykeigen build/host/kykworlds
 
 build/host/kykdesk: shell/desktop/main.cpp shell/desktop/wavio.h shell/desktop/script.h shell/desktop/serve.h $(CORE_HDRS)
 	@mkdir -p build/host
@@ -22,6 +23,12 @@ build/host/kykdesk: shell/desktop/main.cpp shell/desktop/wavio.h shell/desktop/s
 build/host/kykspace: tools/kykspace/main.cpp $(CORE_HDRS)
 	@mkdir -p build/host
 	$(CXX) $(CORE_FLAGS) tools/kykspace/main.cpp -o $@
+
+# kykworlds grades every registered world on one table. Offline like the rest
+# of tools/, so libm is fair game.
+build/host/kykworlds: tools/kykworlds/main.cpp tools/corpus.h $(CORE_HDRS)
+	@mkdir -p build/host
+	$(CXX) -std=gnu++17 -O2 -Wall -Wextra -Icore tools/kykworlds/main.cpp -o $@
 
 # kykeigen bakes a corpus into a space. Offline, so it may use libm and
 # exceptions; the core flags stay off it apart from the include path.

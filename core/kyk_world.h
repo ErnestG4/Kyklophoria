@@ -25,6 +25,7 @@
 #pragma once
 #include "kyk_interp.h"
 #include "kyk_eigen_basis.h"
+#include "kyk_fm.h"
 
 namespace kyk {
 
@@ -53,7 +54,7 @@ struct VertexField
 class World
 {
 public:
-    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3 };
+    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3, Fm = 4 };
     static constexpr int kMaxVerts = 32;
 
     void UseLattice(const Space* s)
@@ -78,16 +79,25 @@ public:
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }
 
+    void UseFm(const FmField& f, int p, const uint8_t* topo)
+    {
+        kind_ = (f.n >= 1 && f.n <= kMaxN && f.k >= 1 && f.k <= kMaxK) ? Kind::Fm : Kind::None;
+        fm_   = f;
+        p_    = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
+        for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
+    }
+
     Kind Which() const { return kind_; }
     bool Ready() const { return kind_ != Kind::None; }
-    int  N() const { return kind_ == Kind::Lattice ? space_->N() : (kind_ == Kind::Vertices ? verts_.n : basis_.n); }
-    int  K() const { return kind_ == Kind::Lattice ? space_->K() : (kind_ == Kind::Vertices ? verts_.k : basis_.k); }
+    int  N() const { return kind_ == Kind::Lattice ? space_->N() : (kind_ == Kind::Vertices ? verts_.n : (kind_ == Kind::Fm ? fm_.n : basis_.n)); }
+    int  K() const { return kind_ == Kind::Lattice ? space_->K() : (kind_ == Kind::Vertices ? verts_.k : (kind_ == Kind::Fm ? fm_.k : basis_.k)); }
     const VertexField& Verts() const { return verts_; }
     int  P() const { return kind_ == Kind::Lattice ? space_->P() : p_; }
     Topo TopoOf(int a) const { return kind_ == Kind::Lattice ? space_->TopoOf(a) : (Topo)topo_[a]; }
     uint32_t PhaseSeed() const { return kind_ == Kind::Lattice ? space_->Header().phase_seed : 1u; }
     const Space*      SpacePtr() const { return kind_ == Kind::Lattice ? space_ : nullptr; }
     const EigenBasis& Basis() const { return basis_; }
+    const FmField&    Fm() const { return fm_; }
 
     void Fold(const float* c, float* p) const
     {
@@ -111,6 +121,7 @@ public:
         wt.n_corners = 0;
         if(kind_ == Kind::Analytic) { EvalAnalytic(p01, mags, payload); return; }
         if(kind_ == Kind::Vertices) { EvalVertices(p01, sharp, mags, payload); return; }
+        if(kind_ == Kind::Fm) { EvalFm(p01, mags, payload); return; }
         for(int k = 0; k < kMaxK; k++) mags[k] = 0.f;
     }
 
@@ -153,6 +164,43 @@ private:
         const float pl[kMaxP] = {
             sat(Sqrt(centroid)), sat(1.f - flat), sat(bright), sat(0.3f + 0.7f * bright),
             sat(rad), sat(0.5f + 0.5f * coord[0] / basis_.extent), sat(centroid), sat(flat),
+        };
+        for(int j = 0; j < p_; j++) payload[j] = pl[j];
+    }
+
+    /* The four axes map straight onto the four FM controls. `sharp` is not
+     * used: there is nothing discrete here to lean toward, the same reason
+     * the eigenspace ignores it. */
+    void EvalFm(const float* p01, float* mags, float* payload) const
+    {
+        const int     k = fm_.k;
+        const FmPoint q = FmAt(fm_, p01);
+        FmSpectrum(q.index, q.ratio, q.carrier, q.second, k, mags);
+
+        float acc = 0.f, lin = 0.f, kw = 0.f, hf = 0.f;
+        for(int i = 0; i < k; i++)
+        {
+            const float p2 = mags[i] * mags[i];
+            acc += p2; lin += mags[i];
+            kw += (float)(i + 1) * p2;
+            if(i >= k / 4) hf += p2;
+        }
+        const float g = acc > 0.f ? Sqrt(2.f) / Sqrt(acc) : 0.f;
+        for(int i = 0; i < k; i++) mags[i] *= g;
+
+        const float centroid = acc > 0.f ? (kw / acc - 1.f) / (float)(k - 1) : 0.f;
+        const float bright   = acc > 0.f ? hf / acc : 0.f;
+        const float flat     = acc > 0.f ? (lin * lin) / ((float)k * acc) : 0.f;
+        auto        sat      = [](float x) { return x < 0.f ? 0.f : (x > 1.f ? 1.f : x); };
+        /* How near this ratio is to a whole number, 1 on it and 0 halfway
+         * between: the CV out fires when the spectrum turns harmonic, which
+         * is the event you can hear. */
+        const float fr = q.ratio - (float)(int)q.ratio;
+        const float har = 1.f - 2.f * (fr < 0.5f ? fr : 1.f - fr);
+        const float pl[kMaxP] = {
+            sat(Sqrt(centroid)), sat(1.f - flat), sat(bright), sat(0.3f + 0.7f * bright),
+            sat(har), sat(q.index / (fm_.index_max > 0.f ? fm_.index_max : 1.f)),
+            sat(centroid), sat(flat),
         };
         for(int j = 0; j < p_; j++) payload[j] = pl[j];
     }
@@ -232,6 +280,7 @@ private:
     const Space* space_ = nullptr;
     EigenBasis   basis_;
     VertexField  verts_;
+    FmField      fm_;
     int          p_ = 0;
     uint8_t      topo_[kMaxN] = {0, 0, 0, 0, 0, 0};
 };
