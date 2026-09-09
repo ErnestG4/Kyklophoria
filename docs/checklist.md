@@ -92,9 +92,19 @@ meaningful axis and stacking four banks makes rotation meaningless.
       that Braids did not.
 - [ ] **AKWF**, several thousand CC0 single cycles. 256 waves is thin for
       four principal components.
-- [ ] **The Erica-like world**: stacked saws and sines on a *logarithmic*
-      stack-count axis, which is the only way n×2, n/2 and n±1 all sit on one
-      straight line from a point.
+- [x] **The Erica-like world** — shipped as `Family::Stack`, world 1. One
+      waveform idea per axis: stack count on a logarithmic axis so n×2 and n/2
+      are equal and opposite steps, spectral tilt, pulse width, parity. I
+      predicted it would measure as badly as the Harmonic family since the
+      axes are separable in log-magnitude. Half right: it is the second most
+      lopsided space at 6.2x, but also the *liveliest*, with the most timbral
+      movement per unit of CV travel of anything we have, 0.4% duplicates and
+      better Braids coverage than the random field. Three inert axes were what
+      sank Harmonic, not separability alone.
+- [ ] **An FM or waveshaping axis** — the untested route to genuine
+      non-separability, since the spectrum would stop being a product of
+      per-axis factors. FM of integer-ratio partials lands on harmonics, so it
+      fits the representation; it needs Bessel weights.
 - [ ] **General MIDI world**, the big one. Sampled instruments are not single
       cycles, so it needs pitch tracking and cycle extraction before analysis.
 

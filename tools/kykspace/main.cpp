@@ -263,9 +263,11 @@ int main(int argc, char** argv)
         {
             const std::string f = next();
             if(f == "field") gp.family = Family::Field;
+            else if(f == "stack") gp.family = Family::Stack;
             else if(f == "harmonic") gp.family = Family::Harmonic;
-            else { fprintf(stderr, "unknown family %s (harmonic|field)\n", f.c_str()); return 2; }
+            else if(f != "harmonic") { fprintf(stderr, "unknown family %s (harmonic|field|stack)\n", f.c_str()); return 2; }
             if(name == "harmonic" && gp.family == Family::Field) name = "field";
+            if(name == "harmonic" && gp.family == Family::Stack) name = "stack";
         }
         else if(a == "--rough") gp.rough = (float)atof(next());
         else if(a == "--smooth") gp.smooth = atoi(next());

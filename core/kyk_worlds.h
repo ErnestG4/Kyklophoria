@@ -13,7 +13,7 @@
 namespace kyk {
 namespace worlds {
 
-enum : uint8_t { kBraids = 0, kFieldCalm = 1, kFieldWild = 2, kHarmonic = 3, kCount = 4 };
+enum : uint8_t { kBraids = 0, kStack = 1, kFieldCalm = 2, kFieldWild = 3, kHarmonic = 4, kCount = 5 };
 
 struct Entry
 {
@@ -26,6 +26,7 @@ inline const Entry& Get(uint8_t i)
 {
     static const Entry kEntries[kCount] = {
         {"Braids",   "eigenspace of Emilie Gillet's 256-wave bank", World::Kind::Analytic},
+        {"Stack",    "one waveform idea per axis: stacking, tilt, width, parity", World::Kind::Lattice},
         {"Field",    "correlated noise, even in every direction",   World::Kind::Lattice},
         {"Field II", "the same, rougher and less correlated",       World::Kind::Lattice},
         {"Harmonic", "one parameter per axis, legible but lopsided", World::Kind::Lattice},
@@ -54,6 +55,9 @@ inline size_t Expand(uint8_t i, int n, int side, int k, int p, uint8_t* out, siz
     g.n = n; g.side = side; g.k = k; g.p = p; g.seed = 1;
     switch(i)
     {
+        case kStack:
+            g.family = Family::Stack; g.name = "stack";
+            break;
         case kFieldCalm:
             g.family = Family::Field; g.rough = 0.9f; g.smooth = 1; g.name = "field";
             break;

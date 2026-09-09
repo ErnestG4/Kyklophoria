@@ -15,12 +15,13 @@
  */
 #pragma once
 #include "kyk_space.h"
+#include "kyk_rotate.h"   /* SinCosTurns, for the comb and the pulse width */
 
 namespace kyk {
 
 /* Which generator filled the space. The file format does not record this —
  * a blob is a blob — but the tools name it so a space can be regenerated. */
-enum class Family : uint8_t { Harmonic = 0, Field = 1 };
+enum class Family : uint8_t { Harmonic = 0, Field = 1, Stack = 2 };
 
 struct GenParams
 {
@@ -297,10 +298,101 @@ inline size_t BuildFieldLattice(const GenParams& g, uint8_t* out, size_t cap)
     return need;
 }
 
+/* ── Stack family ────────────────────────────────────────────────────────
+ * Will's proposal: one waveform idea per dimension. Stacking (a wave
+ * repeating n times inside the cycle, so its harmonics land on multiples of
+ * n), pulse width, spectral tilt, and even/odd parity. The stack axis is
+ * logarithmic, so doubling and halving the count are equal and opposite
+ * steps — the only way n×2 and n/2 sit symmetrically about a point.
+ *
+ * I predicted this would measure as badly as the Harmonic family, on the
+ * grounds that each axis is a multiplicative weighting of the harmonic
+ * series, so in log-magnitude they add, and a sum of independent per-axis
+ * terms is separable by definition. Measured, that was half right:
+ *
+ *   family    variety/unit   direction spread   duplicates   covers Braids
+ *   Harmonic       0.20            11.0x           7.0%          15%
+ *   Stack          3.43             6.2x           0.4%          24%
+ *   Field          2.81             1.5x           0.0%          18%
+ *   Eigen          1.44             2.7x           4.8%          33%
+ *
+ * Separability does hold, and this is the second most lopsided space we have.
+ * But it is also the *liveliest* — the most timbral movement per unit of CV
+ * travel of anything here — with almost no duplicate cells and better corpus
+ * coverage than the random field. What sank the Harmonic family was not
+ * separability alone but three nearly inert axes; four potent axes are
+ * lopsided without being dead. Legibility and activity are worth having on
+ * their own terms.
+ *
+ * Genuine isotropy still needs a non-linear operation — FM or waveshaping,
+ * where the spectrum is not a product of per-axis factors. Untested. */
+inline void StackPoint(const GenParams& g, const float* u, float* mags, float* payload)
+{
+    const int   K     = g.k;
+    const float stack = detail::Exp(u[0] * 2.0794f);                 /* 1 → 8, log-spaced */
+    const float tilt  = 0.3f + (g.n > 1 ? u[1] : 0.5f) * 1.7f;       /* bright → dark    */
+    const float width = 0.04f + (g.n > 2 ? u[2] : 0.5f) * 0.46f;     /* pulse width      */
+    const float odd   = g.n > 3 ? u[3] : 0.f;                        /* all → odd only   */
+    float       e     = 0.f;
+    for(int i = 0; i < K; i++)
+    {
+        const float k = (float)(i + 1);
+        float       m = detail::Powf01(k, -tilt);
+        /* comb: full weight where k is a multiple of the stack count, and
+         * continuous in between so the axis can be swept rather than stepped */
+        float sc, cc;
+        SinCosTurns(k / stack, sc, cc);
+        const float comb = 0.5f * (1.f + cc);
+        m *= comb * comb;
+        /* pulse width: the classic |sin(pi k w)| shaping of a square */
+        float sw, cw;
+        SinCosTurns(0.5f * k * width, sw, cw);
+        m *= (sw < 0.f ? -sw : sw);
+        if(i % 2 == 1) m *= 1.f - odd;
+        mags[i] = m;
+        e += m * m;
+    }
+    const float gn = e > 0.f ? Sqrt(2.f) / Sqrt(e) : 0.f;
+    for(int i = 0; i < K; i++) mags[i] *= gn;
+    float pl[kMaxP] = {1.f - u[1], u[2], u[0] * u[3], u[0], u[3], u[1], 0.5f, u[2]};
+    for(int j = 0; j < g.p; j++) payload[j] = Clamp01(pl[j]);
+}
+
+inline size_t BuildStackLattice(const GenParams& g, uint8_t* out, size_t cap)
+{
+    if(g.n < 1 || g.n > kMaxN || g.k < 1 || g.k > kMaxK || g.p < 0 || g.p > kMaxP || g.side < 2) return 0;
+    const size_t need = Space::BlobSize(g.n, g.k, g.p, g.side, false);
+    if(cap < need) return 0;
+    SpaceHeader h;
+    std::memset(&h, 0, sizeof(h));
+    h.magic = kSpaceMagic; h.version = kSpaceVersion; h.n = (uint8_t)g.n; h.mode = kModeLattice;
+    h.k = (uint8_t)g.k; h.p = (uint8_t)g.p; h.side = (uint8_t)g.side; h.phase_seed = g.seed;
+    for(int a = 0; a < kMaxN; a++) h.topo[a] = g.topo[a];
+    uint32_t count = 1;
+    for(int a = 0; a < g.n; a++) count *= (uint32_t)g.side;
+    h.point_count = count;
+    std::strncpy(h.name, g.name ? g.name : "stack", sizeof(h.name));
+    std::memcpy(out, &h, sizeof(h));
+    float* w = reinterpret_cast<float*>(out + sizeof(h));
+    int    ix[kMaxN] = {0, 0, 0, 0, 0, 0};
+    float  u[kMaxN], mags[kMaxK], payload[kMaxP];
+    for(uint32_t i = 0; i < count; i++)
+    {
+        for(int a = 0; a < g.n; a++) u[a] = (float)ix[a] / (float)(g.side - 1);
+        StackPoint(g, u, mags, payload);
+        std::memcpy(w, mags, sizeof(float) * (size_t)g.k);
+        std::memcpy(w + g.k, payload, sizeof(float) * (size_t)g.p);
+        w += (size_t)g.k + (size_t)g.p;
+        for(int a = 0; a < g.n; a++) { if(++ix[a] < g.side) break; ix[a] = 0; }
+    }
+    return need;
+}
+
 inline size_t BuildLattice(const GenParams& g, uint8_t* out, size_t cap)
 {
-    return g.family == Family::Field ? BuildFieldLattice(g, out, cap)
-                                     : BuildHarmonicLattice(g, out, cap);
+    if(g.family == Family::Field) return BuildFieldLattice(g, out, cap);
+    if(g.family == Family::Stack) return BuildStackLattice(g, out, cap);
+    return BuildHarmonicLattice(g, out, cap);
 }
 
 } // namespace kyk
