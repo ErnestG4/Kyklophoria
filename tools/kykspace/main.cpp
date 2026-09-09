@@ -12,6 +12,7 @@
 #include <vector>
 #include <fstream>
 #include "kyk_interp.h"
+#include "../corpus.h"
 #include "kyk_space.h"
 #include "kyk_gen.h"
 
@@ -141,11 +142,110 @@ static int Info(const std::string& path)
     return bad ? 1 : 0;
 }
 
+/* How well does a space cover real material?
+ *
+ * For every wave in a corpus, find the closest point in the space and report
+ * the distribution of those distances. A space can score well on variety and
+ * isotropy and still be a cabinet of curiosities that never lands near
+ * anything a player would recognise; this is the check for that. Distance is
+ * cosine distance between unit-normalised magnitude spectra, so 0 is the same
+ * spectral shape and 1 is orthogonal.
+ *
+ * Search is over lattice nodes plus cell centres. That understates coverage
+ * slightly, since a corpus wave may sit between nodes, but it is honest and
+ * it does not need an optimiser. */
+static int Cover(const std::string& path, const std::string& braids, const std::string& corpusdir)
+{
+    std::ifstream in(path, std::ios::binary);
+    if(!in) { fprintf(stderr, "cannot open %s\n", path.c_str()); return 1; }
+    std::vector<uint8_t> blob((std::istreambuf_iterator<char>(in)), {});
+    Space s;
+    if(s.Attach(blob.data(), blob.size()) != SpaceError::Ok) { fprintf(stderr, "bad space\n"); return 1; }
+
+    std::vector<std::vector<float>> cycles;
+    int nb = 0, nf = 0;
+    if(!braids.empty() && !kykcorpus::LoadBraids(braids, cycles, nb))
+    { fprintf(stderr, "could not read wt_waves from %s\n", braids.c_str()); return 1; }
+    if(!corpusdir.empty()) kykcorpus::LoadWavDir(corpusdir, cycles, nf);
+    if(cycles.empty()) { fprintf(stderr, "empty corpus\n"); return 1; }
+
+    const int K = s.K(), N = s.N();
+    auto unit = [&](std::vector<double>& v) {
+        double n2 = 0; for(double x : v) n2 += x * x;
+        n2 = std::sqrt(n2 > 0 ? n2 : 1);
+        for(double& x : v) x /= n2;
+    };
+    /* every node, plus every cell centre */
+    std::vector<std::vector<double>> pts;
+    for(uint32_t i = 0; i < s.PointCount(); i++)
+    {
+        std::vector<double> v((size_t)K);
+        for(int k = 0; k < K; k++) v[k] = s.Mags(i)[k];
+        unit(v); pts.push_back(std::move(v));
+    }
+    {
+        float mags[kMaxK], pl[kMaxP];
+        int ix[kMaxN] = {0,0,0,0,0,0}; int cells = 1;
+        for(int a = 0; a < N; a++) cells *= (s.Side() - 1);
+        for(int c = 0; c < cells; c++)
+        {
+            float p[kMaxN];
+            for(int a = 0; a < N; a++) p[a] = ((float)ix[a] + 0.5f) / (float)(s.Side() - 1);
+            Weights w; LatticeWeights(s, p, w); Blend(s, w, mags, pl);
+            std::vector<double> v((size_t)K);
+            for(int k = 0; k < K; k++) v[k] = mags[k];
+            unit(v); pts.push_back(std::move(v));
+            for(int a = 0; a < N; a++) { if(++ix[a] < s.Side() - 1) break; ix[a] = 0; }
+        }
+    }
+
+    std::vector<double> best;
+    std::vector<double> m;
+    for(const auto& c : cycles)
+    {
+        kykcorpus::Analyse(c, K, m);
+        double e = 0; for(double x : m) e += x * x;
+        if(e <= 0) continue;
+        std::vector<double> v = m; unit(v);
+        double bd = 1e9;
+        for(const auto& p : pts)
+        {
+            double d = 0;
+            for(int k = 0; k < K; k++) d += v[k] * p[k];
+            d = 1.0 - (d > 1.0 ? 1.0 : d);
+            if(d < bd) bd = d;
+        }
+        best.push_back(bd);
+    }
+    std::sort(best.begin(), best.end());
+    auto q = [&](double f) { return best[(size_t)(f * (best.size() - 1))]; };
+    printf("%s vs %zu corpus waves over %zu candidate points\n", path.c_str(), best.size(), pts.size());
+    printf("  nearest-point distance: best %.4f  p25 %.4f  median %.4f  p75 %.4f  worst %.4f\n",
+           q(0), q(0.25), q(0.5), q(0.75), q(1));
+    int near = 0, far = 0;
+    for(double d : best) { if(d < 0.02) near++; if(d > 0.20) far++; }
+    printf("  recognisably covered (<0.02): %d of %zu (%.0f%%)   badly missed (>0.20): %d (%.0f%%)\n",
+           near, best.size(), 100.0 * near / (double)best.size(), far, 100.0 * far / (double)best.size());
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
-    if(argc < 3) { fprintf(stderr, "usage: kykspace gen out.kyk [opts] | kykspace info file.kyk\n"); return 2; }
+    if(argc < 3) { fprintf(stderr, "usage: kykspace gen out.kyk [opts] | info file.kyk | cover file.kyk --braids <resources.cc>\n"); return 2; }
     const std::string cmd = argv[1], path = argv[2];
     if(cmd == "info") return Info(path);
+    if(cmd == "cover")
+    {
+        std::string braids, corpusdir;
+        for(int i = 3; i < argc; i++)
+        {
+            std::string a = argv[i];
+            auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : ""; };
+            if(a == "--braids") braids = next();
+            else if(a == "--corpus") corpusdir = next();
+        }
+        return Cover(path, braids, corpusdir);
+    }
     if(cmd != "gen") { fprintf(stderr, "unknown command %s\n", cmd.c_str()); return 2; }
     GenParams gp;
     std::string name = "harmonic";

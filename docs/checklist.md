@@ -44,6 +44,36 @@ not a dependency chain.
 - [ ] **Wrap and sphere** on the panel. Both are implemented and seam-tested
       in the core; neither is reachable from the module.
 
+## Parametric axes — a proposal from Sonnet, and what measurement says
+
+Argued for replacing corpus-derived axes with closed-form parametric ones
+(tilt, parity, stretch, fold), on the grounds that a curated bank has one
+meaningful axis and stacking four banks makes rotation meaningless.
+
+- [x] **Measured.** Coverage of the Braids corpus, nearest-point cosine
+      distance over matched candidate counts:
+
+      | space | covered (<0.02) | badly missed (>0.20) | direction spread |
+      |---|---|---|---|
+      | Harmonic, parametric, side 8 | 15% | 55% | 11.0x |
+      | Field, random, side 8 | 18% | 12% | 1.5x |
+      | Eigen, PCA from Braids, side 8 | 33% | 11% | 2.7x |
+
+      The parametric family we already have *is* closed-form legible axes, and
+      it is the worst on both counts. So "closed-form axes" is not the fix for
+      rotation; separability is the cause of the anisotropy, not the cure.
+- [ ] **Still worth building**: tilt / parity / fold as a fourth family, to be
+      graded on the same numbers rather than argued about. Legible axes have
+      real value that PCA lacks — nobody can learn "PC2".
+- [ ] **Stretch cannot be built as proposed.** `f_n = n·f0·sqrt(1+B·n²)` is
+      inharmonic, and a single-cycle frame read cyclically at f0 is strictly
+      periodic at f0, so it can hold harmonics of f0 and nothing else. It
+      needs either an M-period frame (1/M-harmonic resolution, K grows by M)
+      or a per-partial additive renderer. Real idea, different engine.
+- [ ] Even the eigenspace only lands within 0.02 of a third of the corpus it
+      was built from, so four components is a real limit, not just a tuning
+      choice.
+
 ## Worlds
 
 - [ ] **World manifest**: one small text file naming corpus, representation,
