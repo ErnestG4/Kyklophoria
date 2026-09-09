@@ -81,6 +81,48 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   check(st && st.renderDiv >= 1, 'stats');
   console.log(`  stats: cycles last ${st.cyclesLast} max ${st.cyclesMax} avg ${st.cyclesAvg} budget ${st.cyclesBudget} overruns ${st.overruns} dropped ${st.dropped}`);
 
+  /* The FM world's formula, and the page's port of it against the module's.
+   * The page draws its terrain from evalFm, so a drift between the two would
+   * mean the picture stops being the space that is playing. GET_CELL asks the
+   * module for the spectrum it actually computed at a position. */
+  {
+    const ws = KYK.parseWorlds(await link.request(KYK.CMD.worlds, new Uint8Array(0)));
+    const fm = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.fm);
+    check(!!fm, 'an FM world is registered');
+    if (fm) {
+      const b = await KYK.fetchBasis(link, fm.index, info.maxBody);
+      check(b && b.fm && b.n === 4 && b.k === 64, 'FM formula arrives as 7 numbers');
+      check(b && b.ratioMax > b.ratioMin && b.indexMax > 0, 'FM reaches are sane');
+      /* switch to it, park at a known position, compare spectra */
+      await link.request(KYK.CMD.action, KYK.actionReq(KYK.ACT.selectWorld, [fm.index]));
+      for (let i = 0; i < 60; i++) {
+        const w2 = KYK.parseWorlds(await link.request(KYK.CMD.worlds, new Uint8Array(0)));
+        if (w2 && w2.current === fm.index) break;
+        await new Promise(r => setTimeout(r, 20));
+      }
+      const p = [0.37, 0.62, 0.28, 0.71];
+      await link.request(KYK.CMD.setControl, KYK.setControlReq(110, p, [0, 0, 0, 0, 0, 0], 0));
+      let t3 = null;
+      for (let i = 0; i < 60; i++) {
+        t3 = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(1)));
+        if (t3 && Math.abs(t3.posL[0] - p[0]) < 1e-3) break;
+        await new Promise(r => setTimeout(r, 20));
+      }
+      check(t3 && Math.abs(t3.posL[0] - p[0]) < 1e-3, 'module parked at the test position');
+      const mine = KYK.evalFm(b, t3.posL);
+      /* both to unit norm, then compare: telemetry mags are 8-bit dB, so the
+       * tolerance is what that quantisation allows, not what the maths does */
+      const norm = (a) => { let e = 0; for (const v of a) e += v * v; e = Math.sqrt(e) || 1; return a.map(v => v / e); };
+      const theirs = norm(Array.from(t3.mags).map(KYK.magDb).map(d => Math.pow(10, d / 20)));
+      const ours = norm(Array.from(mine));
+      let worst = 0;
+      for (let i = 0; i < 64; i++) worst = Math.max(worst, Math.abs(theirs[i] - ours[i]));
+      check(worst < 0.02, 'page FM matches the module FM (worst partial ' + worst.toFixed(4) + ')');
+      console.log('  FM: index<=' + b.indexMax + ' ratio ' + b.ratioMin + '..' + b.ratioMax +
+                  ' lock ' + b.ratioLock + ', worst partial mismatch ' + worst.toFixed(4));
+    }
+  }
+
   /* SET_CONTROL then telemetry must reflect it */
   const ctl = [0.11, 0.62, 0.33, 0.84], ang = [0.1, 0, 0, 0.05, 0, 0];
   await link.request(KYK.CMD.setControl, KYK.setControlReq(220, ctl, ang, 0.02), { urgent: true });
