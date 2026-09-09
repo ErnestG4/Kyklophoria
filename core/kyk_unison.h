@@ -10,18 +10,27 @@
  * between harmonics — and since the frame is strictly periodic at f0, "between
  * harmonics" is not available. So each partial is split across the two bins it
  * falls between, the same trick the FM world uses for its sidebands. The
- * result is not a detuned oscillator, which this engine cannot produce, but it
- * is the thing a detuned stack *sounds* like: energy smeared across
- * neighbouring partials, beating against the ones already there. Signed
- * deposits, so voices cancel where they should.
+ * The result is not a detuned oscillator, and it does not beat. Saying it did
+ * was wrong and worth correcting here: the frame is strictly periodic at f0,
+ * so every partial in it is an exact harmonic and two of them can never drift
+ * against each other. What the split actually gives is energy spread onto
+ * neighbouring harmonics, with signed deposits so voices cancel where they
+ * overlap — a fixed comb, not a moving one.
+ *
+ * The chorusing you hear is real but comes from somewhere else: when the
+ * detune axis *moves*, the split ratio slides, and the amplitudes of adjacent
+ * partials trade places continuously. That is an amplitude effect driven by
+ * the control rate, not an interference between mistuned oscillators. Park the
+ * position and it stops dead, which is the honest test of the difference.
  *
  * The four axes:
  *
  *   voices    one to seven copies, the last fading in rather than appearing.
  *   interval  where the copies sit: roots at 1 + j·s for s from 1 (every
  *             harmonic, a dense buzz) to 2.6 (wide and hollow).
- *   detune    pushes the roots off whole numbers, which is where the beating
- *             lives. Zero is exactly harmonic.
+ *   detune    pushes the roots off whole numbers, spreading each partial over
+ *             two harmonics. Zero is exactly harmonic. Alive when it moves,
+ *             static when it does not — see above.
  *   wave      the copied waveform: saw, through square, to a narrow pulse.
  *
  * Deliberately free of transcendentals: the saw and the square are both table

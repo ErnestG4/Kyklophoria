@@ -654,8 +654,14 @@ land between harmonics — which a frame periodic at f0 cannot hold — so each
 partial is split across the two bins it falls between, the same trick the FM
 world uses. That is not a detuned oscillator, which this engine cannot produce,
 but it is what a detuned stack *sounds* like: energy smeared onto neighbouring
-partials, beating against what is already there. Deposits are signed, so voices
-cancel where they should.
+harmonics, with signed deposits so voices cancel where they overlap.
+
+It does **not** beat, and the first version of this note said it did. A frame
+periodic at f0 holds exact harmonics and nothing else, so two partials in it
+can never drift against one another. The chorusing is real but comes from
+motion: when the detune axis moves, the split ratio slides and adjacent
+partials trade amplitude continuously. Park the position and it stops dead,
+which is the test that tells the two apart.
 
 Axes are voices (one to seven, the last fading in), interval, detune, and the
 copied waveform from saw through square to a narrow pulse. The interval axis
