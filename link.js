@@ -24,7 +24,7 @@ const CMD = {
   worlds: 0x65, basis: 0x66, setControl: 0x6e,
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4 };
-const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5 };
+const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5, table: 6 };
 const TEL = { spectrum: 1, frame: 2, motion: 4 };
 const STATUS = ['OK', 'UNSUPPORTED', 'BAD_ARGS', 'BAD_STATE', 'BAD_CRC', 'BAD_SLOT', 'TOO_LARGE',
   'SCHEMA_MISMATCH', 'FLASH_FAIL', 'BUSY', 'FRAME_ERROR'];
@@ -308,7 +308,8 @@ function parseWorlds(b) {
     [name, at] = readStr(b, at); [note, at] = readStr(b, at);
     /* `analytic` here means the page can evaluate it: a world with a
      * formula small enough to hold, whichever formula it is. */
-    list.push({ index: i, kind, analytic: kind === WORLD_KIND.analytic || kind === WORLD_KIND.fm || kind === WORLD_KIND.formant, name, note });
+    list.push({ index: i, kind, analytic: kind === WORLD_KIND.analytic || kind === WORLD_KIND.fm || kind === WORLD_KIND.formant
+                 || kind === WORLD_KIND.table, name, note });
   }
   return { current, list };
 }
@@ -333,6 +334,10 @@ function parseBasis(all) {
       indexMax: d.getFloat32(4, true), ratioMin: d.getFloat32(8, true), ratioMax: d.getFloat32(12, true),
       carrierMin: d.getFloat32(16, true), carrierMax: d.getFloat32(20, true),
       secondMax: d.getFloat32(24, true), ratioLock: d.getFloat32(28, true),
+    };
+    if (all[1] === WORLD_KIND.table && all.length >= 32) return {
+      table: true, n: all[2], k: all[3], cols: all[4], rows: all[5],
+      axis2: all[6], axis3: all[7], pulseMin: d.getFloat32(8, true),
     };
     if (all[1] === WORLD_KIND.formant && all.length >= 44) return {
       formant: true, n: all[2], k: all[3],
@@ -423,6 +428,72 @@ function evalFm(basis, p01, out) {
   return m;
 }
 
+/* The 2-D table of real waveforms — a port of core/kyk_shapes.h. Only the
+ * spectrum half: the shaper axes act on the rendered cycle, not on the
+ * harmonics, so the terrain this draws is the table on axes 0 and 1 and says
+ * nothing about axes 2 and 3. That is the honest picture of the world rather
+ * than a limitation of the drawing. */
+function shapeEnd(b, col, end, out) {
+  const k = b.k;
+  for (let i = 0; i < k; i++) out[i] = 0;
+  if (col === 0) {
+    const n = end ? 8 : 1;
+    for (let h = 1; h <= n && h <= k; h++) out[h - 1] = 1 / h;
+  } else if (col === 1) {
+    for (let h = 1; h <= k; h += 2) {
+      const sg = end ? 1 : ((((h - 1) / 2) & 1) ? -1 : 1);
+      out[h - 1] = sg * Math.pow(h, -2);
+    }
+  } else if (col === 2) {
+    for (let h = 1; h <= k; h++) {
+      let v = 1 / h;
+      if (end) { const d = (Math.log(h) - Math.log(11)) / 0.45; v *= 1 + 5.5 * Math.exp(-0.5 * d * d); }
+      out[h - 1] = v;
+    }
+  } else {
+    const d = end ? b.pulseMin : 0.5;
+    for (let h = 1; h <= k; h++) out[h - 1] = 2 * (1 - Math.cos(2 * Math.PI * h * d)) / (Math.PI * h);
+  }
+  return out;
+}
+const shpA = new Float32Array(256), shpB = new Float32Array(256);
+function shapeNode(b, col, row, out) {
+  const k = b.k, t = b.rows > 1 ? row / (b.rows - 1) : 0;
+  shapeEnd(b, col, 0, out);
+  if (t > 0) { shapeEnd(b, col, 1, shpB); for (let i = 0; i < k; i++) out[i] += t * (shpB[i] - out[i]); }
+  let e = 0; for (let i = 0; i < k; i++) e += out[i] * out[i];
+  const g = e > 0 ? Math.SQRT2 / Math.sqrt(e) : 0;
+  for (let i = 0; i < k; i++) out[i] *= g;
+  return out;
+}
+function snapTo(u, sharp) {
+  if (!(sharp > 0)) return u;
+  if (u <= 0) return 0; if (u >= 1) return 1;
+  const a = 1 + 7 * sharp * sharp;
+  const x = Math.pow(u, a), y = Math.pow(1 - u, a);
+  return (x + y) > 0 ? x / (x + y) : u;
+}
+function evalShapes(basis, p01, out, sharp = 0) {
+  const k = basis.k, C = basis.cols, R = basis.rows;
+  const m = out && out.length >= k ? out : new Float32Array(k);
+  const gx = p01[0] * (C - 1), gy = p01[1] * (R - 1);
+  let c0 = Math.min(C - 2, Math.max(0, Math.floor(gx)));
+  let r0 = Math.min(R - 2, Math.max(0, Math.floor(gy)));
+  const u = snapTo(gx - c0, sharp), v = snapTo(gy - r0, sharp);
+  const w = [(1 - u) * (1 - v), u * (1 - v), (1 - u) * v, u * v];
+  const cc = [c0, c0 + 1, c0, c0 + 1], rr = [r0, r0, r0 + 1, r0 + 1];
+  for (let i = 0; i < k; i++) m[i] = 0;
+  for (let q = 0; q < 4; q++) {
+    if (!(w[q] > 0)) continue;
+    shapeNode(basis, cc[q], rr[q], shpA);
+    for (let i = 0; i < k; i++) m[i] += w[q] * shpA[i];
+  }
+  let acc = 0; for (let i = 0; i < k; i++) acc += m[i] * m[i];
+  const g = acc > 0 ? Math.SQRT2 / Math.sqrt(acc) : 0;
+  for (let i = 0; i < k; i++) m[i] *= g;
+  return m;
+}
+
 /* Three resonances over a falling source — a port of core/kyk_formant.h, the
  * same shape of thing as evalFm and for the same reason. */
 function evalFormant(basis, p01, out) {
@@ -478,7 +549,7 @@ const planeCount = n => n * (n - 1) / 2;
 const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
-  parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
+  parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, basisReq, parseBasis, fetchBasis, evalBasis,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };

@@ -91,11 +91,14 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
     const vw = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.formant);
     check(!!fm, 'an FM world is registered');
     check(!!vw, 'a formant world is registered');
+    const tb = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.table);
+    check(!!tb, 'a shape-table world is registered');
     for (const { w, evalFn, label } of [{ w: fm, evalFn: KYK.evalFm, label: 'FM' },
-                                        { w: vw, evalFn: KYK.evalFormant, label: 'Vowel' }]) {
+                                        { w: vw, evalFn: KYK.evalFormant, label: 'Vowel' },
+                                        { w: tb, evalFn: KYK.evalShapes, label: 'Shapes' }]) {
       if (!w) continue;
       const b = await KYK.fetchBasis(link, w.index, info.maxBody);
-      check(b && (b.fm || b.formant) && b.n === 4 && b.k === 64, label + ' formula arrives');
+      check(b && (b.fm || b.formant || b.table) && b.n === 4 && b.k === 64, label + ' formula arrives');
       /* switch to it, park at a known position, compare spectra */
       await link.request(KYK.CMD.action, KYK.actionReq(KYK.ACT.selectWorld, [w.index]));
       for (let i = 0; i < 60; i++) {
