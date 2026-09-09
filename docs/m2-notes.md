@@ -154,9 +154,8 @@ interpolation from smooth blending toward hard stepping between cells, which
 is the control both halves of the survey said to steal. CV depth moved to P6.
 
 ## Open
-- Goldens were regenerated: the level-preserving blend and the crossfade fix
-  both change output. `m2_field` is a new golden covering the field family,
-  rotation and the stereo pair.
-- Still no bench numbers. Everything above is desktop measurement.
-- The seam-aware slew (a jump across a wrapped axis currently travels the long
-  way round) is not done.
+
+Live list moved to `docs/checklist.md`. Left here only as a note on this
+round: goldens were regenerated, since the level-preserving blend and the
+crossfade fix both change output, and `m2_field` is a new golden covering the
+field family, rotation and the stereo pair.
