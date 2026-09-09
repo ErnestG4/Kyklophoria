@@ -122,7 +122,7 @@ int main(int argc, char** argv)
     eng.L.move_eps = deadband;
     eng.R.move_eps = deadband;
 
-    if(serve) return Serve(eng, blob.data(), blob.size(), have_script ? &script : nullptr, loop, sr, block);
+    if(serve) return Serve(eng, world, blob, have_script ? &script : nullptr, loop, sr, block);
 
     Player player;
     player.Reset(&script);

@@ -67,6 +67,14 @@ public:
     }
     void SetF0(float f0) { L.SetF0(f0); R.SetF0(f0); }
 
+    /* Change worlds under a running voice. Build the World fully first. */
+    void SetWorld(const World* w)
+    {
+        world_ = w;
+        L.SetWorld(w);
+        R.SetWorld(w);
+    }
+
     /* Engine tunables, applied to both voices. */
     void SetGain(float g) { L.gain = g; R.gain = g; }
     void SetRenderDiv(int d) { L.render_div = d; R.render_div = d; }

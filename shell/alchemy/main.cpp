@@ -30,7 +30,7 @@
 #include "alchemy/host_link/host.h"
 
 #include "kyk_stereo.h"
-#include "kyk_gen.h"
+#include "kyk_worlds.h"
 #include "kyk_telemetry.h"
 #include "kyk_ext.h"
 
@@ -142,8 +142,17 @@ static const Jack kJacks[10] = {
  * measured variety per unit of CV travel roughly doubles between them
  * (docs/m2-notes.md). 1.18 MB of the 64 MB SDRAM. */
 static constexpr int kBootN = 4, kBootSide = 8, kBootK = 64, kBootP = 8;
-static uint8_t      KYK_SDRAM gBlob[Space::BlobSize(kBootN, kBootK, kBootP, kBootSide, false)];
-static Space        gSpace;
+
+/* Two lattice buffers, so a tabulated world can be expanded while the current
+ * one keeps playing; the swap is then a single pointer write. Analytic worlds
+ * need neither buffer nor wait, which is why the module boots into one. */
+static uint8_t KYK_SDRAM gBlob[2][Space::BlobSize(kBootN, kBootK, kBootP, kBootSide, false)];
+static Space   gSpace[2];
+static World   gWorlds[2];
+static uint8_t gBufIdx    = 0;
+static volatile uint8_t gWorldIdx = worlds::kBraids;
+static volatile uint8_t gWorldReq = 0xFFu;   /* 0xFF: nothing pending */
+static volatile uint8_t gWorldBusy = 0;
 static StereoEngine KYK_AXI gEng;
 
 /* ── audio ↔ control shared state ────────────────────────────────────────── */
@@ -223,18 +232,20 @@ struct ModuleSource : ExtSource
     }
     bool SpaceInfo(SpaceHeader& h, uint32_t& crc, uint16_t& stride) override
     {
-        if(!gSpace.Attached()) return false;
-        h      = gSpace.Header();
+        const Space* s = gEng.SpacePtr();
+        if(!s || !s->Attached()) return false;   /* an analytic world has no lattice */
+        h      = s->Header();
         crc    = gBlobCrc;
-        stride = (uint16_t)gSpace.Stride();
+        stride = (uint16_t)s->Stride();
         return true;
     }
     bool Cell(uint32_t idx, uint8_t* mags, float* payload, int& k, int& p) override
     {
-        if(!gSpace.Attached() || idx >= gSpace.PointCount()) return false;
-        k = gSpace.K(); p = gSpace.P();
-        for(int i = 0; i < k; i++) mags[i] = detail::MagToU8(gSpace.Mags(idx)[i]);
-        for(int j = 0; j < p; j++) payload[j] = gSpace.Payload(idx)[j];
+        const Space* s = gEng.SpacePtr();
+        if(!s || !s->Attached() || idx >= s->PointCount()) return false;
+        k = s->K(); p = s->P();
+        for(int i = 0; i < k; i++) mags[i] = detail::MagToU8(s->Mags(idx)[i]);
+        for(int j = 0; j < p; j++) payload[j] = s->Payload(idx)[j];
         return true;
     }
     void Stats(ExtStats& s) override
@@ -253,15 +264,96 @@ struct ModuleSource : ExtSource
         {
             case kActResetPhase: gResetPhase = 1; return 0u;
             case kActRenderDiv: (void)args; (void)len; return 1u;   /* the pot owns it on the module */
+            case kActSelectWorld:
+                if(len < 1 || args[0] >= worlds::kCount) return 2u;
+                if(gWorldBusy) return 9u;                     /* BUSY */
+                gWorldReq = args[0];
+                return 0u;
             default: return 1u;
         }
     }
+    int Worlds(uint8_t& count, uint8_t& current, const char** names, const char** notes,
+               uint8_t* kinds, int max) override
+    {
+        count   = (uint8_t)(worlds::kCount < max ? worlds::kCount : max);
+        current = gWorldIdx;
+        for(int i = 0; i < (int)count; i++)
+        {
+            names[i] = worlds::Get((uint8_t)i).name;
+            notes[i] = worlds::Get((uint8_t)i).note;
+            kinds[i] = (uint8_t)worlds::Get((uint8_t)i).kind;
+        }
+        return count;
+    }
+
+    /* The formula, so the page can evaluate the space itself instead of
+     * asking for it a point at a time. About 1.3 KB for the whole world. */
+    int Basis(uint8_t world, uint32_t offset, uint8_t* out, int max, uint32_t& total) override
+    {
+        total = 0;
+        if(!worlds::IsAnalytic(world)) return 0;
+        World w;
+        if(!worlds::Point(world, w, kBootP, nullptr)) return 0;
+        const EigenBasis& b = w.Basis();
+        const uint32_t    hdr = 2u + 8u;
+        total = hdr + (uint32_t)(sizeof(float) * (size_t)b.k * (size_t)(b.n + 1));
+        if(offset >= total) return 0;
+        uint32_t n = total - offset;
+        if(n > (uint32_t)max) n = (uint32_t)max;
+        for(uint32_t i = 0; i < n; i++)
+        {
+            const uint32_t at = offset + i;
+            uint8_t        v  = 0;
+            if(at == 0) v = (uint8_t)b.n;
+            else if(at == 1) v = (uint8_t)b.k;
+            else if(at < 6) { float e = b.extent; v = ((const uint8_t*)&e)[at - 2]; }
+            else if(at < 10) { float f = b.floor_; v = ((const uint8_t*)&f)[at - 6]; }
+            else
+            {
+                const uint32_t o  = at - hdr;
+                const uint32_t fi = o / 4u, bo = o % 4u;
+                const float    x  = fi < (uint32_t)b.k ? b.mean[fi] : b.comp[fi - (uint32_t)b.k];
+                v                 = ((const uint8_t*)&x)[bo];
+            }
+            out[i] = v;
+        }
+        return (int)n;
+    }
+
     uint32_t gBlobCrc   = 0;
     uint32_t gCycMaxWin = 0, gCycAvgWin = 0;
 };
 static ModuleSource  gSource;
 static KykExt         gExt(gSource);
 static hostlink::Host host(presets, "kyk", "Kyklophoria", KYK_FW_VERSION, KYK_GIT_HASH);
+
+/* Switch worlds on the control thread. Analytic is a pointer write; a
+ * tabulated world is expanded into the spare buffer first, which takes long
+ * enough that it must not happen anywhere near the audio callback. */
+static void ServeWorldRequest()
+{
+    const uint8_t req = gWorldReq;
+    if(req == 0xFFu || req >= worlds::kCount) return;
+    gWorldReq  = 0xFFu;
+    gWorldBusy = 1;
+    const uint8_t wi = (uint8_t)(gBufIdx ^ 1u);
+    if(worlds::IsAnalytic(req))
+    {
+        worlds::Point(req, gWorlds[wi], kBootP, nullptr);
+    }
+    else
+    {
+        const size_t n = worlds::Expand(req, kBootN, kBootSide, kBootK, kBootP,
+                                        gBlob[wi], sizeof(gBlob[wi]));
+        if(n == 0 || gSpace[wi].Attach(gBlob[wi], n) != SpaceError::Ok) { gWorldBusy = 0; return; }
+        gWorlds[wi].UseLattice(&gSpace[wi]);
+    }
+    __asm__ volatile("dmb" ::: "memory");
+    gEng.SetWorld(&gWorlds[wi]);
+    gBufIdx    = wi;
+    gWorldIdx  = req;
+    gWorldBusy = 0;
+}
 
 /* one-second stats window and the CV out, from the control loop (~40 Hz) */
 static void OnFrame()
@@ -277,6 +369,7 @@ static void OnFrame()
         win_t = now_ms;
     }
     hw.j8.SetVolts(gPayloadA * 5.f * k_cvdep.Norm());
+    ServeWorldRequest();
 }
 
 int main()
@@ -286,20 +379,10 @@ int main()
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
-    /* the boot space: the correlated field, seed 1 (SD loading is M4). The
-     * Harmonic family is still in the build and reachable from the card. */
-    GenParams gp;
-    gp.family = Family::Field;
-    gp.n      = kBootN;
-    gp.side   = kBootSide;
-    gp.k      = kBootK;
-    gp.p      = kBootP;
-    gp.seed   = 1;
-    gp.name   = "boot field";
-    const size_t n = BuildLattice(gp, gBlob, sizeof(gBlob));
-    gSpace.Attach(gBlob, n);
-    gSource.gBlobCrc = Crc32(gBlob, n);
-    gEng.Init(&gSpace, hw.SampleRate());
+    /* Boot into an analytic world: it is a formula, so there is nothing to
+     * expand and the module makes sound immediately. */
+    worlds::Point(worlds::kBraids, gWorlds[0], kBootP, nullptr);
+    gEng.Init(&gWorlds[0], hw.SampleRate());
 
     hw.j8.EnableCvOutput();
 

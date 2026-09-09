@@ -109,6 +109,16 @@ public:
 
     void ResetPhase(uint32_t p = 0) { osc_.ResetPhase(p); }
 
+    /* Swap the world under a running voice. One pointer write, so the audio
+     * thread either sees the old world or the new one and never a mixture —
+     * provided the caller finished building the new World before calling. */
+    void SetWorld(const World* w)
+    {
+        world_ = w;
+        dirty_ = true;
+        for(int a = 0; a < kMaxN; a++) rendered_[a] = 1e9f;   /* force a re-render */
+    }
+
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
     /* Match another voice's phase and block count without rendering. */
     void FollowPhase(const Engine& o)

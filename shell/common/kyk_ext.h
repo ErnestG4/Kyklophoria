@@ -22,9 +22,12 @@ constexpr uint8_t kCmdSpaceInfo  = 0x61;
 constexpr uint8_t kCmdCell       = 0x62;
 constexpr uint8_t kCmdStats      = 0x63;
 constexpr uint8_t kCmdAction     = 0x64;
+constexpr uint8_t kCmdWorlds     = 0x65;   /* the list, and which one is live */
+constexpr uint8_t kCmdBasis      = 0x66;   /* an analytic world's formula, chunked */
 constexpr uint8_t kCmdSetControl = 0x6E;   /* desktop bridge only */
 
-enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace = 2, kActRenderDiv = 3 };
+enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace = 2, kActRenderDiv = 3,
+                          kActSelectWorld = 4 };
 
 struct ExtStats
 {
@@ -46,6 +49,23 @@ struct ExtSource
     virtual void Stats(ExtStats& s) = 0;
     /* Returns a protocol status (0 ok, 2 bad args, 3 bad state, 1 unsupported). */
     virtual uint8_t Action(uint8_t op, const uint8_t* args, int len) = 0;
+    /* The world list: how many, which is live, and a name and note each. */
+    virtual int Worlds(uint8_t& count, uint8_t& current, const char** names, const char** notes,
+                       uint8_t* kinds, int max)
+    {
+        (void)names; (void)notes; (void)kinds; (void)max;
+        count = 0; current = 0;
+        return 0;
+    }
+    /* An analytic world's formula, as raw bytes the host can evaluate itself:
+     * u8 n, u8 k, f32 extent, f32 floor, f32 mean[k], f32 comp[n][k]. Returns
+     * the total length; `out` receives up to `max` bytes from `offset`. */
+    virtual int Basis(uint8_t world, uint32_t offset, uint8_t* out, int max, uint32_t& total)
+    {
+        (void)world; (void)offset; (void)out; (void)max; total = 0;
+        return 0;
+    }
+
     /* Desktop: set f0, control frame, angles and spread. Module: unsupported. */
     virtual uint8_t SetControl(float f0, const float* c, int n, const float* angles, int planes, float spread)
     {
@@ -63,7 +83,8 @@ public:
     uint8_t     LastCmd() const override { return 0x6Fu; }
     const char* DescriptorRootJson() const override
     {
-        return "\"kyk\":{\"ext\":1,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,\"control\":110}";
+        return "\"kyk\":{\"ext\":2,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,"
+               "\"worlds\":101,\"basis\":102,\"control\":110}";
     }
 
     void Handle(const alchemy::hostlink::ParsedFrame& f, alchemy::hostlink::FrameWriter& w, uint32_t) override
@@ -106,6 +127,46 @@ public:
                 w.U8((uint8_t)p);
                 w.Bytes(mags, (size_t)k);
                 for(int j = 0; j < p; j++) { uint32_t u; std::memcpy(&u, &pl[j], 4); w.U32(u); }
+                return;
+            }
+            case kCmdWorlds:
+            {
+                const char* names[16];
+                const char* notes[16];
+                uint8_t     kinds[16];
+                uint8_t     count = 0, current = 0;
+                src_.Worlds(count, current, names, notes, kinds, 16);
+                if(count == 0) { w.U8(1u); return; }
+                w.U8(0u);
+                w.U8(count);
+                w.U8(current);
+                for(int i = 0; i < (int)count; i++)
+                {
+                    w.U8(kinds[i]);
+                    w.Str(names[i] ? names[i] : "");
+                    w.Str(notes[i] ? notes[i] : "");
+                }
+                return;
+            }
+            case kCmdBasis:
+            {
+                if(f.len < 7) { w.U8(2u); return; }
+                const uint8_t world = f.body[0];
+                uint32_t      off;
+                uint16_t      want;
+                std::memcpy(&off, f.body + 1, 4);
+                std::memcpy(&want, f.body + 5, 2);
+                static uint8_t buf[alchemy::hostlink::kMaxBody];
+                int cap = (int)sizeof(buf) - 12;
+                if((int)want < cap) cap = (int)want;
+                uint32_t  total = 0;
+                const int n     = src_.Basis(world, off, buf, cap, total);
+                if(total == 0) { w.U8(1u); return; }   /* not an analytic world */
+                w.U8(0u);
+                w.U32(total);
+                w.U32(off);
+                w.U16((uint16_t)n);
+                w.Bytes(buf, (size_t)n);
                 return;
             }
             case kCmdStats:

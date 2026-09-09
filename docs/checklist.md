@@ -76,6 +76,14 @@ meaningful axis and stacking four banks makes rotation meaningless.
 
 ## Worlds
 
+- [x] **Two backends, analytic and tabulated** (`core/kyk_world.h`). A world
+      with a formula is evaluated live; one without is expanded to a lattice.
+      1.3 KB against 1.18 MB for the same eigenspace, and switching to an
+      analytic world is a pointer write. See docs/worlds.md for the numbers.
+- [x] **World switching over HostLink**: 0x65 lists them, 0x66 sends an
+      analytic world's formula so a host can evaluate the space itself, and
+      ACTION 4 selects one. The module now boots into the analytic Braids
+      world, so it makes sound immediately with nothing to expand.
 - [ ] **World manifest**: one small text file naming corpus, representation,
       extrapolation and parameters, that the tools execute to bake a `.kyk`.
       The runtime needs no change; the format is already world-agnostic.

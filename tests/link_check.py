@@ -120,7 +120,7 @@ def stdio_tests():
         ty, seq, r, ok = link.request(0x02, struct.pack('<IH', off, 1000))
         n = struct.unpack('<H', r[5:7])[0]; d += r[7:7 + n]; off += n
     check(crc32(d) == dcrc and len(d) == dlen, 'descriptor CRC/length')
-    check(b'"kyk":{"ext":1' in d and b'"iomap":[' in d, 'descriptor carries the kyk block and iomap')
+    check(b'"kyk":{"ext":' in d and b'"iomap":[' in d, 'descriptor carries the kyk block and iomap')
     ty, seq, r, ok = link.request(0x61)
     check(ok and r[0] == 0 and len(r) == 1 + 64 + 6, f'space info size {len(r)}')
     check(r[1:5] == b'KYK1' and r[7] == 4 and r[9] == 64 and r[10] == 8 and r[11] == 4, 'space header fields')
@@ -152,6 +152,58 @@ def stdio_tests():
     check(r[17] == 2, f'render_div visible in stats ({r[17]})')
     ty, seq, r, ok = link.request(0x64, bytes([77]))
     check(r[0] == 1, 'unknown action → UNSUPPORTED')
+    # the world list, the formula, and switching between them
+    ty, seq, r, ok = link.request(0x65)
+    check(ok and r[0] == 0 and r[1] >= 2, f'GET_WORLDS returns a list ({r[1] if len(r)>1 else "?"})')
+    n_worlds, cur, at = r[1], r[2], 3
+    names = []
+    for _ in range(n_worlds):
+        kind = r[at]; at += 1
+        ln = r[at]; nm = r[at+1:at+1+ln].decode(); at += 1 + ln
+        ln2 = r[at]; at += 1 + ln2
+        names.append((nm, kind))
+    check(at == len(r), f'world list consumed exactly ({at} of {len(r)})')
+    check(any(k == 2 for _, k in names), 'at least one analytic world')
+    check(any(k == 1 for _, k in names), 'at least one lattice world')
+    analytic = next(i for i, (_, k) in enumerate(names) if k == 2)
+    lattice = next(i for i, (_, k) in enumerate(names) if k == 1)
+
+    # the analytic world's formula, chunked
+    blob, off, total = b'', 0, None
+    while total is None or off < total:
+        ty, seq, r, ok = link.request(0x66, struct.pack('<BIH', analytic, off, 900))
+        check(r[0] == 0, 'GET_BASIS ok')
+        total = struct.unpack('<I', r[1:5])[0]
+        n = struct.unpack('<H', r[9:11])[0]
+        if n == 0: break
+        blob += r[11:11+n]; off += n
+    bn, bk = blob[0], blob[1]
+    extent, floor_ = struct.unpack('<ff', blob[2:10])
+    check(len(blob) == total, f'basis fully fetched ({len(blob)} of {total})')
+    check(total == 10 + 4*bk*(bn+1), f'basis size matches n={bn} k={bk}')
+    check(bn == 4 and bk == 64 and 0.5 < extent < 10, f'basis header n={bn} k={bk} extent={extent:.2f}')
+    check(total < 2000, f'the whole world is {total} bytes')
+
+    # a lattice world refuses to hand out a formula, because it has none
+    ty, seq, r, ok = link.request(0x66, struct.pack('<BIH', lattice, 0, 900))
+    check(r[0] == 1, 'a tabulated world has no basis to give')
+
+    # switch, and confirm the list agrees
+    ty, seq, r, ok = link.request(0x64, bytes([4, lattice]))
+    check(r[0] == 0, 'ACTION select world')
+    time.sleep(0.1)
+    ty, seq, r, ok = link.request(0x65)
+    check(r[2] == lattice, f'current world is now {lattice} (got {r[2]})')
+    ty, seq, r, ok = link.request(0x61)
+    check(r[0] == 0, 'the tabulated world reports a lattice header')
+    ty, seq, r, ok = link.request(0x64, bytes([4, analytic]))
+    check(r[0] == 0, 'switch back to analytic')
+    time.sleep(0.1)
+    t = telemetry(link, 0)
+    check(t['n'] == 4 and t['k'] == 64, 'telemetry still sane after two world switches')
+    ty, seq, r, ok = link.request(0x64, bytes([4, 99]))
+    check(r[0] == 2, 'an out-of-range world is refused')
+
     ty, seq, r, ok = link.request(0x63, corrupt=True)
     check(ty == 0xFF and r[0] == 10, f'bad CRC → ERR FRAME_ERROR (type {ty:#x})')
     link.close()

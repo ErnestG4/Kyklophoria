@@ -21,6 +21,7 @@
 #include "kyk_ext.h"
 #include "kyk_telemetry.h"
 #include "script.h"
+#include "kyk_worlds.h"
 
 namespace kykdesk {
 
@@ -40,6 +41,12 @@ class DesktopSource : public kyk::ExtSource
 {
 public:
     kyk::StereoEngine* eng  = nullptr;
+    kyk::World*          world = nullptr;   /* the live one */
+    uint8_t              world_idx = 0;
+    /* Its own buffer for expanding tabulated worlds, sized for the largest,
+     * so switching never disturbs whatever space was loaded at startup. */
+    std::vector<uint8_t> scratch;
+    kyk::Space           scratch_space;
     const uint8_t*      blob = nullptr;
     size_t              blob_len = 0;
     kyk::ExtStats      stats;
@@ -75,9 +82,67 @@ public:
         {
             case kyk::kActResetPhase: eng->L.ResetPhase(); eng->R.ResetPhase(); return 0u;
             case kyk::kActRenderDiv: if(len < 1 || args[0] < 1) return 2u; eng->SetRenderDiv(args[0]); return 0u;
+            case kyk::kActSelectWorld:
+            {
+                if(len < 1 || args[0] >= kyk::worlds::kCount) return 2u;
+                const uint8_t i = args[0];
+                if(kyk::worlds::IsAnalytic(i))
+                {
+                    if(!kyk::worlds::Point(i, *world, 8, nullptr)) return 2u;
+                }
+                else
+                {
+                    const size_t need = kyk::Space::BlobSize(4, 64, 8, 8, false);
+                    if(scratch.size() < need) scratch.resize(need);
+                    const size_t n = kyk::worlds::Expand(i, 4, 8, 64, 8, scratch.data(), scratch.size());
+                    if(n == 0 || scratch_space.Attach(scratch.data(), n) != kyk::SpaceError::Ok) return 3u;
+                    world->UseLattice(&scratch_space);
+                }
+                eng->SetWorld(world);
+                world_idx = i;
+                return 0u;
+            }
             default: return 1u;
         }
     }
+    int Worlds(uint8_t& count, uint8_t& current, const char** names, const char** notes,
+               uint8_t* kinds, int max) override
+    {
+        count   = (uint8_t)(kyk::worlds::kCount < max ? kyk::worlds::kCount : max);
+        current = world_idx;
+        for(int i = 0; i < (int)count; i++)
+        {
+            names[i] = kyk::worlds::Get((uint8_t)i).name;
+            notes[i] = kyk::worlds::Get((uint8_t)i).note;
+            kinds[i] = (uint8_t)kyk::worlds::Get((uint8_t)i).kind;
+        }
+        return count;
+    }
+
+    int Basis(uint8_t w, uint32_t offset, uint8_t* out, int max, uint32_t& total) override
+    {
+        total = 0;
+        if(!kyk::worlds::IsAnalytic(w)) return 0;
+        kyk::World tmp;
+        if(!kyk::worlds::Point(w, tmp, 8, nullptr)) return 0;
+        const kyk::EigenBasis& b = tmp.Basis();
+        std::vector<uint8_t>   raw;
+        raw.push_back((uint8_t)b.n);
+        raw.push_back((uint8_t)b.k);
+        auto put = [&](float f) { uint8_t t[4]; std::memcpy(t, &f, 4); for(int i = 0; i < 4; i++) raw.push_back(t[i]); };
+        put(b.extent);
+        put(b.floor_);
+        for(int i = 0; i < b.k; i++) put(b.mean[i]);
+        for(int a = 0; a < b.n; a++)
+            for(int i = 0; i < b.k; i++) put(b.comp[(size_t)a * b.k + i]);
+        total = (uint32_t)raw.size();
+        if(offset >= total) return 0;
+        uint32_t n = total - offset;
+        if(n > (uint32_t)max) n = (uint32_t)max;
+        std::memcpy(out, raw.data() + offset, n);
+        return (int)n;
+    }
+
     uint8_t SetControl(float f0, const float* c, int n, const float* angles, int planes, float spread) override
     {
         if(!eng) return 3u;
@@ -97,19 +162,22 @@ inline double Now()
     return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
 }
 
-inline int Serve(kyk::StereoEngine& eng, const uint8_t* blob, size_t blob_len, const Script* script, bool loop,
-                 int sr, int block)
+inline int Serve(kyk::StereoEngine& eng, kyk::World& world, std::vector<uint8_t>& blob,
+                 const Script* script, bool loop, int sr, int block)
 {
     using namespace alchemy::hostlink;
     DesktopSource src;
-    src.eng = &eng; src.blob = blob; src.blob_len = blob_len;
+    src.eng = &eng; src.blob = blob.data(); src.blob_len = blob.size();
+    src.world = &world;
     src.stats.cycles_budget = (uint32_t)(1e9 * block / sr);   /* desktop "cycles" are nanoseconds */
     kyk::KykExt ext(src);
 
     /* descriptor */
     char desc[4096];
-    const kyk::SpaceHeader& h = eng.SpacePtr()->Header();
-    char name[33]; std::memcpy(name, h.name, 32); name[32] = 0;
+    kyk::SpaceHeader h{};
+    char name[33] = "analytic";
+    if(eng.SpacePtr()) { h = eng.SpacePtr()->Header(); std::memcpy(name, h.name, 32); name[32] = 0; }
+    else { h.n = (uint8_t)eng.WorldPtr()->N(); h.side = 0; h.k = (uint8_t)eng.WorldPtr()->K(); h.p = (uint8_t)eng.WorldPtr()->P(); }
     const int dlen = snprintf(desc, sizeof(desc),
         "{\"dv\":1,\"module\":{\"id\":\"kyk\",\"name\":\"kyklophoria\",\"fw\":\"0.1.0-m1\",\"git\":\"desktop\",\"sdk\":\"bridge\",\"board\":\"desktop\"},"
         "\"schemaHash\":0,\"size\":0,\"components\":[],%s,\"space\":{\"name\":\"%s\",\"n\":%d,\"side\":%d,\"k\":%d,\"p\":%d},\"iomap\":%s}",

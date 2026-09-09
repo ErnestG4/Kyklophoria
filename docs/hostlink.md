@@ -66,6 +66,31 @@ Request: `u8 op [, args]`. 0 reset phases · 3 set render_div `u8` (desktop
 only; the pot owns it on the module) · 1 next space, 2 load space `u8 len,
 name` reserved for M4. Reply: status only.
 
+### 0x65 GET_WORLDS
+Request: empty. Reply: `u8 count`, `u8 current`, then per world `u8 kind`
+(1 tabulated, 2 analytic), `str name`, `str note`. The list is built into the
+firmware (`core/kyk_worlds.h`), so it needs no card.
+
+### 0x66 GET_BASIS
+Request: `u8 world, u32 offset, u16 max`. Reply: `u32 total, u32 offset,
+u16 n, bytes[n]`; chunk until `total` bytes are in hand. UNSUPPORTED when the
+world is tabulated, because it has no formula to send.
+
+The blob is the whole world in about 1.3 KB: `u8 n, u8 k, f32 extent,
+f32 floor, f32 mean[k], f32 comp[n][k]` (row-major, component `a` weight for
+harmonic `i` at `comp[a*k + i]`). A host that has it can evaluate the space
+anywhere without asking again, which is how the page draws the terrain rather
+than a scatter of sampled dots:
+
+    coord[a] = (2·p[a] − 1) · extent
+    y[i]     = mean[i] + Σ_a coord[a] · comp[a·k + i]
+    m[i]     = max(0, exp(y[i]) − floor),  then scale so Σ m² = 2
+
+### 0x64 ACTION op 4 — select world
+`u8 index`. Analytic worlds switch on a pointer write. A tabulated one has to
+be expanded first, on the control thread, and answers BUSY (9) if another
+expansion is already running.
+
 ### 0x6E SET_CONTROL (desktop bridge only)
 Request: `f32 f0, u8 n, f32 c[n], u8 planes, f32 angle[planes], f32 spread`.
 Once received, the host owns the controls and the script stops driving
@@ -89,4 +114,5 @@ exercises both paths and is part of `tests/run.sh`. A node twin
 prefers it; it uses only node's built-in modules, never npm.
 
 ## Versioning
-Any change to a reply layout bumps `"ext"`; the page feature-detects.
+Any change to a reply layout bumps `"ext"`; the page feature-detects. `ext` is
+2 as of the world commands.
