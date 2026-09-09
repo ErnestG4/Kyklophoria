@@ -1,4 +1,4 @@
-# kyklophoria — web surface (M1)
+# Kyklophoria — web surface
 
 `index.html` is the instrument's readout: where the CV has put you in the
 space, what the voice is doing, and how hard the module is working. It is
