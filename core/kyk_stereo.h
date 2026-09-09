@@ -90,6 +90,7 @@ public:
             }
         }
         else for(int a = 0; a < N; a++) c_[a] = target_[a];
+        if(sr_ > 0.f) rot.Advance((float)n / sr_);
         rot.Update();
         if(rot.IsIdentity()) for(int a = 0; a < N; a++) pc_[a] = c_[a];
         else rot.Apply(c_, pc_, pivot);

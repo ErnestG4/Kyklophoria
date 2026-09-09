@@ -42,12 +42,12 @@ and the stereo plane are P1/P2 of the Stereo page.
 
 ## Pots and pages (B1 taps through the pages)
 
-M1 ships three pages; Orbit (rates, ratio lock) arrives with M2 and Lanes
-with M3.
+Four pages ship: Play, Rotate, Stereo and Orbit. Ratio lock and Kuramoto
+coupling on the orbit rates are still to come, and Lanes arrives with M3.
 
 | | Page Play (M1) | Page Rotate (M1) | Page Stereo (M1) | Page Orbit (M2) | Page Lanes (M3) |
 |---|---|---|---|---|---|
-| P1 | Coarse pitch (±3 octaves) | plane (0,1) angle | Spread δ (0–0.1 turn) | plane (0,1) rate | cutoff depth |
+| P1 | Coarse pitch (±3 octaves) | plane (0,1) angle | Spread δ (0–0.1 turn) | plane (0,1) rate ✅ | cutoff depth |
 | P2 | Fine (±1 semitone) | plane (0,2) | Stereo plane (6 zones) | plane (0,2) | resonance depth |
 | P3 | Position 0 offset | plane (0,3) | CV out A depth | plane (0,3) | FM depth |
 | P4 | Position 1 offset | plane (1,2) | Render div (1–4) | plane (1,2) | drive depth |

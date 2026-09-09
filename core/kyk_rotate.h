@@ -60,7 +60,7 @@ public:
     void Init(int n)
     {
         n_ = n < 1 ? 1 : (n > kMaxN ? kMaxN : n);
-        for(int p = 0; p < kMaxPlanes; p++) angle_[p] = 0.f;
+        for(int p = 0; p < kMaxPlanes; p++) { angle_[p] = 0.f; rate_[p] = 0.f; }
         SetIdentity();
         dirty_ = false;
     }
@@ -76,8 +76,38 @@ public:
         turns = Fract(turns);
         if(turns != angle_[plane]) { angle_[plane] = turns; dirty_ = true; }
     }
-    /* Advance a plane's angle (orbit LFOs, M2). */
+    /* Advance a plane's angle by hand. */
     void AddAngle(int plane, float dturns) { SetAngle(plane, angle_[plane] + dturns); }
+
+    /* ── Orbit ──────────────────────────────────────────────────────────
+     * A rate per plane, in turns per second, signed. With one plane turning
+     * a CV traces a circle; with two at unrelated rates the path is
+     * quasi-periodic and never closes, which is the whole reason for having
+     * more than one rotation plane. Rational rate ratios close the figure.
+     *
+     * Advance() is called once per block, so the angle resolution is the
+     * block period: at 48 kHz / 24 samples a rate of one turn per second
+     * moves 5e-4 of a turn per block, well under the sine table's 2^-11
+     * quantum, so the motion is smooth rather than stepped. */
+    void  SetRate(int plane, float turns_per_sec)
+    {
+        if(plane < 0 || plane >= kMaxPlanes) return;
+        rate_[plane] = turns_per_sec;
+    }
+    float Rate(int plane) const { return plane >= 0 && plane < kMaxPlanes ? rate_[plane] : 0.f; }
+    const float* Rates() const { return rate_; }
+
+    bool Orbiting() const
+    {
+        for(int p = 0; p < Planes(); p++) if(rate_[p] != 0.f) return true;
+        return false;
+    }
+
+    void Advance(float dt_seconds)
+    {
+        for(int p = 0; p < Planes(); p++)
+            if(rate_[p] != 0.f) SetAngle(p, angle_[p] + rate_[p] * dt_seconds);
+    }
 
     bool IsIdentity() const
     {
@@ -143,6 +173,7 @@ private:
 
     int   n_ = 4;
     float angle_[kMaxPlanes];
+    float rate_[kMaxPlanes];
     float m_[kMaxN][kMaxN];
     bool  dirty_ = false;
 };

@@ -20,9 +20,16 @@ not a dependency chain.
 
 ## Next
 
-- [ ] **Orbit mode.** A rate per rotation plane, advancing the angles at
-      control rate. Everything needed is already in `Rotation::AddAngle`.
-      This is the feature the whole design exists for and it is not built.
+- [ ] **Orbit needs a bench listen.** It renders continuously by nature, so it
+      is the worst case for CPU; see the max reading above.
+
+- [x] **Orbit mode.** Done. A signed rate per plane in turns per second,
+      advanced once per block, on its own panel page with the centre stopped
+      and an exponential taper either side (0.01 to 1.0 turns per second, so a
+      hundred seconds per revolution at the slow end). `m2_orbit` is a golden;
+      with two planes at unrelated rates the path never returns closer than
+      0.15 to its start over six seconds, which is the quasi-periodic
+      behaviour the whole design is for.
 - [ ] **Kuramoto coupling** on those orbit rates, so ratio lock is emergent
       rather than a menu (`docs/worlds.md`). Six oscillators, one sine per
       pair, negligible cost. Wants listening rather than theory to tune.

@@ -6,6 +6,7 @@
  *   glide f0 <hz> <secs>         linear glide to a pitch
  *   glide pos <x0…> <secs>       linear glide to a position (N values)
  *   angle <plane> <turns>        rotation angle of a plane
+ *   rate <plane> <turns/sec>     orbit rate of a plane, signed
  *   spread <turns>               stereo spread ±δ in the stereo plane
  *   plane <idx>                  the stereo plane
  *   <secs> dur                   total length (default: last event + 1 s)
@@ -73,7 +74,7 @@ struct Script
                 vals.pop_back();
             }
             if(vals.empty()) { fprintf(stderr, "%s:%d: %s needs a value\n", path.c_str(), ln, cmd.c_str()); return false; }
-            if(e.cmd == "angle" || e.cmd == "spread") uses_stereo = true;
+            if(e.cmd == "angle" || e.cmd == "spread" || e.cmd == "rate") uses_stereo = true;
             e.v = vals;
             ev.push_back(e);
         }
@@ -108,6 +109,7 @@ public:
                 if(e.cmd == "f0") { f0_ = e.v[0]; gf0_ = false; }
                 else if(e.cmd == "pos") { for(size_t a = 0; a < e.v.size() && a < (size_t)kyk::kMaxN; a++) pos_[a] = e.v[a]; gpos_ = false; }
                 else if(e.cmd == "angle") { if(e.v.size() >= 2) eng.rot.SetAngle((int)e.v[0], e.v[1]); }
+                else if(e.cmd == "rate") { if(e.v.size() >= 2) eng.rot.SetRate((int)e.v[0], e.v[1]); }
                 else if(e.cmd == "spread") eng.spread = e.v[0];
                 else if(e.cmd == "plane") eng.spread_plane = (int)e.v[0];
                 else if(e.cmd == "glide_f0") { gf0_ = true; f0_from_ = f0_; f0_to_ = e.v[0]; f0_t0_ = t; f0_t1_ = t + e.dur; }

@@ -1,0 +1,7 @@
+# One CV held still. Two planes orbiting at unrelated rates: the position
+# never repeats, which is the point of having more than one plane.
+0.0 f0 110
+0.0 pos 0.75 0.5 0.5 0.5
+0.0 rate 0 0.10
+0.0 rate 4 0.0618
+6.0 dur

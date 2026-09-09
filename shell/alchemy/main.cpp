@@ -5,6 +5,7 @@
  *
  *   Page Play    P1 coarse (octaves)  P2 fine (±1 st)  P3–P6 position 0–3 offsets
  *   Page Rotate  P1–P6 the six plane angles (turns)
+ *   Page Orbit   P1–P6 the six plane rates, centre stopped, exponential out
  *   Page Stereo  P1 spread  P2 stereo plane  P3 CV out A depth  P4 render div  P5 level
  *   B1 taps through the pages · B2+B3 held: Settings (SDK)
  *
@@ -46,7 +47,7 @@ using namespace kyk;
 
 static AlchemyLab  hw;
 static ControlLoop loop(hw);
-static Pager       pager(hw.buttons[kButtonB1], 3, kNumPots);
+static Pager       pager(hw.buttons[kButtonB1], 4, kNumPots);
 static Presets     presets(hw.seed.qspi);
 static Settings    settings(hw, &pager);
 
@@ -54,6 +55,7 @@ static Settings    settings(hw, &pager);
 static constexpr LedPanel::Rgb kPlay   = {0x67, 0xE8, 0xF9};
 static constexpr LedPanel::Rgb kRotate = {0xFC, 0xA5, 0xA5};
 static constexpr LedPanel::Rgb kStereo = {0xC4, 0xB5, 0xFD};
+static constexpr LedPanel::Rgb kOrbit  = {0xFD, 0xE0, 0x68};
 
 static VirtualKnob k_coarse = VirtualKnob(0, "Coarse").Linear(-3.f, 3.f).Unit("oct").Ident("pitch.coarse").Ring(Level(kPlay));
 static VirtualKnob k_fine   = VirtualKnob(1, "Fine").Linear(-1.f, 1.f).Unit("st").Ident("pitch.fine").Ring(Level(kPlay));
@@ -70,6 +72,30 @@ static VirtualKnob k_ang[6] = {
     VirtualKnob(4, "Angle 1,3").Unit("turn").Ident("rot.13").Ring(Level(kRotate)),
     VirtualKnob(5, "Angle 2,3").Unit("turn").Ident("rot.23").Ring(Level(kRotate)),
 };
+
+static VirtualKnob k_rate[6] = {
+    VirtualKnob(0, "Orbit 0,1").Unit("t/s").Ident("orb.01").Ring(Level(kOrbit)),
+    VirtualKnob(1, "Orbit 0,2").Unit("t/s").Ident("orb.02").Ring(Level(kOrbit)),
+    VirtualKnob(2, "Orbit 0,3").Unit("t/s").Ident("orb.03").Ring(Level(kOrbit)),
+    VirtualKnob(3, "Orbit 1,2").Unit("t/s").Ident("orb.12").Ring(Level(kOrbit)),
+    VirtualKnob(4, "Orbit 1,3").Unit("t/s").Ident("orb.13").Ring(Level(kOrbit)),
+    VirtualKnob(5, "Orbit 2,3").Unit("t/s").Ident("orb.23").Ring(Level(kOrbit)),
+};
+
+/* Centre is stopped, and the useful rates are slow, so a linear knob would
+ * bunch everything worth having into the last few degrees. Exponential either
+ * side of a small dead zone: 0.01 turns per second at the inside edge (a
+ * hundred seconds for one revolution) out to 1.0 at the stops, either
+ * direction. */
+static float RateFromKnob(float norm)
+{
+    const float u = (norm - 0.5f) * 2.f;             /* -1 .. +1 */
+    const float a = u < 0.f ? -u : u;
+    if(a < 0.04f) return 0.f;
+    const float t = (a - 0.04f) / 0.96f;             /* 0 .. 1 */
+    const float r = 0.01f * exp2f(t * 6.6439f);      /* 0.01 .. 1.0 */
+    return u < 0.f ? -r : r;
+}
 
 static const char* kPlaneNames[6] = {"0,1", "0,2", "0,3", "1,2", "1,3", "2,3"};
 /* Divider 1 (a frame every block, twice over in stereo) overran the block on
@@ -93,6 +119,7 @@ static VirtualKnob k_cvdep  = VirtualKnob(5, "CV out A depth").Ident("lane.cva")
 
 static Page page_play   = Page(0).Name("Play").Color("#67e8f9").Knobs(k_coarse, k_fine, k_pos0, k_pos1, k_pos2, k_pos3);
 static Page page_rotate = Page(1).Name("Rotate").Color("#fca5a5").Knobs(k_ang[0], k_ang[1], k_ang[2], k_ang[3], k_ang[4], k_ang[5]);
+static Page page_orbit  = Page(3).Name("Orbit").Color("#fde068").Knobs(k_rate[0], k_rate[1], k_rate[2], k_rate[3], k_rate[4], k_rate[5]);
 static Page page_stereo = Page(2).Name("Stereo").Color("#c4b5fd").Knobs(k_spread, k_plane, k_sharp, k_rdiv, k_level, k_cvdep);
 
 /* ── jacks (descriptor metadata; the web panel mirror reads these) ───────── */
@@ -141,7 +168,11 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     c[2] = k_pos2.Norm() + hw.cv[3].Volts() * 0.2f;
     c[3] = k_pos3.Norm() + hw.cv[4].Volts() * 0.2f;
 
-    for(int p = 0; p < 6; p++) gEng.rot.SetAngle(p, k_ang[p].Norm());
+    for(int p = 0; p < 6; p++)
+    {
+        gEng.rot.SetAngle(p, k_ang[p].Norm());
+        gEng.rot.SetRate(p, RateFromKnob(k_rate[p].Norm()));
+    }
     gEng.spread       = k_spread.Value();
     gEng.spread_plane = (int)k_plane.Value();
     int sel = (int)k_rdiv.Value();
@@ -276,7 +307,7 @@ int main()
     host.Jacks(kJacks);
     host.Extend(gExt);
 
-    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(host).OnFrame(OnFrame);
+    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(host).OnFrame(OnFrame);
 
     presets.Init();
     presets.BootLoad();   /* HostLink starts here: descriptor + panel USB up */
