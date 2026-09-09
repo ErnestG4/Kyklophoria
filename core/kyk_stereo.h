@@ -49,7 +49,7 @@ public:
         L.Init(world, sr);
         R.Init(world, sr);
         rot.Init(world ? world->N() : 4);
-        for(int a = 0; a < kMaxN; a++) { c_[a] = 0.5f; target_[a] = 0.5f; pc_[a] = 0.5f; }
+        for(int a = 0; a < kMaxN; a++) { c_[a] = 0.5f; target_[a] = 0.5f; pc_[a] = 0.5f; payAt_[a] = 1e9f; }
         for(int j = 0; j < kMaxP; j++) payload_[j] = 0.f;
         stereo_ = false;
     }
@@ -128,11 +128,25 @@ public:
             R.SetPosition(pr, N);
             L.Process(outL, n);
             R.Process(outR, n);
-            /* payload at the centre, single-valued whichever backend answers */
-            float   pf[kMaxN], scratch[kMaxK];
-            Weights w;
-            world_->Fold(pc_, pf);
-            world_->Evaluate(pf, sharp, scratch, payload_, w);
+            /* Payload at the centre, single-valued whichever backend answers.
+             * Only when the centre has actually moved: deriving eight payload
+             * numbers costs a whole spectrum evaluation, and doing that every
+             * block was a third of the stereo cost for a signal that drives a
+             * filter and a CV output and could not care less about 2 kHz. */
+            bool moved = false;
+            for(int a = 0; a < N; a++)
+            {
+                const float d = pc_[a] - payAt_[a];
+                if(d > 1e-3f || d < -1e-3f) { moved = true; break; }
+            }
+            if(moved)
+            {
+                for(int a = 0; a < kMaxN; a++) payAt_[a] = pc_[a];
+                float   pf[kMaxN], scratch[kMaxK];
+                Weights w;
+                world_->Fold(pc_, pf);
+                world_->Evaluate(pf, sharp, scratch, payload_, w);
+            }
         }
         stereo_ = stereo;
     }
@@ -152,7 +166,7 @@ public:
 private:
     const World* world_ = nullptr;
     float        sr_    = 48000.f;
-    float        c_[kMaxN], target_[kMaxN], pc_[kMaxN];
+    float        c_[kMaxN], target_[kMaxN], pc_[kMaxN], payAt_[kMaxN];
     float        payload_[kMaxP];
     bool         stereo_ = false;
 };

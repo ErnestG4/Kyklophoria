@@ -123,7 +123,13 @@ inline float Ln(float x)
     return (float)e * kLn2 + 2.f * sum;
 }
 
-/* exp(y): range-reduce by ln2, then Taylor on the remainder. */
+/* exp(y): range-reduce by ln2, then Taylor on the remainder.
+ *
+ * Eight terms, not twenty. The reduction leaves |r| < ln2, so the first term
+ * dropped is r^9/9!, which is under 3e-10 — far below float resolution, and
+ * the previous twenty were doing nothing but costing time. This runs 64 times
+ * per analytic world evaluation and three times per block in stereo, so it is
+ * genuinely hot. */
 inline float Exp(float y)
 {
     if(y > 88.f) y = 88.f;
@@ -131,7 +137,7 @@ inline float Exp(float y)
     int   q = (int)(y / kLn2);
     float r = y - (float)q * kLn2;
     float t = 1.f, s = 1.f;
-    for(int i = 1; i < 20; i++) { t *= r / (float)i; s += t; }
+    for(int i = 1; i < 9; i++) { t *= r / (float)i; s += t; }
     while(q > 0) { s *= 2.f; q--; }
     while(q < 0) { s *= 0.5f; q++; }
     return s;
