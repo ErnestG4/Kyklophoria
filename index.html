@@ -228,9 +228,25 @@ async function selectWorld(i) {
       try { await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.selectWorld, [i]), { urgent: true, timeoutMs: 4000 }); break; }
       catch (e) { if (!/BUSY/.test(e.message) || attempt > 20) throw e; await new Promise(r => setTimeout(r, 120)); }
     }
+    /* The action only queues the switch: the module performs it on its
+     * control loop, and a tabulated world has to be expanded first. So the
+     * request returning does not mean the world has changed yet. Reading the
+     * list straight back gave the old value, which is why this used to take
+     * two clicks. Poll until the module agrees, or give up. */
+    const deadline = Date.now() + 8000;
+    for (;;) {
+      await new Promise(r => setTimeout(r, 60));
+      let w = null;
+      try { w = MVL.parseWorlds(await link.request(MVL.CMD.worlds, new Uint8Array(0), { urgent: true })); } catch { /* keep waiting */ }
+      if (w) worlds = w;
+      if (w && w.current === i) break;
+      if (Date.now() > deadline) { say('world: the module did not switch', true); break; }
+    }
     space = await refreshSpace();
     trail.n = 0; trail.head = 0;
-    await refreshWorlds();
+    renderWorldBar();
+    describeSpace();
+    await ensureBasis();
   } catch (e) { say('world: ' + e.message, true); }
   switching = -1;
   renderWorldBar();
