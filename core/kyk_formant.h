@@ -80,9 +80,11 @@ inline void FormantSpectrum(const FormantField& f, float f1, float r2, float r3,
      * was twelve times the cost of any of them. */
     const float kFar = -12.f;
     const bool  plain = f.tilt == 1.f;
+    /* The harmonic tables are sized kMaxK, which is a build-time define; a
+     * larger K without regenerating them would read off the end. */
+    static_assert(kMaxK <= 128, "kLnHarm/kInvHarm are 128 long; re-run tools/gen/gen_tables.py");
     for(int i = 0; i < k; i++)
     {
-        const float h  = (float)(i + 1);
         const float lh = kLnHarm[i];
         const float d1 = lh - l1, d2 = lh - l2, d3 = lh - l3;
         const float e1 = -d1 * d1 * iw, e2 = -d2 * d2 * iw, e3 = -d3 * d3 * iw;

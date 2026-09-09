@@ -494,8 +494,17 @@ int main()
      * "the orbit does nothing", a fault this instrument has already shipped
      * once. Seed it at the detent; pot-catch means the physical knob still
      * has to move through 1x before it takes over, and a preset load
-     * overwrites it as it should. */
-    pager.SetStored(5, 2, 0.5f, nullptr);
+     * overwrites it as it should.
+     *
+     * The phys array is not optional. SetStored ends in InitCatch(s,
+     * phys[pot]) with no null check, and on this part a null read lands at
+     * 0x8, inside ITCM — which this firmware never writes a byte of, so it is
+     * uninitialised ECC RAM. Reading it raises a double-bit ECC error and
+     * hard-faults, deterministically, on every boot. That is what 0.3.0
+     * shipped with. */
+    float phys[kNumPots];
+    for(uint8_t i = 0; i < kNumPots; i++) phys[i] = hw.pots[i].Value();
+    pager.SetStored(5, 2, 0.5f, phys);
 
     presets.Init();
     presets.BootLoad();   /* HostLink starts here: descriptor + panel USB up */
