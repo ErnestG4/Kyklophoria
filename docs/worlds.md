@@ -346,3 +346,98 @@ the exception, because it adds an offset rather than turning the frame. In
 practice a pot never sits exactly at 0.5, but it is reachable from the page
 and from a script, and it produces a convincing impression that the orbit is
 broken.
+
+---
+
+# Hopf fibrations (Will asked, 2026-09-09)
+
+Will's question: are we trying known Hopf fibrations. We had not been, not by
+name — but the machinery turns out to already contain them, and the coupling
+built the same night already seeks them without either of us noticing.
+
+## The condition
+
+SO(4) is special: it factors, and a rotation of four-space turns two invariant
+planes by two angles. When those angles are **equal in magnitude** the rotation
+is *isoclinic*, and the orbits of an isoclinic one-parameter group on S³ are
+exactly the fibres of a Hopf fibration. Every orbit is a great circle, every
+pair of orbits is linked once, and the orbit space is S².
+
+In this instrument's plane ordering — lexicographic, so 0=(0,1), 1=(0,2),
+2=(0,3), 3=(1,2), 4=(1,3), 5=(2,3) — two planes are complementary (they share
+no axis, and together they span all four) exactly when their indices **sum to
+five**. Three pairs: (0,5), (1,4), (2,3). They are the quaternion units i, j,
+k, and each with either relative sign gives one of the six one-parameter
+isoclinic subgroups, three left-handed and three right-handed. Left and right
+are the two mirror Hopf fibrations, with opposite linking.
+
+So the recipe is: **rates on one complementary pair, equal magnitude, every
+other plane at zero.**
+
+## Measured against the real `Rotation`
+
+Angle spread is the max minus min rotation angle over 200 random points of S³.
+An isoclinic rotation moves every point by the same angle, so zero is the
+condition; it needs no coordinates and does not care about chirality.
+Separation is the nearest approach of one whole orbit to another, min and max
+along the first, so a constant value means Clifford parallel.
+
+| rotation | angle spread | closure | separation |
+|---|---|---|---|
+| planes 0,5 at +1 +1 | 2.3e-07 | 1.2e-04 | 0.4285–0.4285 |
+| planes 0,5 at +1 −1 | 3.5e-05 | 1.2e-04 | 0.6736–0.6736 |
+| planes 1,4 at +1 −1 | 3.5e-05 | 1.2e-04 | 0.5669–0.5669 |
+| planes 2,3 at +1 +1 | 2.4e-07 | 1.2e-04 | 0.7363–0.7363 |
+| planes 0,5 at +1 +1.5 (detuned) | 2.6e-01 | 1.1e+00 | 0.5357–0.6895 |
+| planes 0,1 (share an axis) | 1.04 | 1.3e-04 | 0.0598–0.6881 |
+| all six at +1 (reach-1 unison) | 1.06 | 2.2e-04 | 0.0157–0.7075 |
+
+The residual 3.5e-05 on the mixed-sign rows is sine-table interpolation, four
+orders below the failures.
+
+**Closure is not the interesting property, and that is the trap.** Two planes
+sharing an axis close just as tidily, and so does every plane at unison. What
+those settings do not give you is a *fibration*: their orbits crowd together,
+approaching within 0.016 in the unison case, where a Hopf pair holds a constant
+0.43 apart everywhere. A closed orbit is common. A closed orbit that is one
+fibre of a foliation of the whole space is not.
+
+**Reach-1 unison is not Hopf.** Locking all six planes to one rate gives the
+generator L1 + R2 + L3, which has both chiralities and is therefore not
+isoclinic — the 1.06 row. The other four planes have to be *off*, which the
+rate knob's dead zone makes easy, and the coupling skips zero-rate planes by
+construction.
+
+**The coupling already seeks it.** Put rates on one complementary pair only,
+turn Coupling up, and 1:1 is the widest Arnold tongue there is: it snaps to the
+isoclinic condition and holds it against drift. That was not designed and is
+the nicest accident of the night.
+
+## What is missing
+
+**The topology.** Hopf fibres live on S³, and our space is a clamped cube or,
+under Wrap, a 4-torus. `Topo::Sphere` is an enum value with no implementation
+(see the checklist). Some of the behaviour is audible without it — an isoclinic
+rotation about the cube's centre still traces a closed circle in ℝ⁴, so as long
+as the radius keeps it off the walls the loop closes today — but the space is
+not fibred, so there is no S² of loops to steer with.
+
+## Why it would be worth having
+
+Not as a motion mode. As a **control space**.
+
+The Hopf map sends S³ to S², so *a point of S² names an entire closed timbral
+loop*. Two knobs choose which loop, and the loop plays itself; every loop is
+closed, so nothing ever drifts; every pair is linked, so neighbouring choices
+give loops that thread through one another rather than lying near one another.
+That is a different way to hold this instrument from anything on the panel now,
+and it is Will's own criterion promoted from a moment to a trajectory: instead
+of catching a waveform locking into a familiar shape as you cross a plane, the
+whole path is the shape, and the two knobs pick which one.
+
+Cost is small and known: a sphere chart in `FoldAxis`, a rate mode that drives
+a complementary pair together, and a readout. The readout is the interesting
+part — any R in SO(4) splits into a left and a right quaternion factor, so the
+page could show how much of the current rotation is left-handed against
+right-handed, which is a direct display of how near the player is to a
+fibration. Nothing here is built.

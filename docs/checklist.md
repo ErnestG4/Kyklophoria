@@ -64,8 +64,21 @@ not a dependency chain.
       oversampled or it will do to the aliasing figure what the soft clip did
       (`docs/m2-notes.md`).
 - [ ] **FM and sync inputs** on J1 and J2, which are wired to nothing.
-- [ ] **Wrap and sphere** on the panel. Both are implemented and seam-tested
-      in the core; neither is reachable from the module.
+- [ ] **Wrap** on the panel. Implemented and seam-tested in the core
+      (`core_check`: wrap seam midpoint and seam continuity), not reachable
+      from the module.
+- [ ] **Sphere is not implemented at all.** This line used to claim it was.
+      `Topo::Sphere` is an enum value that `Space::Attach` accepts and that
+      `FoldAxis` has no case for, so it falls through to Clamp silently. Worth
+      more than it looks: with every axis on a sphere chart the space is S³,
+      and an isoclinic rotation — two *complementary* planes at equal rate,
+      plane indices p and 5−p — fibres it by Hopf circles. Every orbit closes,
+      every pair of orbits is linked, and the Hopf map hands you a 2-sphere
+      whose every point names one closed timbral loop. Measured against the
+      real `Rotation`: angle spread across 200 points of S³ is 2e-7 for a
+      complementary pair against 1.0 for two planes sharing an axis, and the
+      orbits stay Clifford parallel to four decimals. The coupling already
+      seeks this, since 1:1 is the widest tongue. See docs/worlds.md.
 
 ## Parametric axes — a proposal from Sonnet, and what measurement says
 
