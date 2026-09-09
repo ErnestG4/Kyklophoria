@@ -105,10 +105,18 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
       }
       const p = [0.37, 0.62, 0.28, 0.71];
       await link.request(KYK.CMD.setControl, KYK.setControlReq(110, p, [0, 0, 0, 0, 0, 0], 0));
-      let t3 = null;
-      for (let i = 0; i < 60; i++) {
+      /* Wait for the *spectrum* to settle, not just the position. The
+       * magnitudes in telemetry come from the last render, and rendering runs
+       * on a divider behind a movement deadband, so the position can already
+       * read the new value while the spectrum still belongs to the old world.
+       * Two consecutive identical reads means the render has caught up. */
+      let t3 = null, prev = null;
+      for (let i = 0; i < 120; i++) {
         t3 = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(1)));
-        if (t3 && Math.abs(t3.posL[0] - p[0]) < 1e-3) break;
+        const settled = t3 && Math.abs(t3.posL[0] - p[0]) < 1e-3 && prev
+                        && t3.mags.every((v, j) => v === prev[j]);
+        if (settled) break;
+        prev = t3 && t3.mags;
         await new Promise(r => setTimeout(r, 20));
       }
       check(t3 && Math.abs(t3.posL[0] - p[0]) < 1e-3, label + ': module parked at the test position');
