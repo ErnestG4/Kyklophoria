@@ -39,6 +39,7 @@ public:
         sr_    = sr;
         osc_.Init();
         block_ = 0;
+        renders_ = 0;
         f0_    = 110.f;
         kcut_  = 0;
         kcut_want_ = 1 << 20;
@@ -106,13 +107,19 @@ public:
             world_->Fold(c_, p_);
             world_->Evaluate(p_, sharp, mags_, payload_, wt_);
             Bandlimit();
-            RenderFrame(mags_bl_, cph_, sph_, kcut_, osc_.Back(), sc_);
-            /* Wavefold, ring mod, phase distortion — whichever the world puts
-             * on its upper axes. Each is the identity at zero, so a node of a
-             * shape table with both shaper axes down is exactly the waveform
-             * the table names. */
-            if(world_->HasShaper()) world_->Shape(osc_.Back(), shape_, kFrame, p_);
+            /* A shaped world renders into the scratch and its last shaper
+             * writes the oscillator's frame, so no stage has to copy a buffer.
+             * Each shaper is the identity at zero, so a node of a shape table
+             * with both shaper axes down is exactly the waveform the table
+             * names. */
+            if(world_->HasShaper())
+            {
+                RenderFrame(mags_bl_, cph_, sph_, kcut_, shape_, sc_);
+                world_->Shape(osc_.Back(), shape_, kFrame, p_);
+            }
+            else RenderFrame(mags_bl_, cph_, sph_, kcut_, osc_.Back(), sc_);
             dirty_ = false;
+            renders_++;
         }
         osc_.SetFreq(f0_, sr_);
         osc_.Process(out, n, render);
@@ -163,6 +170,11 @@ public:
 
     /* ── telemetry ──────────────────────────────────────────────────────── */
     uint32_t       Block() const { return block_; }
+    /* How many frames this voice has actually built. A render is the only
+     * expensive thing the engine does — everything else is a phase increment —
+     * so this over a known number of blocks is the honest CPU proxy, and it is
+     * what caught the band-limit treadmill. */
+    uint32_t       Renders() const { return renders_; }
     float          F0() const { return f0_; }
     int            Kcut() const { return kcut_; }
     const float*   Position() const { return p_; }          /* folded */
@@ -234,11 +246,21 @@ private:
             if(kmax > 0 && (float)kmax * f0_ >= nyq) kmax--;
         }
         kcut_ = kmax < K ? kmax : K;
-        /* A world with a frame shaper needs headroom above the harmonics it
+        if(kcut_want_ < kcut_) kcut_ = kcut_want_;   /* honour the held limit */
+        kcut_want_ = kcut_;
+        /* The shaper's reduction comes *after* the hold state is settled, and
+         * never feeds back into it.
+         *
+         * A world with a frame shaper needs headroom above the harmonics it
          * asks for, because a memoryless nonlinearity multiplies bandwidth and
-         * the frame it is handed is band-limited to exactly Nyquist. Pulling
-         * the limit in first gives the folder somewhere to put what it makes.
-         * A mitigation, not a cure — the residual is measured in m3-notes. */
+         * the frame it is handed is band-limited to exactly Nyquist. But the
+         * held limit exists to stop an audio-rate pitch from re-rendering
+         * every block, and it is a property of the pitch, not of the shaper.
+         * Writing the reduced value back into it — which the first version did
+         * — leaves the held limit pinned low, so winding a folder back down
+         * left the tone dull until the slow climb caught up, and the two
+         * mechanisms fought each other on every block. A mitigation, not a
+         * cure: the residual aliasing is measured in docs/m3-notes.md. */
         if(world_->HasShaper())
         {
             const float sc = world_->BandScale(p_);
@@ -249,8 +271,6 @@ private:
                 if(lim < kcut_) kcut_ = lim;
             }
         }
-        if(kcut_want_ < kcut_) kcut_ = kcut_want_;   /* honour the held limit */
-        kcut_want_ = kcut_;
         for(int k = 0; k < kcut_; k++) mags_bl_[k] = mags_[k];
         for(int k = kcut_; k < K; k++) mags_bl_[k] = 0.f;
         const int rb = rolloff_bins < kcut_ ? rolloff_bins : kcut_;
@@ -276,6 +296,7 @@ private:
      * cannot work in place. A member, not a stack array: the audio callback
      * is not the place to put four kilobytes. */
     float        shape_[kFrame];
+    uint32_t     renders_ = 0;
     float        payload_[kMaxP];
     float        c_[kMaxN], p_[kMaxN], rendered_[kMaxN];
     float        f0_    = 110.f;

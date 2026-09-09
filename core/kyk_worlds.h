@@ -73,11 +73,9 @@ inline bool Point(uint8_t i, World& w, int p, const uint8_t* topo, solids::Verte
     if(i == kVowel) { FormantField f; f.n = 4; f.k = 64; w.UseFormant(f, p, topo); return true; }
     if(i == kShapes || i == kShapesRing)
     {
-        ShapeField f;
-        f.n = 4; f.k = 64;
-        f.axis2 = Shaper::Fold;
-        f.axis3 = (i == kShapesRing) ? Shaper::Ring : Shaper::Warp;
-        w.UseShapes(f, p, topo);
+        w.UseShapes(4, kShapeK, Shaper::Fold,
+                    (i == kShapesRing) ? Shaper::Ring : Shaper::Warp,
+                    0.08f, p, topo);
         return true;
     }
     const int sol = SolidOf(i);

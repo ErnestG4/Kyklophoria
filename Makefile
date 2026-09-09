@@ -42,5 +42,28 @@ test: host
 tables:
 	python3 tools/gen/gen_tables.py > core/kyk_tables.h
 
+# armcost — instruction counts for the audio-path inner loops, compiled for
+# the M7 the module actually runs.
+#
+# Desktop timings lie about this part by an order of magnitude. The wavefolder
+# measured 2.7 us on x86 and was around 150 us on the module, because x86 hides
+# a long serial VFP dependency chain and the M7 does not. Counting the
+# instructions the target compiler emits catches that; a stopwatch on a laptop
+# does not.
+.PHONY: armcost
+armcost:
+	@mkdir -p build/arm
+	@printf '#include "kyk_shapes.h"\nusing namespace kyk;\n'\
+'extern "C" void c_fold(float* d, const float* s, int n, float k){ FoldFrame(d,s,n,k); }\n'\
+'extern "C" void c_warp(float* d, const float* s, int n, float k){ WarpFrame(d,s,n,k); }\n'\
+'extern "C" void c_ring(float* d, const float* s, int n, float k){ RingFrame(d,s,n,k); }\n'\
+	  > build/arm/probe.cpp
+	@arm-none-eabi-g++ -std=gnu++17 -O3 -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard \
+	  -mthumb -ffp-contract=off -Icore -c build/arm/probe.cpp -o build/arm/probe.o
+	@echo "  Cortex-M7 instructions per shaper (whole function):"
+	@for f in c_fold c_warp c_ring; do \
+	  n=$$(arm-none-eabi-objdump -d build/arm/probe.o | awk -v fn=$$f '$$0 ~ "<"fn">:" {p=1;next} p && /^$$/ {exit} p' | grep -cE "^[[:space:]]+[0-9a-f]+:"); \
+	  printf "    %-8s %3d\n" $$f $$n; done
+
 clean:
 	rm -rf build/host

@@ -545,23 +545,50 @@ single-operator FM — has no discontinuity in any derivative, spreads a
 harmonic h to about h·(1+A), and measures −62.1 dB. Casio shipped the
 aliasing; that is not a reason to.
 
-## Cost
+## Cost, and the desktop lying about it
 
-Per render, x86, against a 500 µs block:
+This world shipped once in a state that made the module unplayable — "the
+Shapes worlds now absolutely obliterate the CPU and are therefore noisy and
+lossy" — while measuring perfectly reasonable on the desktop. Worth recording
+carefully, because the gap was an order of magnitude and the desktop numbers
+gave no hint of it.
 
-| stage | µs |
-|---|---|
-| Evaluate (the table) | 1.44 |
-| RenderFrame (the transform) | 4.14 |
-| wavefold | 2.72 |
-| phase modulation | 1.75 |
-| ring modulation | 0.49 |
+| stage | x86 µs, first ship | x86 µs, now | M7 instructions, then → now |
+|---|---|---|---|
+| Evaluate (the table) | 7.79 → 1.44 | **0.195** | — |
+| RenderFrame (the transform) | 4.14 | 4.13 | — |
+| wavefold | 2.72 | **0.47** | 90 → 34 |
+| phase modulation | 5.37 → 1.75 | **1.22** | 68 → 50 |
+| ring modulation | 3.19 → 0.49 | **0.48** | 43 → 40 |
 
-The table's Evaluate first measured **7.8 µs**, nearly twice the transform it
-feeds, from a series exp and log per harmonic — the identical mistake the
-vowel world made. The node spectra do not depend on position at all, so every
-one of those became a lookup in the harmonic tables, and the two index-driven
-shapers index the sine table directly instead of calling into it.
+The shaped world now costs about 8% more per render than an unshaped one,
+where it was closer to 80%.
+
+**The wavefolder was calling `SinCosTurns`.** That routine computes sine *and*
+cosine, interpolates both, and then runs a Newton step to put the pair back
+exactly on the unit circle — because it exists to build rotation matrices that
+stay orthonormal through long products. A folder needs none of it. Compiled
+for the M7 the loop was about thirty VFP instructions in one serial dependency
+chain, which at M7 latencies is on the order of 125 to 190 µs for a single
+1024-sample call against a 500 µs block. On x86, which reorders around that
+chain, the same code measured 2.7 µs. A raw table read with no interpolation
+is ten instructions, and the staircase it leaves is one part in 2048 — about
+−72 dB, against a folder whose own aliasing floor is −32 dB. Measured, the
+alias figure did not move: −42.2 dB became −42.3.
+
+**Nothing copies a buffer any more.** The frame is rendered into the scratch
+and the last shaper writes the oscillator's frame, so the out-of-order shaper
+gets a distinct source for free.
+
+**The node spectra never change.** There are sixteen of them and they depend
+only on which node they are, so recomputing one per render was pure waste —
+and the pulse column costs a table sine per harmonic, which put up to 512 of
+them into every Evaluate. They are built once, into 4 KB of DTCM that lives
+with the World.
+
+`make armcost` prints the instruction counts for these loops compiled for the
+M7. A stopwatch on a laptop does not catch this class of bug; counting what
+the target compiler emits does.
 
 ## What this world is not
 

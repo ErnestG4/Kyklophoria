@@ -202,6 +202,25 @@ meaningful axis and stacking four banks makes rotation meaningless.
       Worth a `tools/` script that greps the ELF's `.init_array` reach for
       stores into `0xc0000000`, so it is caught in CI rather than in the rack.
 
+## Audio-path rules, learned the hard way
+
+- [x] **Never call `SinCosTurns` per sample.** It computes sine and cosine,
+      interpolates both and runs a Newton orthonormality step, because it
+      exists for rotation matrices. In the wavefolder that was ~30 VFP
+      instructions in one serial dependency chain, around 150 µs for a
+      1024-sample call against a 500 µs block — and 2.7 µs on x86, which
+      reorders around the chain. A raw table read is ten instructions and cost
+      nothing measurable in aliasing.
+- [ ] **Desktop timings do not predict the M7 for anything with a dependency
+      chain**, and the gap here was an order of magnitude. `make armcost`
+      counts instructions the target compiler emits for the audio-path inner
+      loops; use it before claiming an audio-path change is cheap. It does not
+      model latency or memory, so it is a smell test, not a budget.
+- [ ] **There is still no cycle number from the module in any test.** Every
+      CPU claim in this repo is a desktop proxy. `GET_STATS` reports cycles
+      and the page shows them, but nothing records them, so a regression is
+      only ever caught by someone playing it.
+
 ## Known warts
 
 - [ ] **v/oct is read at control rate, not audio rate.** `hw.cv[0].Volts()`

@@ -122,13 +122,26 @@ public:
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }
 
-    void UseShapes(const ShapeField& f, int p, const uint8_t* topo)
+    /* Takes the parameters rather than a whole ShapeField, and builds the node
+     * table straight into its own copy. A ShapeField carries 4 KB of node
+     * table, so passing one by value would put that on the caller's stack and
+     * keeping one as a file static would add a guarded initialiser — neither
+     * belongs on a control thread that also has to serve HostLink. */
+    void UseShapes(int n, int k, Shaper a2, Shaper a3, float pulse_min,
+                   int p, const uint8_t* topo)
     {
-        kind_   = (f.n >= 1 && f.n <= kMaxN && f.k >= 1 && f.k <= kMaxK
-                   && f.cols >= 2 && f.rows >= 2) ? Kind::Table : Kind::None;
-        shapes_ = f;
-        phase_  = Phase::Sine;      /* the entire point: real waveforms */
-        p_      = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
+        kind_ = (n >= 1 && n <= kMaxN && k >= 1 && k <= kShapeK) ? Kind::Table : Kind::None;
+        if(kind_ == Kind::None) return;
+        shapes_.cols = 4;
+        shapes_.rows = 4;
+        shapes_.n = n;
+        shapes_.k = k;
+        shapes_.axis2 = a2;
+        shapes_.axis3 = a3;
+        shapes_.pulse_min = pulse_min;
+        detail::BuildShapeNodes(shapes_);
+        phase_ = Phase::Sine;       /* the entire point: real waveforms */
+        p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }
 
@@ -162,13 +175,31 @@ public:
         const float a3 = shapes_.n > 3 ? p01[3] : 0.f;
         return ShapeBandScale(shapes_, a2, a3);
     }
-    void Shape(float* frame, float* scratch, int n, const float* p01) const
+    /* The frame is rendered into `scratch`; this writes the finished cycle
+     * into `dst`. Staging it that way rather than shaping in place means the
+     * out-of-order shaper gets a separate source for nothing, so no stage ever
+     * copies a buffer — 1024 floats per render that used to be spent moving
+     * memory around. */
+    void Shape(float* dst, float* scratch, int n, const float* p01) const
     {
-        if(kind_ != Kind::Table) return;
-        const float a2 = shapes_.n > 2 ? p01[2] : 0.f;
-        const float a3 = shapes_.n > 3 ? p01[3] : 0.f;
-        Apply(shapes_.axis2, frame, scratch, n, a2);
-        Apply(shapes_.axis3, frame, scratch, n, a3);
+        if(kind_ != Kind::Table) { CopyFrame(dst, scratch, n); return; }
+        Shaper s[2]; float d[2]; int m = 0;
+        const float a[2] = {shapes_.n > 2 ? p01[2] : 0.f, shapes_.n > 3 ? p01[3] : 0.f};
+        const Shaper ax[2] = {shapes_.axis2, shapes_.axis3};
+        for(int q = 0; q < 2; q++)
+            if(ax[q] != Shaper::None && a[q] > 1e-4f) { s[m] = ax[q]; d[m] = a[q]; m++; }
+        if(m == 0) { CopyFrame(dst, scratch, n); return; }
+        if(m == 1) { Apply(s[0], dst, scratch, n, d[0]); return; }
+        if(s[0] != Shaper::Warp)
+        {
+            Apply(s[0], scratch, scratch, n, d[0]);      /* in place */
+            Apply(s[1], dst, scratch, n, d[1]);
+            return;
+        }
+        Apply(s[0], dst, scratch, n, d[0]);              /* warp cannot be in place */
+        if(s[1] != Shaper::Warp) { Apply(s[1], dst, dst, n, d[1]); return; }
+        CopyFrame(scratch, dst, n);
+        Apply(s[1], dst, scratch, n, d[1]);
     }
 
     void Fold(const float* c, float* p) const
@@ -312,14 +343,14 @@ private:
         for(int j = 0; j < p_; j++) payload[j] = pl[j];
     }
 
-    static void Apply(Shaper s, float* frame, float* scratch, int n, float d)
+    static void Apply(Shaper s, float* dst, const float* src, int n, float d)
     {
         switch(s)
         {
-            case Shaper::Fold: FoldFrame(frame, n, d); break;
-            case Shaper::Ring: RingFrame(frame, n, d); break;
-            case Shaper::Warp: WarpFrame(frame, scratch, n, d); break;
-            default: break;
+            case Shaper::Fold: FoldFrame(dst, src, n, d); break;
+            case Shaper::Ring: RingFrame(dst, src, n, d); break;
+            case Shaper::Warp: WarpFrame(dst, src, n, d); break;
+            default: CopyFrame(dst, src, n); break;
         }
     }
 
@@ -343,15 +374,15 @@ private:
         const float u = detail::SnapTo(gx - (float)c0, sharp);
         const float v = detail::SnapTo(gy - (float)r0, sharp);
 
-        float node[kMaxK];
+        /* The four corners are already built; this is a bilinear blend of
+         * stored vectors and nothing else. */
         const float w[4] = {(1.f - u) * (1.f - v), u * (1.f - v), (1.f - u) * v, u * v};
-        const int   cc[4] = {c0, c0 + 1, c0, c0 + 1};
-        const int   rr[4] = {r0, r0, r0 + 1, r0 + 1};
+        const int   id[4] = {r0 * C + c0, r0 * C + c0 + 1, (r0 + 1) * C + c0, (r0 + 1) * C + c0 + 1};
         for(int i = 0; i < k; i++) mags[i] = 0.f;
         for(int q = 0; q < 4; q++)
         {
             if(w[q] <= 0.f) continue;
-            detail::ShapeNode(shapes_, cc[q], rr[q], k, node);
+            const float* node = shapes_.node[id[q]];
             for(int i = 0; i < k; i++) mags[i] += w[q] * node[i];
         }
 

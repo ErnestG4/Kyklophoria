@@ -54,6 +54,15 @@ namespace kyk {
 /* Which shaper each of the upper two axes drives. */
 enum class Shaper : uint8_t { None = 0, Fold = 1, Ring = 2, Warp = 3 };
 
+/* The grid is at most this, and each node's coefficients are held rather than
+ * recomputed. A node depends only on which node it is, so recomputing one per
+ * render was pure waste — and expensive waste: the pulse column costs a table
+ * sine per harmonic, and a corner in that column put up to 512 of them into
+ * every Evaluate. Sixteen nodes of 64 coefficients is 4 KB, which lives in
+ * DTCM with the World and is built once when the world is selected. */
+constexpr int kShapeMaxNodes = 16;
+constexpr int kShapeK        = 64;
+
 struct ShapeField
 {
     int    cols = 4, rows = 4;
@@ -64,7 +73,8 @@ struct ShapeField
      * 4.3, so past this the loud corner of the table clips instead of getting
      * thinner. Measured, not guessed. */
     float  pulse_min = 0.08f;
-    int    n = 4, k = 64;
+    int    n = 4, k = kShapeK;
+    float  node[kShapeMaxNodes][kShapeK];
 };
 
 namespace detail {
@@ -162,6 +172,17 @@ inline void ShapeNode(const ShapeField& f, int col, int row, int k, float* c)
     for(int i = 0; i < k; i++) c[i] *= g;
 }
 
+/* Fill in every node of the grid. Called once, off the audio thread, when a
+ * world is selected. */
+inline void BuildShapeNodes(ShapeField& f)
+{
+    if(f.k > kShapeK) f.k = kShapeK;
+    if(f.cols * f.rows > kShapeMaxNodes) { f.cols = 4; f.rows = 4; }
+    for(int r = 0; r < f.rows; r++)
+        for(int c = 0; c < f.cols; c++)
+            ShapeNode(f, c, r, f.k, f.node[r * f.cols + c]);
+}
+
 /* Bias a fractional grid coordinate toward the nearer node.
  *
  * At sharp 0 this is the identity and the table is a smooth crossfade. Wound
@@ -190,24 +211,42 @@ inline float SnapTo(float u, float sharp)
 /* A sine folder, crossfaded against dry so that depth 0 is exactly dry.
  * Folding is what turns a triangle into something alive, and it is the one
  * classic shaper with no closed form in the harmonics. */
-inline void FoldFrame(float* x, int n, float d)
+inline void FoldFrame(float* dst, const float* src, int n, float d)
 {
-    if(d <= 0.f) return;
-    const float g = 1.f + 5.5f * d;
+    /* Deliberately not SinCosTurns.
+     *
+     * That routine computes both sine and cosine, interpolates each, and then
+     * runs a Newton step to put the pair back exactly on the unit circle,
+     * because it exists to build rotation matrices that must stay orthonormal
+     * through long products. A wavefolder needs none of it. Compiled for the
+     * M7 the loop came out around thirty VFP instructions in one serial
+     * dependency chain — on the order of 125 to 190 microseconds for a single
+     * 1024-sample call, against a 500 microsecond block. That is what
+     * obliterated the CPU on the bench while measuring 2.7 us on x86.
+     *
+     * A raw table read with no interpolation is a handful of instructions.
+     * The staircase it leaves is one part in 2048, about -72 dB, against a
+     * folder whose own aliasing floor is -32 dB: three dozen decibels below
+     * the thing it is riding on, and measured to leave the alias figure
+     * unchanged. Wrapping is the mask, so the argument needs no range
+     * reduction and the offset keeps it positive for the truncating convert. */
+    const float g    = 1.f + 5.5f * d;
+    const float sc   = 0.25f * g * (float)kTableSize;
+    const float off  = (float)(kTableSize * 64);   /* |0.25·g·x| stays well under 64 turns */
+    const int   mask = kTableSize - 1;
     for(int i = 0; i < n; i++)
     {
-        float sn, cs;
-        SinCosTurns(0.25f * g * x[i], sn, cs);      /* sin(g·x·pi/2) */
-        x[i] += d * (sn - x[i]);
+        const float v = src[i];
+        const int   j = (int)(v * sc + off) & mask;
+        dst[i] = v + d * (kSinTable[j] - v);
     }
 }
 
 /* Ring modulation against a harmonic of the cycle itself, so the result is
  * still one cycle and still lands on harmonics rather than between them. The
  * ratio walks with depth, which is what makes the axis worth turning. */
-inline void RingFrame(float* x, int n, float d)
+inline void RingFrame(float* dst, const float* src, int n, float d)
 {
-    if(d <= 0.f) return;
     const int m = 1 + (int)(d * 6.99f);             /* 1..7 */
     /* cos(2·pi·m·i/n) at integer i is a table entry, not a computation: the
      * frame length divides the sine table, so the index is exact and no
@@ -216,7 +255,8 @@ inline void RingFrame(float* x, int n, float d)
     for(int i = 0; i < n; i++)
     {
         const float cs = kSinTable[(m * i * step + q) & mask];
-        x[i] += d * (x[i] * cs - x[i]);
+        const float v  = src[i];
+        dst[i] = v + d * (v * cs - v);
     }
 }
 
@@ -251,29 +291,37 @@ inline void RingFrame(float* x, int n, float d)
  * required — where the warp runs backwards it is through-zero PM, which is a
  * sound rather than a fault — so A is free to exceed one.
  *
- * Needs the original to read from, since the read runs both directions. */
-inline void WarpFrame(float* x, float* scratch, int n, float d)
+ * Reads both directions, so src and dst must be different buffers. The engine
+ * arranges that for free by rendering into the scratch and letting the last
+ * shaper write the oscillator's frame, which is why nothing here copies. */
+inline void WarpFrame(float* dst, const float* src, int n, float d)
 {
-    if(d <= 0.f) return;
     const float A = 2.2f * d;
-    for(int i = 0; i < n; i++) scratch[i] = x[i];
     /* sin(2·pi·i/n) at integer i is an exact table entry for the same reason
      * as the ring modulator, so the warp costs a lookup and a multiply. */
-    const int   step = kTableSize / n, mask = kTableSize - 1;
-    const float inv = 1.f / (float)n, k2pi = A * (1.f / 6.2831853f);
-    for(int i = 0; i < n; i++)
+    /* p = (u + A·sin(2·pi·u)/(2·pi))·n collapses to i + C·sin, with the sine
+     * an exact table entry at integer i, so the whole warp is a load, a
+     * multiply-add, a convert and a lerp. Keeping i as a running float saves
+     * the integer-to-float convert as well. */
+    const int   step = kTableSize / n, mask = kTableSize - 1, nm = n - 1;
+    const float C = A * (float)n * (1.f / 6.2831853f);
+    const float bias = (float)(n * 64);            /* keep the convert positive */
+    float       fi = bias;
+    for(int i = 0; i < n; i++, fi += 1.f)
     {
-        const float u  = (float)i * inv;
-        const float sn = kSinTable[(i * step) & mask];
-        const float v  = u + k2pi * sn;
-        float       p = v * (float)n;
-        int         j = (int)p;
-        float       fr = p - (float)j;
-        if(p < 0.f) { j -= 1; fr = p - (float)j; }
-        j &= (n - 1);
-        const int j1 = (j + 1) & (n - 1);
-        x[i] = scratch[j] + (scratch[j1] - scratch[j]) * fr;
+        const float p  = fi + C * kSinTable[(i * step) & mask];
+        const int   ip = (int)p;
+        const float fr = p - (float)ip;
+        const int   j  = ip & nm;
+        const int   j1 = (j + 1) & nm;
+        const float s0 = src[j];
+        dst[i] = s0 + (src[j1] - s0) * fr;
     }
+}
+
+inline void CopyFrame(float* dst, const float* src, int n)
+{
+    for(int i = 0; i < n; i++) dst[i] = src[i];
 }
 
 /* How much wider the shapers make the spectrum at this setting.
