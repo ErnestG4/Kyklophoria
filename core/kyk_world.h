@@ -39,10 +39,22 @@ struct EigenBasis
     float        floor_ = 0.f;      /* subtracted after exp; see kykeigen */
 };
 
+/* A set of waveforms placed at points in the space, weighted by distance.
+ * Unlike every multiplicative family, distance couples all axes at once, so
+ * this is the one legible construction that is not separable. */
+struct VertexField
+{
+    const float* pos   = nullptr;   /* [count][kMaxN] */
+    const float* spec  = nullptr;   /* [count][kMaxK] */
+    int          count = 0, n = 0, k = 0;
+    float        sigma = 0.3f;      /* lock tightness; small locks hard */
+};
+
 class World
 {
 public:
-    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2 };
+    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3 };
+    static constexpr int kMaxVerts = 32;
 
     void UseLattice(const Space* s)
     {
@@ -57,10 +69,20 @@ public:
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }
 
+    void UseVertices(const VertexField& v, int p, const uint8_t* topo)
+    {
+        kind_ = (v.count > 0 && v.count <= kMaxVerts && v.n >= 1 && v.n <= kMaxN
+                 && v.k >= 1 && v.k <= kMaxK) ? Kind::Vertices : Kind::None;
+        verts_ = v;
+        p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
+        for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
+    }
+
     Kind Which() const { return kind_; }
     bool Ready() const { return kind_ != Kind::None; }
-    int  N() const { return kind_ == Kind::Lattice ? space_->N() : basis_.n; }
-    int  K() const { return kind_ == Kind::Lattice ? space_->K() : basis_.k; }
+    int  N() const { return kind_ == Kind::Lattice ? space_->N() : (kind_ == Kind::Vertices ? verts_.n : basis_.n); }
+    int  K() const { return kind_ == Kind::Lattice ? space_->K() : (kind_ == Kind::Vertices ? verts_.k : basis_.k); }
+    const VertexField& Verts() const { return verts_; }
     int  P() const { return kind_ == Kind::Lattice ? space_->P() : p_; }
     Topo TopoOf(int a) const { return kind_ == Kind::Lattice ? space_->TopoOf(a) : (Topo)topo_[a]; }
     uint32_t PhaseSeed() const { return kind_ == Kind::Lattice ? space_->Header().phase_seed : 1u; }
@@ -87,8 +109,9 @@ public:
             return;
         }
         wt.n_corners = 0;
-        if(kind_ != Kind::Analytic) { for(int k = 0; k < kMaxK; k++) mags[k] = 0.f; return; }
-        EvalAnalytic(p01, mags, payload);
+        if(kind_ == Kind::Analytic) { EvalAnalytic(p01, mags, payload); return; }
+        if(kind_ == Kind::Vertices) { EvalVertices(p01, sharp, mags, payload); return; }
+        for(int k = 0; k < kMaxK; k++) mags[k] = 0.f;
     }
 
 private:
@@ -134,9 +157,81 @@ private:
         for(int j = 0; j < p_; j++) payload[j] = pl[j];
     }
 
+    /* Softmax over minus the squared distance to each vertex: the Gaussian
+     * mixture weight. At a vertex one term dominates and you hear that
+     * waveform; step off and the neighbours crowd in. `sigma` decides how
+     * abruptly the first becomes the second. */
+    void EvalVertices(const float* p01, float sharp, float* mags, float* payload) const
+    {
+        const int n = verts_.n, k = verts_.k, m = verts_.count;
+        /* `sharp` means the same thing here as it does to the lattice: how
+         * discrete is this space. Tightening sigma narrows each vertex's
+         * basin, so the waveforms lock harder and the ground between them
+         * gets murkier. Measured on the 24-cell at K=64: the fraction of the
+         * space sitting within 0.05 of a vertex waveform runs 0.3% at sigma
+         * 0.20, 35% at 0.12 and 81% at 0.06, while the largest spectral step
+         * along a path stays under 0.02 down to sigma 0.10 and only starts
+         * reading as switching below that. */
+        if(sharp < 0.f) sharp = 0.f;
+        if(sharp > 1.f) sharp = 1.f;
+        const float sigma  = verts_.sigma * (1.f - 0.7f * sharp);
+        const float inv2s2 = 1.f / (2.f * sigma * sigma);
+        float       w[kMaxVerts];
+        float       best = -1e30f;
+        for(int v = 0; v < m; v++)
+        {
+            float d2 = 0.f;
+            for(int a = 0; a < n; a++)
+            {
+                const float dd = p01[a] - verts_.pos[(size_t)v * kMaxN + a];
+                d2 += dd * dd;
+            }
+            w[v] = -d2 * inv2s2;
+            if(w[v] > best) best = w[v];
+        }
+        float sum = 0.f;
+        for(int v = 0; v < m; v++) { w[v] = detail::Exp(w[v] - best); sum += w[v]; }
+        const float inv = sum > 0.f ? 1.f / sum : 0.f;
+
+        for(int i = 0; i < k; i++) mags[i] = 0.f;
+        float top = 0.f;
+        for(int v = 0; v < m; v++)
+        {
+            const float wv = w[v] * inv;
+            if(wv > top) top = wv;                   /* how locked are we? */
+            if(wv < 1e-4f) continue;
+            const float* sv = verts_.spec + (size_t)v * kMaxK;
+            for(int i = 0; i < k; i++) mags[i] += wv * sv[i];
+        }
+        float acc = 0.f, kw = 0.f, hf = 0.f, lin = 0.f;
+        for(int i = 0; i < k; i++)
+        {
+            const float p2 = mags[i] * mags[i];
+            acc += p2;
+            lin += mags[i];
+            kw += (float)(i + 1) * p2;
+            if(i >= k / 4) hf += p2;
+        }
+        const float g = acc > 0.f ? Sqrt(2.f) / Sqrt(acc) : 0.f;
+        for(int i = 0; i < k; i++) mags[i] *= g;
+
+        const float centroid = acc > 0.f ? (kw / acc - 1.f) / (float)(k - 1) : 0.f;
+        const float bright   = acc > 0.f ? hf / acc : 0.f;
+        const float flat     = acc > 0.f ? (lin * lin) / ((float)k * acc) : 0.f;
+        auto        sat      = [](float x) { return x < 0.f ? 0.f : (x > 1.f ? 1.f : x); };
+        /* lane 4 is proximity to a vertex, so the CV out fires when the
+         * waveform locks — the event you can hear */
+        const float pl[kMaxP] = {
+            sat(Sqrt(centroid)), sat(1.f - flat), sat(bright), sat(0.3f + 0.7f * bright),
+            sat(top), sat(1.f - top), sat(centroid), sat(flat),
+        };
+        for(int j = 0; j < p_; j++) payload[j] = pl[j];
+    }
+
     Kind         kind_  = Kind::None;
     const Space* space_ = nullptr;
     EigenBasis   basis_;
+    VertexField  verts_;
     int          p_ = 0;
     uint8_t      topo_[kMaxN] = {0, 0, 0, 0, 0, 0};
 };

@@ -21,7 +21,7 @@
 #include <fstream>
 #include "kyk_stereo.h"
 #include "kyk_world.h"
-#include "kyk_gen.h"
+#include "kyk_worlds.h"
 #include "wavio.h"
 #include "script.h"
 #include "serve.h"
@@ -38,6 +38,7 @@ int main(int argc, char** argv)
     float       gain = 0.23f, slew_ms = 5.f;   /* headroom for the crest factor, see kyk_engine.h */
     double      dur_override = -1;
     float       sharp = 0.f, deadband = 5e-4f;
+    int         world_sel = -1;   /* --world N: use a built-in world instead of a lattice */
     for(int i = 1; i < argc; i++)
     {
         std::string a = argv[i];
@@ -50,6 +51,7 @@ int main(int argc, char** argv)
         else if(a == "--K") gp.k = atoi(next());
         else if(a == "--P") gp.p = atoi(next());
         else if(a == "--wrap") { int ax = atoi(next()); if(ax >= 0 && ax < kMaxN) gp.topo[ax] = (uint8_t)Topo::Wrap; }
+        else if(a == "--world") world_sel = atoi(next());
         else if(a == "--family")
         {
             const std::string f = next();
@@ -113,6 +115,14 @@ int main(int argc, char** argv)
     static StereoEngine eng;   /* two voices, ~40 KB with 1024-sample frames: static, as on the module */
     static World world;
     world.UseLattice(&space);
+    if(world_sel >= 0 && world_sel < (int)worlds::kCount)
+    {
+        if(!worlds::Point((uint8_t)world_sel, world, gp.p, gp.topo))
+        {
+            const size_t n = worlds::Expand((uint8_t)world_sel, gp.n, gp.side, gp.k, gp.p, blob.data(), blob.size());
+            if(n && space.Attach(blob.data(), n) == SpaceError::Ok) world.UseLattice(&space);
+        }
+    }
     eng.Init(&world, (float)sr);
     eng.SetGain(gain);
     eng.SetRenderDiv(render_div);

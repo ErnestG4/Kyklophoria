@@ -45,7 +45,10 @@ $CXX -std=gnu++17 -O2 -Icore tests/wavdiff.cpp -o "$OUT/wavdiff" || fail=1
 for script in tests/scripts/*.txt; do
     name=$(basename "$script" .txt)
     args="--gen --seed 1"
-    case "$name" in m2_field*|m2_orbit*) args="--gen --seed 1 --family field --side 8";; esac
+    case "$name" in
+        m2_field*|m2_orbit*) args="--gen --seed 1 --family field --side 8";;
+        m3_solid*)           args="--gen --seed 1 --world 1";;
+    esac
     build/host/kykdesk $args --script "$script" --out "$OUT/$name.wav" --telemetry "$OUT/$name.csv" || { fail=1; continue; }
     if [ $update = 1 ] || [ ! -f "tests/golden/$name.wav" ]; then
         cp "$OUT/$name.wav" "tests/golden/$name.wav"

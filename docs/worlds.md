@@ -83,6 +83,47 @@ corpus, representation, extrapolation and parameters, that `kykspace` and
 name and the web page shows which one is loaded. The runtime does not change
 at all, which is the point: the format is already world-agnostic.
 
+## Vertex worlds, and a hypothesis that failed
+
+Will's description of the target: "if you align on any given plane you catch
+that waveform locking into a familiar shape, and as quickly as you cross it
+you're pulled back into the mire." That is a specification, and it has a
+direct construction: put a recognisable waveform on each vertex of a regular
+4-D polytope and weight them by distance. `core/kyk_solids.h`, shipped as the
+**24-cell** world — 24 vertices, self-dual, a shape with no 3-D analogue,
+which happens to exist exactly at our default N.
+
+**The hypothesis was that distance would buy isotropy.** Every other legible
+family weights the harmonic series multiplicatively, and multiplicative
+weightings add in log magnitude, which is separable by construction, and
+separable is what measures at 6 to 11x direction spread. Distance is not
+separable, since `|p − v|²` couples every axis at once, so this ought to have
+been the first legible family that was also even.
+
+It is not. Measured spread is 4.5 to 5.9x depending on the solid — better
+than Stack at 6.2x and Harmonic at 11x, nowhere near the random field at 1.5x.
+Non-separability is evidently necessary and not sufficient: 24 points in four
+dimensions still leave the space structured *by the polytope*, and directions
+toward vertices differ from directions between them. Anisotropy of a different
+shape, not its absence.
+
+**What it does deliver is the thing that was actually asked for.** The lock is
+real and tunable, and the Morph knob drives it, meaning the same control now
+says "how discrete is this space" to both backends. On the 24-cell at K=64,
+the fraction of the space sitting within 0.05 of a vertex waveform:
+
+| sigma | locked | within 0.15 | worst spectral step | reads as |
+|---|---|---|---|---|
+| 0.06 | 81% | 92% | 0.058 | switching |
+| 0.10 | 51% | 79% | 0.020 | locks and blends |
+| 0.15 | 14% | 56% | 0.008 | locks and blends |
+| 0.20 | 0.3% | 34% | 0.004 | always blended |
+
+Morph runs sigma from the table's value down to 30% of it, so the low end is
+mire everywhere and the high end lands on named waveforms most of the time,
+with the interesting settings in between. Below about 0.10 the space stops
+blending and becomes a Voronoi switch, which is the other failure.
+
 ## Modes
 
 Also Will's, and a separate axis from worlds. Three named:

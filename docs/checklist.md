@@ -101,6 +101,12 @@ meaningful axis and stacking four banks makes rotation meaningless.
       movement per unit of CV travel of anything we have, 0.4% duplicates and
       better Braids coverage than the random field. Three inert axes were what
       sank Harmonic, not separability alone.
+- [x] **Geometric-solid worlds** — `core/kyk_solids.h`, shipped as the 24-cell.
+      A waveform per vertex, weighted by distance, with Morph tightening the
+      lock. My hypothesis that distance-coupling would give isotropy was
+      wrong: 4.5-5.9x spread, better than the other legible families and far
+      off the random field's 1.5x. It does deliver the lock-and-mire
+      behaviour that was the actual request. Numbers in docs/worlds.md.
 - [ ] **An FM or waveshaping axis** — the untested route to genuine
       non-separability, since the spectrum would stop being a product of
       per-axis factors. FM of integer-ratio partials lands on harmonics, so it

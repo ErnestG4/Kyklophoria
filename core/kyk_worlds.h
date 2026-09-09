@@ -9,11 +9,12 @@
 #pragma once
 #include "kyk_world.h"
 #include "kyk_gen.h"
+#include "kyk_solids.h"
 
 namespace kyk {
 namespace worlds {
 
-enum : uint8_t { kBraids = 0, kStack = 1, kFieldCalm = 2, kFieldWild = 3, kHarmonic = 4, kCount = 5 };
+enum : uint8_t { kBraids = 0, kCell24 = 1, kStack = 2, kFieldCalm = 3, kFieldWild = 4, kHarmonic = 5, kCount = 6 };
 
 struct Entry
 {
@@ -26,6 +27,7 @@ inline const Entry& Get(uint8_t i)
 {
     static const Entry kEntries[kCount] = {
         {"Braids",   "eigenspace of Emilie Gillet's 256-wave bank", World::Kind::Analytic},
+        {"24-cell",  "a waveform on each vertex of the 4-D solid; Morph tightens the lock", World::Kind::Vertices},
         {"Stack",    "one waveform idea per axis: stacking, tilt, width, parity", World::Kind::Lattice},
         {"Field",    "correlated noise, even in every direction",   World::Kind::Lattice},
         {"Field II", "the same, rougher and less correlated",       World::Kind::Lattice},
@@ -34,15 +36,24 @@ inline const Entry& Get(uint8_t i)
     return kEntries[i < kCount ? i : 0];
 }
 
-inline bool IsAnalytic(uint8_t i) { return Get(i).kind == World::Kind::Analytic; }
+inline bool IsAnalytic(uint8_t i) { return Get(i).kind != World::Kind::Lattice; }
+
+/* The 24-cell's vertex table, built once and kept for the life of the app. */
+inline solids::VertexTable& Cell24Table()
+{
+    static solids::VertexTable t;
+    static bool built = false;
+    if(!built) { solids::Build(solids::Solid::Cell24, 64, t); built = true; }
+    return t;
+}
 
 /* Analytic worlds: point the World at a formula. Nothing to expand, nothing
  * to allocate, and switching is a pointer write. */
 inline bool Point(uint8_t i, World& w, int p, const uint8_t* topo)
 {
-    if(i != kBraids) return false;
-    w.UseAnalytic(BraidsBasis(), p, topo);
-    return true;
+    if(i == kBraids) { w.UseAnalytic(BraidsBasis(), p, topo); return true; }
+    if(i == kCell24) { solids::Use(Cell24Table(), w, p, topo); return true; }
+    return false;
 }
 
 /* Tabulated worlds: expand into caller memory, then attach. Slow enough that

@@ -1,0 +1,8 @@
+# M3 golden: the 24-cell. A rotated diagonal drift, so the path crosses
+# several vertices and the wave locks and unlocks as it passes.
+0.0 f0 110
+0.0 pos 0.15 0.2 0.8 0.35
+0.0 angle 0 0.07
+0.0 rate 4 0.05
+0.5 glide pos 0.85 0.8 0.2 0.7 3.0
+3.5 dur
