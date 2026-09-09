@@ -134,12 +134,22 @@ inline float Exp(float y)
 {
     if(y > 88.f) y = 88.f;
     if(y < -88.f) y = -88.f;
-    int   q = (int)(y / kLn2);
-    float r = y - (float)q * kLn2;
-    float t = 1.f, s = 1.f;
-    for(int i = 1; i < 9; i++) { t *= r / (float)i; s += t; }
-    while(q > 0) { s *= 2.f; q--; }
-    while(q < 0) { s *= 0.5f; q++; }
+    /* Multiply by reciprocal factorials rather than dividing by i. Float
+     * division on a Cortex-M7 is around fourteen cycles and does not
+     * pipeline, and this loop ran eight of them per call, 64 times per
+     * analytic world evaluation. Invisible on x86, which is why the desktop
+     * benchmark did not show it. */
+    static const float kInvFact[9] = {
+        0.f, 1.f, 0.5f, 1.f / 6.f, 1.f / 24.f, 1.f / 120.f, 1.f / 720.f,
+        1.f / 5040.f, 1.f / 40320.f
+    };
+    const int   q = (int)(y * (1.f / kLn2));
+    const float r = y - (float)q * kLn2;
+    float       p = 1.f, s = 1.f;
+    for(int i = 1; i < 9; i++) { p *= r; s += p * kInvFact[i]; }
+    int qq = q;
+    while(qq > 0) { s *= 2.f; qq--; }
+    while(qq < 0) { s *= 0.5f; qq++; }
     return s;
 }
 

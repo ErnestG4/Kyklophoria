@@ -23,6 +23,13 @@ public:
      * even the peakiest cell inside full scale with the level knob wide open. */
     float gain         = 0.23f;
     int   render_div   = 1;      /* render a new frame every render_div blocks */
+    /* Which block within that period this voice renders on. The stereo pair
+     * sets the two voices to different phases so they never transform on the
+     * same block: the average work is unchanged, the worst block halves, and
+     * overruns are a property of the worst block. The two ears then hold
+     * frames from adjacent blocks, which is well under a millisecond apart
+     * and inaudible. */
+    int   render_phase = 0;
     int   rolloff_bins = 0;
     float sharp        = 0.f;   /* see SharpenWeights */      /* raised-cosine taper over the top bins below the cutoff */
 
@@ -34,6 +41,8 @@ public:
         block_ = 0;
         f0_    = 110.f;
         kcut_  = 0;
+        kcut_want_ = 1 << 20;
+        hold_  = 0;
         for(int a = 0; a < kMaxN; a++) { c_[a] = 0.5f; p_[a] = 0.5f; rendered_[a] = 1e9f; }
         for(int k = 0; k < kMaxK; k++) { mags_[k] = 0.f; mags_bl_[k] = 0.f; }
         for(int j = 0; j < kMaxP; j++) payload_[j] = 0.f;
@@ -67,19 +76,29 @@ public:
     void SetF0(float f0)
     {
         /* Only a change that moves the band limit needs a new frame; pitch
-         * itself is the phase increment and costs nothing. Compare the band
-         * limit this f0 would give, not a proxy for it, or the comparison
-         * fails whenever K is the binding constraint rather than Nyquist. */
+         * itself is the phase increment and costs nothing.
+         *
+         * With an audio-rate signal on v/oct — an additive wave from a
+         * sequencer, say — f0 swings every block and the band limit chases it,
+         * which marked the frame dirty on every single block and pinned the
+         * engine at its maximum render rate permanently. So the limit is
+         * asymmetric: it must drop the instant f0 rises, or partials cross
+         * Nyquist and alias, but it may climb back lazily. A fast pitch wobble
+         * then re-renders on the way down and waits on the way up, and the
+         * only cost is a slightly duller tone at the bottom of the swing. */
         if(f0 != f0_)
         {
             f0_ = f0;
-            if(KcutFor(f0) != kcut_) dirty_ = true;
+            const int want = KcutFor(f0);
+            if(want < kcut_want_) { kcut_want_ = want; dirty_ = true; hold_ = 0; }
+            else if(want > kcut_want_ && ++hold_ >= kKcutHold) { kcut_want_ = want; dirty_ = true; hold_ = 0; }
         }
     }
 
     void Process(float* out, int n)
     {
-        const bool due    = (block_ % (uint32_t)(render_div < 1 ? 1 : render_div)) == 0u;
+        const uint32_t period = (uint32_t)(render_div < 1 ? 1 : render_div);
+        const bool     due    = ((block_ + (uint32_t)render_phase) % period) == 0u;
         const bool render = due && dirty_ && world_ && world_->Ready();
         if(render)
         {
@@ -181,6 +200,8 @@ private:
         return kmax < K ? kmax : K;
     }
 
+    static constexpr int kKcutHold = 64;   /* blocks, so about 32 ms */
+
     void Bandlimit()
     {
         const int K = world_->K();
@@ -195,6 +216,8 @@ private:
             if(kmax > 0 && (float)kmax * f0_ >= nyq) kmax--;
         }
         kcut_ = kmax < K ? kmax : K;
+        if(kcut_want_ < kcut_) kcut_ = kcut_want_;   /* honour the held limit */
+        kcut_want_ = kcut_;
         for(int k = 0; k < kcut_; k++) mags_bl_[k] = mags_[k];
         for(int k = kcut_; k < K; k++) mags_bl_[k] = 0.f;
         const int rb = rolloff_bins < kcut_ ? rolloff_bins : kcut_;
@@ -219,6 +242,8 @@ private:
     float        c_[kMaxN], p_[kMaxN], rendered_[kMaxN];
     float        f0_    = 110.f;
     int          kcut_  = 0;
+    int          kcut_want_ = 1 << 20;   /* the band limit the pitch is asking for */
+    int          hold_  = 0;
     uint32_t     block_ = 0;
     bool         dirty_ = true;
 };

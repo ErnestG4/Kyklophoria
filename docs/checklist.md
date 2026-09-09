@@ -122,6 +122,14 @@ meaningful axis and stacking four banks makes rotation meaningless.
 
 ## Known warts
 
+- [ ] **v/oct is read at control rate, not audio rate.** `hw.cv[0].Volts()`
+      goes through the SDK's one-pole `AnalogControl`, updated on the 1 kHz
+      control poll, so an audio-rate signal into v/oct is undersampled and
+      smeared before the engine ever sees it. Audiothurgist reads the ADC DMA
+      buffer directly (`hw.seed.adc.GetPtr`) for exactly this reason. Until we
+      do the same, audio-rate pitch modulation will not track cleanly however
+      much CPU we free up.
+
 - [ ] `kykeigen` spans a symmetric ±2.2 sd on every axis, but the corpus is
       lopsided: axis 1 runs −1.6 to +5.5. Per-axis percentiles would waste
       less of the lattice.

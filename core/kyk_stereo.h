@@ -77,7 +77,13 @@ public:
 
     /* Engine tunables, applied to both voices. */
     void SetGain(float g) { L.gain = g; R.gain = g; }
-    void SetRenderDiv(int d) { L.render_div = d; R.render_div = d; }
+    void SetRenderDiv(int d)
+    {
+        L.render_div = d;
+        R.render_div = d;
+        L.render_phase = 0;
+        R.render_phase = d > 1 ? d / 2 : 0;   /* keep the two transforms apart */
+    }
     void SetRolloff(int b) { L.rolloff_bins = b; R.rolloff_bins = b; }
 
     void Process(float* outL, float* outR, int n)
