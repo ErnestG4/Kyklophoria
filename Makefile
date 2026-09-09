@@ -1,7 +1,8 @@
 # kyklophoria — host build. The Alchemy Lab firmware build lands in
 # shell/alchemy/Makefile at M1 (it expects ../alchemy-sdk like Audiothurgist).
 #
-#   make host    — build/host/kykdesk (desktop shell) and build/host/kykspace
+#   make host    — build/host/kykdesk (desktop shell), kykspace (generate and
+#                  grade spaces) and kykeigen (bake a corpus into one)
 #   make test    — tests/run.sh (unit, aliasing, golden)
 #   make tables  — regenerate core/kyk_tables.h
 CXX      ?= g++
