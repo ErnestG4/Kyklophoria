@@ -703,3 +703,65 @@ triangle. As it happens the numbers did not move, because coverage takes a
 minimum over eight thousand points and the nearest is almost always an
 all-positive spectrum — but the metric was ill-defined for signed worlds and
 now is not.
+
+---
+
+# A modal world — design note, measured but not built (2026-09-09)
+
+Will asked whether we could precompute tables from a physical model without
+the synth running one. Yes, and it is what the architecture is for: a world is
+a corpus, a representation and an extrapolation, and a physical model is a
+corpus generator. It runs in `tools/`, never in the audio path. If the model
+has a closed form — and the canonical shapes do — it can be an *analytic*
+world, 1.3 KB evaluated live, with no lattice at all.
+
+What precomputing does **not** do is dodge the harmonic grid. Whatever is
+baked, the renderer places partials on integers. Worst placement error for
+real modal ratios, as a fraction of each partial's own frequency:
+
+| system | as rendered | 3-period frame | 8-period frame |
+|---|---|---|---|
+| ideal bar | 8.9% | 3.2% | 0.65% |
+| circular membrane | 25.5% | 6.3% | 2.0% |
+| square plate | 9.2% | 2.8% | 2.0% |
+
+A semitone is 5.95%. A membrane is over four semitones out. So a modal world
+here is a *tuned* instrument, in the sense that vibraphone and handpan makers
+mean it — the mode ratios are deliberately rational. True inharmonicity needs
+the M-period frame or a per-partial additive renderer, both already on this
+list and both a different engine.
+
+That is a smaller loss than it sounds, because **the frequencies are not where
+a struck object gets its character — the amplitudes are.** Strike position,
+geometry and decay all live in which modes are loud, and that is exactly
+representable.
+
+## Three things the prototype measured
+
+A rectangular plate: strike position, side ratio, hammer width, stiffness.
+
+**Deposit fractionally or it clicks.** Rounding each mode to its nearest
+harmonic makes modes *hop* between bins as the geometry moves. That measured
+6.00 variety and it was mostly discontinuity: splitting each mode across the
+two bins it falls between, exactly as FM and Unison do, brought it to 1.454
+with a worst step of 0.0025 over 4000 points. Three quarters of the apparent
+variety was clicks.
+
+**Decay time and hammer hardness are the same axis.** Both are lowpass filters
+on the mode set, so they are collinear in spectrum space. Spending two of four
+axes on them left "time since strike" at 0.07 against 0.83 for strike
+position, whatever the scaling. Pick one.
+
+**Aspect ratio is the strong axis**, because it changes *which* modes exist
+rather than tilting the ones that do — modes reorder and collide as the plate
+reshapes. It measured 2.58 against 0.55 for hammer width.
+
+With those three applied: **variety 1.454, direction spread 3.05x, per-axis
+4.7x**, which sits beside Vowel at 1.50 / 2.87x and Braids at 1.47 / 2.14x.
+
+## What would need deciding before building
+
+Which object families to ship, and whether to keep a decay axis at all given
+it duplicates hammer width. The obvious four axes are strike position, aspect
+ratio, hammer width and stiffness — no decay — with the object family either a
+fifth axis or a set of separate worlds.
