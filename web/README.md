@@ -11,7 +11,7 @@ Three static files, no build step, no dependencies:
 | file | what |
 |---|---|
 | `index.html` | the page: Space view, Sound view, status strip, dev drawer, polling |
-| `link.js` | HostLink v1 framing (CRC32/COBS, ported from Audiothurgist's `hostlink.js`), the priority `Link`, three transports (Web Serial, WebSocket, node stdio), the KykExt parsers/builders |
+| `link.js` | HostLink v1 framing (CRC32/COBS, ported from Audiothurgist's `hostlink.js`), the priority `Link`, three transports (Web Serial, WebSocket, node stdio), the KykExt parsers/builders, and `evalBasis` — the same coordinate-to-spectrum formula the module runs, so the page can evaluate a world locally |
 | `selftest.mjs` | node: codec vectors, an end-to-end run against `kykdesk --serve` over stdio, then HELLO + telemetry through the bridge |
 
 ## Running it
@@ -43,12 +43,32 @@ node web/selftest.mjs            # optional node twin; --no-bridge skips the Web
 
 ## Views
 
+- **World strip** (top): the worlds the module can be in, from
+  `GET_WORLDS`, the live one marked; click to switch. A world marked `ƒ`
+  is *analytic* — a formula, so switching to it is instant — and one
+  without is *tabulated*, a lattice the module has to expand, which takes
+  a moment and shows as `expanding…`. The note beside the list describes
+  the current world. On the right, what the terrain is shaded by.
 - **Space** (left, the hero): a 2-D projection of the N-D space on a
-  selectable pair of axes (buttons top-left, or `[` / `]`). Lattice points
-  faint, the cell containing the left position highlighted, the *control
-  frame* (pre-rotation) as a faint cross, the folded positions as glowing
-  dots — one when mono, L and R joined by a line under stereo spread. The
-  dot's hue follows payload lane 0 (cutoff), its size lane 3 (drive). A
+  selectable pair of axes (buttons top-left, or `[` / `]`).
+
+  When the world is analytic the page fetches its basis once (`GET_BASIS`,
+  about 1.3 KB for a whole world) and **shades the plane as a terrain**,
+  evaluating the formula itself on a 72² grid — the other axes held at the
+  live position, each grid point's spectrum computed the way the module
+  computes it (`core/kyk_world.h`). Shade by brightness (spectral
+  centroid), flatness, or the energy above K/4; all three are ratios, so
+  the missing normalisation cancels. The grid is rebuilt only when the
+  world, the projection, the off-plane position or the measure changes,
+  never per frame, and the colour scale re-normalises to the range
+  actually present. A tabulated world has no formula to draw, so it falls
+  back to faint lattice dots and says so.
+
+  Over that: the cell containing the left position highlighted (lattice
+  worlds only — an analytic one has no cells), the *control frame*
+  (pre-rotation) as a faint cross, the folded positions as glowing dots —
+  one when mono, L and R joined by a line under stereo spread. The dot's
+  hue follows payload lane 0 (cutoff), its size lane 3 (drive). A
   600-point trail fades by age. Wrap axes draw dashed seams. Below the
   square, one gauge per rotation plane shows its angle as an arc; the
   stereo plane is marked.
