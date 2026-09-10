@@ -120,13 +120,16 @@ let switching = -1;             /* world index mid-switch, or -1 */
  * evaluate the whole space itself and shade it rather than drawing dots at
  * the few points the module happens to sample. */
 let basis = null, basisWorld = -1;
+/* The first two labels used to name the wrong quantities: index 0 computes
+   what the firmware calls `centroid`, and index 2 computes what it calls
+   `bright`. */
 const SHADE = [
-  { id: 'bright', label: 'brightness' },
+  { id: 'centroid', label: 'centroid' },
   { id: 'flat', label: 'flatness' },
   { id: 'high', label: 'high end' },
 ];
 let shadeIdx = 0;
-const terrain = { key: '', canvas: null, res: 72, lo: 0, hi: 1, at: 0 };
+const terrain = { key: '', canvas: null, res: 72, lo: 0, hi: 1, at: 0, flat: false };
 const TRAIL_N = 600;
 const trail = { L: new Float32Array(TRAIL_N * 2), R: new Float32Array(TRAIL_N * 2), n: 0, head: 0 };
 /* The falling body, kept separately from the position trail: it lives in the
@@ -397,16 +400,139 @@ function resize() {
 }
 window.addEventListener('resize', resize); resize();
 
-const hueOf = pl => Math.round(220 - (pl ? pl[0] : 0.5) * 220);   /* cutoff: blue → yellow/red */
-const sizeOf = pl => 4 + (pl ? pl[3] : 0.3) * 10;                    /* drive */
+/* ── one spectral measure, on an absolute domain ────────────────────────
+ * The terrain and the dot both read this, so the same colour means the same
+ * thing in both — and, because nothing here is scaled to the slice it came
+ * from, the same thing in two different slices and two different worlds.
+ *
+ * Each measure is logged onto [0,1] against its own bound, so there is no
+ * free constant to pick wrong. The centroid is the power-weighted mean
+ * harmonic and lives in [1,K]; flatness lives in [1/K,1] by Cauchy-Schwarz,
+ * so K·flatness also lives in [1,K]. Dividing the log by log K lands both on
+ * [0,1] exactly.
+ *
+ * The log is doing real work, not cosmetics. Measured across a 24² slice of
+ * every world, the raw ratios sit crushed against zero — Plate's centroid
+ * ratio covers 0.015 to 0.054 and Saw's covers 0.006 to 0.097, so an absolute
+ * raw scale would paint both of those worlds inside the darkest twentieth of
+ * the ramp. Logged, those same two slices span 0.16 to 0.36 and 0.08 to 0.47:
+ * four to five times as much ramp, from a transform that is the same for
+ * every world and so leaves them comparable. Across all 21 worlds the logged
+ * spans run from 0.065 (Edge, centroid) to 0.954 (Braids, high end).
+ *
+ * The high-end fraction is the one that needs a chosen constant, and it is
+ * chosen here rather than hidden: it has no positive lower bound, because it
+ * is exactly zero over the whole of Plate and the whole of Drum — no energy
+ * in either reaches harmonic 17 — and log 0 is not a colour. −40 dB is the
+ * floor, and cells at or under it clip to the bottom of the ramp. Bar is not
+ * like its two neighbours and spans 0.11 to 0.70, which is worth knowing and
+ * is the sort of thing the old per-slice autoscale made invisible. */
+const SHADE_FLOOR = 1e-4;
+function shadeMeasure(m, k, idx) {
+  let s = 0, s2 = 0, kw = 0, hf = 0;
+  const hiStart = k >> 2;
+  for (let i = 0; i < k; i++) {
+    /* magnitude, not the signed coefficient: the sine-phase worlds return
+       signed spectra and the firmware's own Finish() sums magnitudes. */
+    const v = m[i] < 0 ? -m[i] : m[i], p2 = v * v;
+    s += v; s2 += p2; kw += (i + 1) * p2;
+    if (i >= hiStart) hf += p2;
+  }
+  if (!(s2 > 0)) return 0;
+  const lk = Math.log(k);
+  if (idx === 0) return Math.min(1, Math.max(0, Math.log(kw / s2) / lk));
+  /* flatness is (sum m)^2/(K sum m^2), so K*flatness is (sum m)^2/(sum m^2). */
+  if (idx === 1) return Math.min(1, Math.max(0, Math.log((s * s) / s2) / lk));
+  const h = Math.max(hf / s2, SHADE_FLOOR);
+  return Math.min(1, Math.max(0, 1 - Math.log(h) / Math.log(SHADE_FLOOR)));
+}
+
+/* The dot's colour ramp. Monotone in L* — measured 40, 55, 68, 80, 90 — so it
+   reads as ordered rather than as a rainbow. The old hue ramp was specified
+   220°→0° but no world reaches below 61°, so the warm half was never drawn,
+   and on FM the dot's lightness moved 2.5 L* across the entire world. */
+const DOTLUT = (() => {
+  const stops = [[0, [33, 85, 205]], [0.25, [27, 142, 183]], [0.5, [44, 186, 157]],
+                 [0.75, [234, 194, 84]], [1, [253, 221, 189]]];
+  const lut = new Uint8Array(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255; let a = stops[0], b = stops[stops.length - 1];
+    for (let q = 0; q < stops.length - 1; q++) if (t >= stops[q][0] && t <= stops[q + 1][0]) { a = stops[q]; b = stops[q + 1]; break; }
+    const u = (b[0] - a[0]) > 0 ? (t - a[0]) / (b[0] - a[0]) : 0;
+    for (let c = 0; c < 3; c++) lut[i * 3 + c] = Math.round(a[1][c] + (b[1][c] - a[1][c]) * u);
+  }
+  return lut;
+})();
+const dotColour = (v, alpha) => {
+  const i = Math.max(0, Math.min(255, Math.round(v * 255))) * 3;
+  return `rgba(${DOTLUT[i]},${DOTLUT[i + 1]},${DOTLUT[i + 2]},${alpha})`;
+};
+
+/* Worlds with no linear structure to precompute. FM's Bessel amplitudes
+ * depend on the index and its sideband positions on the ratio; the vowel
+ * world's peaks are chained multiples of each other. That is exactly why
+ * neither is separable, and why both are worth drawing rather than
+ * summarising. Lifted out of buildTerrain so the dot can call it too — the
+ * dot and the ground under it now come from the same function. */
+function evaluatorFor(b) {
+  if (!b) return null;
+  return b.fm ? MVL.evalFm
+       : b.formant ? MVL.evalFormant
+       : b.table ? MVL.evalShapes
+       : b.lock ? MVL.evalLock
+       : b.unison ? MVL.evalUnison
+       : b.modal ? MVL.evalModal
+       : b.bend ? MVL.evalBend : null;
+}
+
+/* The displayed timbre value, smoothed and with its own scratch spectrum.
+ * Raw it jumps up to 13.4% of its range in one 16 ms frame on a rotating FM
+ * trajectory, which reads as flicker; a 0.12 s one-pole cuts the worst frame
+ * step to 4.5% while keeping 95% of the range. */
+const timbre = { v: 0.5, spec: new Float32Array(256), p: new Float32Array(6) };
+function timbreAt(pos) {
+  const nl = evaluatorFor(basis);
+  let raw;
+  if (nl && basis) {
+    for (let a = 0; a < basis.n && a < 6; a++) timbre.p[a] = clamp01(pos[a]);
+    raw = shadeMeasure(nl(basis, timbre.p, timbre.spec, tel && tel.sharp || 0), basis.k, shadeIdx);
+  }
+  else if (tel && tel.mags) {
+    /* No formula for this world, so read the spectrum the module sent. Only
+       up to kcut: the payload and mags are computed before the band limit, so
+       counting silent partials says bright while the sound is dull. */
+    const k = Math.max(1, Math.min(tel.kcut, tel.k));
+    for (let i = 0; i < k; i++) timbre.spec[i] = Math.pow(10, MVL.magDb(tel.mags[i]) / 20);
+    raw = shadeMeasure(timbre.spec, k, shadeIdx);
+  } else raw = 0.5;
+  timbre.v += (raw - timbre.v) * 0.13;
+  return timbre.v;
+}
+/* Dot radius, on an envelope that tracks what this world actually does. pl3
+   is affine in brightness and spans 0.300 to 0.391 across every canonical
+   waveform, so a fixed mapping moved the radius by under one pixel — on the
+   modal worlds by exactly zero. Fast attack, ~8 s release. */
+const dotEnv = { lo: 0.3, hi: 0.4 };
+function sizeOf(pl) {
+  const v = pl ? pl[3] : 0.35;
+  dotEnv.lo += (v < dotEnv.lo ? 0.25 : 0.002) * (v - dotEnv.lo);
+  dotEnv.hi += (v > dotEnv.hi ? 0.25 : 0.002) * (v - dotEnv.hi);
+  const d = dotEnv.hi - dotEnv.lo;
+  const u = d > 1e-4 ? Math.min(1, Math.max(0, (v - dotEnv.lo) / d)) : 0.5;
+  return 5 + u * 7;
+}
 
 /* ── terrain ────────────────────────────────────────────────────────────
  * With the world as a formula rather than a table, the page can evaluate the
  * whole projection plane and shade it, instead of drawing dots wherever the
  * module happened to sample. Dark to warm, one hue, kept under the dots.  */
 const RAMP = (() => {
-  const stops = [[0, [10, 15, 22]], [0.30, [44, 33, 35]], [0.58, [98, 61, 38]],
-                 [0.82, [168, 108, 53]], [1, [232, 178, 108]]];
+  /* Stops re-spaced, same five colours. At [0, .30, .58, .82, 1] the five sit
+     at L* 4.2, 14.1, 29.6, 51.0, 76.1, so the perceptual step per 0.1 of the
+     ramp ran 2.8 to 13.7 — a 4.9x swing, with the worst resolution at the
+     bottom where most of the data sits. These put the swing at 1.10x. */
+  const stops = [[0, [10, 15, 22]], [0.14, [44, 33, 35]], [0.35, [98, 61, 38]],
+                 [0.65, [168, 108, 53]], [1, [232, 178, 108]]];
   const lut = new Uint8Array(256 * 3);
   for (let i = 0; i < 256; i++) {
     const t = i / 255; let a = stops[0], b = stops[stops.length - 1];
@@ -437,44 +563,17 @@ function buildTerrain() {
   const { n, k } = basis;
   const R = terrain.res, ax = axes[0], ay = axes[1];
   if (ax >= n || ay >= n) return;
-  const vals = new Float32Array(R * R), hiStart = k >> 2;
+  const vals = new Float32Array(R * R);
   let lo = Infinity, hi = -Infinity;
-  /* One shading measure out of one spectrum. Every measure is a ratio, so
-   * the missing normalisation cancels and neither backend has to do it. */
-  const shadeOf = (m) => {
-    let s = 0, s2 = 0, kw = 0, hf = 0;
-    for (let i = 0; i < k; i++) {
-      /* magnitude, not the signed coefficient. The sine-phase worlds return
-         signed spectra — a triangle's partials alternate — and summing them
-         signed computes a different quantity from the firmware's own
-         flatness, which sums magnitudes (Finish, core/kyk_world.h). The two
-         drifted apart on exactly the worlds where the sign pattern carries
-         the waveform. */
-      const v = m[i] < 0 ? -m[i] : m[i], p2 = v * v;
-      s += v; s2 += p2; kw += (i + 1) * p2;
-      if (i >= hiStart) hf += p2;
-    }
-    if (!(s2 > 0)) return 0;
-    return shadeIdx === 0 ? (kw / s2 - 1) / (k - 1)
-         : shadeIdx === 1 ? (s * s) / (k * s2)
-         : hf / s2;
-  };
+  /* One shading measure out of one spectrum, shared with the dot. Every
+   * measure is a ratio, so the missing normalisation cancels and neither
+   * backend has to do it. */
+  const shadeOf = (m) => shadeMeasure(m, k, shadeIdx);
   const note = (gx, gy, val) => {
     vals[gy * R + gx] = val;
     if (val < lo) lo = val; if (val > hi) hi = val;
   };
-  /* Worlds with no linear structure to precompute. FM's Bessel amplitudes
-   * depend on the index and its sideband positions on the ratio; the vowel
-   * world's peaks are chained multiples of each other. That is exactly why
-   * neither is separable, and why both are worth drawing rather than
-   * summarising. */
-  const nonlinear = basis.fm ? MVL.evalFm
-                  : basis.formant ? MVL.evalFormant
-                  : basis.table ? MVL.evalShapes
-                  : basis.lock ? MVL.evalLock
-                  : basis.unison ? MVL.evalUnison
-                  : basis.modal ? MVL.evalModal
-                  : basis.bend ? MVL.evalBend : null;
+  const nonlinear = evaluatorFor(basis);
   if (nonlinear) {
     const p = new Float32Array(6), spec = new Float32Array(k);
     for (let a = 0; a < n; a++) p[a] = clamp01(tel.posL[a]);
@@ -513,21 +612,37 @@ function buildTerrain() {
   }
   paintTerrain(vals, R, lo, hi);
 }
+/* Painted on the absolute domain shadeMeasure defines, not on the slice's own
+ * min and max.
+ *
+ * The autoscale that used to live here was the reason two slices of the same
+ * world could not be compared: it stretched whatever range a slice happened to
+ * occupy across the whole ramp, so a slice spanning 0.02 of centroid and one
+ * spanning 0.6 were painted with identical contrast and there was no way to
+ * tell which was which. Worse, it made a genuinely flat slice look like the most
+ * structured thing on screen, because float noise got stretched to full scale
+ * — and flat slices are real: Plate and Drum have no high end anywhere, so
+ * that shading of those two worlds was a picture of rounding error.
+ *
+ * Absolute costs contrast on the flat ones. That is the true picture, and
+ * `terrain.flat` says so in words rather than pretending. */
 function paintTerrain(vals, R, lo, hi) {
-  const span = (hi - lo) > 1e-9 ? hi - lo : 1;
   if (!terrain.canvas) terrain.canvas = document.createElement('canvas');
   terrain.canvas.width = R; terrain.canvas.height = R;
   const g = terrain.canvas.getContext('2d'), img = g.createImageData(R, R), d = img.data;
   for (let gy = 0; gy < R; gy++) {
     const row = (R - 1 - gy) * R;        /* image row 0 is the top; our gy 0 is the bottom */
     for (let gx = 0; gx < R; gx++) {
-      const ci = Math.max(0, Math.min(255, Math.round(((vals[gy * R + gx] - lo) / span) * 255))) * 3;
+      const ci = Math.max(0, Math.min(255, Math.round(vals[gy * R + gx] * 255))) * 3;
       const o = (row + gx) * 4;
       d[o] = RAMP[ci]; d[o + 1] = RAMP[ci + 1]; d[o + 2] = RAMP[ci + 2]; d[o + 3] = 255;
     }
   }
   g.putImageData(img, 0, 0);
   terrain.lo = lo; terrain.hi = hi;
+  /* 0.02 of the measure is about five of the ramp's 256 steps: below that the
+     eye is reading dither, so say so instead of drawing it. */
+  terrain.flat = (hi - lo) < 0.02;
 }
 
 function fit(c) {
@@ -549,7 +664,12 @@ function drawSpace() {
   /* the world itself, when it is a formula we can evaluate */
   buildTerrain();
   if (basis && terrain.canvas && terrain.key) {
-    cx.save(); cx.globalAlpha = 0.92; cx.imageSmoothingEnabled = true;
+    /* buildTerrain rate-limits itself to one rebuild per 150 ms, so while a
+       knob is moving the ground on screen is up to 150 ms behind the dot on
+       top of it. Fading it while it is known-stale is the cheap honest fix:
+       the dot stays put and the ground says "not this, yet". */
+    cx.save(); cx.globalAlpha = terrainKey() === terrain.key ? 0.92 : 0.6;
+    cx.imageSmoothingEnabled = true;
     cx.drawImage(terrain.canvas, ox, oy, S, S);
     cx.restore();
   }
@@ -571,6 +691,10 @@ function drawSpace() {
   };
   axLabel('axis ' + ax, ox + S - 44, oy + S - 6, false);
   axLabel('axis ' + ay, ox + 13, oy + 52, true);
+  /* Now that the ramp is absolute, a slice with nothing in it paints one
+     colour — which is correct, and indistinguishable from a slice that failed
+     to build. So name it. */
+  if (basis && terrain.key && terrain.flat) axLabel('flat field', ox + 8, oy + 14, false);
   /* wrap seams */
   if (space) for (const [a, edge] of [[ax, 'v'], [ay, 'h']]) if (space.topo[a] === 'wrap') {
     cx.setLineDash([3, 5]); cx.strokeStyle = '#3a4757'; cx.beginPath();
@@ -585,28 +709,61 @@ function drawSpace() {
     cx.fillStyle = 'rgba(98,213,255,0.06)'; cx.fillRect(px(ci * cw), py((cj + 1) * cw), cw * S, cw * S);
     cx.strokeStyle = 'rgba(98,213,255,0.25)'; cx.strokeRect(px(ci * cw) + .5, py((cj + 1) * cw) + .5, cw * S, cw * S);
   }
-  /* trail: oldest first, alpha by age */
-  const hue = hueOf(tel.payload);
+  /* The timbre at the dot, read off the same function that painted the
+     ground, so the dot's colour and the colour under it mean one thing. */
+  const tv = timbreAt(tel.posL);
+  /* trail: oldest first, alpha linear in recency.
+   *
+   * It used to square the recency, which put nine tenths of the visible trail
+   * into its newest third — so a slow orbit showed a bright comma and a long
+   * invisible tail, and the shape of the path, which is the entire reason the
+   * trail exists, was only legible where it had barely moved. Linear spreads
+   * the alpha over the whole 600 samples. */
   for (let k = 0; k < trail.n; k++) {
-    const idx = (trail.head - trail.n + k + TRAIL_N) % TRAIL_N, age = 1 - k / trail.n;
-    const a = 0.02 + 0.5 * (1 - age) * (1 - age);
-    cx.fillStyle = `hsla(${hue},80%,65%,${a})`; cx.beginPath(); cx.arc(px(trail.L[2 * idx]), py(trail.L[2 * idx + 1]), 1.5, 0, 7); cx.fill();
-    if (tel.stereo) { cx.fillStyle = `hsla(${(hue + 40) % 360},80%,65%,${a})`; cx.beginPath(); cx.arc(px(trail.R[2 * idx]), py(trail.R[2 * idx + 1]), 1.5, 0, 7); cx.fill(); }
+    const idx = (trail.head - trail.n + k + TRAIL_N) % TRAIL_N, u = k / trail.n;
+    const a = 0.06 + 0.62 * u;
+    cx.fillStyle = dotColour(tv, a);
+    cx.beginPath(); cx.arc(px(trail.L[2 * idx]), py(trail.L[2 * idx + 1]), 1.5, 0, 7); cx.fill();
+    /* Same colour for R, dimmer. The two voices are the same timbre at two
+       points, and giving them different hues said they were different sounds. */
+    if (tel.stereo) {
+      cx.fillStyle = dotColour(tv, a * 0.55);
+      cx.beginPath(); cx.arc(px(trail.R[2 * idx]), py(trail.R[2 * idx + 1]), 1.5, 0, 7); cx.fill();
+    }
   }
   /* control frame (before rotation), faint cross */
-  cx.strokeStyle = 'rgba(207,214,221,0.18)'; cx.beginPath();
   const cxp = px(clamp01(tel.ctl[ax])), cyp = py(clamp01(tel.ctl[ay]));
-  cx.moveTo(cxp - 6, cyp); cx.lineTo(cxp + 6, cyp); cx.moveTo(cxp, cyp - 6); cx.lineTo(cxp, cyp + 6); cx.stroke();
-  /* the dots */
+  const cross = () => { cx.beginPath(); cx.moveTo(cxp - 6, cyp); cx.lineTo(cxp + 6, cyp); cx.moveTo(cxp, cyp - 6); cx.lineTo(cxp, cyp + 6); };
+  cx.lineWidth = 2.5; cx.strokeStyle = 'rgba(7,9,12,0.7)'; cross(); cx.stroke();
+  cx.lineWidth = 1; cx.strokeStyle = 'rgba(232,238,244,0.5)'; cross(); cx.stroke();
+  /* The dots.
+   *
+   * Everything here now sits on a dark under-stroke and a light rim. The dot
+   * is drawn on top of terrain whose colour it shares by construction, so
+   * over any cell close to its own value it had been disappearing — the one
+   * mark that must never be lost. The two strokes are achromatic, so the
+   * contrast does not depend on the colour either carries. */
   const r = sizeOf(tel.payload);
-  const dot = (x, y, col, glow) => {
-    cx.shadowColor = glow; cx.shadowBlur = 18; cx.fillStyle = col; cx.beginPath(); cx.arc(px(x), py(y), r, 0, 7); cx.fill(); cx.shadowBlur = 0;
+  const halo = (path) => {
+    cx.lineWidth = 2.5; cx.strokeStyle = 'rgba(7,9,12,0.85)'; path(); cx.stroke();
+    cx.lineWidth = 1.2; cx.strokeStyle = '#e8eef4'; path(); cx.stroke();
+    cx.lineWidth = 1;
   };
   if (tel.stereo) {
-    cx.strokeStyle = 'rgba(207,214,221,0.25)'; cx.beginPath(); cx.moveTo(px(tel.posL[ax]), py(tel.posL[ay])); cx.lineTo(px(tel.posR[ax]), py(tel.posR[ay])); cx.stroke();
-    dot(tel.posR[ax], tel.posR[ay], `hsl(${(hue + 40) % 360},85%,70%)`, `hsl(${(hue + 40) % 360},85%,60%)`);
+    const connector = () => { cx.beginPath(); cx.moveTo(px(tel.posL[ax]), py(tel.posL[ay])); cx.lineTo(px(tel.posR[ax]), py(tel.posR[ay])); };
+    cx.lineWidth = 2.5; cx.strokeStyle = 'rgba(7,9,12,0.7)'; connector(); cx.stroke();
+    cx.lineWidth = 1; cx.strokeStyle = 'rgba(232,238,244,0.45)'; connector(); cx.stroke();
+    /* R is the same colour as L, drawn as a ring rather than a disc: the
+       voices differ in where they are, not in what they sound like, so the
+       difference belongs in the shape and not in the hue. */
+    const ring = () => { cx.beginPath(); cx.arc(px(tel.posR[ax]), py(tel.posR[ay]), r, 0, 7); };
+    ring(); cx.lineWidth = 2.5; cx.strokeStyle = 'rgba(7,9,12,0.85)'; cx.stroke();
+    ring(); cx.lineWidth = 1.5; cx.strokeStyle = dotColour(tv, 1); cx.stroke();
+    cx.lineWidth = 1;
   }
-  dot(tel.posL[ax], tel.posL[ay], `hsl(${hue},85%,72%)`, `hsl(${hue},85%,60%)`);
+  const disc = () => { cx.beginPath(); cx.arc(px(tel.posL[ax]), py(tel.posL[ay]), r, 0, 7); };
+  halo(disc);
+  cx.fillStyle = dotColour(tv, 1); disc(); cx.fill();
   drawKepler(tel, n, ox, oy, S, px, py);
   cx.fillStyle = '#9aa7b3'; cx.font = '11px ui-monospace, monospace';
   cx.fillText(`${tel.stereo ? 'L' : 'pos'} ${fmtVec(tel.posL)}`, ox + 6, oy + S - (tel.stereo ? 20 : 8));
@@ -709,10 +866,13 @@ function drawSound() {
   cnx.fillStyle = '#3b4756';
   cnx.fillText('frame', m, 18); cnx.fillText('spectrum', m, specCap);
   if (!tel) return;
-  const hue = hueOf(tel.payload);
+  /* Untinted on purpose. The frame and the lanes used to take the same hue as
+     the dot, which spent the page's one colour channel saying the same thing
+     in three places while the spectrum bars said nothing at all. Colour now
+     means position-in-timbre and appears only in the space view. */
   /* frame: 256 points, i8/127, ×40 scale means ±3.2 full scale */
   if (tel.frame) {
-    cnx.strokeStyle = `hsl(${hue},80%,68%)`; cnx.lineWidth = 1.5; cnx.beginPath();
+    cnx.strokeStyle = '#62d5ff'; cnx.lineWidth = 1.5; cnx.beginPath();
     for (let i = 0; i < 256; i++) { const x = m + (W - 2 * m) * i / 255, y = mid - (tel.frame[i] / 127) * (frameH / 2 - 6); i ? cnx.lineTo(x, y) : cnx.moveTo(x, y); }
     cnx.stroke(); cnx.lineWidth = 1;
   }
@@ -722,7 +882,7 @@ function drawSound() {
     const x = m + j * mw + 2, w = Math.max(8, mw - 6);
     cnx.fillStyle = '#3b4756'; cnx.fillText('pl' + j, x, stripY + 10);
     cnx.fillStyle = '#1a2230'; cnx.fillRect(x, stripY + 14, w, 6);
-    cnx.fillStyle = `hsl(${hue},60%,55%)`; cnx.fillRect(x, stripY + 14, w * clamp01(tel.payload[j]), 6);
+    cnx.fillStyle = '#3f7f9c'; cnx.fillRect(x, stripY + 14, w * clamp01(tel.payload[j]), 6);
   }
   /* spectrum: K bars on a +6…−96 dB scale, cutoff marked on the bottom axis */
   if (tel.mags) {
