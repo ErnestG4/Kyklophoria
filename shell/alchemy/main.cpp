@@ -327,7 +327,7 @@ struct ModuleSource : ExtSource
          * rendering, which is exactly the block that sets the CPU maximum. A
          * field or two may be torn instead; this is a display feed at 60 Hz
          * and nobody can see a one-frame inconsistency. */
-        return EncodeTelemetry(gEng, flags, out, cap);
+        return EncodeTelemetry(gEng, flags, out, cap, pager.Page());
     }
     bool SpaceInfo(SpaceHeader& h, uint32_t& crc, uint16_t& stride) override
     {
@@ -564,6 +564,11 @@ int main()
 
     host.Jacks(kJacks);
     host.Extend(gExt);
+    /* Without this the descriptor carries the jacks and nothing about the
+     * panel, so the web page cannot say what any knob does — the names, idents
+     * and units are all declared above and were simply never published. Six
+     * pages against the SDK's limit of eight. */
+    host.Pages(page_play, page_rotate, page_stereo, page_orbit, page_kepler, page_couple);
 
     loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(page_couple).Use(host).OnFrame(OnFrame);
 

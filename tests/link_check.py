@@ -111,6 +111,8 @@ def telemetry(link, flags):
         t['kep_xy'] = []
         for _ in range(1, t['bodies']):
             t['kep_xy'].append(struct.unpack('<2f', b[at:at+8])); at += 8
+        t['page'] = b[at] if len(b) > at else 0
+        at += 1 if len(b) > at else 0
     t['size'] = len(b)
     check(at == len(b), f'telemetry body consumed exactly ({at} of {len(b)})')
     return t
@@ -141,7 +143,7 @@ def stdio_tests():
     check((t['n'], t['k'], t['p'], t['planes']) == (4, 64, 8, 6), 'telemetry dims')
     t7 = telemetry(link, 7)
     # 23 for the original block, 1 for the body count, 8 per perturber
-    want = 460 + 23 + 1 + 8 * (t7['bodies'] - 1)
+    want = 460 + 23 + 1 + 8 * (t7['bodies'] - 1) + 1
     check(t7['size'] == want, f"motion block appends {want - 460} bytes (size {t7['size']}, {t7['bodies']} bodies)")
     check(t7['kep_plane'] < 6 and 0.0 <= t7['kep_rush'] <= 1.0, 'kepler fields sane')
     check(t7['couple'] >= 0.0 and 0.0 <= t7['lock'] <= 1.0, 'coupling fields sane')

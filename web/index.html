@@ -113,7 +113,35 @@ const $ = id => document.getElementById(id);
 const MVL = window.KYK;
 
 /* ── state ─────────────────────────────────────────────────────────── */
-let link = null, info = null, desc = null, space = null;   /* space: parsed 0x61, null when analytic */
+let link = null, info = null, desc = null, space = null;
+/* The panel, as the module describes it.
+ *
+ * The descriptor has carried the jacks since M2 and nothing about the knobs,
+ * not because the page ignored it but because the firmware never called
+ * Host::Pages — the names, idents and units were all declared and never
+ * published. With that one line the pager component arrives as
+ * { pages, pots, pageNames[], fields:[{id,name,page,pot,disp,...}] } and the
+ * page can mirror the panel rather than describe it in the abstract. */
+let panel = null;
+function parsePanel(d) {
+  if (!d) return null;
+  const walk = (o) => {
+    if (!o || typeof o !== 'object') return null;
+    if (Array.isArray(o)) { for (const v of o) { const r = walk(v); if (r) return r; } return null; }
+    if (Array.isArray(o.fields) && o.pots > 0 && o.pages > 0) return o;
+    for (const k of Object.keys(o)) { const r = walk(o[k]); if (r) return r; }
+    return null;
+  };
+  const pg = walk(d);
+  if (!pg) return null;
+  const pots = pg.pots | 0, pages = pg.pages | 0;
+  const grid = Array.from({ length: pages }, () => new Array(pots).fill(null));
+  for (const f of pg.fields) {
+    if (f == null || f.page >= pages || f.pot >= pots) continue;
+    grid[f.page][f.pot] = { name: f.name || f.id || '', id: f.id || '', disp: f.disp || null };
+  }
+  return { pages, pots, names: pg.pageNames || [], colors: pg.pageColors || [], grid };
+}   /* space: parsed 0x61, null when analytic */
 let tel = null;                 /* latest telemetry */
 let stats = null;               /* latest 0x63 */
 let axes = [0, 1];              /* projection */
@@ -245,6 +273,7 @@ async function connect(transport) {
     await link.start();
     info = await MVL.hello(link);
     desc = await MVL.getDescriptor(link, info).catch(() => null);
+    panel = parsePanel(desc);
     /* An analytic world has no lattice, so 0x61 refuses — that is not a
      * failure to connect. */
     space = await refreshSpace();
@@ -263,7 +292,7 @@ async function connect(transport) {
 }
 async function disconnect() {
   polling = false;
-  const l = link; link = null; tel = null; stats = null; info = null;
+  const l = link; link = null; tel = null; stats = null; info = null; panel = null;
   worlds = null; basis = null; basisWorld = -1; switching = -1; terrain.key = '';
   renderWorldBar();
   if (l) { try { await l.close(); } catch {} }
@@ -1302,10 +1331,14 @@ function drawSound() {
   const W = cn.clientWidth, H = cn.clientHeight;
   fit(cn);
   const m = 14, font = '11px ui-monospace, monospace';
-  const frameTop = 26, frameH = Math.max(40, H * 0.36), mid = frameTop + frameH / 2;
+  /* The spectrum used to take everything below the payload lanes, which was
+     far more room than 64 bars need and left nowhere to say what the panel is
+     doing. It keeps a fixed slice now and the panel mirror takes the rest. */
+  const panelH = panel ? Math.min(150, Math.max(96, H * 0.30)) : 0;
+  const frameTop = 26, frameH = Math.max(40, H * 0.30), mid = frameTop + frameH / 2;
   const stripY = frameTop + frameH + 10;                       /* payload lanes row */
   const specCap = stripY + 34;                                  /* "spectrum" caption baseline */
-  const specTop = specCap + 8, base = H - m - 12, h = Math.max(20, base - specTop);
+  const specTop = specCap + 8, base = H - m - 12 - panelH, h = Math.max(20, base - specTop);
   cnx.font = font;
   cnx.strokeStyle = '#141b23'; cnx.beginPath(); cnx.moveTo(m, mid); cnx.lineTo(W - m, mid); cnx.stroke();
   cnx.fillStyle = '#3b4756';
@@ -1329,6 +1362,7 @@ function drawSound() {
     cnx.fillStyle = '#1a2230'; cnx.fillRect(x, stripY + 14, w, 6);
     cnx.fillStyle = '#3f7f9c'; cnx.fillRect(x, stripY + 14, w * clamp01(tel.payload[j]), 6);
   }
+  if (panelH) drawPanel(m, H - m - panelH + 6, W - 2 * m, panelH - 6);
   /* spectrum: K bars on a +6…−96 dB scale, cutoff marked on the bottom axis */
   if (tel.mags) {
     const k = tel.k, x0 = m, bw = (W - 2 * m) / k;
@@ -1350,6 +1384,48 @@ function drawSound() {
 }
 const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
 const fmtVec = v => Array.from(v).map(x => x.toFixed(2)).join(' ');
+/* The six knobs under the player's hands, right now.
+ *
+ * Which page the panel is on comes from telemetry; what the six knobs of that
+ * page are comes from the descriptor. Neither alone is enough — the descriptor
+ * describes all six pages and cannot say which one you are holding, and the
+ * page index alone is a number with no meaning. */
+function drawPanel(x0, y0, W, H) {
+  if (!panel || !panel.pots) return;
+  const pg = tel && tel.page < panel.pages ? tel.page : 0;
+  const name = panel.names[pg] || ('page ' + pg);
+  const tint = panel.colors && panel.colors[pg] ? panel.colors[pg] : '#62d5ff';
+  cnx.strokeStyle = '#141b23'; cnx.beginPath();
+  cnx.moveTo(x0, y0 - 8); cnx.lineTo(x0 + W, y0 - 8); cnx.stroke();
+  cnx.font = '11px ui-monospace, monospace';
+  cnx.fillStyle = '#3b4756'; cnx.fillText('PANEL', x0, y0 + 6);
+  cnx.fillStyle = tint;      cnx.fillText(name, x0 + 48, y0 + 6);
+  /* Pages other than the live one are named but not spelled out — the point is
+     what is under your hands, not a manual. */
+  cnx.fillStyle = '#2f3a46'; cnx.font = '10px ui-monospace, monospace';
+  let tx = x0 + 48 + cnx.measureText(name).width * 1.1 + 14;
+  for (let i = 0; i < panel.pages; i++) {
+    if (i === pg) continue;
+    const t = panel.names[i] || String(i);
+    if (tx + 40 > x0 + W) break;
+    cnx.fillText(t, tx, y0 + 6); tx += cnx.measureText(t).width + 10;
+  }
+  const cols = Math.min(3, panel.pots), rows = Math.ceil(panel.pots / cols);
+  const cw = W / cols, ch = Math.max(20, (H - 18) / rows);
+  for (let i = 0; i < panel.pots; i++) {
+    const k = panel.grid[pg] && panel.grid[pg][i];
+    const cx0 = x0 + (i % cols) * cw, cy0 = y0 + 18 + Math.floor(i / cols) * ch;
+    cnx.fillStyle = '#3b4756'; cnx.font = '9px ui-monospace, monospace';
+    cnx.fillText('P' + (i + 1), cx0, cy0 + 9);
+    cnx.fillStyle = k ? '#9aa7b3' : '#2a3542'; cnx.font = '10px ui-monospace, monospace';
+    const label = k ? k.name : '—';
+    /* clip rather than overflow into the next column */
+    let txt = label;
+    while (txt.length > 3 && cnx.measureText(txt).width > cw - 26) txt = txt.slice(0, -1);
+    cnx.fillText(txt + (txt !== label ? '…' : ''), cx0 + 20, cy0 + 9);
+  }
+}
+
 function drawStatus() {
   if (!tel) return;
   $('sBlock').textContent = tel.block;

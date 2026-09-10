@@ -84,7 +84,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, onTelemetry };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -123,6 +123,28 @@ const CASES = [
       kepler: { running: true, plane: 0, x: 0.1, y: 0.1, rush: 0.5 } })],
   ['no mags / no frame', tel({ mags: null, frame: null, flags: 4 })],
 ];
+
+/* The panel mirror, from a descriptor shaped the way the SDK emits one
+   (framework/src/host_link/descriptor.cpp): a pager component carrying
+   pages/pots/pageNames and a flat fields array keyed by page and pot. */
+const DESC = { components: [
+  { id: 'pager', type: 'pager', pages: 6, pots: 6,
+    pageNames: ['Play', 'Rotate', 'Stereo', 'Orbit', 'Kepler', 'Couple'],
+    pageColors: ['#67e8f9', '#fca5a5', '#a5b4fc', '#fde068', '#9ae6b4', '#f0a0d8'],
+    fields: (() => {
+      const names = [['Coarse','Fine','Position 0','Position 1','Position 2','Position 3'],
+                     ['Angle 0,1','Angle 0,2','Angle 0,3','Angle 1,2','Angle 1,3','Angle 2,3'],
+                     ['Spread','Stereo plane','Morph','Render divider','Level','CV out A depth'],
+                     ['Orbit 0,1','Orbit 0,2','Orbit 0,3','Orbit 1,2','Orbit 1,3','Orbit 2,3'],
+                     ['Gravity','Eccentricity','Orbit plane','Softening','Damping','Radius'],
+                     ['Coupling','Reach','Rate','Bodies','Company', null]];
+      const out = [];
+      for (let p = 0; p < 6; p++) for (let q = 0; q < 6; q++)
+        if (names[p][q]) out.push({ id: `f${p}.${q}`, name: names[p][q], page: p, pot: q,
+                                    off: (p*6+q)*4, type: 'f32', def: 0.5, disp: { kind: 'norm' } });
+      return out;
+    })() },
+] };
 let bad = 0;
 /* The chip rows must actually be populated at load.
  *
@@ -139,12 +161,30 @@ for (const [id, min] of [['worldChips', 0], ['shadeChips', 3], ['trailChips', 4]
 if (unknownIds.size) { bad++; console.log(`  FAIL page asked for undeclared ids: ${[...unknownIds].join(', ')}`); }
 console.log('');
 
+/* the descriptor parse, then every case again with a panel present */
+const parsed = P.parsePanel(DESC);
+{
+  const ok = parsed && parsed.pages === 6 && parsed.pots === 6
+             && parsed.grid[4][0] && parsed.grid[4][0].name === 'Gravity'
+             && parsed.grid[5][5] === null;
+  if (!ok) bad++;
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} descriptor pager block parses (found ${
+    parsed ? parsed.pages + ' pages x ' + parsed.pots + ' pots' : 'nothing'}, gap at Couple P6 kept null)`);
+}
+console.log('');
+
 for (const [name, t] of CASES) {
   P.setTel(t);
   try {
     if (t) P.onTelemetry(t);
     /* the individual draws, not frame(), which now swallows throws on purpose */
+    P.setPanel(null);
     P.drawSpace(); P.drawSound(); P.drawStatus();
+    /* and again with the panel mirror live, on every pager page plus one out
+       of range, since tel.page comes off the wire and is not to be trusted */
+    P.setPanel(parsed);
+    for (const pg of [0, 1, 4, 5, 99]) { P.setTel(t ? { ...t, page: pg } : t); P.drawSound(); }
+    P.setTel(t);
     P.frame();
     console.log(`  ok    ${name}`);
   } catch (e) {
