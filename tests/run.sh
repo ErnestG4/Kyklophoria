@@ -81,6 +81,10 @@ done
 echo "== link_check (python, stdio + bridge.py) =="
 python3 tests/link_check.py || fail=1
 if command -v node >/dev/null 2>&1 && [ "${KYK_NODE:-0}" = 1 ]; then echo "== web selftest (node, optional) =="; node web/selftest.mjs || fail=1; fi
+# pagecheck needs no module and no bridge, so it runs whenever node is present:
+# it is the only thing here that executes index.html's drawing code at all, and
+# the bug it was written for froze the page for a whole test session.
+if command -v node >/dev/null 2>&1; then echo "== web pagecheck (node) =="; node web/pagecheck.mjs || fail=1; fi
 
 if [ $fail = 0 ]; then echo "ALL PASSED"; else echo "FAILURES"; fi
 exit $fail
