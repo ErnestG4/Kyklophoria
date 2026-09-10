@@ -56,31 +56,77 @@ node web/selftest.mjs            # optional node twin; --no-bridge skips the Web
   about 1.3 KB for a whole world) and **shades the plane as a terrain**,
   evaluating the formula itself on a 72² grid — the other axes held at the
   live position, each grid point's spectrum computed the way the module
-  computes it (`core/kyk_world.h`). Shade by brightness (spectral
-  centroid), flatness, or the energy above K/4; all three are ratios, so
-  the missing normalisation cancels. The grid is rebuilt only when the
-  world, the projection, the off-plane position or the measure changes,
-  never per frame, and the colour scale re-normalises to the range
-  actually present. A tabulated world has no formula to draw, so it falls
-  back to faint lattice dots and says so.
+  computes it (`core/kyk_world.h`). Shade by spectral centroid, flatness,
+  or the energy above K/4; all three are ratios, so the missing
+  normalisation cancels.
+
+  The scale is **absolute**, not per-slice. Each measure is logged against
+  its own bound — the centroid and K·flatness both live in [1,K], so
+  log/log K lands them on [0,1] with no free constant; the high-end
+  fraction has no positive lower bound (it is exactly zero over the whole
+  of Plate and of Drum) so it takes a stated −40 dB floor. That means two
+  slices of one world, and two different worlds, can be compared. It also
+  means a slice that really is flat paints one colour and says **flat
+  field**, instead of being stretched to fill the ramp — the old
+  autoscale made rounding error look like structure. The grid is rebuilt
+  only when the world, the projection, the off-plane position, the measure
+  or the Morph knob changes, never per frame, and fades while a rebuild is
+  pending. A tabulated world has no formula to draw, so it falls back to
+  faint lattice dots and says so.
 
   Over that: the cell containing the left position highlighted (lattice
   worlds only — an analytic one has no cells), the *control frame*
-  (pre-rotation) as a faint cross, the folded positions as glowing dots —
-  one when mono, L and R joined by a line under stereo spread. The dot's
-  hue follows payload lane 0 (cutoff), its size lane 3 (drive). A
-  600-point trail fades by age. Wrap axes draw dashed seams. Below the
-  square, one gauge per rotation plane shows its angle as an arc; the
-  stereo plane is marked.
+  (pre-rotation) as a cross, and the folded positions as dots — one when
+  mono, L a disc and R a ring joined by a line under stereo spread. Both
+  voices take the **same** colour, from the same measure that painted the
+  ground under them, through a ramp that is monotone in lightness; they
+  are one timbre at two points, and separate hues claimed otherwise. Dot,
+  ring, cross and connector all carry a dark under-stroke and a light rim,
+  because a dot that shares the terrain's colour scheme can otherwise
+  vanish into ground of its own value. Radius follows payload lane 3 on an
+  envelope that adapts to what the world actually does.
+
+  The trail keeps 600 samples, each holding the timbre it was drawn at,
+  with alpha linear in recency. It is **paced by the motion**: the sample
+  interval is set from the slowest rotation that is actually moving the
+  picture, so the trail holds about one turn of it rather than a fixed ten
+  seconds — a plane turning once a minute used to draw a sixth of its
+  circle. It says how long a window it covers, and says **strobed** when
+  fewer than eight samples land per turn of the fastest plane.
+
+  A clamped axis pushed past the edge of the space gets an arrow at the
+  wall, sized logarithmically, because that is the one thing here that is
+  invisible and audible at once: the position stops moving while the knob,
+  the CV and the rotation all keep going. Nothing is drawn on a wrapped
+  axis, which loses no information. Lattice worlds declare their topology;
+  for a formula world the page works out which fold happened by watching.
+
+  Wrap axes draw dashed seams. Below the square, one gauge per rotation
+  plane shows its angle as a **hand** — an arc from twelve o'clock
+  collapsed to nothing at every wrap — each sized by how far the position
+  sits from the pivot in that plane, since a rotation about a point you
+  are standing on moves you nowhere. The stereo plane is marked. Lock gets
+  a two-second sparkline beside its bar: one number cannot say whether the
+  rotation is settling, sliding or hunting. No p:q label — the ratio is
+  not on the wire and guessing one would state a confidence nothing
+  supports. When Kepler is running, an inset draws the orbit in its own
+  plane, brightening with `rush` so periapsis is the bright part.
 - **Sound** (right): the current single-cycle frame (256 points of the
-  left voice) and its K-bin spectrum on a 0…−96 dB scale, with the
+  left voice) and its K-bin spectrum on a +6…−96 dB scale, with the
   bandlimit cutoff (`nyq k`) marked and moving with pitch; bins above it
-  are drawn grey. Payload lanes as small meters.
+  are drawn grey. Payload lanes as small meters. Deliberately untinted:
+  colour on this page means position-in-timbre and lives only in the
+  Space view.
 - **Status strip**: module id and firmware, block counter, f0 in Hz with
   the note name, cutoff bin, spread/plane, link round trip · telemetry
   fps · KB/s, CPU cycles last/avg/max as a percentage of the block
   budget from `GET_STATS` (polled once a second; red when overrunning or
-  above 70 %), and the space's name and shape.
+  above 70 %), and the space's name and shape. Under stereo the spread
+  readout also gives the geometric width — L and R are the centre turned
+  by ∓δ in one plane, so the chord between them is 2·r·sin(2πδ) — and,
+  where the world is a formula, how far apart the two voices' centroids
+  actually are. The projected separation is zero whenever the spread plane
+  is not the plane on screen, so the picture alone said mono.
 - **Controls** (bridge only): f0 (log), the N control axes, the
   N(N−1)/2 rotation angles in turns, stereo spread — sent with
   `SET_CONTROL` at most 30 times a second. Hidden on a serial link: the
@@ -99,11 +145,13 @@ and `shell/common/kyk_ext.h`:
 
 | cmd | | page use |
 |---|---|---|
-| 0x60 | `GET_TELEMETRY u8 flags` → block, f0, n/k/kcut/p/planes, stereo, spread, ctl/centre/posL/posR, angles, payload, `u8 mags[k]`, `i8 frame[256]` | 60 Hz poll, flags 3 |
+| 0x60 | `GET_TELEMETRY u8 flags` → block, f0, n/k/kcut/p/planes, stereo, spread, ctl/centre/posL/posR, angles, payload, `u8 mags[k]`, `i8 frame[256]`, motion block (Kepler, couple, lock, **sharp**) | 60 Hz poll, flags 7 |
 | 0x61 | `GET_SPACE_INFO` → 64-byte header, blob CRC, stride | once at connect |
 | 0x62 | `GET_CELL u32 idx` → k, p, mags, payload | (ghost spectra, M2) |
 | 0x63 | `GET_STATS` → cycles last/max/avg, overruns, dropped, render_div, budget | 1 Hz |
 | 0x64 | `ACTION u8 op …` | (space browser, M4) |
+| 0x65 | `GET_WORLDS [u8 start]` → total, current, start, sent, then entries | once at connect, paged |
+| 0x66 | `GET_BASIS u8 world, u16 off` → an analytic world's formula, chunked | on switching to a formula world |
 | 0x6E | `SET_CONTROL f0, c[n], angle[planes], spread` | dev drawer; module answers UNSUPPORTED |
 
 `link.js` exposes everything as `window.KYK` in the browser and
