@@ -156,7 +156,17 @@ const view = { S: 300 };
  * shows up as both errors being large and is skipped rather than guessed at. */
 const foldVote = new Float32Array(6);
 const KEP_N = 900;
-const kepTrail = { xy: new Float32Array(KEP_N * 2), n: 0, head: 0, plane: -1 };
+const kepTrail = { xy: new Float32Array(KEP_N * 2), r: new Float32Array(KEP_N), n: 0, head: 0, plane: -1 };
+/* The observed range of `rush`. It is a rate, not a normalised quantity, and
+   how big it gets depends on the mass and the radius, so a fixed mapping is
+   either flat on a gentle orbit or saturated on a violent one. */
+const rushEnv = { lo: 0, hi: 0.2 };
+/* Recent history of the lock figure. One number in a bar says how locked the
+   rotation is now; it cannot say whether it is settling into a ratio, sliding
+   out of one, or hunting — and which of those is happening is the interesting
+   part of watching Arnold tongues at all. */
+const LOCK_N = 120;
+const lockHist = { v: new Float32Array(LOCK_N), n: 0, head: 0 };
 let lastBlock = -1, framesSeen = 0, fpsWin = { t0: performance.now(), n: 0, fps: 0 };
 /* The module's block clock, measured rather than assumed. It is nominally
    48000/24 = 2000 Hz, but nothing on the wire says so, and the trail's pacing
@@ -399,13 +409,20 @@ function onTelemetry(t) {
       trail.C[i] = timbre.v;
       trail.head = (i + 1) % TRAIL_N; if (trail.n < TRAIL_N) trail.n++;
     }
+    if (typeof t.lock === 'number') {
+      lockHist.v[lockHist.head] = t.lock;
+      lockHist.head = (lockHist.head + 1) % LOCK_N;
+      if (lockHist.n < LOCK_N) lockHist.n++;
+    }
     const kp = t.kepler;
     if (kp && kp.running) {
       if (kp.plane !== kepTrail.plane) { kepTrail.plane = kp.plane; kepTrail.n = 0; kepTrail.head = 0; }
       const j = kepTrail.head;
-      kepTrail.xy[2 * j] = kp.x; kepTrail.xy[2 * j + 1] = kp.y;
+      kepTrail.xy[2 * j] = kp.x; kepTrail.xy[2 * j + 1] = kp.y; kepTrail.r[j] = kp.rush;
+      rushEnv.lo += (kp.rush < rushEnv.lo ? 0.2 : 0.002) * (kp.rush - rushEnv.lo);
+      rushEnv.hi += (kp.rush > rushEnv.hi ? 0.2 : 0.002) * (kp.rush - rushEnv.hi);
       kepTrail.head = (j + 1) % KEP_N; if (kepTrail.n < KEP_N) kepTrail.n++;
-    } else if (kepTrail.n) { kepTrail.n = 0; kepTrail.head = 0; kepTrail.plane = -1; }
+    } else if (kepTrail.n) { kepTrail.n = 0; kepTrail.head = 0; kepTrail.plane = -1; rushEnv.lo = 0; rushEnv.hi = 0.2; }
   }
   fpsWin.n++; const now = performance.now();
   if (now - fpsWin.t0 > 1000) { fpsWin.fps = fpsWin.n * 1000 / (now - fpsWin.t0); fpsWin.t0 = now; fpsWin.n = 0; }
@@ -983,14 +1000,25 @@ function drawFold(t, n, ox, oy, S, px, py) {
  * The inset is the honest one and is always drawn. The orbit is a plane in the
  * *unrotated* frame, so once the rotation is doing anything the main view is
  * showing a shadow of it rather than the orbit itself. The inset shows the
- * conic in its own plane where it is a conic. Brightness follows `rush`, which
- * peaks at periapsis, so the trail is brightest exactly where the timbre is
- * moving fastest. */
+ * conic in its own plane where it is a conic.
+ *
+ * Brightness follows `rush`, which peaks at periapsis, so the orbit is
+ * brightest exactly where the timbre is moving fastest. It did not used to.
+ * The old ramp swept the hue from 28 to 68 degrees while raising the HSL
+ * lightness, and yellow carries so much more luminance than orange that the
+ * hue sweep beat the lightness: measured in L* it ran 82.5 at rest, peaked at
+ * 91.0 a quarter of the way up, and bottomed out at 76.8 at periapsis. So the
+ * body was dimmest exactly where this comment claimed it was brightest, and
+ * not even monotone in between. Holding the hue and moving only the lightness
+ * gives 56.8 to 84.3, monotone, which is what was meant all along. */
 function drawKepler(t, n, ox, oy, S, px, py) {
   const kp = t.kepler;
   if (!kp || !kp.running) return;
   const [ki, kj] = MVL.planeAxes(n, kp.plane);
-  const hot = `hsl(${28 + 40 * (1 - kp.rush)},90%,${45 + 25 * kp.rush}%)`;
+  /* rush against the range this orbit has actually shown */
+  const rspan = rushEnv.hi - rushEnv.lo;
+  const rn = rspan > 1e-6 ? Math.min(1, Math.max(0, (kp.rush - rushEnv.lo) / rspan)) : 0.5;
+  const hot = `hsl(32,90%,${42 + 36 * rn}%)`;
 
   if (ki === axes[0] && kj === axes[1]) {
     /* The attractor *is* the control frame. It used to be computed as
@@ -1020,26 +1048,52 @@ function drawKepler(t, n, ox, oy, S, px, py) {
     const x1 = kepTrail.xy[2 * i1], y1 = kepTrail.xy[2 * i1 + 1];
     /* a wrapped orbit jumps the seam; do not draw the chord across it */
     if (Math.abs(x1 - x0) > 0.5 || Math.abs(y1 - y0) > 0.5) continue;
-    cx.strokeStyle = `rgba(255,176,86,${0.05 + 0.5 * (k / kepTrail.n)})`;
+    /* Age fades the segment; rush brightens it. Periapsis is where the orbit
+       is moving fastest and so where the fewest samples land, which made it
+       the faintest part of the picture — the opposite of what it should be. */
+    const rn0 = rspan > 1e-6 ? Math.min(1, Math.max(0, (kepTrail.r[i1] - rushEnv.lo) / rspan)) : 0.5;
+    cx.strokeStyle = `rgba(255,176,86,${(0.06 + 0.55 * (k / kepTrail.n)) * (0.35 + 0.65 * rn0)})`;
     cx.beginPath(); cx.moveTo(mx + x0 * sc, my - y0 * sc); cx.lineTo(mx + x1 * sc, my - y1 * sc); cx.stroke();
   }
   cx.strokeStyle = 'rgba(255,176,86,0.5)'; cx.beginPath(); cx.arc(mx, my, 3, 0, 7); cx.stroke();
-  cx.shadowColor = hot; cx.shadowBlur = 10 + 14 * kp.rush; cx.fillStyle = hot;
-  cx.beginPath(); cx.arc(mx + kp.x * sc, my - kp.y * sc, 2.5 + 1.5 * kp.rush, 0, 7); cx.fill(); cx.shadowBlur = 0;
+  cx.shadowColor = hot; cx.shadowBlur = 10 + 14 * rn; cx.fillStyle = hot;
+  cx.beginPath(); cx.arc(mx + kp.x * sc, my - kp.y * sc, 2.5 + 1.5 * rn, 0, 7); cx.fill(); cx.shadowBlur = 0;
   cx.fillStyle = '#7d8896'; cx.font = '9px ui-monospace, monospace';
   cx.fillText(`kepler ${ki}${kj}`, bx + 4, by + D - 4);
 }
+/* One gauge per rotation plane.
+ *
+ * The angle is shown as a hand rather than as a filled arc. An arc growing
+ * from twelve o'clock reads as an accumulating quantity, but the angle is a
+ * position on a circle that wraps at one turn, so the arc collapsed to nothing
+ * every time round and was ambiguous either side of the seam. A hand has one
+ * unmistakable reading at every angle and none at the wrap.
+ *
+ * The gauges are no longer all the same size. A plane whose radius has
+ * collapsed onto the pivot is still turning, and still drew a full-size dial
+ * sweeping away, but a rotation about a point you are standing on moves you
+ * nowhere: it changes the sound not at all. Sizing each dial by how far the
+ * position actually sits from the pivot in that plane makes a busy dial that
+ * is doing nothing look like what it is. */
 function drawArcs(n, planes, t, x0, y0, S) {
-  /* one small gauge per rotation plane, angle as an arc (turns) */
-  const gap = Math.min(52, S / planes), r = Math.min(9, gap * 0.32);
+  const gap = Math.min(52, S / planes), rmax = Math.min(9, gap * 0.32);
   for (let p = 0; p < planes; p++) {
     const [a, b] = MVL.planeAxes(n, p), cxp = x0 + gap * (p + 0.5), cyp = y0 + 10;
     const isSpread = t && t.stereo && t.spreadPlane === p;
+    /* 0.707 is a corner of the unit square seen from its centre: the furthest
+       from the pivot any in-range position can be in one plane. */
+    const c = t ? (t.centre || t.posL) : null;
+    const rad = c ? Math.min(1, Math.hypot(c[a] - 0.5, c[b] - 0.5) / 0.7071) : 1;
+    const r = rmax * (0.45 + 0.55 * rad);
     cx.strokeStyle = '#243040'; cx.lineWidth = 2; cx.beginPath(); cx.arc(cxp, cyp, r, 0, 7); cx.stroke();
     const ang = t ? t.angle[p] : 0;
-    if (ang > 0) { cx.strokeStyle = isSpread ? 'var(--hot)' : '#62d5ff'; cx.strokeStyle = isSpread ? '#ffcc55' : '#62d5ff'; cx.beginPath(); cx.arc(cxp, cyp, r, -Math.PI / 2, -Math.PI / 2 + ang * 2 * Math.PI); cx.stroke(); }
-    if (t && t.stereo && isSpread) { cx.fillStyle = '#ffcc55'; cx.beginPath(); cx.arc(cxp, cyp, 2, 0, 7); cx.fill(); }
-    cx.lineWidth = 1; cx.fillStyle = '#4b5866'; cx.font = '10px ui-monospace, monospace'; cx.fillText(a + '' + b, cxp - 6, cyp + r + 11);
+    const th = -Math.PI / 2 + ang * 2 * Math.PI;
+    cx.strokeStyle = '#1d2836'; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(cxp, cyp - r); cx.lineTo(cxp, cyp - r - 2.5); cx.stroke();   /* the zero mark */
+    cx.strokeStyle = isSpread ? '#ffcc55' : '#62d5ff'; cx.lineWidth = 1.6;
+    cx.beginPath(); cx.moveTo(cxp, cyp); cx.lineTo(cxp + Math.cos(th) * r, cyp + Math.sin(th) * r); cx.stroke();
+    if (isSpread) { cx.fillStyle = '#ffcc55'; cx.beginPath(); cx.arc(cxp, cyp, 2, 0, 7); cx.fill(); }
+    cx.lineWidth = 1; cx.fillStyle = '#4b5866'; cx.font = '10px ui-monospace, monospace'; cx.fillText(a + '' + b, cxp - 6, cyp + rmax + 11);
   }
   /* Coupling, to the right of the gauges. The bar is how closed the figure
    * is: near zero the six planes are drifting independently and the path
@@ -1054,6 +1108,58 @@ function drawArcs(n, planes, t, x0, y0, S) {
   cx.fillRect(bx, by, bw * L, 8);
   cx.fillStyle = '#4b5866'; cx.font = '10px ui-monospace, monospace';
   cx.fillText(`lock ${L.toFixed(2)}  couple ${t.couple.toFixed(2)}`, bx, by + 20);
+  /* The last two seconds of it. Deliberately no p:q label: the ratio the
+     planes have found is not on the wire, and a number recovered here by
+     guessing at a rational close to the angle ratio would be stated with a
+     confidence nothing supports. The shape says settling, sliding or hunting
+     without having to name the tongue. */
+  if (lockHist.n > 3) {
+    const sw = 60, sh = 10, sx = Math.min(bx + bw - sw, x0 + S - sw - 2), sy = by + 13;
+    cx.fillStyle = 'rgba(12,16,22,0.6)'; cx.fillRect(sx, sy, sw, sh);
+    cx.strokeStyle = '#2c3a4a'; cx.lineWidth = 1; cx.beginPath();
+    for (let k = 0; k < lockHist.n; k++) {
+      const idx = (lockHist.head - lockHist.n + k + LOCK_N) % LOCK_N;
+      const vx = sx + sw * (k / (LOCK_N - 1)), vy = sy + sh - sh * Math.max(0, Math.min(1, lockHist.v[idx]));
+      k ? cx.lineTo(vx, vy) : cx.moveTo(vx, vy);
+    }
+    cx.strokeStyle = `hsl(${310 - 30 * L},${45 + 40 * L}%,${55 + 20 * L}%)`; cx.stroke();
+  }
+}
+
+/* How wide the two voices really are.
+ *
+ * The dots and the line between them show the separation *as projected*, which
+ * is zero whenever the spread plane is not the plane being drawn — the two
+ * voices sit exactly on top of each other and the picture says mono while the
+ * ears say otherwise. The geometry is knowable regardless: L and R are the
+ * centre turned by minus and plus the spread in one plane, so they are two
+ * points on a circle about the pivot separated by twice the spread, and the
+ * chord between them is 2·r·sin(2·pi·delta).
+ *
+ * Geometry is not the whole of it either. The same chord across a flat part of
+ * a world is two voices that sound alike, and across a steep part it is two
+ * different instruments. So the difference in their spectral centroids is
+ * shown next to it, when the world is a formula the page can evaluate at both
+ * points; a tabulated world only ships the left voice's spectrum, and that
+ * half of the readout is left off rather than filled with the left one twice. */
+const wscratch = { p: new Float32Array(6), spec: new Float32Array(256) };
+function stereoWidth(t) {
+  if (!t || !t.stereo) return null;
+  const [i, j] = MVL.planeAxes(t.n, t.spreadPlane);
+  const c = t.centre || t.posL;
+  const rad = Math.hypot(c[i] - 0.5, c[j] - 0.5);
+  const geo = Math.abs(2 * rad * Math.sin(2 * Math.PI * t.spread));
+  const onScreen = (i === axes[0] && j === axes[1]) || (i === axes[1] && j === axes[0]);
+  let tim = null;
+  const nl = evaluatorFor(basis);
+  if (nl && basis) {
+    const at = (pos) => {
+      for (let a = 0; a < basis.n && a < 6; a++) wscratch.p[a] = clamp01(pos[a]);
+      return shadeMeasure(nl(basis, wscratch.p, wscratch.spec, t.sharp || 0), basis.k, 0);
+    };
+    tim = Math.abs(at(t.posL) - at(t.posR));
+  }
+  return { geo, tim, onScreen };
 }
 function drawSound() {
   const W = cn.clientWidth, H = cn.clientHeight;
@@ -1112,7 +1218,11 @@ function drawStatus() {
   $('sBlock').textContent = tel.block;
   $('sF0').textContent = tel.f0.toFixed(1) + ' Hz ' + MVL.noteName(tel.f0);
   $('sKcut').textContent = tel.kcut + '/' + tel.k;
-  $('sSpread').textContent = tel.stereo ? `${tel.spread.toFixed(3)} turns · plane ${MVL.planeAxes(tel.n, tel.spreadPlane).join('')}` : 'mono';
+  const sw = stereoWidth(tel);
+  $('sSpread').textContent = !sw ? 'mono'
+    : `${tel.spread.toFixed(3)} turns · plane ${MVL.planeAxes(tel.n, tel.spreadPlane).join('')}`
+      + ` · width ${sw.geo.toFixed(3)}` + (sw.tim === null ? '' : ` · timbre ${sw.tim.toFixed(3)}`)
+      + (sw.onScreen ? '' : ' · off this plane');
   if (link) { const s = link.stats; $('sLink').textContent = `${s.rttAvg.toFixed(1)} ms · ${fpsWin.fps.toFixed(0)} fps · ${s.kbps.toFixed(1)} KB/s${s.timeouts ? ' · ' + s.timeouts + ' timeouts' : ''}`; }
   if (stats) {
     const pct = v => stats.cyclesBudget ? (100 * v / stats.cyclesBudget).toFixed(0) + '%' : v;
