@@ -423,7 +423,9 @@ function terrainKey() {
   if (!basis || !tel) return '';
   let off = '';
   for (let a = 0; a < basis.n; a++) if (a !== axes[0] && a !== axes[1]) off += Math.round(clamp01(tel.posL[a]) * 40) + ',';
-  return `${basisWorld}|${axes[0]}|${axes[1]}|${shadeIdx}|${terrain.res}|${off}`;
+  /* sharp is part of the key: it changes what the lattice, vertex, Lock and
+     Table worlds evaluate to, so a Morph move is a different field. */
+  return `${basisWorld}|${axes[0]}|${axes[1]}|${shadeIdx}|${terrain.res}|${off}|${Math.round((tel.sharp || 0) * 40)}`;
 }
 function buildTerrain() {
   if (!basis || !tel) return;
@@ -480,7 +482,7 @@ function buildTerrain() {
       p[ay] = gy / (R - 1);
       for (let gx = 0; gx < R; gx++) {
         p[ax] = gx / (R - 1);
-        note(gx, gy, shadeOf(nonlinear(basis, p, spec)));
+        note(gx, gy, shadeOf(nonlinear(basis, p, spec, tel.sharp || 0)));
       }
     }
     paintTerrain(vals, R, lo, hi);

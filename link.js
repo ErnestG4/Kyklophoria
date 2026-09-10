@@ -247,7 +247,9 @@ async function getDescriptor(link, info) {
  *   f32 ctl[n] centre[n] posL[n] posR[n] angle[planes] payload[p]
  *   [flags&1] u8 mags[k] (0 = ≤ −96 dB, 255 = +6 dB) · [flags&2] i8 frame[256] (×40)
  *   [flags&4] u8 kep_running · u8 kep_plane · f32 kep_x · f32 kep_y · f32
- *   kep_rush · f32 couple · f32 lock — how the position is moving on its own.
+ *   kep_rush · f32 couple · f32 lock · u8 sharp — how the position is moving
+ *   on its own, plus the Morph knob, which the page needs because it evaluates
+ *   several worlds itself and `sharp` changes what they evaluate to.
  *   Appended last, so a host that predates it just ignores the tail. */
 function parseTelemetry(b) {
   if (b.length < 21) return null;
@@ -260,7 +262,8 @@ function parseTelemetry(b) {
   if (t.flags & TEL.motion) {
     t.kepler = { running: b[at] !== 0, plane: b[at + 1], x: f32(b, at + 2), y: f32(b, at + 6), rush: f32(b, at + 10) };
     t.couple = f32(b, at + 14); t.lock = f32(b, at + 18);
-    at += 22;
+    t.sharp = b.length > at + 22 ? b[at + 22] / 255 : 0;
+    at += 23;
   }
   t.bytes = b.length;
   return t;

@@ -64,8 +64,9 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   check(t && t.n === 4 && t.k === 64 && t.p === 8 && t.planes === 6, 'telemetry header');
   check(t && t.bytes === 461, 'telemetry body 460 B + status (got ' + (t && t.bytes) + ')');
   const tk = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
-  check(tk && tk.bytes === 483, 'motion block appends 22 B (got ' + (tk && tk.bytes) + ')');
-  check(tk && tk.kepler && tk.kepler.plane < 6 && tk.kepler.rush >= 0 && tk.lock >= 0, 'motion fields parse');
+  check(tk && tk.bytes === 484, 'motion block appends 23 B (got ' + (tk && tk.bytes) + ')');
+  check(tk && tk.kepler && tk.kepler.plane < 6 && tk.kepler.rush >= 0 && tk.lock >= 0
+        && tk.sharp >= 0 && tk.sharp <= 1, 'motion fields parse, sharp included');
   check(t && t.mags && t.mags.length === 64 && t.frame && t.frame.length === 256, 'spectrum + frame present');
   check(t && t.kcut >= 1 && t.kcut <= 64, 'kcut range');
   const finite = a => Array.from(a).every(Number.isFinite);
@@ -128,7 +129,7 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
        * Two consecutive identical reads means the render has caught up. */
       let t3 = null, prev = null;
       for (let i = 0; i < 120; i++) {
-        t3 = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(1)));
+        t3 = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(5)));
         const settled = t3 && Math.abs(t3.posL[0] - p[0]) < 1e-3 && prev
                         && t3.mags.every((v, j) => v === prev[j]);
         if (settled) break;
@@ -136,7 +137,9 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
         await new Promise(r => setTimeout(r, 20));
       }
       check(t3 && Math.abs(t3.posL[0] - p[0]) < 1e-3, label + ': module parked at the test position');
-      const mine = evalFn(b, t3.posL);
+      /* sharp comes off the wire now, so the page evaluates the same space
+       * the module rendered rather than assuming Morph is at zero. */
+      const mine = evalFn(b, t3.posL, undefined, t3.sharp);
       /* Compare in decibels, per partial, because that is the only comparison
        * the wire can settle. Telemetry magnitudes are one byte over 96 dB, so
        * a step is 0.376 dB and no agreement finer than that is observable.
