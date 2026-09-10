@@ -206,11 +206,19 @@ int main(int argc, char** argv)
        trade is visible instead of decided here. */
     const double kBudget[] = {1.83, 2.00, 2.25, 2.50, 3.00};
     const int    nB = (int)(sizeof kBudget / sizeof kBudget[0]);
+    /* A shortlist per budget, not a single winner.
+     *
+     * Keeping only the best-measured candidate is the winner's curse: among
+     * thousands of trials the one whose spread happens to measure lowest is
+     * the one with the most favourable noise, and an independent re-grade
+     * takes it straight back over budget. That is not a hypothesis — with one
+     * winner per budget, all five failed re-grade at 60000 trials, which reads
+     * as "no improvement exists" when it actually means "I only checked the
+     * luckiest sample". Keep thirty-two per budget and confirm them all. */
+    const int kShort = 32;
     std::atomic<long> next{0}, kept{0};
     std::mutex        mut;
-    FmField           bestF[8];
-    double            bestV[8];
-    for(int q = 0; q < nB; q++) { bestF[q] = ship; bestV[q] = 0; }
+    std::vector<std::pair<double, FmField>> shortlist[8];
 
     std::vector<std::thread> pool;
     for(unsigned t = 0; t < threads; t++)
@@ -242,7 +250,17 @@ int main(int argc, char** argv)
                 kept.fetch_add(1);
                 std::lock_guard<std::mutex> lk(mut);
                 for(int q = 0; q < nB; q++)
-                    if(s.spread <= kBudget[q] && s.variety > bestV[q]) { bestV[q] = s.variety; bestF[q] = f; }
+                {
+                    if(s.spread > kBudget[q]) continue;
+                    auto& sl = shortlist[q];
+                    sl.emplace_back(s.variety, f);
+                    if((int)sl.size() > kShort * 4)
+                    {
+                        std::sort(sl.begin(), sl.end(),
+                                  [](const auto& a, const auto& b){ return a.first > b.first; });
+                        sl.resize(kShort);
+                    }
+                }
             }
         });
     for(auto& th : pool) th.join();
@@ -254,14 +272,28 @@ int main(int argc, char** argv)
        so the front has to be confirmed at the resolution it is quoted at. */
     for(int q = 0; q < nB; q++)
     {
-        if(bestV[q] <= 0) { printf("  <=%.2fx    nothing found\n", kBudget[q]); continue; }
-        const Score c = Grade(bestF[q], 256);
+        auto& sl = shortlist[q];
+        std::sort(sl.begin(), sl.end(), [](const auto& a, const auto& b){ return a.first > b.first; });
+        if((int)sl.size() > kShort) sl.resize(kShort);
+        if(sl.empty()) { printf("  <=%.2fx    nothing found\n", kBudget[q]); continue; }
+        /* Confirm the whole shortlist at 256 directions and keep the best that
+           still holds its budget, so the answer is not one lucky sample. */
+        int    survivors = 0, bestI = -1;
+        Score  bestC{};
+        for(int i = 0; i < (int)sl.size(); i++)
+        {
+            const Score c = Grade(sl[i].second, 256);
+            if(c.spread > kBudget[q]) continue;
+            survivors++;
+            if(bestI < 0 || c.variety > bestC.variety) { bestI = i; bestC = c; }
+        }
         char tag[16]; std::snprintf(tag, sizeof tag, "<=%.2fx", kBudget[q]);
-        Print(tag, bestF[q], c);
-        if(c.spread > kBudget[q]) printf("             (re-grade puts this over its budget — noise, discard)\n");
-        else if(c.variety > base.variety)
-            printf("             variety %+.1f%% against what ships\n",
-                   100.0 * (c.variety / base.variety - 1.0));
+        if(bestI < 0)
+        { printf("  %-9s none of %d shortlisted candidates held its budget on re-grade\n",
+                 tag, (int)sl.size()); continue; }
+        Print(tag, sl[bestI].second, bestC);
+        printf("             %d of %d shortlisted survived re-grade; variety %+.1f%% against what ships\n",
+               survivors, (int)sl.size(), 100.0 * (bestC.variety / base.variety - 1.0));
     }
     return 0;
 }
