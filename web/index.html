@@ -131,7 +131,15 @@ const SHADE = [
 let shadeIdx = 0;
 const terrain = { key: '', canvas: null, res: 72, lo: 0, hi: 1, at: 0, flat: false };
 const TRAIL_N = 600;
-const trail = { L: new Float32Array(TRAIL_N * 2), R: new Float32Array(TRAIL_N * 2), n: 0, head: 0 };
+/* C holds the timbre each sample was taken at, so an old stretch of the path
+   keeps the colour it had rather than being repainted with the present. */
+const trail = { L: new Float32Array(TRAIL_N * 2), R: new Float32Array(TRAIL_N * 2),
+                C: new Float32Array(TRAIL_N), n: 0, head: 0, at: -1, step: 1, gap: 1, fast: 0 };
+/* Plane rates, in turns per second, measured off the angles rather than
+   assumed: the page is never told what rate was asked for, only where the
+   rotation has got to. */
+const spin = { ang: null, block: -1, rate: null };
+const view = { S: 300 };
 /* The falling body, kept separately from the position trail: it lives in the
  * control frame, before rotation, and is stored relative to its attractor. So
  * it stays a clean conic even while the rotation is dragging the position
@@ -150,6 +158,10 @@ const foldVote = new Float32Array(6);
 const KEP_N = 900;
 const kepTrail = { xy: new Float32Array(KEP_N * 2), n: 0, head: 0, plane: -1 };
 let lastBlock = -1, framesSeen = 0, fpsWin = { t0: performance.now(), n: 0, fps: 0 };
+/* The module's block clock, measured rather than assumed. It is nominally
+   48000/24 = 2000 Hz, but nothing on the wire says so, and the trail's pacing
+   is expressed in blocks because that is the only clock both ends share. */
+let blockHz = 2000, blockWin = { t0: performance.now(), b0: -1 };
 let polling = false;
 
 const say = (s, bad) => { $('msg').textContent = s || ''; $('msg').style.color = bad ? 'var(--bad)' : 'var(--dim)'; };
@@ -176,7 +188,7 @@ async function connect(transport) {
   $('btnDrawer').hidden = !dev;
   if (dev) buildDrawer(); else $('drawer').classList.remove('show');
   buildAxisButtons();
-  trail.n = 0; trail.head = 0; lastBlock = -1;
+  trail.n = 0; trail.head = 0; trail.at = -1; lastBlock = -1;
   say('');
   polling = true; pollTelemetry(); pollStats();
 }
@@ -277,7 +289,7 @@ async function selectWorld(i) {
       if (Date.now() > deadline) { say('world: the module did not switch', true); break; }
     }
     space = await refreshSpace();
-    trail.n = 0; trail.head = 0;
+    trail.n = 0; trail.head = 0; trail.at = -1;
     renderWorldBar();
     describeSpace();
     await ensureBasis();
@@ -365,10 +377,28 @@ function onTelemetry(t) {
   if (lastBlock < 0) describeSpace();   /* an analytic world gets its dims from here */
   if (t.block !== lastBlock) {
     lastBlock = t.block; framesSeen++;
-    const i = trail.head;
-    trail.L[2 * i] = t.posL[axes[0]]; trail.L[2 * i + 1] = t.posL[axes[1]];
-    trail.R[2 * i] = t.posR[axes[0]]; trail.R[2 * i + 1] = t.posR[axes[1]];
-    trail.head = (i + 1) % TRAIL_N; if (trail.n < TRAIL_N) trail.n++;
+    /* The smoothing runs on every block the page sees, not on the trail's own
+       paced clock, so its time constant stays 0.12 s however the trail is
+       spaced. */
+    timbreAt(t.posL);
+    const paced = trailStep(t, t.n);
+    trail.step = paced.step; trail.fast = paced.fast;
+    const due = t.block - trail.at;
+    if (trail.at < 0 || due < 0 || due >= trail.step) {
+      /* The spacing actually achieved, which is not the spacing asked for. The
+         page sees telemetry at its poll rate, roughly sixty times a second, so
+         thirty-odd blocks pass between anything it can sample; a step under
+         that is a request the poll loop cannot honour. Measuring the gap
+         rather than assuming it keeps the window label and the undersampling
+         warning honest about what is really on screen. */
+      if (trail.at >= 0 && due > 0) trail.gap += (due - trail.gap) * 0.2;
+      trail.at = t.block;
+      const i = trail.head;
+      trail.L[2 * i] = t.posL[axes[0]]; trail.L[2 * i + 1] = t.posL[axes[1]];
+      trail.R[2 * i] = t.posR[axes[0]]; trail.R[2 * i + 1] = t.posR[axes[1]];
+      trail.C[i] = timbre.v;
+      trail.head = (i + 1) % TRAIL_N; if (trail.n < TRAIL_N) trail.n++;
+    }
     const kp = t.kepler;
     if (kp && kp.running) {
       if (kp.plane !== kepTrail.plane) { kepTrail.plane = kp.plane; kepTrail.n = 0; kepTrail.head = 0; }
@@ -379,6 +409,65 @@ function onTelemetry(t) {
   }
   fpsWin.n++; const now = performance.now();
   if (now - fpsWin.t0 > 1000) { fpsWin.fps = fpsWin.n * 1000 / (now - fpsWin.t0); fpsWin.t0 = now; fpsWin.n = 0; }
+  if (blockWin.b0 < 0) { blockWin.b0 = t.block; blockWin.t0 = now; }
+  else if (now - blockWin.t0 > 2000) {
+    const hz = (t.block - blockWin.b0) * 1000 / (now - blockWin.t0);
+    if (hz > 1) blockHz = hz;
+    blockWin.b0 = t.block; blockWin.t0 = now;
+  }
+}
+
+/* How many blocks to leave between trail samples.
+ *
+ * Six hundred samples taken one per poll cover about ten seconds, which is the
+ * wrong window for almost every rotation anyone actually dials in: a plane
+ * turning once a minute drew a sixth of its circle and looked like a drifting
+ * line, and the closed loop — the thing the trail exists to show — was never
+ * on screen at all. So the trail is paced instead by the slowest rotation that
+ * is actually moving the picture, and holds one full turn of it.
+ *
+ * Only planes touching a drawn axis are considered, because a rotation in a
+ * plane that is entirely off-screen changes nothing here, and only those whose
+ * excursion clears a couple of pixels — a plane whose radius has collapsed to
+ * the pivot is turning but not going anywhere, and letting it in would stretch
+ * the window towards infinity for no visible gain. The admit and drop
+ * thresholds differ so a plane hovering at the boundary does not chatter.  */
+function trailStep(t, n) {
+  const planes = MVL.planeCount(n);
+  if (!t.angle || !spin.ang || spin.ang.length !== planes) {
+    spin.ang = t.angle ? Float32Array.from(t.angle) : null;
+    spin.rate = new Float32Array(planes); spin.block = t.block;
+    return { step: 1, fast: 0 };
+  }
+  const db = t.block - spin.block;
+  if (db > 0) {
+    const dt = db / blockHz;
+    for (let q = 0; q < planes; q++) {
+      /* angles are in turns and wrap, so take the short way round */
+      let d = t.angle[q] - spin.ang[q];
+      d -= Math.round(d);
+      const r = Math.abs(d) / dt;
+      spin.rate[q] += (r - spin.rate[q]) * 0.2;
+      spin.ang[q] = t.angle[q];
+    }
+    spin.block = t.block;
+  }
+  const [ax, ay] = axes;
+  let slow = 0, fast = 0;
+  for (let q = 0; q < planes; q++) {
+    const [i, j] = MVL.planeAxes(n, q);
+    if (i !== ax && j !== ax && i !== ay && j !== ay) continue;
+    const c = t.centre || t.posL;
+    const rad = Math.hypot(c[i] - 0.5, c[j] - 0.5);
+    const px2 = 2 * rad * view.S;
+    if (px2 < (spin.rate[q] > 0 && trail.step > 1 ? 1 : 2)) continue;   /* hysteresis */
+    const w = spin.rate[q];
+    if (w < 1e-4) continue;
+    if (!slow || w < slow) slow = w;
+    if (w > fast) fast = w;
+  }
+  if (!slow) return { step: 1, fast };
+  return { step: Math.max(1, Math.round(blockHz / (slow * TRAIL_N))), fast };
 }
 
 /* ── axis selector ──────────────────────────────────────────────────── */
@@ -387,7 +476,7 @@ function buildAxisButtons() {
   for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
     const btn = document.createElement('button'); btn.textContent = a + '×' + b;
     btn.classList.toggle('on', axes[0] === a && axes[1] === b);
-    btn.onclick = () => { axes = [a, b]; trail.n = 0; trail.head = 0; buildAxisButtons(); };
+    btn.onclick = () => { axes = [a, b]; trail.n = 0; trail.head = 0; trail.at = -1; buildAxisButtons(); };
     box.appendChild(btn);
   }
 }
@@ -396,8 +485,8 @@ document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   const n = tel ? tel.n : 4, pairs = []; for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) pairs.push([a, b]);
   const i = pairs.findIndex(p => p[0] === axes[0] && p[1] === axes[1]);
-  if (e.key === 'ArrowRight' || e.key === ']') { axes = pairs[(i + 1) % pairs.length]; trail.n = 0; buildAxisButtons(); }
-  if (e.key === 'ArrowLeft' || e.key === '[') { axes = pairs[(i - 1 + pairs.length) % pairs.length]; trail.n = 0; buildAxisButtons(); }
+  if (e.key === 'ArrowRight' || e.key === ']') { axes = pairs[(i + 1) % pairs.length]; trail.n = 0; trail.at = -1; buildAxisButtons(); }
+  if (e.key === 'ArrowLeft' || e.key === '[') { axes = pairs[(i - 1 + pairs.length) % pairs.length]; trail.n = 0; trail.at = -1; buildAxisButtons(); }
 });
 
 /* ── drawing ────────────────────────────────────────────────────────── */
@@ -672,6 +761,7 @@ function drawSpace() {
   const ox = (W - S) / 2, oy = m + (H - 2 * m - arcRow - S) / 2;
   const px = v => ox + v * S, py = v => oy + (1 - v) * S;
   const [ax, ay] = axes;
+  view.S = S;                    /* the trail's pacing needs to know the scale */
   /* the world itself, when it is a formula we can evaluate */
   buildTerrain();
   if (basis && terrain.canvas && terrain.key) {
@@ -722,26 +812,40 @@ function drawSpace() {
   }
   /* The timbre at the dot, read off the same function that painted the
      ground, so the dot's colour and the colour under it mean one thing. */
-  const tv = timbreAt(tel.posL);
-  /* trail: oldest first, alpha linear in recency.
+  const tv = timbre.v;
+  /* Trail: oldest first, alpha linear in recency, colour frozen at the moment
+   * each sample was taken.
    *
-   * It used to square the recency, which put nine tenths of the visible trail
-   * into its newest third — so a slow orbit showed a bright comma and a long
-   * invisible tail, and the shape of the path, which is the entire reason the
-   * trail exists, was only legible where it had barely moved. Linear spreads
-   * the alpha over the whole 600 samples. */
-  for (let k = 0; k < trail.n; k++) {
-    const idx = (trail.head - trail.n + k + TRAIL_N) % TRAIL_N, u = k / trail.n;
-    const a = 0.06 + 0.62 * u;
-    cx.fillStyle = dotColour(tv, a);
-    cx.beginPath(); cx.arc(px(trail.L[2 * idx]), py(trail.L[2 * idx + 1]), 1.5, 0, 7); cx.fill();
-    /* Same colour for R, dimmer. The two voices are the same timbre at two
-       points, and giving them different hues said they were different sounds. */
-    if (tel.stereo) {
-      cx.fillStyle = dotColour(tv, a * 0.55);
-      cx.beginPath(); cx.arc(px(trail.R[2 * idx]), py(trail.R[2 * idx + 1]), 1.5, 0, 7); cx.fill();
+   * The alpha used to be squared, which put nine tenths of the visible trail
+   * into its newest third — a slow orbit showed a bright comma and a long
+   * invisible tail, so the shape of the path, the entire reason the trail
+   * exists, was legible only where it had barely moved. Linear spreads it over
+   * all six hundred.
+   *
+   * Drawn in colour buckets rather than per sample. Every distinct fillStyle
+   * string has to be parsed as CSS, and a per-sample rgba() string meant up to
+   * 1200 of those per frame and 72,000 a second, to express a value that moves
+   * slowly and is being quantised to a byte anyway. Sixteen buckets is
+   * sixteen parses; globalAlpha is a number and costs nothing to set. */
+  const BUCKETS = 16;
+  for (let b = 0; b < BUCKETS; b++) {
+    let any = false;
+    for (let k = 0; k < trail.n; k++) {
+      const idx = (trail.head - trail.n + k + TRAIL_N) % TRAIL_N;
+      if (Math.min(BUCKETS - 1, Math.floor(trail.C[idx] * BUCKETS)) !== b) continue;
+      if (!any) { cx.fillStyle = dotColour((b + 0.5) / BUCKETS, 1); any = true; }
+      const a = 0.06 + 0.62 * (k / trail.n);
+      cx.globalAlpha = a;
+      cx.beginPath(); cx.arc(px(trail.L[2 * idx]), py(trail.L[2 * idx + 1]), 1.5, 0, 7); cx.fill();
+      /* Same colour for R, dimmer. The two voices are the same timbre at two
+         points, and separate hues said they were two different sounds. */
+      if (tel.stereo) {
+        cx.globalAlpha = a * 0.55;
+        cx.beginPath(); cx.arc(px(trail.R[2 * idx]), py(trail.R[2 * idx + 1]), 1.5, 0, 7); cx.fill();
+      }
     }
   }
+  cx.globalAlpha = 1;
   /* control frame (before rotation), faint cross */
   const cxp = px(clamp01(tel.ctl[ax])), cyp = py(clamp01(tel.ctl[ay]));
   const cross = () => { cx.beginPath(); cx.moveTo(cxp - 6, cyp); cx.lineTo(cxp + 6, cyp); cx.moveTo(cxp, cyp - 6); cx.lineTo(cxp, cyp + 6); };
@@ -778,6 +882,20 @@ function drawSpace() {
   drawFold(tel, n, ox, oy, S, px, py);
   drawKepler(tel, n, ox, oy, S, px, py);
   cx.fillStyle = '#9aa7b3'; cx.font = '11px ui-monospace, monospace';
+  /* The trail no longer covers a fixed ten seconds, so it has to say what it
+     does cover, or its length means nothing. */
+  if (trail.n > 8) {
+    const secs = trail.n * trail.gap / blockHz;
+    /* Eight samples per turn of the fastest plane is where its shape stops
+       being recoverable from the dots. Below that the trail is a strobe
+       picture and says so, rather than drawing a confident lie. */
+    const strobed = trail.fast > 0 && blockHz / trail.gap < 8 * trail.fast;
+    const lbl = (secs < 90 ? secs.toFixed(secs < 10 ? 1 : 0) + ' s' : (secs / 60).toFixed(1) + ' min') + ' of trail';
+    cx.fillStyle = strobed ? '#ff9a5c' : '#5c6b7a';
+    cx.font = '10px ui-monospace, monospace';
+    cx.fillText(strobed ? lbl + ' · detail strobed' : lbl, ox + S - 150, oy + 14);
+    cx.font = '11px ui-monospace, monospace'; cx.fillStyle = '#9aa7b3';
+  }
   cx.fillText(`${tel.stereo ? 'L' : 'pos'} ${fmtVec(tel.posL)}`, ox + 6, oy + S - (tel.stereo ? 20 : 8));
   if (tel.stereo) cx.fillText(`R ${fmtVec(tel.posR)}`, ox + 6, oy + S - 8);
   drawArcs(n, planes, tel, ox, oy + S + 18, S);
