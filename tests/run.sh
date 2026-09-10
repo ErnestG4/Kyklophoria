@@ -38,6 +38,11 @@ echo "== morph_check =="
 $CXX $CORE_FLAGS $SAN tests/morph_check.cpp -o "$OUT/morph_check" || fail=1
 "$OUT/morph_check" || fail=1
 
+echo "== kepler_check =="
+$CXX $CORE_FLAGS $SAN tests/kepler_check.cpp -o "$OUT/kepler_check" || fail=1
+"$OUT/kepler_check" > "$OUT/kep.txt" || { cat "$OUT/kep.txt"; fail=1; }
+grep -q "all passed" "$OUT/kep.txt" || { cat "$OUT/kep.txt"; fail=1; }
+
 echo "== cont_check =="
 $CXX $CORE_FLAGS $SAN tests/cont_check.cpp -o "$OUT/cont_check" || fail=1
 "$OUT/cont_check" > "$OUT/cont.txt" || { cat "$OUT/cont.txt"; fail=1; }

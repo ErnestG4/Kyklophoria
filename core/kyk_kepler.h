@@ -32,11 +32,50 @@
  * conserve energy exactly but it does not drift secularly either, so an orbit
  * left running for an hour is still an orbit. A block is half a millisecond
  * against orbital periods of tenths of seconds upward, so the step is tiny.
+ *
+ * ── company ──────────────────────────────────────────────────────────────
+ *
+ * One body is a closed curve, and Will's objection to it is the right one: a
+ * single orbit is hard to play, because everything it will ever do is visible
+ * in the first cycle. What changes that is other bodies, and the reason is the
+ * oldest open problem in the subject. Two bodies about a common centre are
+ * integrable — the pair beats against itself, quasi-periodic, and you can hear
+ * the period. Three are not, and Poincare's whole point was that no amount of
+ * cleverness makes them so: the path stops repeating and never starts again.
+ *
+ * So `bodies` runs from one to eight, and the character of the first few is a
+ * fact about celestial mechanics rather than a tuning choice.
+ *
+ * The voice is body 0. The others are gravitational company: they pull on it
+ * and on each other, and the space is read where body 0 has got to. Summing
+ * the bodies instead was the obvious alternative and is wrong here — a large
+ * orbit plus a small one *is* an epicycle, and epicycles are precisely what
+ * the orbit mode above already does. Perturbing a Keplerian body keeps this
+ * mode Keplerian.
+ *
+ * `companion` is their mass, and at zero the whole system collapses exactly
+ * back to the single-body case whatever `bodies` says. That is deliberate: it
+ * means turning the count up cannot break a patch that was set before this
+ * existed, and the knob has somewhere honest to start.
  */
 #pragma once
 #include "kyk_rotate.h"
 
 namespace kyk {
+
+/* Eight. A power of two so BodyX/BodyY can mask rather than branch, and the
+ * pairwise force loop is then 28 interactions per block — against a budget
+ * that already absorbs fifteen planes of Givens rotation, that is nothing.
+ *
+ * The first three are the ones with names: one body closes, two are integrable
+ * and beat against each other, three are Poincare's problem and never repeat.
+ * Past three the additions are not new in kind, but they are not redundant
+ * either — a ring of six perturbers is closer to a mean field than to a
+ * three-body scramble, and it behaves like it: smoother, denser, far less
+ * prone to the sudden ejections that make three lively. Both ends are worth
+ * having, so the range runs to eight rather than stopping where the textbook
+ * stops being interesting. */
+constexpr int kKeplerBodies = 8;
 
 class Kepler
 {
@@ -46,6 +85,8 @@ public:
     float damp    = 0.f;     /* 0 keeps it going forever; a little spirals in  */
     float vmax    = 6.f;     /* speed clamp, space units per second            */
     int   plane   = 0;       /* which Givens plane the orbit lives in          */
+    int   bodies  = 1;       /* 1 closed, 2 beating, 3 chaotic, more = denser  */
+    float companion = 0.f;   /* mass of bodies 1..n-1, relative to the centre  */
     /* Gravity on a torus. Under Wrap the space has no edges, so the attractor
      * has an image in every direction and the body should feel the nearest
      * one. Folding the displacement into ±half a turn does exactly that, and
@@ -60,6 +101,8 @@ public:
         Reset(0.30f, 0.f);
     }
 
+    int Bodies() const { return bodies < 1 ? 1 : (bodies > kKeplerBodies ? kKeplerBodies : bodies); }
+
     bool Running() const { return running_; }
     void Stop() { running_ = false; }
 
@@ -71,10 +114,7 @@ public:
     void Reset(float radius, float ecc)
     {
         if(radius < 0.02f) radius = 0.02f;
-        r_[0] = radius;
-        r_[1] = 0.f;
         const float vc = Sqrt(gravity / radius);
-        v_[0] = 0.f;
         /* k times the circular speed. Apoapsis is r·k²/(2−k²), so k must stay
          * below sqrt(2) to remain bound at all and below about 1.24 to stay
          * inside the playable cube from this radius. The top of the knob is
@@ -82,47 +122,97 @@ public:
          * gravity down while eccentricity is high will still fling the body
          * out, and it respawns, which is a comet and worth keeping. */
         const float e = ecc < 0.f ? 0.f : (ecc > 1.f ? 1.f : ecc);
-        v_[1] = vc * (0.35f + 0.89f * e);
+        /* Companions start evenly spaced round the same circle and moving the
+         * same way, which is the one arrangement that is stable enough to be
+         * worth hearing before the perturbations take over — start them all at
+         * the same phase and they collide immediately, however soft the core. */
+        const int nb = Bodies();
+        for(int b = 0; b < kKeplerBodies; b++)
+        {
+            /* spaced over the bodies that are actually running: two start
+               opposite each other, three at a third of a turn, and so on */
+            const float turn = (float)b / (float)(b < nb ? nb : kKeplerBodies);
+            float sn, cs;
+            SinCosTurns(turn, sn, cs);
+            r_[b][0] = radius * cs;
+            r_[b][1] = radius * sn;
+            const float sp = vc * (0.35f + 0.89f * e);
+            v_[b][0] = -sp * sn;      /* tangential, same sense for all */
+            v_[b][1] =  sp * cs;
+        }
         running_ = true;
     }
 
     void Step(float dt)
     {
         if(!running_ || dt <= 0.f) return;
-        /* a = -G r / (|r|² + eps²)^{3/2}, toward the nearest image of the
-         * centre when the space wraps */
-        float fx = r_[0], fy = r_[1];
-        if(wrap) { fx = Wrapped(fx); fy = Wrapped(fy); }
+        const int   nb = Bodies();
         const float e2 = soften * soften;
-        const float d2 = fx * fx + fy * fy + e2;
-        const float inv = 1.f / (d2 * Sqrt(d2));
-        const float ax = -gravity * fx * inv;
-        const float ay = -gravity * fy * inv;
-        v_[0] += ax * dt;
-        v_[1] += ay * dt;
-        if(damp > 0.f)
+        const float m  = companion < 0.f ? 0.f : (companion > 1.f ? 1.f : companion);
+
+        float a[kKeplerBodies][2];
+        for(int b = 0; b < nb; b++)
         {
-            const float k = 1.f - damp * dt;
-            v_[0] *= k;
-            v_[1] *= k;
+            /* a = -G r / (|r|² + eps²)^{3/2}, toward the nearest image of the
+             * centre when the space wraps */
+            float fx = r_[b][0], fy = r_[b][1];
+            if(wrap) { fx = Wrapped(fx); fy = Wrapped(fy); }
+            const float d2  = fx * fx + fy * fy + e2;
+            const float inv = 1.f / (d2 * Sqrt(d2));
+            a[b][0] = -gravity * fx * inv;
+            a[b][1] = -gravity * fy * inv;
         }
-        const float sp = Sqrt(v_[0] * v_[0] + v_[1] * v_[1]);
-        if(sp > vmax) { const float k = vmax / sp; v_[0] *= k; v_[1] *= k; }
-        r_[0] += v_[0] * dt;
-        r_[1] += v_[1] * dt;
-        if(wrap)
+        /* Mutual attraction, each pair once and applied both ways — Newton's
+         * third law is what keeps the system from gaining momentum out of
+         * nothing and wandering off. Softened with the same core, since two
+         * bodies can pass arbitrarily close and an unsoftened pair would take
+         * an unbounded kick in a single half-millisecond step. */
+        if(m > 0.f && nb > 1)
         {
-            /* keep the stored offset in one turn so it cannot drift away */
-            r_[0] = Wrapped(r_[0]);
-            r_[1] = Wrapped(r_[1]);
+            for(int i = 0; i < nb; i++)
+                for(int j = i + 1; j < nb; j++)
+                {
+                    float dx = r_[j][0] - r_[i][0], dy = r_[j][1] - r_[i][1];
+                    if(wrap) { dx = Wrapped(dx); dy = Wrapped(dy); }
+                    const float d2  = dx * dx + dy * dy + e2;
+                    const float inv = 1.f / (d2 * Sqrt(d2));
+                    const float g   = gravity * m * inv;
+                    a[i][0] += g * dx;  a[i][1] += g * dy;
+                    a[j][0] -= g * dx;  a[j][1] -= g * dy;
+                }
         }
-        else
+        for(int b = 0; b < nb; b++)
+        {
+            v_[b][0] += a[b][0] * dt;
+            v_[b][1] += a[b][1] * dt;
+            if(damp > 0.f)
+            {
+                const float k = 1.f - damp * dt;
+                v_[b][0] *= k;
+                v_[b][1] *= k;
+            }
+            const float sp = Sqrt(v_[b][0] * v_[b][0] + v_[b][1] * v_[b][1]);
+            if(sp > vmax) { const float k = vmax / sp; v_[b][0] *= k; v_[b][1] *= k; }
+            r_[b][0] += v_[b][0] * dt;
+            r_[b][1] += v_[b][1] * dt;
+            if(wrap)
+            {
+                /* keep the stored offset in one turn so it cannot drift away */
+                r_[b][0] = Wrapped(r_[b][0]);
+                r_[b][1] = Wrapped(r_[b][1]);
+            }
+        }
+        if(!wrap)
         {
             /* Anything far past the playable cube is not coming back on its
              * own within a useful time, so relaunch rather than let the sound
-             * sit against a clamped edge. */
+             * sit against a clamped edge. With company this is more likely:
+             * three bodies routinely eject one, which is correct physics and a
+             * dead voice, so the whole system restarts together. */
             const float far = 1.5f;
-            if(r_[0] * r_[0] + r_[1] * r_[1] > far * far) Reset(0.30f, 0.55f);
+            for(int b = 0; b < nb; b++)
+                if(r_[b][0] * r_[b][0] + r_[b][1] * r_[b][1] > far * far)
+                { Reset(0.30f, 0.55f); break; }
         }
     }
 
@@ -132,13 +222,15 @@ public:
         if(!running_) return;
         int i, j;
         Rotation::PlaneAxes(n, plane, i, j);
-        p[i] += r_[0];
-        p[j] += r_[1];
+        p[i] += r_[0][0];
+        p[j] += r_[0][1];
     }
 
-    float X() const { return r_[0]; }
-    float Y() const { return r_[1]; }
-    float Speed() const { return Sqrt(v_[0] * v_[0] + v_[1] * v_[1]); }
+    float X() const { return r_[0][0]; }
+    float Y() const { return r_[0][1]; }
+    float BodyX(int b) const { return r_[b & (kKeplerBodies - 1)][0]; }
+    float BodyY(int b) const { return r_[b & (kKeplerBodies - 1)][1]; }
+    float Speed() const { return Sqrt(v_[0][0] * v_[0][0] + v_[0][1] * v_[0][1]); }
     /* How near periapsis the body is, 0 at its slowest and 1 at its fastest.
      * Musically the useful readout: it is high exactly when the timbre is
      * moving fastest. */
@@ -159,8 +251,8 @@ private:
     }
 
     int   n_ = 4;
-    float r_[2] = {0.3f, 0.f};
-    float v_[2] = {0.f, 0.f};
+    float r_[kKeplerBodies][2] = {{0.3f, 0.f}};
+    float v_[kKeplerBodies][2] = {};
     bool  running_ = false;
 };
 

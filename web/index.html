@@ -1163,6 +1163,9 @@ function drawKepler(t, n, ox, oy, S, px, py) {
     const x = kepTrail.xy[2 * k], y = kepTrail.xy[2 * k + 1];
     const m = Math.max(Math.abs(x), Math.abs(y)); if (m > rmax) rmax = m;
   }
+  if (t.kepXY) for (const [bxp, byp] of t.kepXY) {
+    const m = Math.max(Math.abs(bxp), Math.abs(byp)); if (m > rmax) rmax = m;
+  }
   const sc = (D * 0.44) / rmax, mx = bx + D / 2, my = by + D / 2;
   cx.fillStyle = 'rgba(12,16,22,0.55)'; cx.fillRect(bx, by, D, D);
   cx.strokeStyle = 'rgba(120,134,150,0.28)'; cx.strokeRect(bx + .5, by + .5, D, D);
@@ -1181,10 +1184,19 @@ function drawKepler(t, n, ox, oy, S, px, py) {
     cx.beginPath(); cx.moveTo(mx + x0 * sc, my - y0 * sc); cx.lineTo(mx + x1 * sc, my - y1 * sc); cx.stroke();
   }
   cx.strokeStyle = 'rgba(255,176,86,0.5)'; cx.beginPath(); cx.arc(mx, my, 3, 0, 7); cx.stroke();
+  /* The company. They pull on body 0 and on each other but the space is not
+     read at them, so they are drawn as outlines: present, and clearly not the
+     voice. With one body there are none and this loop does nothing. */
+  if (t.kepXY && t.kepXY.length) {
+    cx.strokeStyle = 'rgba(160,182,210,0.55)'; cx.lineWidth = 1;
+    for (const [bxp, byp] of t.kepXY) {
+      cx.beginPath(); cx.arc(mx + bxp * sc, my - byp * sc, 2, 0, 7); cx.stroke();
+    }
+  }
   cx.shadowColor = hot; cx.shadowBlur = 10 + 14 * rn; cx.fillStyle = hot;
   cx.beginPath(); cx.arc(mx + kp.x * sc, my - kp.y * sc, 2.5 + 1.5 * rn, 0, 7); cx.fill(); cx.shadowBlur = 0;
   cx.fillStyle = '#7d8896'; cx.font = '9px ui-monospace, monospace';
-  cx.fillText(`kepler ${ki}${kj}`, bx + 4, by + D - 4);
+  cx.fillText(`kepler ${ki}${kj}` + (t.bodies > 1 ? ` ·${t.bodies}` : ''), bx + 4, by + D - 4);
 }
 /* One gauge per rotation plane.
  *

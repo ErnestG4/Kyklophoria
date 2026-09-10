@@ -159,7 +159,12 @@ static const char* kReachNames[5] = {"1", "2", "3", "4", "5"};
 static VirtualKnob k_couple = VirtualKnob(0, "Coupling").Ident("orb.couple").Ring(Level(kCouple));
 static VirtualKnob k_reach  = VirtualKnob(1, "Reach").Selector(5).Labels(kReachNames, 5).Ident("orb.reach").Ring(Level(kCouple));
 static VirtualKnob k_ratex  = VirtualKnob(2, "Rate").Unit("x").Ident("orb.ratex").Ring(Level(kCouple));
-static Page page_couple = Page(5).Name("Couple").Color("#f0a0d8").Knobs(k_couple, k_reach, k_ratex);
+/* The falling body's company lives on this page rather than on Kepler's,
+ * which is full, and it belongs here anyway: both knobs are about motions
+ * pulling on each other. One body closes, two beat, three never repeat. */
+static VirtualKnob k_kbody  = VirtualKnob(3, "Bodies").Selector(8).Ident("kep.bodies").Ring(Level(kCouple));
+static VirtualKnob k_kmass  = VirtualKnob(4, "Company").Ident("kep.mass").Ring(Level(kCouple));
+static Page page_couple = Page(5).Name("Couple").Color("#f0a0d8").Knobs(k_couple, k_reach, k_ratex, k_kbody, k_kmass);
 static Page page_stereo = Page(2).Name("Stereo").Color("#c4b5fd").Knobs(k_spread, k_plane, k_sharp, k_rdiv, k_level, k_cvdep);
 
 /* ── jacks (descriptor metadata; the web panel mirror reads these) ───────── */
@@ -272,6 +277,13 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
         gEng.kepler.soften  = k_soft.Value();
         gEng.kepler.damp    = k_damp.Value();
         gEng.kepler.plane   = (int)k_kplane.Value();
+        gEng.kepler.bodies  = (int)k_kbody.Value() + 1;      /* selector is 0-based */
+        /* Squared, because the interesting part of the range is the bottom:
+         * a companion at full mass rearranges the orbit completely, and the
+         * settings worth playing are the ones that perturb it. At zero this is
+         * exactly the single-body orbit whatever the count says. */
+        const float mk = k_kmass.Norm();
+        gEng.kepler.companion = mk * mk;
         const float rad = k_radius.Value();
         const bool  moved = (rad > gKepRadius + 0.02f) || (rad < gKepRadius - 0.02f);
         if(on && (!gKepOn || moved))

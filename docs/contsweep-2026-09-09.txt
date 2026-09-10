@@ -1,0 +1,114 @@
+contsweep: 84 world-axis pairs x 2500 base points on 14 threads, seed 1
+           (cont_check tests one base point; this tests 2500)
+
+  world      axis  worst step min ratio
+  Braids     0        0.00620     3.989
+  Braids     1        0.00669     3.988
+  Braids     2        0.00659     3.993
+  Braids     3        0.00430     3.988
+  24-cell    0        0.00570     3.214
+  24-cell    1        0.00623     3.013
+  24-cell    2        0.00561     1.921   <-- STEP
+  24-cell    3        0.00636     3.437
+  16-cell    0        0.00173     3.992
+  16-cell    1        0.00233     3.992
+  16-cell    2        0.00168     3.992
+  16-cell    3        0.00269     3.992
+  Tesseract  0        0.00599     1.971   <-- STEP
+  Tesseract  1        0.00594     3.422
+  Tesseract  2        0.00620     2.254
+  Tesseract  3        0.00571     3.635
+  Stack      0        0.02647     3.998
+  Stack      1        0.00521     3.996
+  Stack      2        0.02327     3.998
+  Stack      3        0.01466     3.997
+  Field      0        0.01855     3.996
+  Field      1        0.01518     3.995
+  Field      2        0.01532     3.996
+  Field      3        0.01606     3.994
+  Field II   0        0.02464     3.991
+  Field II   1        0.02475     3.994
+  Field II   2        0.02483     3.995
+  Field II   3        0.02491     3.989
+  Torus      0        0.01960     3.999
+  Torus      1        0.02063     3.999
+  Torus      2        0.02189     3.997
+  Torus      3        0.02124     3.999
+  Harmonic   0        0.00107     3.998
+  Harmonic   1        0.00339     3.998
+  Harmonic   2        0.00222     3.995
+  Harmonic   3        0.00111     3.998
+  FM         0        0.04628     3.926
+  FM         1        0.18852     3.154
+  FM         2        0.04649     3.135
+  FM         3        0.03588     3.349
+  Vowel      0        0.12345     3.961
+  Vowel      1        0.05750     3.926
+  Vowel      2        0.07081     3.898
+  Vowel      3        0.02372     3.890
+  Shapes     0        0.07285     3.524
+  Shapes     1        0.08273     1.321   <-- STEP
+  Shapes     2        0.03924     2.396
+  Shapes     3        0.15178     3.059
+  Shapes R   0        0.13151     3.747
+  Shapes R   1        0.06136     1.463   <-- STEP
+  Shapes R   2        0.03804     3.039
+  Shapes R   3        0.03381     3.096
+  Lock       0        0.00906     3.597
+  Lock       1        0.00899     3.400
+  Lock       2        0.00955     3.577
+  Lock       3        0.00897     3.442
+  Unison     0        0.00686     3.989
+  Unison     1        0.01847     3.677
+  Unison     2        0.00636     3.792
+  Unison     3        0.04392     3.954
+  Plate      0        0.01158     3.957
+  Plate      1        0.01059     3.753
+  Plate      2        0.00818     3.997
+  Plate      3        0.00709     3.956
+  Bar        0        0.01600     3.955
+  Bar        1        0.06253     3.995
+  Bar        2        0.01843     3.994
+  Bar        3        0.00514     3.957
+  Drum       0        0.02341     3.862
+  Drum       1        0.02078     3.662
+  Drum       2        0.02763     3.864
+  Drum       3        0.00639     3.918
+  Saw        0        0.00229     3.995
+  Saw        1        0.00348     3.999
+  Saw        2        0.01797     3.982
+  Saw        3        0.02266     3.909
+  Pulse      0        0.02582     3.992
+  Pulse      1        0.00212     3.995
+  Pulse      2        0.01953     3.855
+  Pulse      3        0.02302     3.845
+  Edge       0        0.00135     3.998
+  Edge       1        0.01609     3.992
+  Edge       2        0.00989     3.873
+  Edge       3        0.02177     3.873
+
+  210000 sweeps, 206992 refined (98.6%)
+
+  worst cases, reproduce with --replay world:axis:index
+    --replay 11:1:448   Shapes     ratio 1.32  step 0.00095
+    --replay 11:1:694   Shapes     ratio 1.38  step 0.00182
+    --replay 11:1:446   Shapes     ratio 1.40  step 0.00107
+    --replay 12:1:181   Shapes R   ratio 1.46  step 0.00119
+    --replay 11:1:516   Shapes     ratio 1.48  step 0.00101
+    --replay 12:1:1173   Shapes R   ratio 1.48  step 0.00114
+    --replay 11:1:175   Shapes     ratio 1.49  step 0.00377
+    --replay 11:1:1250   Shapes     ratio 1.49  step 0.00119
+    --replay 11:1:179   Shapes     ratio 1.50  step 0.00130
+    --replay 11:1:774   Shapes     ratio 1.51  step 0.00366
+    --replay 12:1:252   Shapes R   ratio 1.51  step 0.00120
+    --replay 12:1:1038   Shapes R   ratio 1.51  step 0.00110
+    --replay 11:1:161   Shapes     ratio 1.52  step 0.00219
+    --replay 12:1:431   Shapes R   ratio 1.52  step 0.00119
+    --replay 12:1:1452   Shapes R   ratio 1.54  step 0.00178
+    --replay 11:1:181   Shapes     ratio 1.56  step 0.00215
+    --replay 11:1:339   Shapes     ratio 1.56  step 0.00167
+    --replay 11:1:1684   Shapes     ratio 1.56  step 0.00432
+    --replay 11:1:759   Shapes     ratio 1.56  step 0.00169
+    --replay 11:1:1371   Shapes     ratio 1.58  step 0.00149
+
+contsweep: 4 of 84 world-axis pairs have a discontinuity somewhere

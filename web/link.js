@@ -264,6 +264,14 @@ function parseTelemetry(b) {
     t.couple = f32(b, at + 14); t.lock = f32(b, at + 18);
     t.sharp = b.length > at + 22 ? b[at + 22] / 255 : 0;
     at += 23;
+    /* The company. Body 0 is t.kepler.x/y; these are the perturbers, and only
+       as many as are running are sent, so a single body costs one byte. */
+    t.bodies = b.length > at ? Math.max(1, b[at]) : 1;
+    at += b.length > at ? 1 : 0;
+    t.kepXY = [];
+    for (let i = 1; i < t.bodies && b.length >= at + 8; i++) {
+      t.kepXY.push([f32(b, at), f32(b, at + 4)]); at += 8;
+    }
   }
   t.bytes = b.length;
   return t;

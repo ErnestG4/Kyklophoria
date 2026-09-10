@@ -99,7 +99,7 @@ function tel(over = {}) {
     mags: Uint8Array.from({ length: k }, (_, i) => 200 - i * 2),
     frame: Int8Array.from({ length: 256 }, (_, i) => Math.round(100 * Math.sin(i / 8))),
     kepler: { running: false, plane: 0, x: 0, y: 0, rush: 0 },
-    couple: 0, lock: 0, sharp: 0, bytes: 512,
+    couple: 0, lock: 0, sharp: 0, bodies: 1, kepXY: [], bytes: 512,
   }, over);
 }
 const CASES = [
@@ -112,6 +112,12 @@ const CASES = [
       centre: Float32Array.from([1.4, -0.6, 0.5, 0.5]), posL: Float32Array.from([1, 0, 0.5, 0.5]),
       posR: Float32Array.from([1, 0.05, 0.5, 0.5]), kepler: { running: true, plane: 2, x: 0.2, y: -0.1, rush: 0.9 } })],
   ['n=6', tel({ n: 6 })],
+  ['kepler with company', tel({ couple: 0.4, lock: 0.3,
+      kepler: { running: true, plane: 1, x: 0.18, y: -0.07, rush: 0.6 },
+      bodies: 8, kepXY: [[-0.12, 0.2], [0.05, -0.25], [0.3, 0.11], [-0.28, -0.04],
+                         [0.02, 0.31], [-0.19, -0.22], [0.24, -0.15]] })],
+  ['bodies claimed but positions missing', tel({ bodies: 4, kepXY: [],
+      kepler: { running: true, plane: 0, x: 0.1, y: 0.1, rush: 0.5 } })],
   ['no mags / no frame', tel({ mags: null, frame: null, flags: 4 })],
 ];
 let bad = 0;

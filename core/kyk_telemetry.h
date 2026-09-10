@@ -11,6 +11,7 @@
  *   [flags&2] i8 frame[256] — left voice's frame, decimated, ×40 clipped
  *   [flags&4] u8 kep_running · u8 kep_plane · f32 kep_x · f32 kep_y
  *             f32 kep_rush · f32 couple · f32 lock · u8 sharp
+ *             u8 kep_bodies · f32 x,y for bodies 1..kep_bodies-1
  *
  * That last block is how the position is moving of its own accord: the
  * falling body, and how hard the orbit planes are pulling on each other. It
@@ -123,6 +124,13 @@ inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, i
          * zero and never needed it. */
         const float sh = e.sharp < 0.f ? 0.f : (e.sharp > 1.f ? 1.f : e.sharp);
         w.U8((uint8_t)(sh * 255.f + 0.5f));
+        /* The company. Body 0 is already above as kep_x/kep_y — it is the one
+         * the space is actually read at — so only the perturbers go here, and
+         * only as many as are running. A single body therefore costs one extra
+         * byte, which is what the common case should cost. */
+        const int nb = e.kepler.Bodies();
+        w.U8((uint8_t)nb);
+        for(int b = 1; b < nb; b++) { w.F32(e.kepler.BodyX(b)); w.F32(e.kepler.BodyY(b)); }
     }
     return w.ok ? w.n : 0;
 }
@@ -134,7 +142,7 @@ inline int TelemetrySize(int n, int k, int p, uint8_t flags)
     int       sz     = 4 + 4 + 6 + 2 + 4 + 4 * (4 * n + planes + p);
     if(flags & kTelSpectrum) sz += k;
     if(flags & kTelFrame) sz += kTelFramePts;
-    if(flags & kTelMotion) sz += 2 + 20 + 1;
+    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1);
     return sz;
 }
 
