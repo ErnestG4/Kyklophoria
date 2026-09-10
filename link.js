@@ -272,6 +272,10 @@ function parseTelemetry(b) {
     for (let i = 1; i < t.bodies && b.length >= at + 8; i++) {
       t.kepXY.push([f32(b, at), f32(b, at + 4)]); at += 8;
     }
+    /* which pager page the panel is showing, so the mirror knows which six
+       knobs are under the player's hands right now */
+    t.page = b.length > at ? b[at] : 0;
+    at += b.length > at ? 1 : 0;
   }
   t.bytes = b.length;
   return t;
