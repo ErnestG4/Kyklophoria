@@ -531,16 +531,27 @@ function evalShapes(basis, p01, out, sharp = 0) {
  * fourth axis is a second strike coordinate; 1 and 2 are a bar and a drum
  * head, whose fourth axis is temper. */
 const BAR_R = [1, 2.756, 5.404, 8.933, 13.34, 18.64, 24.80, 31.80, 39.80, 48.70, 58.50];
-const DRUM_R = [1, 1.593, 2.135, 2.295, 2.653, 2.917, 3.155, 3.500, 3.598, 3.647, 4.060, 4.154];
+const DRUM_R = [1.000, 1.593, 2.135, 2.295, 2.653, 2.917, 3.155, 3.500,
+                3.598, 3.647, 4.060, 4.154, 4.230, 4.601, 4.832, 4.903,
+                5.412, 5.428, 5.579, 5.651, 5.976, 6.130, 6.156, 6.442,
+                6.575, 6.729, 7.015, 7.144];
 function msinc(x) {
   const a = Math.abs(x);
   return a < 1e-4 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x);
 }
-function mtemper(fh, t) {
-  if (!(t > 0)) return fh;
-  for (let i = 0; i < 3; i++) fh -= t * Math.sin(2 * Math.PI * fh) / (2 * Math.PI);
-  return fh;
+/* Per-mode damping, relative to the fundamental. Mirrors ModalDamp in
+ * core/kyk_modal.h: a crossfade between sqrt(f), f and f² rather than a
+ * power, and a rational decay rather than an exponential. */
+function mdamp(t, p, m, n) {
+  if (!(t > 0)) return 1;
+  const f2 = (m * m + n * n) * 0.5, f = Math.sqrt(f2);
+  const sq = Math.sqrt(f);
+  const pw = p < 0.5 ? sq + (p * 2) * (f - sq) : f + (p * 2 - 1) * (f2 - f);
+  const shape = 1 + 0.5 * (m / n + n / m - 2);
+  const a = 0.9 * (pw * shape - 1);
+  return a <= 0 ? 1 : 1 / (1 + a * t);
 }
+const mq = (i) => Math.pow(i, -0.3);
 function mdeposit(m, fh, a, k) {
   if (a === 0 || fh <= 0 || fh > k + 1) return;
   const h = fh - 1, i0 = Math.floor(h), fr = h - i0;
@@ -552,31 +563,30 @@ function evalModal(basis, p01, out) {
   const m = out && out.length >= k ? out : new Float32Array(k);
   for (let i = 0; i < k; i++) m[i] = 0;
   const x = 0.04 + 0.42 * p01[0];
+  const w = 0.03;
   const g = basis.geomMin + (basis.geomMax - basis.geomMin) * p01[1];
-  const w = basis.widthMin + (basis.widthMax - basis.widthMin) * (n > 2 ? p01[2] : 0.4);
-  const p4 = n > 3 ? p01[3] : 0;
+  const tt = n > 2 ? p01[2] : 0, t = tt * tt * 4;
+  const p = n > 3 ? p01[3] : 0.5;
   if (basis.body === 0) {
     const norm = 1 / Math.sqrt(g * g + 1 / (g * g));
-    const y = 0.04 + 0.42 * p4;
-    for (let a = 1; a <= 6; a++) {
+    for (let a = 1; a <= 8; a++) {
       const hit = Math.abs(Math.sin(Math.PI * a * x)) * msinc(a * w);
       if (hit < 1e-4) continue;
-      for (let b = 1; b <= 6; b++) {
-        const hit2 = hit * Math.abs(Math.sin(Math.PI * b * y));
-        if (hit2 < 1e-4) continue;
+      for (let b = 1; b <= 8; b++) {
+        const hit2 = hit * mdamp(t, p, a, b);
+        if (hit2 < 1e-5) continue;
         const mm = a * g, nn = b / g;
-        mdeposit(m, Math.sqrt(mm * mm + nn * nn) * norm, hit2 / Math.sqrt(a * b), k);
+        mdeposit(m, Math.sqrt(mm * mm + nn * nn) * norm, hit2 * mq(a * b), k);
       }
     }
     return m;
   }
   const r = basis.body === 1 ? BAR_R : DRUM_R;
-  const t = p4 * 0.95;
   for (let i = 0; i < r.length; i++) {
     const b = i + 1;
-    const hit = Math.abs(Math.sin(Math.PI * b * x)) * msinc(b * w);
-    if (hit < 1e-4) continue;
-    mdeposit(m, mtemper(1 + (r[i] - 1) * g, t), hit / b, k);
+    const hit = Math.abs(Math.sin(Math.PI * b * x)) * msinc(b * w) * mdamp(t, p, b, 1);
+    if (hit < 1e-5) continue;
+    mdeposit(m, 1 + (r[i] - 1) * g, hit * mq(b), k);
   }
   return m;
 }

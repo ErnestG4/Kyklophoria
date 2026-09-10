@@ -43,9 +43,9 @@ inline const Entry& Get(uint8_t i)
         {"Shapes R", "the same grid, with wavefolding and ring modulation instead", World::Kind::Table},
         {"Lock",     "real waveforms on the 24-cell, one family per rotation plane", World::Kind::Lock},
         {"Unison",   "one wave stacked on itself; interval, detune, comb", World::Kind::Unison},
-        {"Plate",     "a struck rectangular plate; the side ratio reorders its modes", World::Kind::Modal},
-        {"Bar",       "a struck bar, tuned onto the harmonic grid", World::Kind::Modal},
-        {"Drum",      "a struck membrane, tuned; dense and low-ordered", World::Kind::Modal},
+        {"Plate",     "a struck plate: where, what shape, how long ago, how damped", World::Kind::Modal},
+        {"Bar",       "a struck bar tuned onto the grid; sparse and ringing", World::Kind::Modal},
+        {"Drum",      "a struck membrane, tuned; packed low, dies fast", World::Kind::Modal},
     };
     return kEntries[i < kCount ? i : 0];
 }

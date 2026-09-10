@@ -818,6 +818,80 @@ Worst crest over 4000 random points is 2.81, 2.92 and 2.75, all inside the 4.3
 the output gain allows. Evaluate costs 1.25 µs for the Plate and about 0.55 for
 the other two, against 4.1 µs for the transform they feed.
 
+## The time axis, after Will heard what the numbers missed
+
+The first build of these had no time axis, on measured grounds: time-since-
+strike and mallet hardness are the same direction in spectrum space, both
+being lowpass filters on the mode set, and time read 0.07 against 0.83 for the
+strike position whatever the scaling.
+
+Will played them and said the plate and the drum were "a mild wiggle on the
+sine", and that a struck thing needs a time axis by its nature — we are making
+wavetables from the output of something like Rings across all its knobs.
+
+Both halves of that were right, and the second explains why the first
+measurement was worthless. Share of energy in the fundamental, and how many
+partials hold ninety percent of it:
+
+| world | energy in h1 | partials at 90% |
+|---|---|---|
+| FM | 5.2% | 11.1 |
+| Vowel | 13.2% | 7.0 |
+| Drum, as shipped | **72.7%** | **1.9** |
+| Bar, as shipped | 73.4% | 2.4 |
+| Plate, as shipped | 29.9% | 3.2 |
+
+The drum was holding ninety percent of its energy in under two partials. In a
+spectrum that empty every axis measures small and any two of them look alike,
+so "time is collinear with the mallet" was a statement about the emptiness, not
+about the axes. The immediate cause was the mallet itself: `sinc(n·w)` has its
+first zero at `n = 1/w`, and the width ran to 0.32, so at the middle of the
+knob six modes survived. The drum also had only twelve modes, all inside two
+octaves.
+
+Rebuilt around what an exciter and a resonator actually have: **strike,
+geometry, time, damping**. The last two are a pair rather than two lowpasses —
+damping does nothing at time zero, time does nothing under uniform damping, and
+together they sweep a family of decay *shapes*. The mallet is fixed at a hard
+0.03 and gave its slot to time.
+
+| world | strike | geometry | time | damping | per-axis |
+|---|---|---|---|---|---|
+| Plate | 2.638 | 0.670 | 0.828 | 0.627 | 4.2x |
+| Bar | 1.173 | 1.883 | 1.066 | 0.302 | 6.2x |
+| Drum | 1.291 | 1.030 | 1.403 | 0.369 | 3.8x |
+
+| world | variety | spread | twins |
+|---|---|---|---|
+| Plate | 1.314 | 4.78x | 0.1% |
+| Bar | 1.152 | 3.31x | 0.2% |
+| Drum | 0.880 | 3.52x | 1.2% |
+
+And the strike is bright again. Partials above −40 dB, sweeping the time axis:
+
+| world | t = 0 | t = 0.35 | t = 0.7 |
+|---|---|---|---|
+| Plate | 8 | 8 | 8 |
+| Bar | 20 | 17 | 11 |
+| Drum | 14 | 11 | 7 |
+
+Two implementation notes, because both are the same lesson a fourth time.
+
+The obvious way to write "damping rises with frequency to a power" is `freq^p`
+and the obvious decay is `exp(−a·t)`. That is two series evaluations per mode,
+and the plate has sixty-four: it measured **5.46 µs an evaluation, more than
+the transform it feeds**. The power became a crossfade between three exponents
+that need no arithmetic — `sqrt(f)`, `f`, `f²` — which covers the same range of
+decay *shapes*, and shapes are the point. The decay became `1/(1 + a·t)`:
+smooth, monotone, one at zero, and a single divide. As a spectral tilt it is
+indistinguishable from an exponential, and real damping is not a clean
+exponential across modes anyway. 5.46 µs → 0.75.
+
+And the mode-amplitude law was mine rather than the physics. A strike is close
+to an impulse and excites the modes roughly equally; what shapes them is where
+it lands and how wide the mallet is. `1/n` and `1/(m·n)` were putting half the
+energy in the fundamental before anything else got a say.
+
 ## A protocol bug they exposed
 
 Adding three worlds took the list to eighteen, and `GET_WORLDS` writes every

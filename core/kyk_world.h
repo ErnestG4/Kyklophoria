@@ -178,8 +178,12 @@ public:
         if(kind_ == Kind::None) return;
         modal_ = ModalField();
         modal_.body = b; modal_.n = n; modal_.k = k;
-        if(b == Body::Bar)  { modal_.geom_min = 0.55f; modal_.geom_max = 1.35f; }
-        if(b == Body::Drum) { modal_.geom_min = 0.45f; modal_.geom_max = 1.60f; }
+        /* The one-dimensional bodies stretch their ratio set rather than
+         * reshaping a grid, so they need a wider reach to spread modes up the
+         * spectrum at all — a drum's modes are packed into two octaves and
+         * without this the world cannot be bright anywhere. */
+        if(b == Body::Bar)  { modal_.geom_min = 0.62f; modal_.geom_max = 1.24f; }
+        if(b == Body::Drum) { modal_.geom_min = 0.50f; modal_.geom_max = 3.20f; }
         phase_ = Phase::Sine;
         p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
@@ -467,10 +471,9 @@ private:
     void EvalModal(const float* p01, float* mags, float* payload) const
     {
         const ModalPoint q = ModalAt(modal_, p01);
-        ModalSpectrum(modal_, q.strike, q.geom, q.width, q.stiff, modal_.k, mags);
-        /* lane 4 is how hard the mallet is, lane 5 the geometry, because those
-         * are the two a player is most likely to want out on a jack */
-        Finish(mags, modal_.k, 1.f - q.width, q.geom, payload);
+        ModalSpectrum(modal_, q.strike, q.geom, q.time, q.damp, modal_.k, mags);
+        /* lane 4 counts down as the strike decays, lane 5 is the geometry */
+        Finish(mags, modal_.k, 1.f - q.time, q.geom, payload);
     }
 
     void EvalUnison(const float* p01, float* mags, float* payload) const
