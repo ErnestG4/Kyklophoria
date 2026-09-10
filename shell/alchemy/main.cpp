@@ -114,7 +114,10 @@ static const char* kPlaneNames[6] = {"0,1", "0,2", "0,3", "1,2", "1,3", "2,3"};
 static VirtualKnob k_grav   = VirtualKnob(0, "Gravity").Ident("kep.g").Ring(Level(kKepler));
 static VirtualKnob k_ecc    = VirtualKnob(1, "Eccentricity").Ident("kep.ecc").Ring(Level(kKepler));
 static VirtualKnob k_kplane = VirtualKnob(2, "Orbit plane").Selector(6).Labels(kPlaneNames, 6).Ident("kep.plane").Ring(Level(kKepler));
-static VirtualKnob k_soft   = VirtualKnob(3, "Softening").Linear(0.02f, 0.30f).Ident("kep.soft").Ring(Level(kKepler));
+/* Normalised, and mapped exponentially where it is read — the same shape as
+ * Gravity, and for the same reason: what this knob really controls is how far
+ * the orbit is from closing, and that is not linear in the softening radius. */
+static VirtualKnob k_soft   = VirtualKnob(3, "Softening").Ident("kep.soft").Ring(Level(kKepler));
 static VirtualKnob k_damp   = VirtualKnob(4, "Damping").Linear(0.f, 1.2f).Unit("/s").Ident("kep.damp").Ring(Level(kKepler));
 static VirtualKnob k_radius = VirtualKnob(5, "Radius").Linear(0.08f, 0.55f).Ident("kep.r").Ring(Level(kKepler));
 /* Divider 1 (a frame every block, twice over in stereo) overran the block on
@@ -274,7 +277,19 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
          * revolution at the bottom to well under a second at the top, and a
          * high eccentricity stretches the slow end much further still. */
         gEng.kepler.gravity = 0.002f * exp2f(gk * 11.f);
-        gEng.kepler.soften  = k_soft.Value();
+        /* Softening decides whether there is an orbit at all, and the old
+         * Linear(0.02, 0.30) put every setting outside the range where there
+         * is one. Measured apsis drift per orbit: 0.005 gives 0.4 degrees, a
+         * closed ellipse that takes 474 orbits to turn half way round; 0.02
+         * gives 5.6; 0.08 — the value that shipped — gives 47.9, so the figure
+         * pointed the other way after four orbits and never retraced itself.
+         * The knob's own midpoint was 0.16, at 85 degrees an orbit.
+         *
+         * Exponential over 0.005 to 0.30 puts half the travel below 0.039, i.e.
+         * below 19 degrees of drift, which is where the ellipse is still an
+         * ellipse. The top is unchanged, so the rosette is still there for
+         * anyone who wants it — it just is not the only thing on offer. */
+        gEng.kepler.soften  = 0.005f * exp2f(k_soft.Norm() * 5.907f);   /* 0.005 .. 0.30 */
         gEng.kepler.damp    = k_damp.Value();
         gEng.kepler.plane   = (int)k_kplane.Value();
         gEng.kepler.bodies  = (int)k_kbody.Value() + 1;      /* selector is 0-based */
@@ -588,6 +603,10 @@ int main()
     float phys[kNumPots];
     for(uint8_t i = 0; i < kNumPots; i++) phys[i] = hw.pots[i].Value();
     pager.SetStored(5, 2, 0.5f, phys);
+    /* Softening at a quarter turn: about 0.014, roughly 2.5 degrees of drift
+     * per orbit, which reads as an orbit rather than a wash. The default that
+     * shipped sat at 47.9 degrees. */
+    pager.SetStored(4, 3, 0.25f, phys);
 
     presets.Init();
     presets.BootLoad();   /* HostLink starts here: descriptor + panel USB up */
