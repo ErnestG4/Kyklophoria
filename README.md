@@ -6,9 +6,10 @@ The wavetable is not a line or a grid but a 4-dimensional space of spectra
 so one cable sweeps a diagonal slice no axis reaches, and slow rotation turns
 a still hand into an orbit through the space.
 
-**Status: alpha, and it plays.** It runs in the rack and makes sound. It also
-has a lot of design work left: the modes are sketched rather than built, most
-of the payload routing is not wired, and the panel layout is a first guess.
+**Status: alpha, and it plays.** It runs in the rack and makes sound. Twenty-one
+worlds ship, the rotation and its orbit LFOs are real, ratio coupling works,
+and presets persist. There is design work left: FM and sync are not read, most
+payload lanes are not routed, and the panel layout is still a first guess.
 `docs/spec.md` is the source of truth, `docs/worlds.md` is where the argument
 about what comes next lives, and `docs/m*-notes.md` carry the measurements,
 including the ones that came out the wrong way round.
@@ -75,37 +76,60 @@ either side of centre, so width is an *angular* spread, and an orbit moves
 your ears through the space slightly out of step. At zero spread the output is
 mono, bit for bit.
 
+## Phase is part of the representation
+
+Every world used to render against a fixed random phase spectrum. That keeps
+the morph click-free, but it throws the *waveform* away: a saw's spectrum at
+random phase correlates 0.79 with a saw, so the instrument could never lock
+onto one, and it never did — the complaint that started this was never seeing
+anything settle into a square or a saw, only stacks of sines rolling through
+triangles.
+
+A world now declares its phase convention. At **sine phase**, with **signed
+coefficients**, sine, triangle, saw and square all come out at 1.0000 against
+the textbook series, at a slightly better crest factor than random phase was
+costing. A negative coefficient is a half turn, so blending stays linear and
+click-freedom survives intact. Everything from Shapes down the table below is
+built in that basis.
+
 ## Worlds
 
-Eleven ship. A world is either a **formula**, evaluated wherever you happen to
-be standing, or a **lattice** of sampled spectra, interpolated between. Which
-one a world is is a property of the world, not a storage decision: a formula
-that exists is 1.3 KB and exact everywhere, and baking it out to a grid would
-cost 1.18 MB to approximate what it just threw away.
+Twenty-one ship. A world is either a **formula**, evaluated wherever you happen
+to be standing, or a **lattice** of sampled spectra, interpolated between.
+Which one a world is is a property of the world, not a storage decision: a
+formula that exists is 1.3 KB and exact everywhere, and baking it out to a grid
+would cost 1.18 MB to approximate what it just threw away.
 
-| world | what it is | variety | spread | covers Braids |
-|---|---|---|---|---|
-| Braids | eigenspace of Emilie Gillet's 256-wave bank | 1.47 | 2.14x | 32% |
-| 24-cell | a waveform on each vertex of the 4-D solid | 0.66 | 3.64x | 16% |
-| 16-cell | eight vertices, on the axes: mostly mire | 0.38 | 3.14x | 14% |
-| Tesseract | sixteen, on the cube corners | 0.47 | 4.22x | 16% |
-| Stack | one waveform idea per axis | 3.43 | 3.69x | 27% |
-| Field | correlated noise, even in every direction | 2.81 | 1.31x | 9% |
-| Field II | the same, rougher | 5.87 | 1.39x | 10% |
-| Torus | a field with no edges; gravity wraps with it | 4.33 | 1.26x | 11% |
-| Harmonic | one parameter per axis, legible but lopsided | 0.20 | 6.13x | 15% |
-| **FM** | index, ratio, carrier, and a second carrier that interferes | **12.76** | **1.83x** | 11% |
-| **Vowel** | three chained resonances over a falling source | 1.50 | 2.87x | **29%** |
-| **Shapes** | a 4×4 grid of *real* waveforms, plus fold and phase modulation | — | — | — |
-| **Shapes R** | the same grid, with fold and ring modulation | — | — | — |
-| **Lock** | real waveforms on the 24-cell, a family per rotation plane | 0.82 | 4.72x | 18% |
-| **Unison** | one wave stacked on itself; interval, detune | 3.95 | 4.39x | 2% |
-| **Plate** | a struck plate; strike, shape, time and damping | 1.31 | 4.78x | 20% |
-| **Bar** | a struck bar, tuned onto the harmonic grid | 1.15 | 3.31x | 19% |
-| **Drum** | a struck membrane, tuned; dense and low-ordered | 0.88 | 3.52x | 24% |
-| **Saw** | nothing but a saw: tilt, parity, comb, fold point | 1.44 | **2.03x** | — |
-| **Pulse** | nothing but a pulse: duty, tilt, comb, fold point | 2.79 | 3.36x | — |
-| **Edge** | saw against pulse, only those two, bent four ways | 1.86 | 2.57x | — |
+| world | what it is | variety | spread |
+|---|---|---|---|
+| Braids | eigenspace of Émilie Gillet's 256-wave bank | 1.47 | 2.14x |
+| 24-cell | a waveform on each vertex of the 4-D solid | 0.66 | 3.64x |
+| 16-cell | eight vertices, on the axes: mostly mire | 0.38 | 3.14x |
+| Tesseract | sixteen, on the cube corners | 0.47 | 4.22x |
+| Stack | one waveform idea per axis | 3.43 | 3.69x |
+| Field | correlated noise, even in every direction | 2.81 | 1.31x |
+| Field II | the same, rougher | 5.87 | 1.39x |
+| Torus | a field with no edges; gravity wraps with it | 4.33 | 1.26x |
+| Harmonic | one parameter per axis, legible but lopsided | 0.20 | 6.13x |
+| **FM** | index, ratio, carrier, and a second carrier that interferes | **12.76** | 1.83x |
+| **Vowel** | three chained resonances over a falling source | 1.50 | 2.87x |
+| **Shapes** | a 4×4 grid of real waveforms, plus fold and phase modulation | 0.99 | 8.47x † |
+| **Shapes R** | the same grid, with fold and ring modulation | 0.99 | 8.47x † |
+| **Lock** | real waveforms on the 24-cell, a family per rotation plane | 0.82 | 4.72x |
+| **Unison** | one wave stacked on itself; interval, detune, wave | 3.95 | 4.39x |
+| **Plate** | a struck plate; strike, geometry, time, damping | 1.31 | 4.78x |
+| **Bar** | a struck bar, tuned onto the harmonic grid | 1.15 | 3.31x |
+| **Drum** | a struck membrane, tuned; dense and low-ordered | 0.88 | 3.52x |
+| **Saw** | nothing but a saw: tilt, parity, comb, fold point | 1.44 | **2.03x** |
+| **Pulse** | nothing but a pulse: duty, tilt, comb, fold point | 2.79 | 3.36x |
+| **Edge** | saw against pulse, only those two, bent four ways | 1.86 | 2.57x |
+
+`build/host/kykworlds` prints this table, and with `--braids <resources.cc>` adds
+a column for how much of the Braids bank each world can reach.
+
+† The two Shapes worlds are measured on their first two axes only. The other
+two drive shapers that act on the rendered cycle rather than the spectrum, so
+the tool cannot see them and scores them dead, which is most of that 8.47x.
 
 **Spread** is the number that decides whether rotating the control frame was
 worth building: the most varied direction through the space over the least. At
@@ -115,27 +139,26 @@ taste — they weight the harmonic series multiplicatively, multiplicative
 weights add in log magnitude, and a sum of per-axis terms is separable. A
 separable space already has natural axes, so a rotation finds nothing new.
 
-FM is the exception. The k'th sideband is a Bessel function of the modulation
-index, which does not factor, and the sidebands *move* with the ratio, so one
-axis relocates energy another axis put down. The vowel world escapes the same
-way, by chaining its three resonances so the first axis moves all three.
+FM is the exception, and the k'th sideband being a Bessel function of the
+modulation index is why: it does not factor, and the sidebands *move* with the
+ratio, so one axis relocates energy another axis put down. Vowel escapes the
+same way, by chaining its three resonances so the first axis moves all three.
 
-The two **Shapes** worlds are not playing that game and have no spread number,
-because they are after something else. Every world above renders against a
-random phase spectrum, which keeps the morph click-free but throws the
-*waveform* away: a saw's spectrum at random phase correlates 0.79 with a saw,
-so the instrument could never lock onto one. Rendering at sine phase with
-signed coefficients gives the real thing — sine, triangle, saw and square all
-at 1.0000 against the textbook series, at a slightly better crest factor than
-the random phase cost. Those four sit on the top row of a 4×4 grid you scan
-with two axes, the Erica GraphicVCO's wavetable matrix, and the Morph knob
-decides how hard you land on a node. The other two axes fold, phase-modulate
-or ring-modulate the cycle. It is the world for knowing what you are hearing,
-where the rest are for not knowing.
+**Narrow worlds beat broad ones.** Saw does one thing and spends all four axes
+bending it, and at 2.03x it is second only to FM among the designed worlds —
+ahead of every world that tried to span a wide range with four balanced axes,
+Braids included. A world that already knows what it is has no axis fighting
+another for the same job. Saw, Pulse and Edge exist to test that, and it held.
+
+**The modal worlds needed a time axis.** A struck thing is defined by its
+decay, so Plate and Bar and Drum put strike, geometry, **time** and damping on
+the four axes: the axis is how far the decay has got, frozen, not a decay that
+runs. Sweeping it back and forth is not time running backwards — it is moving
+through a family of spectra that a decay generated.
 
 ```sh
 build/host/kykworlds --braids ../../Mutable/Streams/eurorack/braids/resources.cc
-tools/renderpack.sh                       # 16 wavs to listen to before flashing
+tools/renderpack.sh                       # a wav per world plus the motion renders
 build/host/kykspace info space.kyk        # grade a baked lattice file
 build/host/kykeigen space.kyk --braids ../../Mutable/Streams/eurorack/braids/resources.cc
 ```
@@ -147,7 +170,16 @@ function of the magnitude vector and partials cannot cancel, whatever the
 interpolator does. The usual wavetable complaint, a comb-filtered dip or a
 tick as you cross between waves, is unreachable by construction rather than
 tuned away. `tests/morph_check` holds that down, along with the level across a
-cell and the behaviour at an instant position jump.
+cell and the behaviour at an instant position jump — which measures 1.4x the
+99.99th-percentile curvature of the same render, where a click is 50x or more.
+That is the licence to drive the position with anything at all.
+
+A world is free to put a step in the coefficients even so, and twice in one day
+one did. `tests/cont_check` sweeps every axis of every world at two step sizes:
+halve the step and a continuous function halves its largest change, a
+discontinuity does not, so the ratio is about 4 for something smooth and about
+1 for a cliff. No threshold on step size alone can tell them apart, which is
+why the first wavefolder passed every other test.
 
 Band-limiting is spectral truncation, verified at −88 dBFS worst non-harmonic
 content over a five-octave sweep (`tests/alias_check`). As far as the survey
@@ -160,21 +192,46 @@ Siblings expected beside this repo, as for Audiothurgist:
 its one-line 480 MHz patch, and `DaisySP`.
 
 ```sh
-make host                 # build/host/{kykdesk,kykspace,kykeigen}
-make test                 # unit, aliasing, morph, golden WAVs, link check
+make host                 # build/host/{kykdesk,kykspace,kykeigen,kykworlds}
+make test                 # unit, continuity, aliasing, morph, golden WAVs, link
+KYK_NODE=1 make test      # the same plus the node web selftest
+make armcost              # M7 instruction counts for the audio-path inner loops
 cd shell/alchemy && make  # build/kyklophoria.bin
 make program-dfu          # with the module parked in the bootloader
 ```
 
-Nothing here needs node or npm. The tooling is C++ and the Python standard
-library; the node files are optional twins.
+Nothing here needs npm. The tooling is C++ and the Python standard library;
+node is optional and used only by the web selftest.
+
+Two rules the build will not catch for you. Nothing placed in `.sdram_bss` may
+have default member initialisers — `.init_array` would write SDRAM before
+`hw.Init()` has configured the FMC, and the module hard-faults on boot; there
+is a `static_assert` at each such declaration. And desktop timings understate
+the M7 by an order of magnitude on serial dependency chains, so `make armcost`
+counts instructions rather than trusting a stopwatch on a laptop.
 
 ## The web page
 
-`web/index.html` is one static page over Web Serial: your position in the
-space with a fading trail, the contributing cells, the live frame and its
-spectrum with the band limit marked, and a CPU readout. It is a readout, not
-a remote control, and almost everything on it comes *from* the module.
+`web/index.html` is one static page over Web Serial: where you are in the
+space, over a shaded map of the world you are standing in, with the live frame,
+its spectrum and the band limit, the rotation planes, the Kepler orbit and a
+CPU readout. It is a readout, not a remote control, and almost everything on it
+comes *from* the module.
+
+Because a world is a formula, the page evaluates the whole projection plane
+itself and shades it, rather than drawing dots where the module happened to
+sample. The shading is on an **absolute** domain — centroid, flatness or high
+end, each logged against its own bound — so two slices of a world, and two
+different worlds, can be compared. It does not autoscale to whatever range a
+slice happens to occupy; a slice that really is flat says "flat field" instead
+of being stretched to fill the ramp. The dot takes its colour from the same
+function that painted the ground under it.
+
+The trail is paced by the slowest rotation that is actually moving the picture,
+so it holds about one turn of it rather than a fixed ten seconds, and each
+sample keeps the timbre it was drawn at. A clamped axis pushed past the edge
+of the space gets a mark, because that is the one thing here that is invisible
+and audible at once: the position stops moving while the knob keeps going.
 
 ```sh
 python3 -m http.server 8080 -d web        # then press Serial
@@ -183,22 +240,26 @@ python3 tools/bridge/bridge.py -- --gen --family field --side 8 --seed 1 \
 ```
 
 Published at https://combust.codeberg.page/Kyklophoria/, which is https and
-therefore a secure context, so Serial works there from any machine.
+therefore a secure context, so Serial works there from any machine. The page
+and the firmware share a descriptor version (`ext`, currently 5); publish and
+flash together, or the page will parse an older shape than the module sends.
 
 ## Not built yet
 
-FM and sync inputs; the filter, drive and FM-index payload lanes; orbit LFOs
-and ratio lock; wrap and sphere topologies on the panel; loading spaces from
-the card; presets; scattered (non-lattice) spaces. The rotation and the stereo
-pair are real. Much of the rest of `docs/spec.md` is still a plan.
+FM and sync inputs; the filter, drive and FM-index payload lanes (only CV out A
+is routed); wrap and sphere topologies on the panel; loading spaces from the
+card; scattered (non-lattice) spaces; per-axis LFO shapes and axis masks.
+The rotation, the orbits, the coupling, the stereo pair and presets are real.
+Much of the rest of `docs/spec.md` is still a plan.
 
 ## Layout
 
 `core/` header-only engine, no hardware and no allocation · `shell/desktop`
 renders a param script to WAV and serves HostLink on stdio · `shell/alchemy`
 the module · `shell/common` the HostLink extension both compile · `tools/`
-space generation, the eigenspace bake, the web bridge · `tests/` the suite ·
-`docs/` spec, io-map, formats, protocol, milestone notes and the survey.
+space generation, the eigenspace bake, the world grader, the web bridge ·
+`tests/` the suite · `docs/` spec, io-map, formats, protocol, milestone notes
+and the survey.
 
 ## Credits
 
