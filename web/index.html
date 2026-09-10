@@ -266,7 +266,6 @@ async function disconnect() {
   const l = link; link = null; tel = null; stats = null; info = null;
   worlds = null; basis = null; basisWorld = -1; switching = -1; terrain.key = '';
   renderWorldBar();
-renderTrailChips();
   if (l) { try { await l.close(); } catch {} }
   $('modinfo').textContent = 'not connected';
   $('btnClose').hidden = true; $('btnSerial').hidden = false; $('btnBridge').hidden = false; $('btnDrawer').hidden = true;
@@ -464,6 +463,7 @@ function renderShadeChips() {
   }
 }
 renderWorldBar();
+renderTrailChips();
 
 /* ── polling ────────────────────────────────────────────────────────── */
 async function pollTelemetry() {
