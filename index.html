@@ -129,7 +129,7 @@ const SHADE = [
   { id: 'high', label: 'high end' },
 ];
 let shadeIdx = 0;
-const terrain = { key: '', canvas: null, res: 72, lo: 0, hi: 1, at: 0, flat: false };
+const terrain = { key: '', canvas: null, res: 72, at: 0, flat: false };
 const TRAIL_N = 600;
 /* C holds the timbre each sample was taken at, so an old stretch of the path
    keeps the colour it had rather than being repainted with the present. */
@@ -756,7 +756,6 @@ function paintTerrain(vals, R, lo, hi) {
     }
   }
   g.putImageData(img, 0, 0);
-  terrain.lo = lo; terrain.hi = hi;
   /* 0.02 of the measure is about five of the ramp's 256 steps: below that the
      eye is reading dither, so say so instead of drawing it. */
   terrain.flat = (hi - lo) < 0.02;
