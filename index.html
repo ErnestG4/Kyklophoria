@@ -639,6 +639,23 @@ document.addEventListener('keydown', e => {
 
 /* ── drawing ────────────────────────────────────────────────────────── */
 const cs = $('space'), cx = cs.getContext('2d'), cn = $('sound'), cnx = cn.getContext('2d');
+/* The CSS box of each canvas, measured when it changes rather than every frame.
+ *
+ * drawSpace and drawSound each read clientWidth and clientHeight and then call
+ * fit(), which read them again: eight layout-forcing reads per frame, 480 a
+ * second. They force a synchronous reflow rather than returning a cached value
+ * because drawStatus has just written textContent into the footer, so every
+ * frame was measure-after-mutate. A ResizeObserver gives the same numbers for
+ * free and only when they actually change. */
+const boxes = new WeakMap();
+function measure(c) {
+  boxes.set(c, { w: c.clientWidth, h: c.clientHeight, dpr: window.devicePixelRatio || 1 });
+}
+function boxOf(c) {
+  let b = boxes.get(c);
+  if (!b) { measure(c); b = boxes.get(c); }
+  return b;
+}
 function resize() {
   for (const c of [cs, cn]) {
     const r = c.parentElement.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
@@ -647,6 +664,12 @@ function resize() {
   }
 }
 window.addEventListener('resize', resize); resize();
+/* Re-measure only on an actual box change. The observer fires once on observe,
+   which is what primes the cache. */
+if (typeof ResizeObserver !== 'undefined') {
+  const ro = new ResizeObserver(es => { for (const e of es) measure(e.target); });
+  ro.observe(cs); ro.observe(cn);
+} else { measure(cs); measure(cn); window.addEventListener('resize', () => { measure(cs); measure(cn); }); }
 
 /* ── one spectral measure, on an absolute domain ────────────────────────
  * The terrain and the dot both read this, so the same colour means the same
@@ -907,13 +930,14 @@ function paintTerrain(vals, R, lo, hi) {
 
 function fit(c) {
   /* backing store follows the CSS box; clear the whole store, not just the CSS box */
-  const dpr = window.devicePixelRatio || 1, w = Math.max(1, Math.round(c.clientWidth * dpr)), h = Math.max(1, Math.round(c.clientHeight * dpr));
+  const b = boxOf(c);
+  const w = Math.max(1, Math.round(b.w * b.dpr)), h = Math.max(1, Math.round(b.h * b.dpr));
   const g = c.getContext('2d');
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
-  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); g.setTransform(b.dpr, 0, 0, b.dpr, 0, 0);
 }
 function drawSpace() {
-  const W = cs.clientWidth, H = cs.clientHeight;
+  const { w: W, h: H } = boxOf(cs);
   fit(cs);
   const n = tel ? tel.n : (space ? space.n : 4), side = space ? space.side : 4, planes = MVL.planeCount(n);
   const arcRow = 34, m = 30;
@@ -1328,7 +1352,7 @@ function stereoWidth(t) {
   return { geo, tim, onScreen };
 }
 function drawSound() {
-  const W = cn.clientWidth, H = cn.clientHeight;
+  const { w: W, h: H } = boxOf(cn);
   fit(cn);
   const m = 14, font = '11px ui-monospace, monospace';
   /* The spectrum used to take everything below the payload lanes, which was
@@ -1426,20 +1450,28 @@ function drawPanel(x0, y0, W, H) {
   }
 }
 
+/* Writing textContent that is already there still dirties layout, and the
+   canvas draws measure right afterwards. Only write on change. */
+const lastText = new Map();
+function setText(id, v) {
+  if (lastText.get(id) === v) return;
+  lastText.set(id, v);
+  $(id).textContent = v;
+}
 function drawStatus() {
   if (!tel) return;
-  $('sBlock').textContent = tel.block;
-  $('sF0').textContent = tel.f0.toFixed(1) + ' Hz ' + MVL.noteName(tel.f0);
-  $('sKcut').textContent = tel.kcut + '/' + tel.k;
+  setText('sBlock', String(tel.block));
+  setText('sF0', tel.f0.toFixed(1) + ' Hz ' + MVL.noteName(tel.f0));
+  setText('sKcut', tel.kcut + '/' + tel.k);
   const sw = stereoWidth(tel);
-  $('sSpread').textContent = !sw ? 'mono'
+  setText('sSpread', !sw ? 'mono'
     : `${tel.spread.toFixed(3)} turns · plane ${MVL.planeAxes(tel.n, tel.spreadPlane).join('')}`
       + ` · width ${sw.geo.toFixed(3)}` + (sw.tim === null ? '' : ` · timbre ${sw.tim.toFixed(3)}`)
-      + (sw.onScreen ? '' : ' · off this plane');
-  if (link) { const s = link.stats; $('sLink').textContent = `${s.rttAvg.toFixed(1)} ms · ${fpsWin.fps.toFixed(0)} fps · ${s.kbps.toFixed(1)} KB/s${s.timeouts ? ' · ' + s.timeouts + ' timeouts' : ''}`; }
+      + (sw.onScreen ? '' : ' · off this plane'));
+  if (link) { const s = link.stats; setText('sLink', `${s.rttAvg.toFixed(1)} ms · ${fpsWin.fps.toFixed(0)} fps · ${s.kbps.toFixed(1)} KB/s${s.timeouts ? ' · ' + s.timeouts + ' timeouts' : ''}`); }
   if (stats) {
     const pct = v => stats.cyclesBudget ? (100 * v / stats.cyclesBudget).toFixed(0) + '%' : v;
-    $('sCpu').textContent = `${pct(stats.cyclesLast)} last · ${pct(stats.cyclesAvg)} avg · ${pct(stats.cyclesMax)} max · div ${stats.renderDiv}${stats.overruns ? ' · ' + stats.overruns + ' overruns' : ''}${stats.dropped ? ' · ' + stats.dropped + ' dropped' : ''}`;
+    setText('sCpu', `${pct(stats.cyclesLast)} last · ${pct(stats.cyclesAvg)} avg · ${pct(stats.cyclesMax)} max · div ${stats.renderDiv}${stats.overruns ? ' · ' + stats.overruns + ' overruns' : ''}${stats.dropped ? ' · ' + stats.dropped + ' dropped' : ''}`);
     $('sCpuWrap').classList.toggle('warn', stats.overruns > 0 || (stats.cyclesBudget && stats.cyclesMax > 0.7 * stats.cyclesBudget));
   }
 }
