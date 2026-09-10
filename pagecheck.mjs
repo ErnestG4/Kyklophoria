@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space worldCap worldChips worldNote'.split(' ');
+const IDS = 'axes btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote'.split(' ');
 const calls = [];
 const ctx2d = new Proxy({}, {
   get(_, k) {
@@ -59,8 +59,11 @@ function mkEl(tag) {
   return el;
 }
 const els = Object.fromEntries(IDS.map(i => [i, mkEl('div')]));
+/* Any id the page asks for that we did not declare is a typo or a stale
+   reference, and returning a fresh div for it hides that. */
+const unknownIds = new Set();
 globalThis.document = {
-  getElementById: id => els[id] || mkEl('div'),
+  getElementById: id => { if (!els[id]) unknownIds.add(id); return els[id] || mkEl('div'); },
   createElement: mkEl, addEventListener() {},
   body: mkEl('body'), documentElement: mkEl('html'),
 };
@@ -121,6 +124,21 @@ const CASES = [
   ['no mags / no frame', tel({ mags: null, frame: null, flags: 4 })],
 ];
 let bad = 0;
+/* The chip rows must actually be populated at load.
+ *
+ * This exists because renderTrailChips() was spliced in next to the wrong one
+ * of six calls to renderWorldBar() — the one inside the disconnect handler —
+ * so the tail controls only appeared after disconnecting, and every "survived"
+ * line below printed happily while the row sat empty. Not throwing is not the
+ * same as having drawn anything. */
+for (const [id, min] of [['worldChips', 0], ['shadeChips', 3], ['trailChips', 4]]) {
+  const n = els[id].children.length, ok = n >= min;
+  if (!ok) bad++;
+  console.log(`  ${ok ? 'ok  ' : 'FAIL'} #${id} populated at load (${n} children, want >= ${min})`);
+}
+if (unknownIds.size) { bad++; console.log(`  FAIL page asked for undeclared ids: ${[...unknownIds].join(', ')}`); }
+console.log('');
+
 for (const [name, t] of CASES) {
   P.setTel(t);
   try {
