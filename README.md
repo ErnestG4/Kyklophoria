@@ -258,8 +258,9 @@ Much of the rest of `docs/spec.md` is still a plan.
 renders a param script to WAV and serves HostLink on stdio · `shell/alchemy`
 the module · `shell/common` the HostLink extension both compile · `tools/`
 space generation, the eigenspace bake, the world grader, the web bridge ·
-`tests/` the suite · `docs/` spec, io-map, formats, protocol, milestone notes
-and the survey.
+`tests/` the suite · `docs/` spec, io-map, formats, protocol, milestone notes,
+the survey, and `sdk-quirks.md` — the libDaisy and Alchemy SDK traps that cost
+us time, including the two that hard-fault on boot.
 
 ## Credits
 
