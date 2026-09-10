@@ -102,7 +102,8 @@ def telemetry(link, flags):
     if flags & 4:
         t['kep_run'], t['kep_plane'] = b[at], b[at+1]
         (t['kep_x'], t['kep_y'], t['kep_rush'],
-         t['couple'], t['lock']) = struct.unpack('<5f', b[at+2:at+22]); at += 22
+         t['couple'], t['lock']) = struct.unpack('<5f', b[at+2:at+22])
+        t['sharp'] = b[at+22] / 255.0; at += 23
     t['size'] = len(b)
     check(at == len(b), f'telemetry body consumed exactly ({at} of {len(b)})')
     return t
@@ -132,7 +133,7 @@ def stdio_tests():
     t = telemetry(link, 3)
     check((t['n'], t['k'], t['p'], t['planes']) == (4, 64, 8, 6), 'telemetry dims')
     t7 = telemetry(link, 7)
-    check(t7['size'] == 460 + 22, f"motion block appends 22 bytes (size {t7['size']})")
+    check(t7['size'] == 460 + 23, f"motion block appends 23 bytes (size {t7['size']})")
     check(t7['kep_plane'] < 6 and 0.0 <= t7['kep_rush'] <= 1.0, 'kepler fields sane')
     check(t7['couple'] >= 0.0 and 0.0 <= t7['lock'] <= 1.0, 'coupling fields sane')
     check(t['size'] == 460, f"telemetry size {t['size']}")

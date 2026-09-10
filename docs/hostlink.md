@@ -46,9 +46,10 @@ u8  kep_plane                    │
 f32 kep_x, kep_y                 │  how the position is moving on its own:
 f32 kep_rush         0..1, 1 at periapsis
 f32 couple           Kuramoto coupling strength as set
-f32 lock             0..1, how closed the orbit figure is ─┘
+f32 lock             0..1, how closed the orbit figure is
+u8  sharp            the Morph knob, 0..255; the page needs it to draw ─┘
 ```
-N=4, K=64, P=8 with spectrum and frame: 460 bytes; with motion as well, 482.
+N=4, K=64, P=8 with spectrum and frame: 460 bytes; with motion as well, 483.
 
 The motion block is deliberately last. A host written against an earlier
 firmware reads every field it knows by fixed offset and ignores the tail, so

@@ -98,7 +98,7 @@ public:
     uint8_t     LastCmd() const override { return 0x6Fu; }
     const char* DescriptorRootJson() const override
     {
-        return "\"kyk\":{\"ext\":4,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,"
+        return "\"kyk\":{\"ext\":5,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,"
                "\"worlds\":101,\"basis\":102,\"control\":110}";
     }
 

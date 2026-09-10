@@ -10,7 +10,7 @@
  *   [flags&1] u8 mags[k]   — left voice, pre-bandlimit, dB: 0 = ≤ −96 dB, 255 = +6 dB
  *   [flags&2] i8 frame[256] — left voice's frame, decimated, ×40 clipped
  *   [flags&4] u8 kep_running · u8 kep_plane · f32 kep_x · f32 kep_y
- *             f32 kep_rush · f32 couple · f32 lock
+ *             f32 kep_rush · f32 couple · f32 lock · u8 sharp
  *
  * That last block is how the position is moving of its own accord: the
  * falling body, and how hard the orbit planes are pulling on each other. It
@@ -109,6 +109,20 @@ inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, i
         w.F32(e.kepler.Rush());
         w.F32(e.rot.Couple());
         w.F32(e.rot.Lock());
+        /* The Morph knob. Not motion, but this block is where the frame grows
+         * and a host that predates it ignores the tail.
+         *
+         * It is here because the page evaluates several worlds itself to draw
+         * their terrain, and `sharp` feeds World::Evaluate for the lattice,
+         * vertex, Lock and Table worlds — so without it the page draws a
+         * different space from the one playing. Measured over the whole cube,
+         * the difference between sharp 0 and sharp 1 is a mean of 0.047 and a
+         * maximum of 0.312 in normalised log-centroid on Lock, against a
+         * typical slice span of 0.27 to 0.46: worst case is essentially the
+         * whole range. Ten of the thirteen drawable worlds measure exactly
+         * zero and never needed it. */
+        const float sh = e.sharp < 0.f ? 0.f : (e.sharp > 1.f ? 1.f : e.sharp);
+        w.U8((uint8_t)(sh * 255.f + 0.5f));
     }
     return w.ok ? w.n : 0;
 }
@@ -120,7 +134,7 @@ inline int TelemetrySize(int n, int k, int p, uint8_t flags)
     int       sz     = 4 + 4 + 6 + 2 + 4 + 4 * (4 * n + planes + p);
     if(flags & kTelSpectrum) sz += k;
     if(flags & kTelFrame) sz += kTelFramePts;
-    if(flags & kTelMotion) sz += 2 + 20;
+    if(flags & kTelMotion) sz += 2 + 20 + 1;
     return sz;
 }
 
