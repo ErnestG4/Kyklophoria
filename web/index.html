@@ -129,6 +129,46 @@ const SHADE = [
   { id: 'high', label: 'high end' },
 ];
 let shadeIdx = 0;
+
+/* Terrain palettes.
+ *
+ * Four palettes and an off switch, because "which colours" is a taste question
+ * and measurement cannot answer it — only rule out the answers that are
+ * unreadable. All four are monotone in L*, which is what keeps a map legible
+ * rather than decorative, and all four are weighted dark: between 48% and 57%
+ * of each ramp sits below L*20, so the field reads as black with structure
+ * emerging from it.
+ *
+ * That weighting is a reversal and worth recording. An earlier pass re-spaced
+ * the stops for uniform perceptual steps, which is the right objective if you
+ * want to read fine structure everywhere — and it lifted the mid-tone from
+ * L*25 to L*41, so the page stopped looking black. Even lightness steps and a
+ * dark field are not the same goal, and the second one is the one that was
+ * actually wanted here.
+ */
+const PAL_STOPS = [0, 0.44, 0.70, 0.88, 1];
+const PALETTE = [
+  { id: 'ember',     lut: [[6,7,10],[38,18,20],[110,45,28],[196,116,44],[255,214,150]] },
+  { id: 'ink',       lut: [[6,7,12],[22,24,58],[64,52,140],[118,110,214],[196,214,255]] },
+  { id: 'verdigris', lut: [[5,9,10],[16,38,38],[30,88,80],[92,164,132],[214,238,206]] },
+  { id: 'ash',       lut: [[8,8,9],[40,40,42],[92,92,96],[160,160,166],[240,240,244]] },
+  { id: 'off',       lut: null },
+];
+let palIdx = 0;
+try { const v = localStorage.getItem('kyk.pal'); if (v !== null) palIdx = Math.max(0, Math.min(PALETTE.length - 1, +v)); } catch {}
+const RAMPS = PALETTE.map(p => {
+  if (!p.lut) return null;
+  const lut = new Uint8Array(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255; let a = 0;
+    for (let q = 0; q < 4; q++) if (t >= PAL_STOPS[q] && t <= PAL_STOPS[q + 1]) { a = q; break; }
+    const lo = PAL_STOPS[a], hi = PAL_STOPS[a + 1];
+    const u = hi > lo ? (t - lo) / (hi - lo) : 0;
+    for (let c = 0; c < 3; c++) lut[i * 3 + c] = Math.round(p.lut[a][c] + (p.lut[a + 1][c] - p.lut[a][c]) * u);
+  }
+  return lut;
+});
+
 const terrain = { key: '', canvas: null, res: 72, at: 0, flat: false };
 const TRAIL_N = 600;
 /* C holds the timbre each sample was taken at, so an old stretch of the path
@@ -353,6 +393,20 @@ function renderShadeChips() {
     b.className = 'chip' + (i === shadeIdx && live ? ' on' : '');
     b.textContent = SHADE[i].label; b.disabled = !live;
     b.onclick = () => { shadeIdx = i; terrain.key = ''; renderShadeChips(); };
+    box.appendChild(b);
+  }
+  const sep = document.createElement('span');
+  sep.textContent = '·'; sep.style.color = 'var(--dim)'; sep.style.padding = '0 2px';
+  box.appendChild(sep);
+  for (let i = 0; i < PALETTE.length; i++) {
+    const b = document.createElement('button');
+    b.className = 'chip' + (i === palIdx ? ' on' : '');
+    b.textContent = PALETTE[i].id;
+    b.onclick = () => {
+      palIdx = i; terrain.key = '';
+      try { localStorage.setItem('kyk.pal', String(i)); } catch {}
+      renderShadeChips();
+    };
     box.appendChild(b);
   }
   if (!live) {
@@ -642,23 +696,8 @@ function sizeOf(pl) {
 /* ── terrain ────────────────────────────────────────────────────────────
  * With the world as a formula rather than a table, the page can evaluate the
  * whole projection plane and shade it, instead of drawing dots wherever the
- * module happened to sample. Dark to warm, one hue, kept under the dots.  */
-const RAMP = (() => {
-  /* Stops re-spaced, same five colours. At [0, .30, .58, .82, 1] the five sit
-     at L* 4.2, 14.1, 29.6, 51.0, 76.1, so the perceptual step per 0.1 of the
-     ramp ran 2.8 to 13.7 — a 4.9x swing, with the worst resolution at the
-     bottom where most of the data sits. These put the swing at 1.10x. */
-  const stops = [[0, [10, 15, 22]], [0.14, [44, 33, 35]], [0.35, [98, 61, 38]],
-                 [0.65, [168, 108, 53]], [1, [232, 178, 108]]];
-  const lut = new Uint8Array(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255; let a = stops[0], b = stops[stops.length - 1];
-    for (let s = 0; s < stops.length - 1; s++) if (t >= stops[s][0] && t <= stops[s + 1][0]) { a = stops[s]; b = stops[s + 1]; break; }
-    const u = (b[0] - a[0]) > 0 ? (t - a[0]) / (b[0] - a[0]) : 0;
-    for (let c = 0; c < 3; c++) lut[i * 3 + c] = Math.round(a[1][c] + (b[1][c] - a[1][c]) * u);
-  }
-  return lut;
-})();
+ * module happened to sample. Colours come from PALETTE, up with the other
+ * shading settings. */
 /* Rebuild only when the world, the projection, the off-plane position or the
  * shading changes — never per frame. A 72² grid over 64 harmonics is about a
  * million multiply-adds, which is fine occasionally and not at 60 Hz. */
@@ -668,10 +707,10 @@ function terrainKey() {
   for (let a = 0; a < basis.n; a++) if (a !== axes[0] && a !== axes[1]) off += Math.round(clamp01(tel.posL[a]) * 40) + ',';
   /* sharp is part of the key: it changes what the lattice, vertex, Lock and
      Table worlds evaluate to, so a Morph move is a different field. */
-  return `${basisWorld}|${axes[0]}|${axes[1]}|${shadeIdx}|${terrain.res}|${off}|${Math.round((tel.sharp || 0) * 40)}`;
+  return `${basisWorld}|${axes[0]}|${axes[1]}|${shadeIdx}|${terrain.res}|${off}|${Math.round((tel.sharp || 0) * 40)}|${palIdx}`;
 }
 function buildTerrain() {
-  if (!basis || !tel) return;
+  if (!basis || !tel || !PALETTE[palIdx].lut) return;
   const key = terrainKey();
   if (!key || key === terrain.key) return;
   const now = performance.now();
@@ -747,12 +786,13 @@ function paintTerrain(vals, R, lo, hi) {
   if (!terrain.canvas) terrain.canvas = document.createElement('canvas');
   terrain.canvas.width = R; terrain.canvas.height = R;
   const g = terrain.canvas.getContext('2d'), img = g.createImageData(R, R), d = img.data;
+  const R8 = RAMPS[palIdx] || RAMPS[0];
   for (let gy = 0; gy < R; gy++) {
     const row = (R - 1 - gy) * R;        /* image row 0 is the top; our gy 0 is the bottom */
     for (let gx = 0; gx < R; gx++) {
       const ci = Math.max(0, Math.min(255, Math.round(vals[gy * R + gx] * 255))) * 3;
       const o = (row + gx) * 4;
-      d[o] = RAMP[ci]; d[o + 1] = RAMP[ci + 1]; d[o + 2] = RAMP[ci + 2]; d[o + 3] = 255;
+      d[o] = R8[ci]; d[o + 1] = R8[ci + 1]; d[o + 2] = R8[ci + 2]; d[o + 3] = 255;
     }
   }
   g.putImageData(img, 0, 0);
@@ -780,13 +820,17 @@ function drawSpace() {
   view.S = S;                    /* the trail's pacing needs to know the scale */
   /* the world itself, when it is a formula we can evaluate */
   buildTerrain();
-  if (basis && terrain.canvas && terrain.key) {
-    /* buildTerrain rate-limits itself to one rebuild per 150 ms, so while a
-       knob is moving the ground on screen is up to 150 ms behind the dot on
-       top of it. Fading it while it is known-stale is the cheap honest fix:
-       the dot stays put and the ground says "not this, yet". */
-    cx.save(); cx.globalAlpha = terrainKey() === terrain.key ? 0.92 : 0.6;
-    cx.imageSmoothingEnabled = true;
+  if (basis && terrain.canvas && terrain.key && PALETTE[palIdx].lut) {
+    /* No staleness fade here, and there must not be one.
+     *
+     * There was, at 0.6 when terrainKey() disagreed with the built key and
+     * 0.92 when it matched. The key quantises the off-plane axes to a fortieth,
+     * so with any motion at all it changes almost every frame, while the
+     * rebuild is throttled to one per 150 ms — which produced a single bright
+     * frame among every nine dark ones. A 53% brightness swing at about 7 Hz.
+     * "Known-stale" is not an exceptional condition worth marking; it is what
+     * the terrain always is while anything is moving. */
+    cx.save(); cx.globalAlpha = 0.92; cx.imageSmoothingEnabled = true;
     cx.drawImage(terrain.canvas, ox, oy, S, S);
     cx.restore();
   }
