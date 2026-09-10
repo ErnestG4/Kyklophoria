@@ -24,7 +24,7 @@ const CMD = {
   worlds: 0x65, basis: 0x66, setControl: 0x6e,
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4 };
-const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5, table: 6, lock: 7, unison: 8, modal: 9 };
+const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5, table: 6, lock: 7, unison: 8, modal: 9, bend: 10 };
 const TEL = { spectrum: 1, frame: 2, motion: 4 };
 const STATUS = ['OK', 'UNSUPPORTED', 'BAD_ARGS', 'BAD_STATE', 'BAD_CRC', 'BAD_SLOT', 'TOO_LARGE',
   'SCHEMA_MISMATCH', 'FLASH_FAIL', 'BUSY', 'FRAME_ERROR'];
@@ -314,7 +314,7 @@ function parseWorlds(b) {
      * formula small enough to hold, whichever formula it is. */
     list.push({ index: start + i, kind, analytic: kind === WORLD_KIND.analytic || kind === WORLD_KIND.fm || kind === WORLD_KIND.formant
                  || kind === WORLD_KIND.table || kind === WORLD_KIND.lock
-                 || kind === WORLD_KIND.unison || kind === WORLD_KIND.modal, name, note });
+                 || kind === WORLD_KIND.unison || kind === WORLD_KIND.modal || kind === WORLD_KIND.bend, name, note });
   }
   return { current, count, start, sent, list };
 }
@@ -352,6 +352,9 @@ function parseBasis(all) {
       indexMax: d.getFloat32(4, true), ratioMin: d.getFloat32(8, true), ratioMax: d.getFloat32(12, true),
       carrierMin: d.getFloat32(16, true), carrierMax: d.getFloat32(20, true),
       secondMax: d.getFloat32(24, true), ratioLock: d.getFloat32(28, true),
+    };
+    if (all[1] === WORLD_KIND.bend && all.length >= 8) return {
+      bend: true, n: all[2], k: all[3], base: all[4],
     };
     if (all[1] === WORLD_KIND.modal && all.length >= 24) return {
       modal: true, n: all[2], k: all[3],
@@ -524,6 +527,47 @@ function evalShapes(basis, p01, out, sharp = 0) {
   let acc = 0; for (let i = 0; i < k; i++) acc += m[i] * m[i];
   const g = acc > 0 ? Math.SQRT2 / Math.sqrt(acc) : 0;
   for (let i = 0; i < k; i++) m[i] *= g;
+  return m;
+}
+
+/* One waveform bent four ways — a port of core/kyk_bend.h. Base 0 is a saw,
+ * 1 a pulse, 2 the saw-against-pulse blend. */
+const invH = (h) => 1 / h;
+function bendRoll(h, tilt) {
+  const bright = tilt >= 0.5, u = bright ? tilt * 2 - 1 : tilt * 2;
+  const ih = Math.pow(h, -1);
+  const lo = bright ? ih : Math.pow(h, -1.6);
+  const hi = bright ? Math.pow(h, -0.75) : ih;
+  return lo + u * (hi - lo);
+}
+function evalBend(basis, p01, out) {
+  const k = basis.k, n = basis.n;
+  const m = out && out.length >= k ? out : new Float32Array(k);
+  const a0 = p01[0], a1 = p01[1];
+  const a2 = n > 2 ? p01[2] : 0.5, a3 = n > 3 ? p01[3] : 1;
+  let duty = 0.5, blend = 0, tilt = 0.5, parity = 0;
+  if (basis.base === 0) { tilt = a0; parity = a1; }
+  else if (basis.base === 1) { duty = 0.5 - 0.22 * a0; tilt = a1; }
+  else { blend = a0; duty = 0.5 - 0.26 * a1; tilt = 0.5; }
+  const P = 4 + 6 * (1 - a2);
+  const foldAt = 2 + a3 * (k - 3);
+  const invPi = 1 / Math.PI;
+  for (let h = 1; h <= k; h++) {
+    const roll = bendRoll(h, tilt);
+    let c;
+    if (basis.base === 0) c = roll;
+    else {
+      const pw = 2 * (1 - Math.cos(2 * Math.PI * h * duty)) * invPi * roll;
+      c = basis.base === 1 ? pw : roll + blend * (pw - roll);
+    }
+    if (parity > 0 && (h % 2) === 0) c *= 1 - 2 * parity;
+    c *= 1 - 0.55 * Math.cos(2 * Math.PI * h / P);
+    /* the fold point: +1 below, -1 above, smoothstepped across seven harmonics */
+    let u = (h - foldAt) / 7, sg;
+    if (u <= 0) sg = 1; else if (u >= 1) sg = -1;
+    else sg = 1 - 2 * (u * u * (3 - 2 * u));
+    m[h - 1] = c * sg;
+  }
   return m;
 }
 
@@ -746,7 +790,7 @@ const planeCount = n => n * (n - 1) / 2;
 const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
-  parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
+  parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };

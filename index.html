@@ -465,7 +465,8 @@ function buildTerrain() {
                   : basis.table ? MVL.evalShapes
                   : basis.lock ? MVL.evalLock
                   : basis.unison ? MVL.evalUnison
-                  : basis.modal ? MVL.evalModal : null;
+                  : basis.modal ? MVL.evalModal
+                  : basis.bend ? MVL.evalBend : null;
   if (nonlinear) {
     const p = new Float32Array(6), spec = new Float32Array(k);
     for (let a = 0; a < n; a++) p[a] = clamp01(tel.posL[a]);
@@ -625,7 +626,11 @@ function drawKepler(t, n, ox, oy, S, px, py) {
   const hot = `hsl(${28 + 40 * (1 - kp.rush)},90%,${45 + 25 * kp.rush}%)`;
 
   if (ki === axes[0] && kj === axes[1]) {
-    const axp = px(clamp01(t.ctl[ki] - kp.x)), ayp = py(clamp01(t.ctl[kj] - kp.y));
+    /* The attractor *is* the control frame. It used to be computed as
+       ctl − body, because the firmware added the body into the control frame
+       itself; that turned out to be a bug that made ctl diverge to the
+       hundreds, and it is fixed — the body is applied to a copy now. */
+    const axp = px(clamp01(t.ctl[ki])), ayp = py(clamp01(t.ctl[kj]));
     cx.strokeStyle = 'rgba(255,176,86,0.55)'; cx.lineWidth = 1;
     cx.beginPath(); cx.arc(axp, ayp, 4.5, 0, 7); cx.stroke();
     cx.beginPath(); cx.arc(axp, ayp, 1.2, 0, 7); cx.fillStyle = 'rgba(255,176,86,0.9)'; cx.fill();

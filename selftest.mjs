@@ -97,6 +97,8 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
     const lk = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.lock);
     const un = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.unison);
     const md = ws && ws.list.filter(w => w.kind === KYK.WORLD_KIND.modal);
+    const bd = ws && ws.list.filter(w => w.kind === KYK.WORLD_KIND.bend);
+    check(bd && bd.length === 3, 'three single-shape worlds are registered');
     check(md && md.length === 3, 'three modal worlds are registered');
     check(!!tb, 'a shape-table world is registered');
     check(!!lk && !!un, 'the lock and unison worlds are registered');
@@ -105,10 +107,11 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
                                         { w: tb, evalFn: KYK.evalShapes, label: 'Shapes' },
                                         { w: lk, evalFn: KYK.evalLock, label: 'Lock' },
                                         { w: un, evalFn: KYK.evalUnison, label: 'Unison' },
-                                        ...(md || []).map(w => ({ w, evalFn: KYK.evalModal, label: w.name }))]) {
+                                        ...(md || []).map(w => ({ w, evalFn: KYK.evalModal, label: w.name })),
+                                        ...(bd || []).map(w => ({ w, evalFn: KYK.evalBend, label: w.name }))]) {
       if (!w) continue;
       const b = await KYK.fetchBasis(link, w.index, info.maxBody);
-      check(b && (b.fm || b.formant || b.table || b.lock || b.unison || b.modal) && b.n === 4 && b.k === 64, label + ' formula arrives');
+      check(b && (b.fm || b.formant || b.table || b.lock || b.unison || b.modal || b.bend) && b.n === 4 && b.k === 64, label + ' formula arrives');
       /* switch to it, park at a known position, compare spectra */
       await link.request(KYK.CMD.action, KYK.actionReq(KYK.ACT.selectWorld, [w.index]));
       for (let i = 0; i < 60; i++) {
