@@ -811,7 +811,7 @@ function drawSpace() {
   /* Now that the ramp is absolute, a slice with nothing in it paints one
      colour — which is correct, and indistinguishable from a slice that failed
      to build. So name it. */
-  if (basis && terrain.key && terrain.flat) axLabel('flat field', ox + 8, oy + 14, false);
+  if (basis && terrain.key && terrain.flat) axLabel('flat field', ox + 8, oy + 26, false);
   /* wrap seams */
   if (space) for (const [a, edge] of [[ax, 'v'], [ay, 'h']]) if (space.topo[a] === 'wrap') {
     cx.setLineDash([3, 5]); cx.strokeStyle = '#3a4757'; cx.beginPath();
@@ -900,16 +900,20 @@ function drawSpace() {
   cx.fillStyle = '#9aa7b3'; cx.font = '11px ui-monospace, monospace';
   /* The trail no longer covers a fixed ten seconds, so it has to say what it
      does cover, or its length means nothing. */
+  /* Top-left, and terse. It used to sit at ox + S - 150, where the long form
+     ran about 186px at 10px monospace: 36px off the right edge of the box and
+     straight under the Kepler inset, which occupies the top-right corner
+     whenever a body is falling. */
   if (trail.n > 8) {
     const secs = trail.n * trail.gap / blockHz;
     /* Eight samples per turn of the fastest plane is where its shape stops
        being recoverable from the dots. Below that the trail is a strobe
        picture and says so, rather than drawing a confident lie. */
     const strobed = trail.fast > 0 && blockHz / trail.gap < 8 * trail.fast;
-    const lbl = (secs < 90 ? secs.toFixed(secs < 10 ? 1 : 0) + ' s' : (secs / 60).toFixed(1) + ' min') + ' of trail';
+    const lbl = 'trail ' + (secs < 90 ? secs.toFixed(secs < 10 ? 1 : 0) + ' s' : (secs / 60).toFixed(1) + ' min');
     cx.fillStyle = strobed ? '#ff9a5c' : '#5c6b7a';
     cx.font = '10px ui-monospace, monospace';
-    cx.fillText(strobed ? lbl + ' · detail strobed' : lbl, ox + S - 150, oy + 14);
+    cx.fillText(strobed ? lbl + ' · strobed' : lbl, ox + 8, oy + 14);
     cx.font = '11px ui-monospace, monospace'; cx.fillStyle = '#9aa7b3';
   }
   cx.fillText(`${tel.stereo ? 'L' : 'pos'} ${fmtVec(tel.posL)}`, ox + 6, oy + S - (tel.stereo ? 20 : 8));
