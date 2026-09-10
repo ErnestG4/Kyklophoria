@@ -1177,10 +1177,10 @@ function drawSound() {
   cnx.fillStyle = '#3b4756';
   cnx.fillText('frame', m, 18); cnx.fillText('spectrum', m, specCap);
   if (!tel) return;
-  /* Untinted on purpose. The frame and the lanes used to take the same hue as
-     the dot, which spent the page's one colour channel saying the same thing
-     in three places while the spectrum bars said nothing at all. Colour now
-     means position-in-timbre and appears only in the space view. */
+  /* Untinted on purpose. The frame, the lanes and the spectrum bars all took
+     the same hue as the dot, which spent the page's one colour channel saying
+     one thing in four places. Colour now means position-in-timbre and appears
+     only in the space view. */
   /* frame: 256 points, i8/127, ×40 scale means ±3.2 full scale */
   if (tel.frame) {
     cnx.strokeStyle = '#62d5ff'; cnx.lineWidth = 1.5; cnx.beginPath();
@@ -1201,7 +1201,7 @@ function drawSound() {
     cnx.fillStyle = '#3b4756'; cnx.fillText('+6 dB', W - m - 36, specCap); cnx.fillText('−96', W - m - 24, base - 2);
     for (let i = 0; i < k; i++) {
       const v = tel.mags[i] / 255, live = i < tel.kcut;
-      cnx.fillStyle = live ? `hsla(${hue},70%,60%,${0.35 + 0.65 * v})` : 'rgba(93,104,115,0.35)';
+      cnx.fillStyle = live ? `rgba(98,213,255,${0.35 + 0.65 * v})` : 'rgba(93,104,115,0.35)';
       cnx.fillRect(x0 + i * bw + 0.5, base - v * h, Math.max(1, bw - 1.5), v * h);
     }
     const kx = x0 + tel.kcut * bw, label = 'nyq ' + tel.kcut, lw = cnx.measureText(label).width;
@@ -1233,7 +1233,26 @@ function drawStatus() {
     $('sCpuWrap').classList.toggle('warn', stats.overruns > 0 || (stats.cyclesBudget && stats.cyclesMax > 0.7 * stats.cyclesBudget));
   }
 }
-function frame() { drawSpace(); drawSound(); drawStatus(); requestAnimationFrame(frame); }
+/* The draw loop reschedules itself whatever happens.
+ *
+ * It used to call requestAnimationFrame *after* the three draws, so a single
+ * throw in any of them stopped the loop for good: the last good frame stayed
+ * painted, nothing ever updated again, and because click handlers run on their
+ * own stack the page went on sending commands to the module quite happily. It
+ * looked like a hung link rather than a dead renderer, which is the worst way
+ * for it to fail. A drawing bug should cost one frame, not the session.
+ *
+ * The message is reported once per distinct error so a fault that repeats
+ * sixty times a second does not bury everything else in the status line. */
+let lastDrawError = '';
+function frame() {
+  try { drawSpace(); drawSound(); drawStatus(); }
+  catch (e) {
+    const m = (e && e.message) || String(e);
+    if (m !== lastDrawError) { lastDrawError = m; say('draw: ' + m, true); console.error(e); }
+  }
+  requestAnimationFrame(frame);
+}
 requestAnimationFrame(frame);
 
 /* ── dev drawer (bridge only): 0x6E SET_CONTROL at ≤ 30 Hz ─────────── */
