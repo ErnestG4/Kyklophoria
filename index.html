@@ -442,7 +442,13 @@ function buildTerrain() {
   const shadeOf = (m) => {
     let s = 0, s2 = 0, kw = 0, hf = 0;
     for (let i = 0; i < k; i++) {
-      const v = m[i], p2 = v * v;
+      /* magnitude, not the signed coefficient. The sine-phase worlds return
+         signed spectra — a triangle's partials alternate — and summing them
+         signed computes a different quantity from the firmware's own
+         flatness, which sums magnitudes (Finish, core/kyk_world.h). The two
+         drifted apart on exactly the worlds where the sign pattern carries
+         the waveform. */
+      const v = m[i] < 0 ? -m[i] : m[i], p2 = v * v;
       s += v; s2 += p2; kw += (i + 1) * p2;
       if (i >= hiStart) hf += p2;
     }
