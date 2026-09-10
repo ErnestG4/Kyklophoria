@@ -61,7 +61,7 @@ static void Unit(const float* m, int k, double* out)
     for(int i = 0; i < k; i++) out[i] = m[i] * inv;
 }
 
-struct Score { double variety, spread, twins; };
+struct Score { double variety, spread, twins, top, topworst; };
 
 static Score Grade(const FmField& f, int dirs)
 {
@@ -128,15 +128,46 @@ static Score Grade(const FmField& f, int dirs)
         for(int j = i + 1; j < S; j++)
         { total++; if(Dist(pts[i].data(), pts[j].data(), K) < 0.05) close++; }
 
-    return { mean, spread, total ? 100.0 * (double)close / (double)total : 0.0 };
+    /* How much of the spectrum is piled against the K limit.
+     *
+     * Without this the search cheats and it is not subtle: left free it drove
+     * index_max to 82 and carrier_max to 30, put 20% of the energy above
+     * harmonic 48, and reported five times the variety. None of that is
+     * timbre. The sidebands were being cut off by K and the "distance covered"
+     * was the truncation edge moving through the spectrum.
+     *
+     * The constraint is principled beyond stopping the cheat. Energy near K is
+     * energy the instrument cannot promise: below 375 Hz the band stops at K,
+     * above it at Nyquist, so a world that lives against that edge is a world
+     * whose timbre changes with pitch for no musical reason. */
+    double topSum = 0, topMax = 0;
+    {
+        SearchRng q; q.Seed(99);
+        const int T = 512;
+        for(int i = 0; i < T; i++)
+        {
+            float p[kMaxN];
+            for(int ax = 0; ax < N; ax++) p[ax] = (float)q.Uniform();
+            w.Evaluate(p, 0.f, mags, pl, wt);
+            double s2 = 0, hi = 0;
+            for(int c = 0; c < K; c++)
+            { const double v = std::fabs((double)mags[c]); s2 += v * v; if(c >= 48) hi += v * v; }
+            if(s2 <= 0) continue;
+            const double fr = hi / s2;
+            topSum += fr; if(fr > topMax) topMax = fr;
+        }
+        topSum /= (double)T;
+    }
+    return { mean, spread, total ? 100.0 * (double)close / (double)total : 0.0,
+             100.0 * topSum, 100.0 * topMax };
 }
 
 static void Print(const char* tag, const FmField& f, const Score& s)
 {
-    printf("  %-9s variety %7.3f  spread %5.2fx  twins %5.2f%%  |  idx %5.2f  ratio %4.2f-%4.2f  "
-           "carr %4.2f-%5.2f  2nd %5.2f  lock %4.2f\n",
-           tag, s.variety, s.spread, s.twins, f.index_max, f.ratio_min, f.ratio_max,
-           f.carrier_min, f.carrier_max, f.second_max, f.ratio_lock);
+    printf("  %-9s variety %7.3f  spread %5.2fx  twins %4.2f%%  top %4.1f/%4.1f%%  |  idx %5.2f  "
+           "ratio %4.2f-%4.2f  carr %4.2f-%5.2f  2nd %5.2f  lock %4.2f\n",
+           tag, s.variety, s.spread, s.twins, s.top, s.topworst, f.index_max, f.ratio_min,
+           f.ratio_max, f.carrier_min, f.carrier_max, f.second_max, f.ratio_lock);
 }
 
 int main(int argc, char** argv)
@@ -164,7 +195,9 @@ int main(int argc, char** argv)
                                      : "DOES NOT MATCH — not searching, the metric is wrong");
     if(!sane) return 2;
 
-    printf("  objective: maximise variety, subject to spread <= %.2fx and twins <= 0.5%%\n", base.spread);
+    printf("  objective: maximise variety, subject to twins <= 0.5%%, mean energy above\n"
+           "             harmonic 48 <= 2%% and worst <= 25%% (shipping: %.1f%% / %.1f%%)\n",
+           base.top, base.topworst);
     printf("  %ld trials on %u threads, %d directions each\n\n", trials, threads, dirs);
 
     /* A hard gate at the shipping spread throws away 99.5% of the trials,
@@ -203,6 +236,9 @@ int main(int argc, char** argv)
                 if(f.carrier_max <= f.carrier_min + 0.5f) continue;
                 const Score s = Grade(f, dirs);
                 if(s.twins > 0.5) continue;              /* scattering is not variety */
+                /* and neither is the band edge moving. Shipping sits at 0.1%
+                   mean and 14% worst, so this is generous rather than tight. */
+                if(s.top > 2.0 || s.topworst > 25.0) continue;
                 kept.fetch_add(1);
                 std::lock_guard<std::mutex> lk(mut);
                 for(int q = 0; q < nB; q++)
