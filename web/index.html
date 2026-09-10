@@ -136,6 +136,17 @@ const trail = { L: new Float32Array(TRAIL_N * 2), R: new Float32Array(TRAIL_N * 
  * control frame, before rotation, and is stored relative to its attractor. So
  * it stays a clean conic even while the rotation is dragging the position
  * trail somewhere else entirely. */
+/* Which axes clamp and which wrap.
+ *
+ * A lattice world says so in its descriptor and that is used when it is there.
+ * A formula world ships no topology, so it is worked out by watching: when the
+ * unfolded centre leaves [0,1] the module has already folded it, and comparing
+ * the folded position against both candidate folds says which one happened.
+ * Evidence only arrives while an axis is actually outside, so the votes are
+ * kept rather than recomputed, and only decisive frames vote — under a stereo
+ * spread posL carries an extra rotation and neither candidate matches, which
+ * shows up as both errors being large and is skipped rather than guessed at. */
+const foldVote = new Float32Array(6);
 const KEP_N = 900;
 const kepTrail = { xy: new Float32Array(KEP_N * 2), n: 0, head: 0, plane: -1 };
 let lastBlock = -1, framesSeen = 0, fpsWin = { t0: performance.now(), n: 0, fps: 0 };
@@ -764,12 +775,85 @@ function drawSpace() {
   const disc = () => { cx.beginPath(); cx.arc(px(tel.posL[ax]), py(tel.posL[ay]), r, 0, 7); };
   halo(disc);
   cx.fillStyle = dotColour(tv, 1); disc(); cx.fill();
+  drawFold(tel, n, ox, oy, S, px, py);
   drawKepler(tel, n, ox, oy, S, px, py);
   cx.fillStyle = '#9aa7b3'; cx.font = '11px ui-monospace, monospace';
   cx.fillText(`${tel.stereo ? 'L' : 'pos'} ${fmtVec(tel.posL)}`, ox + 6, oy + S - (tel.stereo ? 20 : 8));
   if (tel.stereo) cx.fillText(`R ${fmtVec(tel.posR)}`, ox + 6, oy + S - 8);
   drawArcs(n, planes, tel, ox, oy + S + 18, S);
 }
+/* How far past the edge the hand is pushing.
+ *
+ * On a clamped axis, once the centre leaves [0,1] the position stops moving
+ * and the sound stops changing, but the knob, the CV and the rotation all keep
+ * going. Nothing on the page said so: the dot simply sat against the wall,
+ * looking identical whether the request was a hair over the edge or four units
+ * past it, and the difference is how long you will be turning the knob back
+ * before anything happens again. That is the one thing here that is invisible
+ * *and* audible, so it gets a mark.
+ *
+ * Nothing is drawn for a wrapped axis. A wrap loses no information — the
+ * position really is where the fold put it, the dashed seams already say the
+ * edge is not an edge, and an excursion arrow there would be reporting an
+ * artefact of how the number happens to be written down.
+ *
+ * The length is logarithmic. Excursions are unbounded — the rotation can carry
+ * the centre several units out — so a linear arrow would either be invisible
+ * for the small ones that matter most or leave the frame for the large ones.
+ * log(1+d) over log 3 saturates at two full units past the edge. */
+function drawFold(t, n, ox, oy, S, px, py) {
+  if (!t.centre) return;
+  const [ax, ay] = axes;
+  const wrapped = (a) => {
+    if (space && space.topo && a < space.topo.length) return space.topo[a] === 'wrap';
+    const c = t.centre[a];
+    if (c >= 0 && c <= 1) return foldVote[a] < 0;      /* nothing to learn now */
+    const ec = Math.abs(t.posL[a] - clamp01(c));
+    const ew = Math.abs(t.posL[a] - (c - Math.floor(c)));
+    const lo = Math.min(ec, ew);
+    if (lo < 0.02 && Math.abs(ec - ew) > 0.05) {
+      foldVote[a] = Math.max(-8, Math.min(8, foldVote[a] + (ec < ew ? 1 : -1)));
+    }
+    return foldVote[a] < 0;
+  };
+  const over = (a) => {
+    const c = t.centre[a];
+    const d = c > 1 ? c - 1 : (c < 0 ? -c : 0);
+    return (d < 0.004 || wrapped(a)) ? 0 : (c > 1 ? d : -d);
+  };
+  const len = d => 5 + 16 * Math.min(1, Math.log(1 + Math.abs(d)) / Math.log(3));
+  const tick = (x, y, dx, dy, d) => {
+    const L = len(d), ex = x + dx * L, ey = y + dy * L;
+    const stroke = (w, c) => {
+      cx.lineWidth = w; cx.strokeStyle = c;
+      cx.beginPath();
+      cx.moveTo(x - dy * 5, y - dx * 5); cx.lineTo(x + dy * 5, y + dx * 5);   /* the wall */
+      cx.moveTo(x, y); cx.lineTo(ex, ey);                                      /* the push */
+      cx.moveTo(ex, ey); cx.lineTo(ex - dx * 4 - dy * 3, ey - dy * 4 - dx * 3);
+      cx.moveTo(ex, ey); cx.lineTo(ex - dx * 4 + dy * 3, ey - dy * 4 + dx * 3);
+      cx.stroke();
+    };
+    stroke(3, 'rgba(7,9,12,0.85)');
+    stroke(1.4, '#ff9a5c');
+    cx.lineWidth = 1;
+  };
+  const dx = over(ax), dy = over(ay);
+  if (dx) tick(px(dx > 0 ? 1 : 0), py(clamp01(t.posL[ay])), dx > 0 ? 1 : -1, 0, dx);
+  if (dy) tick(px(clamp01(t.posL[ax])), py(dy > 0 ? 1 : 0), 0, dy > 0 ? -1 : 1, dy);
+  /* Axes off the projection get named rather than drawn: there is no edge on
+     screen that belongs to them, and pretending otherwise would put a mark
+     somewhere it does not mean anything. */
+  let off = '';
+  for (let a = 0; a < n; a++) if (a !== ax && a !== ay && over(a)) off += (off ? ',' : '') + a;
+  if (off) {
+    cx.font = '10px ui-monospace, monospace';
+    cx.lineWidth = 3; cx.strokeStyle = 'rgba(7,9,12,0.75)';
+    const s2 = 'past the edge on axis ' + off;
+    cx.strokeText(s2, ox + 8, oy + S - 26); cx.fillStyle = '#ff9a5c'; cx.fillText(s2, ox + 8, oy + S - 26);
+    cx.lineWidth = 1; cx.font = '11px ui-monospace, monospace';
+  }
+}
+
 /* The orbit, drawn twice over.
  *
  * The faint cross in the main view is already the control frame, and the
