@@ -16,7 +16,7 @@ DESK=build/host/kykdesk
 mkdir -p "$OUT" "$OUT/.scripts"
 
 # name:index, in registry order (core/kyk_worlds.h)
-WORLDS="braids:0 cell24:1 cell16:2 tesseract:3 stack:4 field:5 fieldII:6 torus:7 harmonic:8 fm:9 vowel:10 shapes:11 shapesring:12 lock:13 unison:14 plate:15 bar:16 drum:17"
+WORLDS="braids:0 cell24:1 cell16:2 tesseract:3 stack:4 field:5 fieldII:6 torus:7 harmonic:8 fm:9 vowel:10 shapes:11 shapesring:12 lock:13 unison:14 plate:15 bar:16 drum:17 saw:18 pulse:19 edge:20"
 
 # A slow diagonal from one corner of the cube to the opposite one, at a pitch
 # low enough that most of the K harmonics are below Nyquist and the spectrum

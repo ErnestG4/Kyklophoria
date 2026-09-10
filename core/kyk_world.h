@@ -31,6 +31,7 @@
 #include "kyk_lock.h"
 #include "kyk_unison.h"
 #include "kyk_modal.h"
+#include "kyk_bend.h"
 
 namespace kyk {
 
@@ -59,7 +60,7 @@ struct VertexField
 class World
 {
 public:
-    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3, Fm = 4, Formant = 5, Table = 6, Lock = 7, Unison = 8, Modal = 9 };
+    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3, Fm = 4, Formant = 5, Table = 6, Lock = 7, Unison = 8, Modal = 9, Bend = 10 };
     /* Which phase spectrum the engine should render this world's coefficients
      * against. This is not a detail — it decides whether the instrument can
      * produce a recognisable waveform at all.
@@ -189,6 +190,17 @@ public:
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }
 
+    void UseBend(Base b, int n, int k, int p, const uint8_t* topo)
+    {
+        kind_ = (n >= 1 && n <= kMaxN && k >= 1 && k <= kShapeK) ? Kind::Bend : Kind::None;
+        if(kind_ == Kind::None) return;
+        bend_ = BendField();
+        bend_.base = b; bend_.n = n; bend_.k = k;
+        phase_ = Phase::Sine;
+        p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
+        for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
+    }
+
     Kind Which() const { return kind_; }
     bool Ready() const { return kind_ != Kind::None; }
     /* A switch, not a ternary chain. This was seven levels of nested `?:`
@@ -208,6 +220,7 @@ public:
             case Kind::Lock:     return lock_.n;
             case Kind::Unison:   return uni_.n;
             case Kind::Modal:    return modal_.n;
+            case Kind::Bend:     return bend_.n;
             case Kind::Analytic: return basis_.n;
             default:             return 0;
         }
@@ -224,6 +237,7 @@ public:
             case Kind::Lock:     return lock_.k;
             case Kind::Unison:   return uni_.k;
             case Kind::Modal:    return modal_.k;
+            case Kind::Bend:     return bend_.k;
             case Kind::Analytic: return basis_.k;
             default:             return 0;
         }
@@ -242,6 +256,7 @@ public:
     const LockField&    Lock() const { return lock_; }
     const UnisonField&  Unison() const { return uni_; }
     const ModalField&   Modal() const { return modal_; }
+    const BendField&    Bend() const { return bend_; }
 
     /* ── the frame shapers ───────────────────────────────────────────────
      * A wavefolder has no closed form in the harmonics, so these run on the
@@ -312,6 +327,7 @@ public:
         if(kind_ == Kind::Lock) { EvalLock(p01, sharp, mags, payload); return; }
         if(kind_ == Kind::Unison) { EvalUnison(p01, mags, payload); return; }
         if(kind_ == Kind::Modal) { EvalModal(p01, mags, payload); return; }
+        if(kind_ == Kind::Bend) { EvalBend(p01, mags, payload); return; }
         for(int k = 0; k < kMaxK; k++) mags[k] = 0.f;
     }
 
@@ -466,6 +482,16 @@ private:
             for(int i = 0; i < k; i++) mags[i] += wv * sv[i];
         }
         Finish(mags, k, top, 1.f - top, payload);
+    }
+
+    void EvalBend(const float* p01, float* mags, float* payload) const
+    {
+        const int k = bend_.k;
+        BendSpectrum(bend_, p01[0], p01[1],
+                     bend_.n > 2 ? p01[2] : 0.5f,
+                     bend_.n > 3 ? p01[3] : 1.f, k, mags);
+        /* lane 4 is how far up the fold point sits, lane 5 the first axis */
+        Finish(mags, k, bend_.n > 3 ? p01[3] : 1.f, p01[0], payload);
     }
 
     void EvalModal(const float* p01, float* mags, float* payload) const
@@ -664,6 +690,7 @@ private:
     LockField    lock_;
     UnisonField  uni_;
     ModalField   modal_;
+    BendField    bend_;
     /* One node buffer, lent to whichever table-shaped world is live. 24 rows
      * because that is the 24-cell's vertex count; a shape table uses 16 of
      * them. Six kilobytes, in DTCM with the World. */

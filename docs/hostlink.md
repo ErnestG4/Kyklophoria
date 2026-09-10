@@ -33,7 +33,7 @@ u8  planes, flags    n(n-1)/2, the flags echoed
 u8  stereo           1 when spread ≠ 0 (two positions)
 u8  spread_plane
 f32 spread           turns
-f32 ctl[n]           control frame as set (pots + CVs)
+f32 ctl[n]           control frame after slew; the Kepler attractor
 f32 centre[n]        after rotation, before folding
 f32 posL[n]          left voice, folded (what was interpolated)
 f32 posR[n]          right voice, folded (= posL when mono)

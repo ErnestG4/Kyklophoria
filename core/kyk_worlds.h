@@ -16,7 +16,7 @@ namespace kyk {
 namespace worlds {
 
 enum : uint8_t { kBraids = 0, kCell24 = 1, kCell16 = 2, kTesseract = 3, kStack = 4,
-                 kFieldCalm = 5, kFieldWild = 6, kFieldTorus = 7, kHarmonic = 8, kFm = 9, kVowel = 10, kShapes = 11, kShapesRing = 12, kLock = 13, kUnison = 14, kPlate = 15, kBar = 16, kDrum = 17, kCount = 18 };
+                 kFieldCalm = 5, kFieldWild = 6, kFieldTorus = 7, kHarmonic = 8, kFm = 9, kVowel = 10, kShapes = 11, kShapesRing = 12, kLock = 13, kUnison = 14, kPlate = 15, kBar = 16, kDrum = 17, kSaw = 18, kPulse = 19, kEdge = 20, kCount = 21 };
 
 struct Entry
 {
@@ -46,6 +46,9 @@ inline const Entry& Get(uint8_t i)
         {"Plate",     "a struck plate: where, what shape, how long ago, how damped", World::Kind::Modal},
         {"Bar",       "a struck bar tuned onto the grid; sparse and ringing", World::Kind::Modal},
         {"Drum",      "a struck membrane, tuned; packed low, dies fast", World::Kind::Modal},
+        {"Saw",       "nothing but a saw: tilt, parity, comb, fold point", World::Kind::Bend},
+        {"Pulse",     "nothing but a pulse: duty, tilt, comb, fold point", World::Kind::Bend},
+        {"Edge",      "saw against pulse, only those two, bent four ways", World::Kind::Bend},
     };
     return kEntries[i < kCount ? i : 0];
 }
@@ -88,6 +91,9 @@ inline bool Point(uint8_t i, World& w, int p, const uint8_t* topo, solids::Verte
     if(i == kPlate) { w.UseModal(Body::Plate, 4, kShapeK, p, topo); return true; }
     if(i == kBar) { w.UseModal(Body::Bar, 4, kShapeK, p, topo); return true; }
     if(i == kDrum) { w.UseModal(Body::Drum, 4, kShapeK, p, topo); return true; }
+    if(i == kSaw) { w.UseBend(Base::Saw, 4, kShapeK, p, topo); return true; }
+    if(i == kPulse) { w.UseBend(Base::Pulse, 4, kShapeK, p, topo); return true; }
+    if(i == kEdge) { w.UseBend(Base::Edge, 4, kShapeK, p, topo); return true; }
     const int sol = SolidOf(i);
     if(sol >= 0)
     {

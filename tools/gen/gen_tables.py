@@ -56,5 +56,23 @@ for i in range(MAXK):
         out.append('    ' + ', '.join(row) + ',')
         row = []
 out.append('};')
+
+# Two more harmonic laws, so a tilt can brighten without turning the waveform
+# into an impulse. An exponential tilt r^h stops the series falling once r
+# exceeds one, and a series that does not fall is a spike: measured crest 4.07
+# on that axis alone and 6.76 in the corner, against the 4.3 the output gain
+# allows. h^-q always falls, whatever q, so the crest stays put — and blending
+# between three fixed exponents needs no power function at run time.
+for name, q in (('kInvHarmHalf', 0.75), ('kInvHarmSteep', 1.6)):
+    out.append('')
+    out.append('/* h^-%.2f for harmonics h = 1..kMaxK. */' % q)
+    out.append('static const float %s[%d] = {' % (name, MAXK))
+    row = []
+    for i in range(MAXK):
+        row.append(f32((i + 1) ** -q).hex() + 'f')
+        if len(row) == 4:
+            out.append('    ' + ', '.join(row) + ',')
+            row = []
+    out.append('};')
 out.append('} // namespace kyk')
 sys.stdout.write('\n'.join(out) + '\n')

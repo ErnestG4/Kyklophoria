@@ -65,6 +65,9 @@ for script in tests/scripts/*.txt; do
         m3_plate*) args="--gen --seed 1 --world 15";;
         m3_bar*) args="--gen --seed 1 --world 16";;
         m3_drum*) args="--gen --seed 1 --world 17";;
+        m3_saw*) args="--gen --seed 1 --world 18";;
+        m3_pulse*) args="--gen --seed 1 --world 19";;
+        m3_edge*) args="--gen --seed 1 --world 20";;
     esac
     build/host/kykdesk $args --script "$script" --out "$OUT/$name.wav" --telemetry "$OUT/$name.csv" || { fail=1; continue; }
     if [ $update = 1 ] || [ ! -f "tests/golden/$name.wav" ]; then

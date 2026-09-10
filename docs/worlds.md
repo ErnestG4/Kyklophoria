@@ -905,3 +905,64 @@ takes an optional start index, empty meaning zero, which is what every host
 sent before this existed; the reply carries the total, the current world, the
 start and how many it managed. `fetchWorlds` walks the pages. Descriptor
 extension version 4.
+
+---
+
+# Single-shape worlds: Saw, Pulse, Edge (2026-09-09)
+
+Will's note: *"we could use some funky tables. Square and saw only table,
+square manipulated, saw manipulated, etc. Escape the idea of 'all in one' and
+unlock different worlds."*
+
+That is the better organising idea and it fixes something that had been going
+wrong on its own. Every world before this tried to span a wide range of timbre
+with four balanced axes, and their axes kept fighting: the modal geometry axis
+doing eight times the work of the mallet, the unison interval doing eight times
+the work of the wave. Every one of them needed a tuning round to stop one axis
+swallowing the others. A world that already knows what it is can spend all four
+axes on manipulating that one thing, and each axis gets room.
+
+| world | variety | spread | twins | crest |
+|---|---|---|---|---|
+| **Saw** | 1.444 | **2.03x** | 0.0% | 4.18 |
+| Pulse | 2.794 | 3.36x | 0.0% | 3.40 |
+| Edge | 1.862 | 2.57x | 0.0% | 3.07 |
+
+Saw at 2.03x is the most isotropic world in the instrument that has anything
+legible in it — behind only FM at 1.83 and the featureless noise fields. All
+three have no near-duplicates at all, and at 0.25–0.31 µs an evaluation they
+are the cheapest worlds here.
+
+## The bends
+
+**tilt** crossfades between three harmonic laws, h^-1.6, h^-1 and h^-0.75.
+The obvious way to write a tilt is `r^h`, and it is a trap: once r passes one
+the series stops falling, and a series that does not fall is an impulse. Crest
+4.07 on that axis alone and 6.76 in the corner with parity, against the 4.3 the
+output gain allows. Bounding r to 1.01 kept the crest but left the axis
+measuring 0.41, the weakest of the three worlds. A power law always falls
+whatever the exponent, so it can go far brighter at no cost in crest — and
+three fixed exponents from tables need no power function per harmonic.
+
+**parity** fades the even harmonics out and then past zero: at a half a saw has
+become a square, and beyond that the evens return inverted, which is a
+different waveform with the same spectrum.
+
+**comb** is a periodic notch across the harmonic series whose period sweeps —
+the spectral shape a phaser makes, except static per frame.
+
+**duty** is the bipolar pulse.
+
+**fold point** flips the sign of every harmonic above a moving point, and
+deserves a caveat rather than a boast. It leaves the magnitude spectrum exactly
+unchanged, so on a steady tone its direct audibility is limited — Ohm's law of
+phases, true since Helmholtz. What it changes is the waveform shape and the
+crest factor, which is what a wavefolder or ring modulator downstream has to
+chew on, and it is dramatic on the frame display. It is here because a
+phase-aware representation can offer it and a magnitude-only one cannot, not
+because it is loud.
+
+Nothing evaluates a transcendental per harmonic. The pulse and the comb both
+need cos(2·pi·h·x) at successive integer h, which is a rotation: carry
+(cos, sin) forward with four multiplies and two adds. Four worlds in this
+project were written the expensive way first.

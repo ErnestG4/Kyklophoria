@@ -103,6 +103,9 @@ cost 1.18 MB to approximate what it just threw away.
 | **Plate** | a struck plate; strike, shape, time and damping | 1.31 | 4.78x | 20% |
 | **Bar** | a struck bar, tuned onto the harmonic grid | 1.15 | 3.31x | 19% |
 | **Drum** | a struck membrane, tuned; dense and low-ordered | 0.88 | 3.52x | 24% |
+| **Saw** | nothing but a saw: tilt, parity, comb, fold point | 1.44 | **2.03x** | — |
+| **Pulse** | nothing but a pulse: duty, tilt, comb, fold point | 2.79 | 3.36x | — |
+| **Edge** | saw against pulse, only those two, bent four ways | 1.86 | 2.57x | — |
 
 **Spread** is the number that decides whether rotating the control frame was
 worth building: the most varied direction through the space over the least. At

@@ -111,6 +111,21 @@ public:
             }
         }
         else for(int a = 0; a < N; a++) c_[a] = target_[a];
+        /* The frame the rotation reads: the control frame plus wherever the
+         * falling body currently is. Built fresh every block and never written
+         * back into c_.
+         *
+         * It used to add the body straight into c_, which is persistent state
+         * that only the slew pulls back — and the slew is a rate limiter that
+         * moves at most block_ms/slew_ms of the range per block, 0.1 at the
+         * shipping default. So a fixed point existed only while the orbit
+         * radius stayed under 0.1, and the radius knob goes to 0.55. Measured
+         * at gravity 0.3, radius 0.30: ctl reached 85 after a quarter second
+         * and -156 after four, with the position pinned in a cube corner
+         * flickering between 0 and 1. Every position the module reported while
+         * Kepler was running was noise, which is a thing you cannot see in a
+         * desktop test that leaves the slew at zero. */
+        for(int a = 0; a < N; a++) kc_[a] = c_[a];
         if(sr_ > 0.f)
         {
             const float dt = (float)n / sr_;
@@ -125,12 +140,12 @@ public:
                 Rotation::PlaneAxes(N, kepler.plane, ki, kj);
                 kepler.wrap = world_->TopoOf(ki) == Topo::Wrap || world_->TopoOf(kj) == Topo::Wrap;
                 kepler.Step(dt);
-                kepler.Apply(c_, N);      /* the control frame is the centre */
+                kepler.Apply(kc_, N);     /* the control frame is the attractor */
             }
         }
         rot.Update();
-        if(rot.IsIdentity()) for(int a = 0; a < N; a++) pc_[a] = c_[a];
-        else rot.Apply(c_, pc_, pivot);
+        if(rot.IsIdentity()) for(int a = 0; a < N; a++) pc_[a] = kc_[a];
+        else rot.Apply(kc_, pc_, pivot);
 
         const bool stereo = spread != 0.f && N >= 2;
         if(!stereo)
@@ -196,6 +211,7 @@ private:
     const World* world_ = nullptr;
     float        sr_    = 48000.f;
     float        c_[kMaxN], target_[kMaxN], pc_[kMaxN], payAt_[kMaxN];
+    float        kc_[kMaxN] = {0,0,0,0,0,0};   /* c_ plus the falling body */
     float        payload_[kMaxP];
     bool         stereo_ = false;
 };

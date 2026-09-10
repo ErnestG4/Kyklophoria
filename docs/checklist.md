@@ -219,6 +219,20 @@ meaningful axis and stacking four banks makes rotation meaningless.
       additive renderer. A circular membrane's modes sit 25.5% off the harmonic
       grid, over four semitones, so no amount of baking reaches it.
 
+- [x] **Single-shape worlds** — Saw, Pulse and Edge, worlds 18 to 20. One
+      waveform and four ways to bend it, rather than one world trying to span
+      everything. Combust's idea, and it fixes the recurring problem that a
+      broad world's axes fight each other. Saw measures 2.03x, the most
+      isotropic legible world here.
+- [x] **The Kepler body was being integrated into the control frame.** `Apply`
+      added the offset into `c_`, which is persistent, and the slew is a rate
+      limiter that removes at most `block_ms/slew_ms` per block — 0.1 at the
+      shipping default, against an orbit radius knob that reaches 0.55. So
+      `ctl` diverged: measured -156 after four seconds, with the position
+      pinned in a cube corner. Every position the module reported while Kepler
+      was running was noise. The offset now goes to a copy. Invisible on the
+      desktop, which leaves the slew at zero.
+
 ## Audio-path rules, learned the hard way
 
 - [x] **Never call `SinCosTurns` per sample.** It computes sine and cosine,

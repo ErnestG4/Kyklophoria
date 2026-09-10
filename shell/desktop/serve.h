@@ -130,6 +130,16 @@ public:
         if(!kyk::worlds::IsAnalytic(w)) return 0;
         kyk::World tmp;
         if(!kyk::worlds::Point(w, tmp, 8, nullptr, &vtable)) return 0;
+        if(tmp.Which() == kyk::World::Kind::Bend)
+        {
+            uint8_t blob[kyk::kBendBlobBytes];
+            total = (uint32_t)kyk::BendBlob(tmp.Bend(), blob);
+            if(offset >= total) return 0;
+            uint32_t n = total - offset;
+            if(n > (uint32_t)max) n = (uint32_t)max;
+            std::memcpy(out, blob + offset, n);
+            return (int)n;
+        }
         if(tmp.Which() == kyk::World::Kind::Modal)
         {
             uint8_t blob[kyk::kModalBlobBytes];

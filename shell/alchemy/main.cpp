@@ -381,6 +381,16 @@ struct ModuleSource : ExtSource
         if(!worlds::IsAnalytic(world)) return 0;
         World w;
         if(!worlds::Point(world, w, kBootP, nullptr)) return 0;
+        if(w.Which() == World::Kind::Bend)
+        {
+            uint8_t blob[kBendBlobBytes];
+            total = (uint32_t)BendBlob(w.Bend(), blob);
+            if(offset >= total) return 0;
+            uint32_t n = total - offset;
+            if(n > (uint32_t)max) n = (uint32_t)max;
+            std::memcpy(out, blob + offset, n);
+            return (int)n;
+        }
         if(w.Which() == World::Kind::Modal)
         {
             uint8_t blob[kModalBlobBytes];
