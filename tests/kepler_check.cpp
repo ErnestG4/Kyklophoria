@@ -24,6 +24,7 @@
 #include "kyk_kepler.h"
 #include <cstdio>
 #include <cmath>
+#include <initializer_list>
 
 using namespace kyk;
 
@@ -64,6 +65,34 @@ int main()
         div[nb] = std::hypot(a.X() - b.X(), a.Y() - b.Y());
         printf("    %d bodies: %.3e\n", nb, div[nb]);
     }
+    /* The wall. A relaunch teleports the body and the timbre with it, which is
+       the one discontinuity this instrument is built to make impossible; a
+       reflection leaves the position where it is. So: nothing may cross the
+       bound, and nothing may move further in one block than a bounded speed
+       allows, which is what a reset would look like from outside. */
+    printf("\n  the wall, over 10 minutes each:\n");
+    for(int nb : {1, 3, kKeplerBodies})
+        for(float ecc : {0.f, 0.5f, 1.f})
+        {
+            Kepler k; k.Init(4); k.bodies = nb; k.companion = 0.6f;
+            k.soften = 0.014f; k.gravity = 1.f; k.Reset(0.30f, ecc);
+            double rmax = 0; int jumps = 0;
+            float px = k.X(), py = k.Y();
+            const long steps = (long)(600.0 / dt);
+            for(long i = 0; i < steps; i++)
+            {
+                k.Step(dt);
+                const double r = std::hypot((double)k.X(), (double)k.Y());
+                if(r > rmax) rmax = r;
+                if(std::hypot((double)k.X() - px, (double)k.Y() - py) > 0.2) jumps++;
+                px = k.X(); py = k.Y();
+            }
+            char m[120];
+            std::snprintf(m, sizeof m, "%d bodies ecc %.1f: stays inside the wall (max r %.4f) and never resets (%d jumps)",
+                          nb, ecc, rmax, jumps);
+            ck(m, rmax <= k.bound + 1e-4f && jumps == 0);
+        }
+
     ck("1 body: a nudge stays a nudge (integrable)", div[1] < 0.05);
     ck("2 bodies: still essentially integrable", div[2] < 0.05);
     ck("3 bodies: a nudge grows large (chaotic)", div[3] > 0.05);

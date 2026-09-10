@@ -94,6 +94,9 @@ public:
      * arrives back from the other, and there is no far radius to fall off.
      * Will's idea, and it is stranger than the flat version. */
     bool  wrap    = false;
+    /* How far the body may get from the attractor before the wall turns it
+     * round. Clamped, not wrapped — see the reflection in Step(). */
+    float bound   = 0.62f;
 
     void Init(int n)
     {
@@ -204,16 +207,50 @@ public:
         }
         if(!wrap)
         {
-            /* Anything far past the playable cube is not coming back on its
-             * own within a useful time, so relaunch rather than let the sound
-             * sit against a clamped edge. With company this is more likely:
-             * three bodies routinely eject one, which is correct physics and a
-             * dead voice, so the whole system restarts together. */
-            const float far = 1.5f;
+            /* A wall, not a relaunch.
+             *
+             * This used to detect an escape and call Reset on the whole system.
+             * That is a position jump: the body teleports and the timbre goes
+             * with it, which is the one discontinuity this instrument is built
+             * to make impossible. A reflection reverses the radial component of
+             * the velocity and leaves the position exactly where it was, so the
+             * morph stays continuous by the same argument as everything else —
+             * and the body never restarts, so it keeps exploring instead of
+             * being periodically returned to the same initial condition.
+             *
+             * Energy is conserved on the bounce, so nothing decays. The
+             * tangential component is untouched, which is what makes this a
+             * specular wall and not a sticky one: a body arriving nearly
+             * side-on leaves nearly side-on and keeps circulating.
+             *
+             * A central attractor inside a circular wall is a billiard, and
+             * bounded, aperiodic, never-resetting is exactly the behaviour
+             * asked for. */
             for(int b = 0; b < nb; b++)
-                if(r_[b][0] * r_[b][0] + r_[b][1] * r_[b][1] > far * far)
-                { Reset(0.30f, 0.55f); break; }
+            {
+                const float x = r_[b][0], y = r_[b][1];
+                const float r2 = x * x + y * y;
+                if(r2 <= bound * bound || r2 <= 0.f) continue;
+                const float r   = Sqrt(r2);
+                const float nx  = x / r, ny = y / r;         /* outward normal */
+                const float vn  = v_[b][0] * nx + v_[b][1] * ny;
+                if(vn > 0.f)                                  /* only if outbound */
+                {
+                    v_[b][0] -= 2.f * vn * nx;
+                    v_[b][1] -= 2.f * vn * ny;
+                }
+                /* Put it back on the wall rather than leaving it outside, or a
+                 * body that overshot in one step would bounce every step. */
+                r_[b][0] = nx * bound;
+                r_[b][1] = ny * bound;
+            }
         }
+        /* The one thing a bounce cannot rescue is arithmetic that has stopped
+         * being a number. Nothing here should produce one, but a NaN would be
+         * silent and permanent, so it is caught rather than trusted away. */
+        for(int b = 0; b < nb; b++)
+            if(!(r_[b][0] == r_[b][0]) || !(r_[b][1] == r_[b][1]))
+            { Reset(0.30f, 0.55f); break; }
     }
 
     /* Add the body's offset to the control frame, in the chosen plane. */
