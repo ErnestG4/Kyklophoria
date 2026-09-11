@@ -162,6 +162,36 @@ old firmware, so it would not break existing hosts.
 
 ---
 
+## SDMMC's IDMA cannot reach DTCM
+
+**Symptom.** File operations that do not fail — they corrupt. A `DIR` or
+`FILINFO` in ordinary `.bss` gives garbage filenames or silent truncation
+rather than an error code.
+
+**Cause.** SDMMC1's internal DMA cannot address DTCM, which is where plain
+`.bss` lands on this part. The SDK states this in
+`alchemy/storage/sd_card.h` and Audiothurgist found it independently before
+that.
+
+**What to do.** Every FatFs object and every staging buffer goes in
+`ALCHEMY_SDMMC_BSS`, which is AXI SRAM:
+
+```cpp
+ALCHEMY_SDMMC_BSS alignas(32) static DIR     gDir;
+ALCHEMY_SDMMC_BSS alignas(32) static FILINFO gFno;
+ALCHEMY_SDMMC_BSS alignas(32) static FIL     gFil;
+ALCHEMY_SDMMC_BSS alignas(32) static uint8_t gStage[N];
+```
+
+The `alignas(32)` matters too — cache-line alignment for the D-cache
+maintenance around the transfer.
+
+**Also:** card work is slow and must never happen under the audio callback.
+Both modules defer it to the main loop, and hold `SdCard::BusyGuard` across
+any filesystem operation so the audio side can see `Busy()`.
+
+---
+
 ## Smaller sharp edges
 
 **`Crc32` is bitwise** (`crc32.h:20-33`) — eight iterations per byte, roughly 40

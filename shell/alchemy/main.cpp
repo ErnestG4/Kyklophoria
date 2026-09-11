@@ -37,6 +37,7 @@
 #include "kyk_telemetry.h"
 #include "kyk_ext.h"
 #include "kyk_worldrx.h"
+#include "alchemy/storage/sd_card.h"
 
 using namespace alchemy;
 using namespace kyk;
@@ -241,6 +242,74 @@ static volatile uint8_t gUserReq = 0u;
 static constexpr uint8_t kMorphSlot = 2u;    /* blob/space/vtable slot */
 static volatile uint8_t gMorphReq = 0xFFu;   /* world index to load there */
 static volatile uint8_t gMorphIdx = 0xFFu;   /* what is loaded there now */
+
+/* ── user worlds on the card ─────────────────────────────────────────────
+ *
+ * A world is a file, so the library is a folder. Drop .kykw files in
+ * /kyklophoria on the card and they appear; copy one to a friend and they have
+ * it. No transport, no forking, no upload step.
+ *
+ * The DMA law, which the SDK's own header states and Audiothurgist found the
+ * hard way before that: SDMMC1's IDMA cannot reach DTCM. Every FatFs object
+ * and every staging buffer has to sit in a region the controller can see, which
+ * is what ALCHEMY_SDMMC_BSS marks. A DIR in DTCM does not fail loudly — it
+ * fails as corruption. */
+static alchemy::SdCard gSd;
+constexpr int kMaxCardWorlds = 32;
+ALCHEMY_SDMMC_BSS alignas(32) static DIR      gCardDir;
+ALCHEMY_SDMMC_BSS alignas(32) static FILINFO  gCardFno;
+ALCHEMY_SDMMC_BSS alignas(32) static FIL      gCardFil;
+ALCHEMY_SDMMC_BSS alignas(32) static uint8_t  gCardStage[kUserBlobMax];
+static char    gCardNames[kMaxCardWorlds][32];
+static uint8_t gCardCount = 0;
+static volatile int8_t gCardLoadReq = -1;    /* index to load, -1 = none */
+
+static const char* kWorldDir = "0:/kyklophoria";
+
+/* Names only. Reading every file to validate it would mean a second of card
+ * work at boot for a folder nobody may open; a bad file is refused when it is
+ * asked for, which is the moment anyone is waiting for an answer. */
+static void ScanCard()
+{
+    gCardCount = 0;
+    if(!gSd.EnsureMounted(daisy::System::GetNow())) return;
+    alchemy::SdCard::BusyGuard busy(gSd);
+    if(f_opendir(&gCardDir, kWorldDir) != FR_OK) return;
+    while(gCardCount < kMaxCardWorlds
+          && f_readdir(&gCardDir, &gCardFno) == FR_OK && gCardFno.fname[0])
+    {
+        if(gCardFno.fattrib & AM_DIR) continue;
+        const char* dot = std::strrchr(gCardFno.fname, '.');
+        if(!dot || std::strlen(gCardFno.fname) > 30) continue;
+        if(dot[1] != 'k' && dot[1] != 'K') continue;
+        if(std::strlen(dot) != 5) continue;                  /* ".kykw" */
+        std::strncpy(gCardNames[gCardCount], gCardFno.fname, 31);
+        gCardNames[gCardCount][31] = 0;
+        gCardCount++;
+    }
+    f_closedir(&gCardDir);
+}
+
+/* Read one into the staging buffer. Returns bytes read, 0 on any failure. */
+static size_t ReadCardWorld(uint8_t i)
+{
+    if(i >= gCardCount) return 0;
+    if(!gSd.EnsureMounted(daisy::System::GetNow())) return 0;
+    alchemy::SdCard::BusyGuard busy(gSd);
+    char path[80];
+    std::snprintf(path, sizeof path, "%s/%s", kWorldDir, gCardNames[i]);
+    if(f_open(&gCardFil, path, FA_READ) != FR_OK) return 0;
+    const FSIZE_t sz = f_size(&gCardFil);
+    size_t got = 0;
+    if(sz > 0 && (size_t)sz <= sizeof gCardStage)
+    {
+        UINT rd = 0;
+        if(f_read(&gCardFil, gCardStage, (UINT)sz, &rd) != FR_OK) rd = 0;
+        got = rd;
+    }
+    f_close(&gCardFil);
+    return got;
+}
 static char             gUserName[kUserNameLen + 1] = {0};
 static volatile uint8_t gWorldBusy = 0;
 static StereoEngine KYK_AXI gEng;
@@ -404,6 +473,13 @@ struct ModuleSource : ExtSource
         s.render_div    = (uint8_t)gEng.L.render_div;
         s.cycles_budget = kCycBudget;
     }
+    int CardWorlds(const char** names, int max) override
+    {
+        const int n = gCardCount < max ? gCardCount : max;
+        for(int i = 0; i < n; i++) names[i] = gCardNames[i];
+        return n;
+    }
+
     uint8_t PutWorld(uint32_t total, uint32_t off, const uint8_t* data, int len) override
     {
         if(gUserReq || gWorldBusy) return 1u;        /* a swap is already in flight */
@@ -423,6 +499,14 @@ struct ModuleSource : ExtSource
                 if(len < 1 || args[0] >= worlds::kCount) return 2u;
                 if(gWorldBusy) return 9u;                     /* BUSY */
                 gWorldReq = args[0];
+                return 0u;
+            case kActScanCard:
+                ScanCard();
+                return 0u;
+            case kActLoadCardWorld:
+                if(len < 1 || args[0] >= gCardCount) return 2u;
+                if(gWorldBusy || gCardLoadReq >= 0) return 9u;
+                gCardLoadReq = (int8_t)args[0];
                 return 0u;
             case kActMorphWorld:
                 /* 0xFF clears the target, which is the only way to get the
@@ -565,6 +649,29 @@ static hostlink::Host host(presets, "kyk", "Kyklophoria", KYK_FW_VERSION, KYK_GI
  * enough that it must not happen anywhere near the audio callback. */
 static void ServeWorldRequest()
 {
+    if(gCardLoadReq >= 0)
+    {
+        /* Card work is slow and must not happen under the audio callback, so
+         * it lands here with every other deferred world change. */
+        const uint8_t idx = (uint8_t)gCardLoadReq;
+        gCardLoadReq = -1;
+        const size_t n = ReadCardWorld(idx);
+        if(n)
+        {
+            gWorldBusy = 1;
+            const uint8_t wi = (uint8_t)(gBufIdx ^ 1u);
+            if(gWorlds[wi].UseUserWorld(gCardStage, n, kBootP, nullptr, gUserName)
+               == UserError::Ok)
+            {
+                __asm__ volatile("dmb" ::: "memory");
+                gEng.SetWorld(&gWorlds[wi]);
+                gBufIdx   = wi;
+                gWorldIdx = 0xFFu;
+            }
+            gWorldBusy = 0;
+        }
+        return;
+    }
     if(gUserReq)
     {
         /* Into the buffer the audio thread is not reading, exactly as a
@@ -701,6 +808,9 @@ int main()
      * per orbit, which reads as an orbit rather than a wash. The default that
      * shipped sat at 47.9 degrees. */
     pager.SetStored(4, 3, 0.25f, phys);
+
+    gSd.Init();
+    ScanCard();          /* so the folder is already listed when a page connects */
 
     presets.Init();
     presets.BootLoad();   /* HostLink starts here: descriptor + panel USB up */

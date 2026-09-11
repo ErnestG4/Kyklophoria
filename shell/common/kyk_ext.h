@@ -37,6 +37,7 @@ constexpr uint8_t kCmdAction     = 0x64;
 constexpr uint8_t kCmdWorlds     = 0x65;   /* the list, and which one is live */
 constexpr uint8_t kCmdBasis      = 0x66;   /* an analytic world's formula, chunked */
 constexpr uint8_t kCmdPutWorld   = 0x67;   /* a user world, chunked host to module */
+constexpr uint8_t kCmdCardWorlds = 0x68;   /* what .kykw files the card holds */
 constexpr uint8_t kCmdSetControl = 0x6E;   /* desktop bridge only */
 
 enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace = 2, kActRenderDiv = 3,
@@ -44,7 +45,9 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                           /* which world the Morph knob blends towards; 0xFF
                              clears it. Choosing is setup and lives on the
                              page; how far is a knob and lives on the panel. */
-                          kActMorphWorld = 5 };
+                          kActMorphWorld = 5,
+                          kActScanCard = 6,        /* re-read the card's world folder */
+                          kActLoadCardWorld = 7 }; /* load one by index into the list */
 
 struct ExtStats
 {
@@ -94,6 +97,10 @@ struct ExtSource
      * host nothing since it is sending a file it already has. The source
      * accumulates, and on the last chunk parses, validates and loads — so a
      * transfer that stops half way leaves the running world untouched. */
+    /* Names of the worlds on the card. Returns how many were written into
+     * `names`; a shell with no card returns zero, which is not an error. */
+    virtual int CardWorlds(const char** names, int max) { (void)names; (void)max; return 0; }
+
     virtual uint8_t PutWorld(uint32_t total, uint32_t off, const uint8_t* data, int len)
     { (void)total; (void)off; (void)data; (void)len; return 1u; }
 
@@ -210,6 +217,30 @@ public:
                     w.U8(kinds[i]);
                     w.Str(names[i] ? names[i] : "");
                     w.Str(notes[i] ? notes[i] : "");
+                }
+                return;
+            }
+            case kCmdCardWorlds:
+            {
+                const char* names[32];
+                const int   n = src_.CardWorlds(names, 32);
+                w.U8(0u);
+                /* Written before the entries so a host can size its list even
+                   if the body runs out before the names do. */
+                w.U8((uint8_t)n);
+                /* Same budget idiom as the world list: stop before the body
+                   would overflow rather than after, since a reply that does
+                   not fit is dropped silently and the host waits out its
+                   timeout (see the note on GET_WORLDS below). */
+                const int budget = (int)alchemy::hostlink::kMaxBody - 24;
+                int used = 0;
+                for(int i = 0; i < n; i++)
+                {
+                    const int len = (int)std::strlen(names[i]);
+                    if(len > 255 || used + len + 1 > budget) break;
+                    w.U8((uint8_t)len);
+                    for(int c = 0; c < len; c++) w.U8((uint8_t)names[i][c]);
+                    used += len + 1;
                 }
                 return;
             }
