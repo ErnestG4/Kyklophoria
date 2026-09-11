@@ -21,7 +21,7 @@ const PROTO = 1;
 const CMD = {
   hello: 0x01, getDescriptor: 0x02,
   telemetry: 0x60, spaceInfo: 0x61, cell: 0x62, stats: 0x63, action: 0x64,
-  worlds: 0x65, basis: 0x66, setControl: 0x6e,
+  worlds: 0x65, basis: 0x66, putWorld: 0x67, setControl: 0x6e,
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4 };
 const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5, table: 6, lock: 7, unison: 8, modal: 9, bend: 10 };
@@ -241,6 +241,49 @@ async function getDescriptor(link, info) {
 }
 
 /* ───────────── KykExt (0x60–0x6E) ───────────── */
+
+/* Build a user-world blob (core/kyk_userworld.h). `nodes` is an array of
+   { pos: [..n], mags: Float32Array(k) }; coefficients are written exactly as
+   given, because per-node level is how much a node weighs in the blend and
+   overriding it would override the author. */
+function buildUserWorld(nodes, { n = 4, k = 64, sigma = 0.26, name = '', sinePhase = true } = {}) {
+  const count = nodes.length;
+  if (count < 1 || count > 24) throw new Error('1..24 nodes');
+  if (n < 2 || n > 6) throw new Error('n must be 2..6');
+  if (k < 1 || k > 64) throw new Error('k must be 1..64');
+  const size = 32 + count * 4 * (n + k);
+  const b = new Uint8Array(size), dv = new DataView(b.buffer);
+  dv.setUint32(0, 0x574B594B, true);      /* 'KYKW' */
+  dv.setUint16(4, 1, true);
+  b[6] = n; b[7] = k; b[8] = count; b[9] = sinePhase ? 1 : 0;
+  dv.setFloat32(10, sigma, true);
+  for (let i = 0; i < 16 && i < name.length; i++) b[16 + i] = name.charCodeAt(i) & 0x7f;
+  let at = 32;
+  for (const nd of nodes) {
+    for (let a = 0; a < n; a++) { dv.setFloat32(at, nd.pos[a] ?? 0.5, true); at += 4; }
+    for (let i = 0; i < k; i++) { dv.setFloat32(at, nd.mags[i] ?? 0, true); at += 4; }
+  }
+  return b;
+}
+
+/* Send one, chunked. Offsets go in order from zero because the module refuses
+   anything else — random access would have it index a buffer with numbers the
+   host chose. Nothing loads until the last byte lands, so an interrupted send
+   costs the transfer and not the sound that is playing. */
+async function putWorld(link, blob, onProgress) {
+  const max = Math.max(64, (link.maxBody || 1024) - 24);
+  for (let off = 0; off < blob.length; off += max) {
+    const len = Math.min(max, blob.length - off);
+    const req = new Uint8Array(8 + len), dv = new DataView(req.buffer);
+    dv.setUint32(0, blob.length, true);
+    dv.setUint32(4, off, true);
+    req.set(blob.subarray(off, off + len), 8);
+    const r = await link.request(CMD.putWorld, req, { urgent: true });
+    if (r[0] !== 0) throw new Error('module refused the world at offset ' + off + ' (status ' + r[0] + ')');
+    if (onProgress) onProgress(Math.min(blob.length, off + len), blob.length);
+  }
+  return true;
+}
 
 /* 0x60 GET_TELEMETRY body after status (core/kyk_telemetry.h):
  *   u32 block · f32 f0 · u8 n k kcut p planes flags stereo spreadPlane · f32 spread
@@ -806,7 +849,7 @@ const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
-  parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis,
+  parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, buildUserWorld,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KYK = api;
