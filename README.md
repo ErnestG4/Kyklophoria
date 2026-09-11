@@ -9,24 +9,7 @@ a still hand into an orbit through the space.
 **Status: alpha, and it plays.** It runs in the rack and makes sound. Twenty-one
 worlds ship, the rotation and its orbit LFOs are real, ratio coupling works,
 and presets persist. There is design work left: FM and sync are not read, most
-payload lanes are not routed, and the panel layout is still a first guess.
-`docs/spec.md` is the source of truth, `docs/worlds.md` is where the argument
-about what comes next lives, and `docs/m*-notes.md` carry the measurements,
-including the ones that came out the wrong way round.
-
-## Why the extra dimensions
-
-A 2-D wavetable grid has exactly one rotation plane, so "rotate the map" is a
-single knob and mostly a novelty. Four dimensions have six planes, each with
-its own angle, and two of them turning at unrelated rates trace a path that
-never repeats. That is the point of the dimensions: not more waves, but more
-*ways through* the waves.
-
-It only pays off if the space has no favourite directions, and a grid of
-independent synthesis parameters has them badly. Measured, its best direction
-gave about ten times the timbral movement of its worst, so most rotations
-landed a CV on a nearly dead axis. Fixing that drove the content work below.
-`kykspace info` grades any space on that number.
+payload lanes are not routed, and the panel layout is still a first draft.
 
 ## Controls
 
@@ -41,8 +24,7 @@ landed a CV on a nearly dead axis. Fixing that drove the content work below.
 | P5 | Position 2 offset | plane (1,3) | Level |
 | P6 | Position 3 offset | plane (2,3) | CV out A depth |
 
-Four dimensions give six rotation planes, and the panel has six pots. That is
-a coincidence, and a lucky one.
+Four dimensions give six rotation planes, and the panel has six pots. 
 
 Three more pages move the position without you.
 
@@ -56,25 +38,19 @@ Three more pages move the position without you.
 | P6 | plane (2,3) | Radius | — |
 
 **Orbit** turns the rotation planes at rates you set, which never close into a
-repeating figure. **Kepler** drops the position into a softened central
-potential and reads the space wherever it falls, so the second law does the
-work: it rushes through periapsis and lingers at apoapsis, and the timbre
-dwells unevenly rather than gliding. On a world whose axes wrap, gravity wraps
-with them, and the body leaves one side of the space to arrive from the other.
+repeating figure. **Kepler** Designed to introduce orbit between channels. For
+now it's an orbiting modulator. 
 
-**Couple** is the one that changes what the instrument is. Turn it up and each
-pair of orbits pulls the other toward the nearest simple ratio, the figure
-closes, and the waveform snaps into shape. Over a sweep of rate settings, 2.7%
-land on a simple ratio at zero coupling — chance — and 88% at the top of the
-knob. Reach says how exotic a ratio it will settle for.
+**Couple** Turn it up and each pair of orbits pulls the other toward the nearest
+simple ratio. 
 
 **Jacks.** J3 v/oct · J4 to J7 position 0 to 3 · J8 CV out A · J9/J10 stereo
 out. J1 and J2 are reserved for FM and sync and are not read yet.
 
 **Stereo is not a chorus.** The two channels read the space at rotation angles
-either side of centre, so width is an *angular* spread, and an orbit moves
+either side of centre, so width is an angular spread, and an orbit moves
 your ears through the space slightly out of step. At zero spread the output is
-mono, bit for bit.
+mono.
 
 ## Phase is part of the representation
 
@@ -96,9 +72,9 @@ built in that basis.
 
 Twenty-one ship. A world is either a **formula**, evaluated wherever you happen
 to be standing, or a **lattice** of sampled spectra, interpolated between.
-Which one a world is is a property of the world, not a storage decision: a
-formula that exists is 1.3 KB and exact everywhere, and baking it out to a grid
-would cost 1.18 MB to approximate what it just threw away.
+Which one a world is is a property of the world, not a storage decision: if a
+formula is 1.3 KB and exact everywhere, baking it out to a grid
+would cost 1.18 MB for no gain.
 
 | world | what it is | variety | spread |
 |---|---|---|---|

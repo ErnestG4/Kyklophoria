@@ -29,6 +29,7 @@
 #include "kyk_formant.h"
 #include "kyk_shapes.h"
 #include "kyk_lock.h"
+#include "kyk_userworld.h"
 #include "kyk_unison.h"
 #include "kyk_modal.h"
 #include "kyk_bend.h"
@@ -160,6 +161,39 @@ public:
         phase_ = Phase::Sine;
         p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
+    }
+
+    /* A world somebody else wrote.
+     *
+     * Deliberately Kind::Lock and not a kind of its own. The evaluation, the
+     * basin narrowing under Morph, the click-freedom and the continuity
+     * guarantee are all properties of the Lock path, and a parallel path would
+     * be a second place for all four to go wrong. A user world differs from
+     * the built-in twenty-four-cell only in where its numbers came from, so
+     * that is the only thing that differs in the code.
+     *
+     * Returns the parse error; on anything but Ok the world is left None
+     * rather than half-loaded, so a corrupt file is silent and not a fault. */
+    UserError UseUserWorld(const uint8_t* blob, size_t len, int p, const uint8_t* topo,
+                           char* name_out = nullptr)
+    {
+        LockField f;
+        const UserError e = ParseUserWorld(blob, len, f, nodes_, name_out);
+        if(e != UserError::Ok) { kind_ = Kind::None; return e; }
+        lock_  = f;
+        kind_  = Kind::Lock;
+        phase_ = (blob[9] & 1u) ? Phase::Sine : Phase::Random;
+        p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
+        for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
+        return UserError::Ok;
+    }
+
+    /* Serialise whatever Lock-shaped world is loaded, so a built-in can be
+     * exported, edited and loaded back as a starting point. */
+    size_t SaveUserWorld(const char* name, uint8_t* out, size_t cap) const
+    {
+        if(kind_ != Kind::Lock) return 0;
+        return WriteUserWorld(lock_, nodes_, name, out, cap, phase_ == Phase::Sine);
     }
 
     void UseUnison(int n, int k, int p, const uint8_t* topo)
