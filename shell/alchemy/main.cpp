@@ -36,6 +36,7 @@
 #include <type_traits>
 #include "kyk_telemetry.h"
 #include "kyk_ext.h"
+#include "kyk_worldrx.h"
 
 using namespace alchemy;
 using namespace kyk;
@@ -213,6 +214,15 @@ static_assert(std::is_trivially_default_constructible<decltype(gBlob)>::value,
 static uint8_t gBufIdx    = 0;
 static volatile uint8_t gWorldIdx = worlds::kBraids;
 static volatile uint8_t gWorldReq = 0xFFu;   /* 0xFF: nothing pending */
+/* A user world arriving over HostLink. The chunks land here from the main
+ * loop; the parse and the swap happen in ServeWorldRequest with the same
+ * double buffer and barrier a built-in world switch uses, because the audio
+ * thread is reading the live one throughout. */
+/* AXI SRAM, not DTCM. It is nearly seven kilobytes that the audio path never
+ * touches — only a transfer does — and DTCM is the scarcest memory here. */
+static WorldReceiver KYK_AXI gRx;
+static volatile uint8_t gUserReq = 0u;
+static char             gUserName[kUserNameLen + 1] = {0};
 static volatile uint8_t gWorldBusy = 0;
 static StereoEngine KYK_AXI gEng;
 
@@ -372,6 +382,15 @@ struct ModuleSource : ExtSource
         s.render_div    = (uint8_t)gEng.L.render_div;
         s.cycles_budget = kCycBudget;
     }
+    uint8_t PutWorld(uint32_t total, uint32_t off, const uint8_t* data, int len) override
+    {
+        if(gUserReq || gWorldBusy) return 1u;        /* a swap is already in flight */
+        const uint8_t st = gRx.Take(total, off, data, len);
+        if(st != 0u) return st;
+        if(gRx.Done()) gUserReq = 1u;
+        return 0u;
+    }
+
     uint8_t Action(uint8_t op, const uint8_t* args, int len) override
     {
         switch(op)
@@ -516,6 +535,27 @@ static hostlink::Host host(presets, "kyk", "Kyklophoria", KYK_FW_VERSION, KYK_GI
  * enough that it must not happen anywhere near the audio callback. */
 static void ServeWorldRequest()
 {
+    if(gUserReq)
+    {
+        /* Into the buffer the audio thread is not reading, exactly as a
+         * built-in switch does. A parse that refuses leaves that spare buffer
+         * holding rubbish, which costs nothing — it is never swapped in. */
+        gUserReq = 0u;
+        gWorldBusy = 1;
+        const uint8_t wi = (uint8_t)(gBufIdx ^ 1u);
+        const UserError e = gWorlds[wi].UseUserWorld(gRx.Blob(), gRx.Size(), kBootP,
+                                                     nullptr, gUserName);
+        gRx.Reset();
+        if(e == UserError::Ok)
+        {
+            __asm__ volatile("dmb" ::: "memory");
+            gEng.SetWorld(&gWorlds[wi]);
+            gBufIdx   = wi;
+            gWorldIdx = 0xFFu;          /* not one of the built-ins any more */
+        }
+        gWorldBusy = 0;
+        return;
+    }
     const uint8_t req = gWorldReq;
     if(req == 0xFFu || req >= worlds::kCount) return;
     gWorldReq  = 0xFFu;

@@ -11,6 +11,7 @@ answers, and HELLO + telemetry round-trip over it.
 
 Run from the repo root after `make host`: python3 tests/link_check.py
 """
+import math
 import base64, hashlib, os, socket, struct, subprocess, sys, time, zlib, http.client
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -223,6 +224,54 @@ def stdio_tests():
     check(t['n'] == 4 and t['k'] == 64, 'telemetry still sane after two world switches')
     ty, seq, r, ok = link.request(0x64, bytes([4, 99]))
     check(r[0] == 2, 'an out-of-range world is refused')
+
+    # ── a user world, over the real transport ────────────────────────────
+    # Two nodes: a saw and a square, placed at opposite corners of axis 0.
+    # Sent chunked, then the module must actually be playing it.
+    n, k, count = 4, 64, 2
+    nodes = []
+    for which in range(count):
+        pos = [0.1 if which == 0 else 0.9, 0.5, 0.5, 0.5]
+        mags = []
+        for h in range(1, k + 1):
+            if which == 0: mags.append(1.0 / h)                       # saw
+            else:          mags.append((4.0 / (math.pi * h)) if h % 2 else 0.0)  # square
+        nodes.append((pos, mags))
+    blob = bytearray(32 + count * 4 * (n + k))
+    struct.pack_into('<IHBBBB', blob, 0, 0x574B594B, 1, n, k, count, 1)
+    struct.pack_into('<f', blob, 10, 0.26)
+    blob[16:16 + 4] = b'test'
+    at = 32
+    for pos, mags in nodes:
+        for a in pos: struct.pack_into('<f', blob, at, a); at += 4
+        for m in mags: struct.pack_into('<f', blob, at, m); at += 4
+    blob = bytes(blob)
+
+    chunk = maxbody - 24
+    sent = 0
+    while sent < len(blob):
+        take = min(chunk, len(blob) - sent)
+        req = struct.pack('<II', len(blob), sent) + blob[sent:sent + take]
+        ty, seq, r, ok = link.request(0x67, req)
+        if r[0] != 0: break
+        sent += take
+    check(sent == len(blob) and r[0] == 0,
+          f'a {len(blob)}-byte user world transfers in {-(-len(blob)//chunk)} chunks')
+
+    t = telemetry(link, 7)
+    check(t['n'] == n and t['k'] == k, 'the module reports the new geometry')
+
+    # out-of-order and oversized chunks must be refused, not patched in
+    ty, seq, r, ok = link.request(0x67, struct.pack('<II', len(blob), 999) + b'\x00' * 8)
+    check(r[0] == 2, 'an out-of-order chunk is refused')
+    ty, seq, r, ok = link.request(0x67, struct.pack('<II', 0xFFFFFFFF, 0) + b'\x00' * 8)
+    check(r[0] == 2, 'an impossible total is refused')
+    ty, seq, r, ok = link.request(0x67, struct.pack('<II', 64, 0) + b'\x00' * 64)
+    check(r[0] == 1, 'a well-formed transfer of nonsense is refused at parse')
+
+    # and the module still plays after all that
+    t = telemetry(link, 7)
+    check(t['n'] >= 2 and t['k'] >= 1, 'the module is still alive and sane afterwards')
 
     ty, seq, r, ok = link.request(0x63, corrupt=True)
     check(ty == 0xFF and r[0] == 10, f'bad CRC → ERR FRAME_ERROR (type {ty:#x})')

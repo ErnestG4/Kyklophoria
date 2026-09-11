@@ -59,6 +59,10 @@ constexpr uint32_t kUserMagic   = 0x574B594Bu;   /* 'KYKW' */
 constexpr uint16_t kUserVersion = 1u;
 constexpr int      kUserHeader  = 32;
 constexpr int      kUserNameLen = 16;
+/* The largest a world can be: every dimension, every harmonic, every node.
+ * Staging buffers are sized from this so a transfer can never outrun them. */
+constexpr size_t   kUserBlobMax = (size_t)kUserHeader
+                                 + (size_t)kWorldNodes * 4u * (size_t)(kMaxN + kShapeK);
 
 enum class UserError : uint8_t
 {

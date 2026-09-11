@@ -19,6 +19,7 @@
 #include "alchemy/host_link/frame.h"
 #include "alchemy/host_link/wire.h"
 #include "kyk_ext.h"
+#include "kyk_worldrx.h"
 #include "kyk_telemetry.h"
 #include "script.h"
 #include "kyk_worlds.h"
@@ -80,6 +81,35 @@ public:
         return true;
     }
     void Stats(kyk::ExtStats& s) override { s = stats; s.render_div = (uint8_t)(eng ? eng->L.render_div : 1); }
+    /* A user world arriving from the page. The desktop shell keeps it in a
+     * World of its own and switches to it, which is what makes the whole path
+     * testable without hardware. */
+    kyk::WorldReceiver rx;
+    kyk::World         userWorld;
+    char               userName[kyk::kUserNameLen + 1] = {0};
+
+    uint8_t PutWorld(uint32_t total, uint32_t off, const uint8_t* data, int len) override
+    {
+        const uint8_t st = rx.Take(total, off, data, len);
+        if(st != 0u || !rx.Done()) return st;
+        /* Parse into scratch first, then copy over the live world.
+         *
+         * Two reasons, both learned the hard way. Repointing the engine at a
+         * different World object races the audio thread — kActSelectWorld
+         * rebuilds *world in place for exactly that reason, and doing
+         * otherwise made the very next telemetry request come back empty. And
+         * UseUserWorld leaves the destination None when it refuses, so parsing
+         * straight into the live world would let a corrupt file silence a
+         * module that was playing perfectly well. */
+        const kyk::UserError e =
+            userWorld.UseUserWorld(rx.Blob(), rx.Size(), 8, nullptr, userName);
+        rx.Reset();
+        if(e != kyk::UserError::Ok) return 1u;
+        *world    = userWorld;
+        world_idx = kNoWorld;
+        return 0u;
+    }
+
     uint8_t Action(uint8_t op, const uint8_t* args, int len) override
     {
         if(!eng) return 3u;

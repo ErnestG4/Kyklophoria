@@ -36,6 +36,7 @@ constexpr uint8_t kCmdStats      = 0x63;
 constexpr uint8_t kCmdAction     = 0x64;
 constexpr uint8_t kCmdWorlds     = 0x65;   /* the list, and which one is live */
 constexpr uint8_t kCmdBasis      = 0x66;   /* an analytic world's formula, chunked */
+constexpr uint8_t kCmdPutWorld   = 0x67;   /* a user world, chunked host to module */
 constexpr uint8_t kCmdSetControl = 0x6E;   /* desktop bridge only */
 
 enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace = 2, kActRenderDiv = 3,
@@ -82,6 +83,16 @@ struct ExtSource
     }
 
     /* Desktop: set f0, control frame, angles and spread. Module: unsupported. */
+    /* Receive one chunk of a user world.
+     *
+     * Offsets must arrive in order and start at zero: random access would mean
+     * trusting a stranger's offsets to index a buffer, and in-order costs the
+     * host nothing since it is sending a file it already has. The source
+     * accumulates, and on the last chunk parses, validates and loads — so a
+     * transfer that stops half way leaves the running world untouched. */
+    virtual uint8_t PutWorld(uint32_t total, uint32_t off, const uint8_t* data, int len)
+    { (void)total; (void)off; (void)data; (void)len; return 1u; }
+
     virtual uint8_t SetControl(float f0, const float* c, int n, const float* angles, int planes, float spread)
     {
         (void)f0; (void)c; (void)n; (void)angles; (void)planes; (void)spread;
@@ -196,6 +207,16 @@ public:
                     w.Str(names[i] ? names[i] : "");
                     w.Str(notes[i] ? notes[i] : "");
                 }
+                return;
+            }
+            case kCmdPutWorld:
+            {
+                if(f.len < 8) { w.U8(2u); return; }
+                uint32_t total, off;
+                std::memcpy(&total, f.body, 4);
+                std::memcpy(&off, f.body + 4, 4);
+                w.U8(src_.PutWorld(total, off, f.body + 8, (int)f.len - 8));
+                w.U32(off + (uint32_t)(f.len - 8));   /* what the module now holds */
                 return;
             }
             case kCmdBasis:
