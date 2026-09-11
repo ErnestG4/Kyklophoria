@@ -36,6 +36,11 @@
   .chip.on { border-color: var(--hot); color: var(--hot); }
   .chip.analytic::after { content: " ƒ"; opacity: .75; }   /* has a formula */
   .chip:disabled { opacity: .45; cursor: default; }
+  /* A select rather than a chip row: twenty-one worlds and an open-ended list
+     of files are both too many to lay out flat, and a dropdown is the honest
+     control for a long list. */
+  #worldbar select { background: #0f141a; color: var(--ink); border: 1px solid #263039;
+                     border-radius: 3px; padding: 1px 4px; font: inherit; max-width: 180px; }
   main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 34%); gap: 0; min-height: 0; }
   .pane { position: relative; min-width: 0; min-height: 0; border-right: 1px solid var(--line); }
   .pane:last-child { border-right: 0; }
@@ -81,6 +86,17 @@
     <span class="sp"></span>
     <span class="cap">TAIL</span>
     <span id="trailChips"></span>
+  </div>
+  <div class="wrow">
+    <span class="cap">MORPH</span>
+    <select id="morphSel"><option value="255">off</option></select>
+    <span id="morphState" style="color: var(--dim)"></span>
+    <span class="sp"></span>
+    <span class="cap">CARD</span>
+    <select id="cardSel"></select>
+    <button class="chip" id="cardLoad">load</button>
+    <button class="chip" id="cardScan">rescan</button>
+    <span id="cardState" style="color: var(--dim)"></span>
   </div>
 </nav>
 <main>
@@ -281,6 +297,8 @@ async function connect(transport) {
   $('modinfo').textContent = `${info.name} · fw ${info.fw} (${info.git}) · ${transport.kind}`;
   $('sMod').textContent = info.id + ' ' + info.fw;
   await refreshWorlds();
+  renderMorphSel();
+  await refreshCard();
   $('btnClose').hidden = false; $('btnSerial').hidden = true; $('btnBridge').hidden = true;
   const dev = transport.kind === 'bridge';
   $('btnDrawer').hidden = !dev;
@@ -433,6 +451,60 @@ function renderWorldBar() {
   showCurrent();
   renderShadeChips();
 }
+/* ── the things you choose rather than play ──────────────────────────────
+ *
+ * Which world to morph towards, and which file on the card to load. Both are
+ * setup decisions with too many options to lay out as chips, and both live
+ * here rather than on the panel — the panel carries the Morph knob itself,
+ * which is the half you want under a finger while playing.
+ */
+let cardList = { count: 0, names: [] };
+
+function renderMorphSel() {
+  const sel = $('morphSel');
+  const cur = sel.value;
+  sel.innerHTML = '';
+  const off = document.createElement('option');
+  off.value = '255'; off.textContent = 'off';
+  sel.appendChild(off);
+  if (worlds) for (let i = 0; i < worlds.list.length; i++) {
+    const o = document.createElement('option');
+    o.value = String(i); o.textContent = worlds.list[i].name || ('world ' + i);
+    sel.appendChild(o);
+  }
+  sel.value = cur && [...sel.options].some(o => o.value === cur) ? cur : '255';
+  sel.disabled = !link;
+}
+
+function renderCardSel() {
+  const sel = $('cardSel');
+  sel.innerHTML = '';
+  if (!cardList.names.length) {
+    const o = document.createElement('option');
+    o.value = ''; o.textContent = link ? 'no worlds on the card' : '—';
+    sel.appendChild(o);
+  } else for (const nm of cardList.names) {
+    const o = document.createElement('option');
+    o.value = nm; o.textContent = nm.replace(/\.kykw$/i, '');
+    sel.appendChild(o);
+  }
+  const none = !link || !cardList.names.length;
+  sel.disabled = none;
+  $('cardLoad').disabled = none;
+  $('cardScan').disabled = !link;
+  /* The count comes from the module even when the names did not all fit, so
+     say when the list on screen is shorter than what is actually there. */
+  $('cardState').textContent = cardList.count > cardList.names.length
+    ? `${cardList.names.length} of ${cardList.count} shown` : '';
+}
+
+async function refreshCard() {
+  if (!link) { cardList = { count: 0, names: [] }; renderCardSel(); return; }
+  try { cardList = await MVL.fetchCardWorlds(link); }
+  catch { cardList = { count: 0, names: [] }; }
+  renderCardSel();
+}
+
 function renderTrailChips() {
   const box = $('trailChips'); box.innerHTML = '';
   const group = (items, cur, pick) => {
@@ -493,6 +565,29 @@ function renderShadeChips() {
 }
 renderWorldBar();
 renderTrailChips();
+renderMorphSel();
+renderCardSel();
+$('morphSel').onchange = async () => {
+  if (!link) return;
+  const v = parseInt($('morphSel').value, 10);
+  try { await link.request(MVL.CMD.action, MVL.actionReq(5, [v & 0xff]), { urgent: true }); }
+  catch (e) { say('morph target: ' + e.message, true); }
+};
+$('cardScan').onclick = async () => {
+  if (!link) return;
+  try { await link.request(MVL.CMD.action, MVL.actionReq(6, []), { urgent: true }); await refreshCard(); }
+  catch (e) { say('rescan: ' + e.message, true); }
+};
+$('cardLoad').onclick = async () => {
+  if (!link) return;
+  const i = $('cardSel').selectedIndex;
+  if (i < 0 || !cardList.names.length) return;
+  try {
+    await link.request(MVL.CMD.action, MVL.actionReq(7, [i & 0xff]), { urgent: true });
+    say('loading ' + cardList.names[i]);
+    setTimeout(() => { refreshWorlds(); }, 250);
+  } catch (e) { say('load: ' + e.message, true); }
+};
 
 /* ── polling ────────────────────────────────────────────────────────── */
 async function pollTelemetry() {
@@ -1463,6 +1558,19 @@ function drawStatus() {
   setText('sBlock', String(tel.block));
   setText('sF0', tel.f0.toFixed(1) + ' Hz ' + MVL.noteName(tel.f0));
   setText('sKcut', tel.kcut + '/' + tel.k);
+  /* What the Morph knob is actually doing. A knob whose effect is invisible is
+     a knob nobody trusts, and this one does nothing at all unless a target is
+     set — which is worth saying rather than leaving to be discovered. */
+  {
+    const mw = tel.morphWorld;
+    const named = mw !== 0xFF && worlds && worlds.list[mw] ? worlds.list[mw].name : null;
+    setText('morphState', mw === 0xFF ? 'no target — the knob does nothing'
+            : `${(tel.morph * 100).toFixed(0)}% towards ${named || ('world ' + mw)}`);
+    /* keep the dropdown honest if the target was set from somewhere else */
+    const sel = $('morphSel');
+    if (sel && !sel.disabled && String(mw) !== sel.value && document.activeElement !== sel)
+      sel.value = String(mw);
+  }
   const sw = stereoWidth(tel);
   setText('sSpread', !sw ? 'mono'
     : `${tel.spread.toFixed(3)} turns · plane ${MVL.planeAxes(tel.n, tel.spreadPlane).join('')}`

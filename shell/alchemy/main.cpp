@@ -443,7 +443,7 @@ struct ModuleSource : ExtSource
          * rendering, which is exactly the block that sets the CPU maximum. A
          * field or two may be torn instead; this is a display feed at 60 Hz
          * and nobody can see a one-frame inconsistency. */
-        return EncodeTelemetry(gEng, flags, out, cap, pager.Page());
+        return EncodeTelemetry(gEng, flags, out, cap, pager.Page(), gMorphIdx);
     }
     bool SpaceInfo(SpaceHeader& h, uint32_t& crc, uint16_t& stride) override
     {

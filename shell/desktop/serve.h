@@ -61,7 +61,7 @@ public:
 
     int Telemetry(uint8_t flags, uint8_t* out, int cap) override
     {
-        return eng ? kyk::EncodeTelemetry(*eng, flags, out, cap) : 0;
+        return eng ? kyk::EncodeTelemetry(*eng, flags, out, cap, 0u, morphIdx) : 0;
     }
     bool SpaceInfo(kyk::SpaceHeader& h, uint32_t& crc, uint16_t& stride) override
     {

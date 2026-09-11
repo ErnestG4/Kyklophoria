@@ -13,6 +13,8 @@
  *             f32 kep_rush · f32 couple · f32 lock · u8 sharp
  *             u8 kep_bodies · f32 x,y for bodies 1..kep_bodies-1
  *             u8 page — which pager page the panel is showing
+ *             u8 morph · u8 morph_world — how far towards another world, and
+ *                        which one (0xFF: none, so the knob does nothing)
  *
  * That last block is how the position is moving of its own accord: the
  * falling body, and how hard the orbit planes are pulling on each other. It
@@ -77,7 +79,7 @@ struct Put
 
 /* Returns bytes written, or 0 if cap is too small. */
 inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, int cap,
-                           uint8_t page = 0)
+                           uint8_t page = 0, uint8_t morph_world = 0xFFu)
 {
     const World* s = e.WorldPtr();
     if(!s || !s->Ready()) return 0;
@@ -137,6 +139,12 @@ inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, i
          * of each page are; this says which six you are currently holding, so
          * the page can mirror the panel instead of describing it in general. */
         w.U8(page);
+        /* The Morph knob and its target. Without these the page cannot show
+         * whether the knob is doing anything, and a knob whose effect is
+         * invisible is a knob nobody trusts. */
+        const float mo = e.Morph() < 0.f ? 0.f : (e.Morph() > 1.f ? 1.f : e.Morph());
+        w.U8((uint8_t)(mo * 255.f + 0.5f));
+        w.U8(morph_world);
     }
     return w.ok ? w.n : 0;
 }
@@ -148,7 +156,7 @@ inline int TelemetrySize(int n, int k, int p, uint8_t flags)
     int       sz     = 4 + 4 + 6 + 2 + 4 + 4 * (4 * n + planes + p);
     if(flags & kTelSpectrum) sz += k;
     if(flags & kTelFrame) sz += kTelFramePts;
-    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1;
+    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2;
     return sz;
 }
 
