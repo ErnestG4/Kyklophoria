@@ -38,6 +38,11 @@ echo "== morph_check =="
 $CXX $CORE_FLAGS $SAN tests/morph_check.cpp -o "$OUT/morph_check" || fail=1
 "$OUT/morph_check" || fail=1
 
+echo "== morphworld_check =="
+$CXX $CORE_FLAGS $SAN tests/morphworld_check.cpp -o "$OUT/morphworld_check" || fail=1
+"$OUT/morphworld_check" > "$OUT/mw.txt" || { cat "$OUT/mw.txt"; fail=1; }
+grep -q "all passed" "$OUT/mw.txt" || { cat "$OUT/mw.txt"; fail=1; }
+
 echo "== user_check =="
 $CXX $CORE_FLAGS $SAN tests/user_check.cpp -o "$OUT/user_check" || fail=1
 "$OUT/user_check" > "$OUT/user.txt" || { cat "$OUT/user.txt"; fail=1; }

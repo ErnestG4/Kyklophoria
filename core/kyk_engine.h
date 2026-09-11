@@ -106,6 +106,36 @@ public:
             for(int a = 0; a < kMaxN; a++) rendered_[a] = c_[a];
             world_->Fold(c_, p_);
             world_->Evaluate(p_, sharp, mags_, payload_, wt_);
+            /* Blend a second world in, if one is set.
+             *
+             * This is the whole of cross-world morphing on the audio side, and
+             * it is three lines because the representation was built for it:
+             * the render is linear in the coefficient vector, so a blend of two
+             * spectra is a spectrum and cannot click, whatever the two worlds
+             * are or which backends they use. It costs one extra Evaluate and
+             * no extra transform, since the FFT is the same size regardless.
+             *
+             * What it deliberately does not do is translate the position.
+             * Axis 0 of FM is a modulation index and axis 0 of Plate is a
+             * strike position, so holding the coordinates fixed morphs through
+             * whatever those collide at. Measured (tools/worldbasis), the
+             * subspaces of most pairs of worlds sit about seventy degrees
+             * apart, so no small matrix can fix that in general — the honest
+             * place for the translation is the host, which has every
+             * evaluator and can search for the matching point before it asks
+             * for the morph. */
+            if(morph_ > 0.f && morph_world_ && morph_world_->Ready()
+               && morph_world_->K() == world_->K())
+            {
+                float mb[kMaxK], pb[kMaxP];
+                Weights wb;
+                morph_world_->Fold(c_, pm_);
+                morph_world_->Evaluate(pm_, sharp, mb, pb, wb);
+                const float t = morph_ > 1.f ? 1.f : morph_;
+                const int   k = world_->K();
+                for(int i = 0; i < k; i++) mags_[i] += t * (mb[i] - mags_[i]);
+                for(int j = 0; j < world_->P(); j++) payload_[j] += t * (pb[j] - payload_[j]);
+            }
             Bandlimit();
             /* A shaped world renders into the scratch and its last shaper
              * writes the oscillator's frame, so no stage has to copy a buffer.
@@ -143,6 +173,12 @@ public:
     /* Swap the world under a running voice. One pointer write, so the audio
      * thread either sees the old world or the new one and never a mixture —
      * provided the caller finished building the new World before calling. */
+    /* The world to blend towards, and how far. morph 0 or a null world is
+     * exactly the single-world path, bit for bit. */
+    void SetMorph(const World* w, float amount) { morph_world_ = w; morph_ = amount; dirty_ = true; }
+    const World* MorphWorld() const { return morph_world_; }
+    float        Morph() const { return morph_; }
+
     void SetWorld(const World* w)
     {
         world_ = w;
@@ -320,6 +356,12 @@ private:
     }
 
     const World* world_ = nullptr;
+
+    const World*   morph_world_ = nullptr;
+
+    float          morph_ = 0.f;
+
+    float          pm_[kMaxN] = {0.f};
     float        sr_    = 48000.f;
     Osc          osc_;
     FftScratch   sc_;
