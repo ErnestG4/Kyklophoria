@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote'.split(' ');
+const IDS = 'axes btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState'.split(' ');
 const calls = [];
 const ctx2d = new Proxy({}, {
   get(_, k) {
@@ -42,7 +42,9 @@ function mkEl(tag) {
   const el = {
     tagName: tag, style: {}, dataset: {}, children: [], className: '', textContent: '', title: '',
     classList: { add(){}, remove(){}, toggle(){}, contains(){ return false; } },
-    disabled: false, value: '', checked: false, onclick: null, oninput: null,
+    disabled: false, value: '', checked: false, onclick: null, oninput: null, onchange: null,
+    selectedIndex: -1,
+    get options() { return this.children; },
     width: 300, height: 300, clientWidth: 300, clientHeight: 300,
     appendChild(c) { this.children.push(c); return c; },
     removeChild() {}, remove() {}, setAttribute() {}, getAttribute() { return null; },
@@ -102,7 +104,8 @@ function tel(over = {}) {
     mags: Uint8Array.from({ length: k }, (_, i) => 200 - i * 2),
     frame: Int8Array.from({ length: 256 }, (_, i) => Math.round(100 * Math.sin(i / 8))),
     kepler: { running: false, plane: 0, x: 0, y: 0, rush: 0 },
-    couple: 0, lock: 0, sharp: 0, bodies: 1, kepXY: [], bytes: 512,
+    couple: 0, lock: 0, sharp: 0, bodies: 1, kepXY: [], page: 0,
+    morph: 0, morphWorld: 0xFF, bytes: 512,
   }, over);
 }
 const CASES = [
@@ -122,6 +125,8 @@ const CASES = [
   ['bodies claimed but positions missing', tel({ bodies: 4, kepXY: [],
       kepler: { running: true, plane: 0, x: 0.1, y: 0.1, rush: 0.5 } })],
   ['no mags / no frame', tel({ mags: null, frame: null, flags: 4 })],
+  ['morphing to a named world', tel({ morph: 0.42, morphWorld: 9 })],
+  ['morphing to a world index nobody has', tel({ morph: 1.0, morphWorld: 200 })],
 ];
 
 /* The panel mirror, from a descriptor shaped the way the SDK emits one

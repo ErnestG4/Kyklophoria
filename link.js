@@ -21,7 +21,7 @@ const PROTO = 1;
 const CMD = {
   hello: 0x01, getDescriptor: 0x02,
   telemetry: 0x60, spaceInfo: 0x61, cell: 0x62, stats: 0x63, action: 0x64,
-  worlds: 0x65, basis: 0x66, putWorld: 0x67, setControl: 0x6e,
+  worlds: 0x65, basis: 0x66, putWorld: 0x67, cardWorlds: 0x68, setControl: 0x6e,
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4 };
 const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5, table: 6, lock: 7, unison: 8, modal: 9, bend: 10 };
@@ -266,6 +266,24 @@ function buildUserWorld(nodes, { n = 4, k = 64, sigma = 0.26, name = '', sinePha
   return b;
 }
 
+/* What .kykw files the card's /kyklophoria folder holds. The count comes
+   before the names so a host can size its list even when the body ran out
+   before the names did. */
+async function fetchCardWorlds(link) {
+  const b = await link.request(CMD.cardWorlds, new Uint8Array(0), { key: 'card' });
+  if (!b.length || b[0] !== 0) return { count: 0, names: [] };
+  const count = b[1] || 0;
+  const names = [];
+  let at = 2;
+  while (at < b.length && names.length < count) {
+    const n = b[at++];
+    if (at + n > b.length) break;
+    names.push(new TextDecoder().decode(b.subarray(at, at + n)));
+    at += n;
+  }
+  return { count, names };
+}
+
 /* Send one, chunked. Offsets go in order from zero because the module refuses
    anything else — random access would have it index a buffer with numbers the
    host chose. Nothing loads until the last byte lands, so an interrupted send
@@ -319,6 +337,10 @@ function parseTelemetry(b) {
        knobs are under the player's hands right now */
     t.page = b.length > at ? b[at] : 0;
     at += b.length > at ? 1 : 0;
+    /* the Morph knob and what it is blending towards (0xFF: nothing) */
+    t.morph = b.length > at ? b[at] / 255 : 0;
+    t.morphWorld = b.length > at + 1 ? b[at + 1] : 0xFF;
+    at += b.length > at + 1 ? 2 : 0;
   }
   t.bytes = b.length;
   return t;
@@ -849,7 +871,7 @@ const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
-  parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, buildUserWorld,
+  parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, buildUserWorld, fetchCardWorlds,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KYK = api;
