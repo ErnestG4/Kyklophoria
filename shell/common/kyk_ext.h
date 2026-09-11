@@ -40,7 +40,11 @@ constexpr uint8_t kCmdPutWorld   = 0x67;   /* a user world, chunked host to modu
 constexpr uint8_t kCmdSetControl = 0x6E;   /* desktop bridge only */
 
 enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace = 2, kActRenderDiv = 3,
-                          kActSelectWorld = 4 };
+                          kActSelectWorld = 4,
+                          /* which world the Morph knob blends towards; 0xFF
+                             clears it. Choosing is setup and lives on the
+                             page; how far is a knob and lives on the panel. */
+                          kActMorphWorld = 5 };
 
 struct ExtStats
 {

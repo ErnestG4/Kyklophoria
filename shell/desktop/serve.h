@@ -84,6 +84,10 @@ public:
     /* A user world arriving from the page. The desktop shell keeps it in a
      * World of its own and switches to it, which is what makes the whole path
      * testable without hardware. */
+    kyk::World                morphWorld;
+    kyk::solids::VertexTable  morphTable;
+    uint8_t                   morphIdx = 0xFFu;
+    float                     morphAmt = 0.5f;
     kyk::WorldReceiver rx;
     kyk::World         userWorld;
     char               userName[kyk::kUserNameLen + 1] = {0};
@@ -117,6 +121,17 @@ public:
         {
             case kyk::kActResetPhase: eng->L.ResetPhase(); eng->R.ResetPhase(); return 0u;
             case kyk::kActRenderDiv: if(len < 1 || args[0] < 1) return 2u; eng->SetRenderDiv(args[0]); return 0u;
+            case kyk::kActMorphWorld:
+            {
+                if(len < 1) return 2u;
+                if(args[0] == 0xFFu) { eng->SetMorph(nullptr, 0.f); morphIdx = 0xFFu; return 0u; }
+                if(args[0] >= kyk::worlds::kCount) return 2u;
+                if(!kyk::worlds::IsAnalytic(args[0])) return 2u;   /* formula worlds only here */
+                if(!kyk::worlds::Point(args[0], morphWorld, 8, nullptr, &morphTable)) return 3u;
+                eng->SetMorph(&morphWorld, morphAmt);
+                morphIdx = args[0];
+                return 0u;
+            }
             case kyk::kActSelectWorld:
             {
                 if(len < 1 || args[0] >= kyk::worlds::kCount) return 2u;

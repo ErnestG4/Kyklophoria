@@ -83,6 +83,13 @@ public:
     }
 
     /* Engine tunables, applied to both voices. */
+    /* Both voices morph together: the stereo pair is one timbre read at two
+     * points, and letting the ears disagree about which world they are in
+     * would be a different instrument. */
+    void SetMorph(const World* w, float amount) { L.SetMorph(w, amount); R.SetMorph(w, amount); }
+    float Morph() const { return L.Morph(); }
+    const World* MorphWorld() const { return L.MorphWorld(); }
+
     void SetGain(float g) { L.gain = g; R.gain = g; }
     void SetRenderDiv(int d)
     {

@@ -273,6 +273,16 @@ def stdio_tests():
     t = telemetry(link, 7)
     check(t['n'] >= 2 and t['k'] >= 1, 'the module is still alive and sane afterwards')
 
+    # ── cross-world morph, over the link ─────────────────────────────────
+    ty, seq, r, ok = link.request(0x64, bytes([5, analytic]))
+    check(r[0] == 0, 'a morph target can be selected')
+    t = telemetry(link, 7)
+    check(t['n'] == 4, 'the module is fine with a morph target set')
+    ty, seq, r, ok = link.request(0x64, bytes([5, 0xFF]))
+    check(r[0] == 0, 'and cleared')
+    ty, seq, r, ok = link.request(0x64, bytes([5, 99]))
+    check(r[0] == 2, 'an out-of-range morph target is refused')
+
     ty, seq, r, ok = link.request(0x63, corrupt=True)
     check(ty == 0xFF and r[0] == 10, f'bad CRC → ERR FRAME_ERROR (type {ty:#x})')
     link.close()

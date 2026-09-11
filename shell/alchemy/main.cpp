@@ -168,7 +168,10 @@ static VirtualKnob k_ratex  = VirtualKnob(2, "Rate").Unit("x").Ident("orb.ratex"
  * pulling on each other. One body closes, two beat, three never repeat. */
 static VirtualKnob k_kbody  = VirtualKnob(3, "Bodies").Selector(8).Ident("kep.bodies").Ring(Level(kCouple));
 static VirtualKnob k_kmass  = VirtualKnob(4, "Company").Ident("kep.mass").Ring(Level(kCouple));
-static Page page_couple = Page(5).Name("Couple").Color("#f0a0d8").Knobs(k_couple, k_reach, k_ratex, k_kbody, k_kmass);
+/* How far towards the other world. Which world is a setup choice and lives on
+ * the page; how far is a performance one and belongs under a finger. */
+static VirtualKnob k_morph  = VirtualKnob(5, "World morph").Ident("world.morph").Ring(Level(kCouple));
+static Page page_couple = Page(5).Name("Couple").Color("#f0a0d8").Knobs(k_couple, k_reach, k_ratex, k_kbody, k_kmass, k_morph);
 static Page page_stereo = Page(2).Name("Stereo").Color("#c4b5fd").Knobs(k_spread, k_plane, k_sharp, k_rdiv, k_level, k_cvdep);
 
 /* ── jacks (descriptor metadata; the web panel mirror reads these) ───────── */
@@ -189,13 +192,26 @@ static constexpr int kBootN = 4, kBootSide = 8, kBootK = 64, kBootP = 8;
 /* Two lattice buffers, so a tabulated world can be expanded while the current
  * one keeps playing; the swap is then a single pointer write. Analytic worlds
  * need neither buffer nor wait, which is why the module boots into one. */
-static uint8_t KYK_SDRAM gBlob[2][Space::BlobSize(kBootN, kBootK, kBootP, kBootSide, false)];
-static Space   gSpace[2];
+static uint8_t KYK_SDRAM gBlob[3][Space::BlobSize(kBootN, kBootK, kBootP, kBootSide, false)];
+static Space   gSpace[3];
+/* Two worlds in the double buffer a switch swaps between, and a third for
+ * whatever the Morph knob is blending towards — it has to stay live while the
+ * other two are swapped underneath it.
+ *
+ * The third lives in AXI SRAM rather than with the other two. A World is seven
+ * kilobytes, mostly node buffer, and putting all three in DTCM took it from
+ * 73.6% to 79.1%. Moving the *playing* pair out would change where the audio
+ * path reads its spectra from on every world, and Shapes 2 already measures
+ * around 72% of budget on the bench — not a thing to change as a side effect of
+ * adding a feature. The morph target is read on the same path, so if this ever
+ * shows up in the numbers it can move back and the pair can move out together,
+ * deliberately and with a measurement. */
 static World   gWorlds[2];
+static World   KYK_AXI gMorphWorld;
 /* A vertex world's table, one per world buffer so a switch never rewrites
  * the table the other one is still playing from. SDRAM: at K=128 each is
  * 17 KB, which DTCM cannot spare. */
-static solids::VertexTable KYK_SDRAM gVertTable[2];
+static solids::VertexTable KYK_SDRAM gVertTable[3];
 /* Anything in SDRAM must be trivially constructible.
  *
  * .init_array runs before main(), and main() is where hw.Init() brings up the
@@ -222,6 +238,9 @@ static volatile uint8_t gWorldReq = 0xFFu;   /* 0xFF: nothing pending */
  * touches — only a transfer does — and DTCM is the scarcest memory here. */
 static WorldReceiver KYK_AXI gRx;
 static volatile uint8_t gUserReq = 0u;
+static constexpr uint8_t kMorphSlot = 2u;    /* blob/space/vtable slot */
+static volatile uint8_t gMorphReq = 0xFFu;   /* world index to load there */
+static volatile uint8_t gMorphIdx = 0xFFu;   /* what is loaded there now */
 static char             gUserName[kUserNameLen + 1] = {0};
 static volatile uint8_t gWorldBusy = 0;
 static StereoEngine KYK_AXI gEng;
@@ -320,6 +339,9 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
         gKepOn = on;
     }
     gEng.sharp = k_sharp.Norm();
+    /* Nothing to blend towards means no blend, whatever the knob says. */
+    gEng.SetMorph(gMorphIdx == 0xFFu ? nullptr : &gMorphWorld,
+                  gMorphIdx == 0xFFu ? 0.f : k_morph.Norm());
     /* 0.23 is the headroom the measured crest factor needs; the knob scales
      * from silence to that, so a cell can no longer peak past full scale. */
     gEng.SetGain(0.23f * k_level.Norm());
@@ -401,6 +423,14 @@ struct ModuleSource : ExtSource
                 if(len < 1 || args[0] >= worlds::kCount) return 2u;
                 if(gWorldBusy) return 9u;                     /* BUSY */
                 gWorldReq = args[0];
+                return 0u;
+            case kActMorphWorld:
+                /* 0xFF clears the target, which is the only way to get the
+                   single-world path back regardless of where the knob sits. */
+                if(len < 1) return 2u;
+                if(args[0] != 0xFFu && args[0] >= worlds::kCount) return 2u;
+                if(gWorldBusy) return 9u;
+                gMorphReq = args[0];
                 return 0u;
             default: return 1u;
         }
@@ -554,6 +584,30 @@ static void ServeWorldRequest()
             gWorldIdx = 0xFFu;          /* not one of the built-ins any more */
         }
         gWorldBusy = 0;
+        return;
+    }
+    /* The morph target, built into its own slot so a world switch can swap the
+     * other two underneath it without disturbing what we are blending towards. */
+    const uint8_t mreq = gMorphReq;
+    if(mreq != 0xFFu)
+    {
+        gMorphReq = 0xFFu;
+        if(mreq >= worlds::kCount) { gEng.SetMorph(nullptr, 0.f); gMorphIdx = 0xFFu; }
+        else
+        {
+            bool ok = true;
+            if(worlds::IsAnalytic(mreq))
+                ok = worlds::Point(mreq, gMorphWorld, kBootP, nullptr, &gVertTable[kMorphSlot]);
+            else
+            {
+                const size_t n = worlds::Expand(mreq, kBootN, kBootSide, kBootK, kBootP,
+                                                gBlob[kMorphSlot], sizeof(gBlob[kMorphSlot]));
+                ok = n != 0 && gSpace[kMorphSlot].Attach(gBlob[kMorphSlot], n) == SpaceError::Ok;
+                if(ok) gMorphWorld.UseLattice(&gSpace[kMorphSlot]);
+            }
+            __asm__ volatile("dmb" ::: "memory");
+            gMorphIdx = ok ? mreq : 0xFFu;
+        }
         return;
     }
     const uint8_t req = gWorldReq;
