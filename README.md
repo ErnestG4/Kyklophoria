@@ -6,7 +6,7 @@ The wavetable is not a line or a grid but a 4-dimensional space of spectra
 so one cable sweeps a diagonal slice no axis reaches, and slow rotation turns
 a still hand into an orbit through the space.
 
-**Status: alpha, and it plays.** It runs in the rack and makes sound. Twenty-one
+**Status: beta.** It runs in the rack and makes sound. Twenty-one
 worlds ship, the rotation and its orbit LFOs are real, ratio coupling works,
 and presets persist. There is design work left: FM and sync are not read, most
 payload lanes are not routed, and the panel layout is still a first draft.
@@ -33,9 +33,9 @@ Three more pages move the position without you.
 | P1 | plane (0,1) rate | Gravity, off at the bottom | **Coupling** |
 | P2 | plane (0,2) | Eccentricity | Reach, 1 to 5 |
 | P3 | plane (0,3) | Orbit plane | Rate ×, detent at 1 |
-| P4 | plane (1,2) | Softening | — |
-| P5 | plane (1,3) | Damping | — |
-| P6 | plane (2,3) | Radius | — |
+| P4 | plane (1,2) | Softening | **Bodies**, 1 to 8 |
+| P5 | plane (1,3) | Damping | **Company**: their mass |
+| P6 | plane (2,3) | Radius | **World morph** |
 
 **Orbit** turns the rotation planes at rates you set, which never close into a
 repeating figure. **Kepler** Designed to introduce orbit between channels. For
@@ -67,6 +67,33 @@ the textbook series, at a slightly better crest factor than random phase was
 costing. A negative coefficient is a half turn, so blending stays linear and
 click-freedom survives intact. Everything from Shapes down the table below is
 built in that basis.
+
+## Worlds you write yourself
+
+A world is 24 spectra at 24 positions, blended by distance, with Morph
+narrowing the basins until arriving at a vertex arrives at that exact waveform.
+That is what `Lock` is; the only thing that made it uncurated was that its
+spectra came from a switch statement. So a user world is that written down —
+6560 bytes for a four-dimensional one — and it loads into the same code path,
+which is why click-freedom and the continuity guarantee come with it unchanged.
+
+Single-cycle WAVs import from the page: WaveEdit and the AKWF corpus already
+make and shape them better than anything here would, so this only imports and
+places. A node is signed coefficients on the sine basis, so an import loses
+whatever sits in the cosine half — measured over 401 AKWF waveforms, after
+searching for the best rotation of the cycle, the mean keeps 94.1% and the worst
+54.6%. The page shows the worst fit of a set by name rather than hiding it.
+Per-harmonic phase would make import exact and is not available: click-freedom
+rests on every cell sharing one phase spectrum, and giving each node its own
+would let partials cancel, which is the comb-filtered dip the whole design
+exists to make unreachable.
+
+**Where this stops, for now.** Import places nodes on the 24-cell's own vertices
+and there is no way to move them yet; a world sent from the page lives in RAM
+and is gone at the next boot. The SD card is read-only here — put `.kykw` files
+in `/kyklophoria` on it from a computer and the module lists and loads them —
+so saving one you built on the page means the card cannot help yet. None of
+this is needed to play the instrument; it is needed to keep what you make.
 
 ## Worlds
 
@@ -191,8 +218,14 @@ counts instructions rather than trusting a stopwatch on a laptop.
 `web/index.html` is one static page over Web Serial: where you are in the
 space, over a shaded map of the world you are standing in, with the live frame,
 its spectrum and the band limit, the rotation planes, the Kepler orbit and a
-CPU readout. It is a readout, not a remote control, and almost everything on it
-comes *from* the module.
+CPU readout. It also mirrors the panel — which page you are on, what its six
+knobs do and where they are sitting — and carries the things that are setup
+rather than playing: the morph target and whether it is aimed, which motions are
+muted, which world to load from the card, and importing WAVs.
+
+It is a readout first. Everything it shows comes *from* the module, including
+the state of its own controls, so two pages open at once agree and a preset load
+is not something it has to be told about.
 
 Because a world is a formula, the page evaluates the whole projection plane
 itself and shades it, rather than drawing dots where the module happened to
@@ -222,11 +255,17 @@ flash together, or the page will parse an older shape than the module sends.
 
 ## Not built yet
 
-FM and sync inputs; the filter, drive and FM-index payload lanes (only CV out A
-is routed); wrap and sphere topologies on the panel; loading spaces from the
-card; scattered (non-lattice) spaces; per-axis LFO shapes and axis masks.
-The rotation, the orbits, the coupling, the stereo pair and presets are real.
-Much of the rest of `docs/spec.md` is still a plan.
+Writing to the card, so a world you build on the page can be kept. Moving
+imported nodes rather than taking the placement you are given. FM and sync
+inputs. The filter, drive and FM-index payload lanes — only CV out A is routed.
+Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
+(non-lattice) spaces.
+
+**What has been played and what has not.** The twenty-one built-in worlds are
+what has had real time on the bench. Morphing, user worlds, import and the card
+are tested by the suite — 420 world-pair switches, 99 link checks, 85 web
+checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
+them as the new half of a beta.
 
 ## Layout
 
