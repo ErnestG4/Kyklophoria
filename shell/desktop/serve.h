@@ -126,6 +126,13 @@ public:
             case kyk::kActRenderDiv: if(len < 1 || args[0] < 1) return 2u; eng->SetRenderDiv(args[0]); return 0u;
             case kyk::kActAimMorph:
             {
+                if(len >= 1 && args[0] == 0u)
+                {
+                    const float zero[kyk::kMaxN] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+                    eng->L.SetMorphOffset(zero, kyk::kMaxN);
+                    eng->R.SetMorphOffset(zero, kyk::kMaxN);
+                    return 0u;
+                }
                 if(morphIdx == 0xFFu) return 1u;
                 const kyk::World* live = eng->L.WorldPtr();
                 if(!live || !live->Ready() || !morphWorld.Ready()) return 1u;

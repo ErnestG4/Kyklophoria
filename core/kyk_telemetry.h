@@ -16,6 +16,8 @@
  *             u8 morph · u8 morph_world — how far towards another world, and
  *                        which one (0xFF: none, so the knob does nothing)
  *             u16 mute — which motions are switched off (see kActMotionMute)
+ *             u8 aimed — whether the morph reads its target somewhere other
+ *                        than the current coordinates
  *
  * That last block is how the position is moving of its own accord: the
  * falling body, and how hard the orbit planes are pulling on each other. It
@@ -152,6 +154,13 @@ inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, i
          * a plane that is muted looks exactly like a plane whose rate is zero
          * unless somebody says which it is. */
         w.U16(mute);
+        /* Whether the morph is aimed. Without it the page would have to
+         * remember, and page-side memory of module state is the mistake this
+         * instrument keeps making in other forms. */
+        const float* const moff = e.L.MorphOffset();
+        bool aimed = false;
+        for(int a = 0; a < kMaxN; a++) if(moff[a] > 1e-6f || moff[a] < -1e-6f) aimed = true;
+        w.U8(aimed ? 1u : 0u);
     }
     return w.ok ? w.n : 0;
 }
@@ -163,7 +172,7 @@ inline int TelemetrySize(int n, int k, int p, uint8_t flags)
     int       sz     = 4 + 4 + 6 + 2 + 4 + 4 * (4 * n + planes + p);
     if(flags & kTelSpectrum) sz += k;
     if(flags & kTelFrame) sz += kTelFramePts;
-    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2;
+    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2 + 1;
     return sz;
 }
 

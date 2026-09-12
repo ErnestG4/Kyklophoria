@@ -64,6 +64,11 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              towards whatever the same coordinates collide
                              with in a world that means something else by
                              them. */
+                          /* args[0]: 0 clears the aim and reads the target at
+                             the same coordinates, anything else searches. A
+                             toggle rather than a fire-and-forget button,
+                             because an aim you cannot see is an aim you will be
+                             surprised by. */
                           kActAimMorph = 10 };
 constexpr uint16_t kMuteKepler = 0x8000u;
 

@@ -532,6 +532,13 @@ struct ModuleSource : ExtSource
                 gCardLoadReq = (int8_t)args[0];
                 return 0u;
             case kActAimMorph:
+                if(len >= 1 && args[0] == 0u)
+                {
+                    const float zero[kMaxN] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+                    gEng.L.SetMorphOffset(zero, kMaxN);
+                    gEng.R.SetMorphOffset(zero, kMaxN);
+                    return 0u;
+                }
                 if(gMorphIdx == 0xFFu) return 1u;
                 if(gAimReq) return 9u;
                 gAimReq = 1u;

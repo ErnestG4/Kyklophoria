@@ -90,7 +90,8 @@
   <div class="wrow">
     <span class="cap">MORPH</span>
     <select id="morphSel"><option value="255">off</option></select>
-    <button class="chip" id="morphAim">aim</button>
+    <button class="chip" id="morphDirect">direct</button>
+    <button class="chip" id="morphAim">aimed</button>
     <span id="morphState" style="color: var(--dim)"></span>
     <span class="sp"></span>
     <span class="cap">CARD</span>
@@ -474,6 +475,7 @@ function renderWorldBar() {
  */
 let cardList = { count: 0, names: [] };
 let lastMute = -1;
+let lastAimed = null;
 
 function renderMorphSel() {
   const sel = $('morphSel');
@@ -713,18 +715,23 @@ $('wavMode').onclick = () => {
 $('wavSend').onclick = sendImported;
 $('wavClear').onclick = () => { imported.length = 0; renderImport(); };
 renderImport();
-/* Aiming searches the target world for the position whose spectrum is nearest
-   the one playing, and reads there. Without it a morph travels towards whatever
-   the same coordinates happen to mean in a world that means something else by
-   them. It is a button rather than something continuous because it is a
-   decision — where you are morphing *from* — not a thing that should track. */
-$('morphAim').onclick = async () => {
+/* Direct or aimed, as a pair of chips rather than a button that fires and
+   leaves no trace.
+ *
+ * Direct reads the target world at the same coordinates. Aimed searches it for
+ * the position whose spectrum is nearest the one playing and reads there, which
+ * is nearly always the better morph but means full morph is *not* the same as
+ * simply selecting that world — and a button gave no way to tell which of those
+ * you were hearing. The lit state comes from the module, not from remembering
+ * what was last clicked. */
+const setAim = async (on) => {
   if (!link) return;
   try {
-    await link.request(MVL.CMD.action, MVL.actionReq(10, []), { urgent: true });
-    say('aimed at the nearest match');
+    await link.request(MVL.CMD.action, MVL.actionReq(10, [on ? 1 : 0]), { urgent: true });
   } catch (e) { say('aim: ' + e.message, true); }
 };
+$('morphAim').onclick = () => setAim(true);
+$('morphDirect').onclick = () => setAim(false);
 $('cardScan').onclick = async () => {
   if (!link) return;
   try { await link.request(MVL.CMD.action, MVL.actionReq(6, []), { urgent: true }); await refreshCard(); }
@@ -1718,7 +1725,15 @@ function drawStatus() {
     const mw = tel.morphWorld;
     const named = mw !== 0xFF && worlds && worlds.list[mw] ? worlds.list[mw].name : null;
     setText('morphState', mw === 0xFF ? 'no target — the knob does nothing'
-            : `${(tel.morph * 100).toFixed(0)}% towards ${named || ('world ' + mw)}`);
+            : `${(tel.morph * 100).toFixed(0)}% towards ${named || ('world ' + mw)}`
+              + (tel.aimed ? ', read at its nearest match' : ''));
+    const aimOn = !!tel.aimed;
+    if (aimOn !== lastAimed) {
+      lastAimed = aimOn;
+      $('morphAim').className = 'chip' + (aimOn ? ' on' : '');
+      $('morphDirect').className = 'chip' + (aimOn ? '' : ' on');
+    }
+    $('morphAim').disabled = $('morphDirect').disabled = !link || mw === 0xFF;
     /* keep the dropdown honest if the target was set from somewhere else */
     const sel = $('morphSel');
     if (sel && !sel.disabled && String(mw) !== sel.value && document.activeElement !== sel)
