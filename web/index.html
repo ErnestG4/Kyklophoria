@@ -1689,7 +1689,7 @@ function drawPanel(x0, y0, W, H) {
     cnx.fillText(t, tx, y0 + 6); tx += cnx.measureText(t).width + 10;
   }
   const cols = Math.min(3, panel.pots), rows = Math.ceil(panel.pots / cols);
-  const cw = W / cols, ch = Math.max(20, (H - 18) / rows);
+  const cw = W / cols, ch = Math.max(26, (H - 18) / rows);
   for (let i = 0; i < panel.pots; i++) {
     const k = panel.grid[pg] && panel.grid[pg][i];
     const cx0 = x0 + (i % cols) * cw, cy0 = y0 + 18 + Math.floor(i / cols) * ch;
@@ -1697,10 +1697,18 @@ function drawPanel(x0, y0, W, H) {
     cnx.fillText('P' + (i + 1), cx0, cy0 + 9);
     cnx.fillStyle = k ? '#9aa7b3' : '#2a3542'; cnx.font = '10px ui-monospace, monospace';
     const label = k ? k.name : '—';
-    /* clip rather than overflow into the next column */
     let txt = label;
     while (txt.length > 3 && cnx.measureText(txt).width > cw - 26) txt = txt.slice(0, -1);
     cnx.fillText(txt + (txt !== label ? '…' : ''), cx0 + 20, cy0 + 9);
+    /* Where the knob is sitting, under its name — a bar rather than a number,
+       because the useful question while playing is "how far up", not "what
+       value", and a bar answers it without being read. */
+    if (k && tel && tel.pots) {
+      const v = Math.max(0, Math.min(1, tel.pots[i] || 0));
+      const bw = Math.max(18, cw - 30), bx = cx0 + 20, by = cy0 + 14;
+      cnx.fillStyle = '#1a2230'; cnx.fillRect(bx, by, bw, 3);
+      cnx.fillStyle = tint;     cnx.fillRect(bx, by, bw * v, 3);
+    }
   }
 }
 

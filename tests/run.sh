@@ -38,6 +38,11 @@ echo "== morph_check =="
 $CXX $CORE_FLAGS $SAN tests/morph_check.cpp -o "$OUT/morph_check" || fail=1
 "$OUT/morph_check" || fail=1
 
+echo "== switch_check =="
+$CXX $CORE_FLAGS $SAN tests/switch_check.cpp -o "$OUT/switch_check" || fail=1
+"$OUT/switch_check" > "$OUT/sw.txt" || { cat "$OUT/sw.txt"; fail=1; }
+grep -q "same arrived at as started in" "$OUT/sw.txt" || { cat "$OUT/sw.txt"; fail=1; }
+
 echo "== morphworld_check =="
 $CXX $CORE_FLAGS -Ishell/common $SAN tests/morphworld_check.cpp -o "$OUT/morphworld_check" || fail=1
 "$OUT/morphworld_check" > "$OUT/mw.txt" || { cat "$OUT/mw.txt"; fail=1; }

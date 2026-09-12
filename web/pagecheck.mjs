@@ -105,7 +105,8 @@ function tel(over = {}) {
     frame: Int8Array.from({ length: 256 }, (_, i) => Math.round(100 * Math.sin(i / 8))),
     kepler: { running: false, plane: 0, x: 0, y: 0, rush: 0 },
     couple: 0, lock: 0, sharp: 0, bodies: 1, kepXY: [], page: 0,
-    morph: 0, morphWorld: 0xFF, mute: 0, aimed: false, bytes: 512,
+    morph: 0, morphWorld: 0xFF, mute: 0, aimed: false,
+    pots: [0.1, 0.3, 0.5, 0.7, 0.9, 1.0], bytes: 512,
   }, over);
 }
 const CASES = [
@@ -129,6 +130,7 @@ const CASES = [
   ['morphing to a world index nobody has', tel({ morph: 1.0, morphWorld: 200 })],
   ['motions muted', tel({ mute: 0x8005 })],
   ['morph aimed', tel({ morph: 0.6, morphWorld: 9, aimed: true })],
+  ['no knob positions on the wire', tel({ pots: null })],
   ['every motion muted', tel({ mute: 0xFFFF })],
 ];
 

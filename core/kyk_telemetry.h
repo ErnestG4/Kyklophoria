@@ -18,6 +18,8 @@
  *             u16 mute — which motions are switched off (see kActMotionMute)
  *             u8 aimed — whether the morph reads its target somewhere other
  *                        than the current coordinates
+ *             u8 pots[6] — the live page's knob positions, so the panel mirror
+ *                        can show where they are and not only what they are
  *
  * That last block is how the position is moving of its own accord: the
  * falling body, and how hard the orbit planes are pulling on each other. It
@@ -84,7 +86,7 @@ struct Put
 /* Returns bytes written, or 0 if cap is too small. */
 inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, int cap,
                            uint8_t page = 0, uint8_t morph_world = 0xFFu,
-                           uint16_t mute = 0u)
+                           uint16_t mute = 0u, const uint8_t* pots = nullptr)
 {
     const World* s = e.WorldPtr();
     if(!s || !s->Ready()) return 0;
@@ -161,6 +163,11 @@ inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, i
         bool aimed = false;
         for(int a = 0; a < kMaxN; a++) if(moff[a] > 1e-6f || moff[a] < -1e-6f) aimed = true;
         w.U8(aimed ? 1u : 0u);
+        /* Where the six knobs of the live page are sitting. A byte each is
+         * plenty for a readout and costs six bytes a frame; asking for them
+         * through the descriptor's blob would be the seventeen-round-trip path
+         * that makes other modules feel sluggish from the web. */
+        for(int i = 0; i < 6; i++) w.U8(pots ? pots[i] : 0u);
     }
     return w.ok ? w.n : 0;
 }
@@ -172,7 +179,7 @@ inline int TelemetrySize(int n, int k, int p, uint8_t flags)
     int       sz     = 4 + 4 + 6 + 2 + 4 + 4 * (4 * n + planes + p);
     if(flags & kTelSpectrum) sz += k;
     if(flags & kTelFrame) sz += kTelFramePts;
-    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2 + 1;
+    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2 + 1 + 6;
     return sz;
 }
 
