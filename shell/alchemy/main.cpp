@@ -242,6 +242,11 @@ static volatile uint8_t gUserReq = 0u;
 static constexpr uint8_t kMorphSlot = 2u;    /* blob/space/vtable slot */
 static volatile uint8_t gMorphReq = 0xFFu;   /* world index to load there */
 static volatile uint8_t gMorphIdx = 0xFFu;   /* what is loaded there now */
+/* Which motions are switched off. A mute, not a zero: the knobs keep their
+ * values so unmuting restores what was set, which is the difference between a
+ * switch and turning something down. Chosen from the page — deciding which
+ * planes are live is setup, not performance. */
+static volatile uint16_t gMute = 0u;
 
 /* ── user worlds on the card ─────────────────────────────────────────────
  *
@@ -351,7 +356,8 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     for(int p = 0; p < 6; p++)
     {
         gEng.rot.SetAngle(p, k_ang[p].Norm());
-        gEng.rot.SetRate(p, RateFromKnob(k_rate[p].Norm()) * ratex);
+        gEng.rot.SetRate(p, (gMute & (1u << p)) ? 0.f
+                                                : RateFromKnob(k_rate[p].Norm()) * ratex);
     }
     /* Squared, because the interesting behaviour is all in the bottom half of
      * the capture curve and the top of the knob is already fully locked. */
@@ -369,7 +375,7 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
      * the body; so does moving the radius knob meaningfully. */
     {
         const float gk = k_grav.Norm();
-        const bool  on = gk > 0.02f;
+        const bool  on = gk > 0.02f && !(gMute & kMuteKepler);
         /* Exponential, because the period goes as 1/sqrt(G) and the long
          * orbits are the interesting end. This spans about half a minute per
          * revolution at the bottom to well under a second at the top, and a
@@ -443,7 +449,7 @@ struct ModuleSource : ExtSource
          * rendering, which is exactly the block that sets the CPU maximum. A
          * field or two may be torn instead; this is a display feed at 60 Hz
          * and nobody can see a one-frame inconsistency. */
-        return EncodeTelemetry(gEng, flags, out, cap, pager.Page(), gMorphIdx);
+        return EncodeTelemetry(gEng, flags, out, cap, pager.Page(), gMorphIdx, gMute);
     }
     bool SpaceInfo(SpaceHeader& h, uint32_t& crc, uint16_t& stride) override
     {
@@ -507,6 +513,10 @@ struct ModuleSource : ExtSource
                 if(len < 1 || args[0] >= gCardCount) return 2u;
                 if(gWorldBusy || gCardLoadReq >= 0) return 9u;
                 gCardLoadReq = (int8_t)args[0];
+                return 0u;
+            case kActMotionMute:
+                if(len < 2) return 2u;
+                gMute = (uint16_t)(args[0] | (args[1] << 8));
                 return 0u;
             case kActPhase:
                 if(len < 1 || args[0] > 2) return 2u;

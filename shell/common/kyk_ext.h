@@ -51,7 +51,14 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                           /* 0 = the world's own convention, 1 = force sine,
                              2 = force cosine. A cosine twin of any world
                              without doubling the world list. */
-                          kActPhase = 8 };
+                          kActPhase = 8,
+                          /* u16 mask: bits 0..14 mute a rotation plane's rate,
+                             bit 15 mutes Kepler. A mute rather than a zero, so
+                             the knob keeps its value and unmuting restores it —
+                             which is the whole difference between a switch and
+                             turning something down. */
+                          kActMotionMute = 9 };
+constexpr uint16_t kMuteKepler = 0x8000u;
 
 struct ExtStats
 {

@@ -117,6 +117,8 @@ def telemetry(link, flags):
         t['morph'] = (b[at] / 255.0) if len(b) > at else 0.0
         t['morph_world'] = b[at + 1] if len(b) > at + 1 else 0xFF
         at += 2 if len(b) > at + 1 else 0
+        t['mute'] = struct.unpack('<H', b[at:at+2])[0] if len(b) > at + 1 else 0
+        at += 2 if len(b) > at + 1 else 0
     t['size'] = len(b)
     check(at == len(b), f'telemetry body consumed exactly ({at} of {len(b)})')
     return t
@@ -147,7 +149,7 @@ def stdio_tests():
     check((t['n'], t['k'], t['p'], t['planes']) == (4, 64, 8, 6), 'telemetry dims')
     t7 = telemetry(link, 7)
     # 23 for the original block, 1 for the body count, 8 per perturber
-    want = 460 + 23 + 1 + 8 * (t7['bodies'] - 1) + 1 + 2
+    want = 460 + 23 + 1 + 8 * (t7['bodies'] - 1) + 1 + 2 + 2
     check(t7['size'] == want, f"motion block appends {want - 460} bytes (size {t7['size']}, {t7['bodies']} bodies)")
     check(t7['kep_plane'] < 6 and 0.0 <= t7['kep_rush'] <= 1.0, 'kepler fields sane')
     check(t7['couple'] >= 0.0 and 0.0 <= t7['lock'] <= 1.0, 'coupling fields sane')
@@ -291,6 +293,42 @@ def stdio_tests():
     link.close()
 
 
+def mute_tests():
+    """Muting a plane must stop it and leave its neighbour alone.
+
+    Its own session, with a script that drives rates — SET_CONTROL sets angles,
+    not rates, so without one nothing is turning and every check here would
+    pass for the wrong reason. m2_orbit drives planes 0 and 4."""
+    print('mute')
+    link = Stdio(['--gen', '--seed', '1', '--script',
+                  os.path.join(ROOT, 'tests/scripts/m2_orbit.txt'), '--loop'])
+    link.request(0x01)
+
+    def angles():
+        return telemetry(link, 0)['angle']
+
+    link.request(0x64, bytes([9, 0x00, 0x00]))
+    a0 = angles(); time.sleep(0.15); a1 = angles()
+    turning = [abs(a1[i] - a0[i]) > 1e-6 for i in (0, 4)]
+    check(all(turning), f'planes 0 and 4 are turning before anything is muted ({turning})')
+
+    ty, seq, r, ok = link.request(0x64, bytes([9, 0x01, 0x00]))     # plane 0 only
+    check(r[0] == 0, 'a plane can be muted')
+    t = telemetry(link, 7)
+    check(t['mute'] == 0x0001, f"and the module reports which ({t['mute']:#06x})")
+    b0 = angles(); time.sleep(0.15); b1 = angles()
+    check(abs(b1[0] - b0[0]) < 1e-6, 'the muted plane stops turning')
+    check(abs(b1[4] - b0[4]) > 1e-6, 'and the one beside it keeps going')
+
+    link.request(0x64, bytes([9, 0x00, 0x00]))
+    c0 = angles(); time.sleep(0.15); c1 = angles()
+    check(abs(c1[0] - c0[0]) > 1e-6, 'unmuting restores the rate it had, not zero')
+
+    ty, seq, r, ok = link.request(0x64, bytes([9]))
+    check(r[0] == 2, 'a mute with no mask is refused')
+    link.close()
+
+
 def ws_client(port, path='/link'):
     s = socket.create_connection(('127.0.0.1', port), timeout=5)
     key = base64.b64encode(os.urandom(16)).decode()
@@ -353,6 +391,7 @@ def bridge_tests():
 if __name__ == '__main__':
     if not os.path.exists(KYKDESK): sys.exit('build/host/kykdesk missing — make host')
     stdio_tests()
+    mute_tests()
     bridge_tests()
     print(f'link_check: {checks - fails}/{checks} passed' if not fails else f'link_check: {fails} FAILURES of {checks}')
     sys.exit(1 if fails else 0)

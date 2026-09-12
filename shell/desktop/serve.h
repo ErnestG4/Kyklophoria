@@ -61,7 +61,7 @@ public:
 
     int Telemetry(uint8_t flags, uint8_t* out, int cap) override
     {
-        return eng ? kyk::EncodeTelemetry(*eng, flags, out, cap, 0u, morphIdx) : 0;
+        return eng ? kyk::EncodeTelemetry(*eng, flags, out, cap, 0u, morphIdx, mute) : 0;
     }
     bool SpaceInfo(kyk::SpaceHeader& h, uint32_t& crc, uint16_t& stride) override
     {
@@ -87,6 +87,8 @@ public:
     kyk::World                morphWorld;
     kyk::solids::VertexTable  morphTable;
     uint8_t                   morphIdx = 0xFFu;
+    uint16_t                  mute = 0u;
+    float                     rateWas[kyk::kMaxPlanes] = {0.f};
     float                     morphAmt = 0.5f;
     kyk::WorldReceiver rx;
     kyk::World         userWorld;
@@ -121,6 +123,27 @@ public:
         {
             case kyk::kActResetPhase: eng->L.ResetPhase(); eng->R.ResetPhase(); return 0u;
             case kyk::kActRenderDiv: if(len < 1 || args[0] < 1) return 2u; eng->SetRenderDiv(args[0]); return 0u;
+            case kyk::kActMotionMute:
+            {
+                if(len < 2) return 2u;
+                const uint16_t was = mute;
+                mute = (uint16_t)(args[0] | (args[1] << 8));
+                /* Applied, not merely recorded. The desktop shell has no knobs
+                 * to re-read, so it keeps the rates it was told and re-applies
+                 * them through the mask — otherwise the mute would be a number
+                 * the module reports and does not act on, which is exactly the
+                 * kind of thing a test passes and a player notices. */
+                const int planes = kyk::Rotation::PlaneCount(eng->L.WorldPtr()
+                                                             ? eng->L.WorldPtr()->N() : 4);
+                for(int p = 0; p < planes; p++)
+                {
+                    if(mute & (1u << p)) { if(!(was & (1u << p))) rateWas[p] = eng->rot.Rate(p);
+                                           eng->rot.SetRate(p, 0.f); }
+                    else if(was & (1u << p)) eng->rot.SetRate(p, rateWas[p]);
+                }
+                if(mute & kyk::kMuteKepler) eng->kepler.Stop();
+                return 0u;
+            }
             case kyk::kActPhase:
                 if(len < 1 || args[0] > 2) return 2u;
                 eng->L.SetPhaseOverride(args[0] == 2 ? kyk::World::Phase::Cosine : kyk::World::Phase::Sine,

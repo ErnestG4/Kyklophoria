@@ -428,6 +428,9 @@ function parseTelemetry(b) {
     t.morph = b.length > at ? b[at] / 255 : 0;
     t.morphWorld = b.length > at + 1 ? b[at + 1] : 0xFF;
     at += b.length > at + 1 ? 2 : 0;
+    /* which motions are switched off; bit 15 is Kepler */
+    t.mute = b.length > at + 1 ? u16(b, at) : 0;
+    at += b.length > at + 1 ? 2 : 0;
   }
   t.bytes = b.length;
   return t;
