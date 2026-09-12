@@ -107,6 +107,10 @@
     <button class="chip" id="wavClear">clear</button>
     <span id="wavState" style="color: var(--dim)"></span>
   </div>
+  <div class="wrow">
+    <span class="cap">MOTION</span>
+    <span id="muteChips"></span>
+  </div>
 </nav>
 <main>
   <div class="pane">
@@ -468,6 +472,7 @@ function renderWorldBar() {
  * which is the half you want under a finger while playing.
  */
 let cardList = { count: 0, names: [] };
+let lastMute = -1;
 
 function renderMorphSel() {
   const sel = $('morphSel');
@@ -586,6 +591,47 @@ async function sendImported() {
   } catch (e) { say('send: ' + e.message, true); }
 }
 
+/* Which motions are switched off.
+ *
+ * A mute rather than turning a rate to zero: the knob keeps its value, so
+ * unmuting restores what was set. That is the whole difference between a
+ * switch and turning something down, and it is why this could not just be
+ * "put the rate knob at the bottom".
+ *
+ * The mask is authoritative on the module and echoed in telemetry, so these
+ * chips follow the module rather than remembering their own state — which
+ * matters because a preset load or another page can change it. */
+function renderMuteChips() {
+  const box = $('muteChips'); box.innerHTML = '';
+  const mask = tel ? (tel.mute | 0) : 0;
+  const n = tel ? tel.n : 4, planes = MVL.planeCount(n);
+  const add = (label, bit, title) => {
+    const b = document.createElement('button');
+    const off = (mask & bit) !== 0;
+    b.className = 'chip' + (off ? '' : ' on');
+    b.textContent = label;
+    b.title = title + (off ? ' — muted' : ' — running');
+    b.disabled = !link;
+    b.onclick = async () => {
+      if (!link) return;
+      const next = mask ^ bit;
+      try {
+        await link.request(MVL.CMD.action,
+                           MVL.actionReq(9, [next & 0xff, (next >> 8) & 0xff]), { urgent: true });
+      } catch (e) { say('mute: ' + e.message, true); }
+    };
+    box.appendChild(b);
+  };
+  for (let p = 0; p < planes; p++) {
+    const [i, j] = MVL.planeAxes(n, p);
+    add(`${i}${j}`, 1 << p, `rotation plane ${i},${j}`);
+  }
+  const sep = document.createElement('span');
+  sep.textContent = '·'; sep.style.color = 'var(--dim)'; sep.style.padding = '0 2px';
+  box.appendChild(sep);
+  add('kepler', 0x8000, 'the falling body');
+}
+
 function renderTrailChips() {
   const box = $('trailChips'); box.innerHTML = '';
   const group = (items, cur, pick) => {
@@ -646,6 +692,7 @@ function renderShadeChips() {
 }
 renderWorldBar();
 renderTrailChips();
+renderMuteChips();
 renderMorphSel();
 renderCardSel();
 $('morphSel').onchange = async () => {
@@ -1650,6 +1697,7 @@ function drawStatus() {
   setText('sBlock', String(tel.block));
   setText('sF0', tel.f0.toFixed(1) + ' Hz ' + MVL.noteName(tel.f0));
   setText('sKcut', tel.kcut + '/' + tel.k);
+  if (tel.mute !== lastMute) { lastMute = tel.mute; renderMuteChips(); }
   /* What the Morph knob is actually doing. A knob whose effect is invisible is
      a knob nobody trusts, and this one does nothing at all unless a target is
      set — which is worth saying rather than leaving to be discovered. */

@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavSend wavClear wavState'.split(' ');
+const IDS = 'axes btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavSend wavClear wavState muteChips'.split(' ');
 const calls = [];
 const ctx2d = new Proxy({}, {
   get(_, k) {
@@ -105,7 +105,7 @@ function tel(over = {}) {
     frame: Int8Array.from({ length: 256 }, (_, i) => Math.round(100 * Math.sin(i / 8))),
     kepler: { running: false, plane: 0, x: 0, y: 0, rush: 0 },
     couple: 0, lock: 0, sharp: 0, bodies: 1, kepXY: [], page: 0,
-    morph: 0, morphWorld: 0xFF, bytes: 512,
+    morph: 0, morphWorld: 0xFF, mute: 0, bytes: 512,
   }, over);
 }
 const CASES = [
@@ -127,6 +127,8 @@ const CASES = [
   ['no mags / no frame', tel({ mags: null, frame: null, flags: 4 })],
   ['morphing to a named world', tel({ morph: 0.42, morphWorld: 9 })],
   ['morphing to a world index nobody has', tel({ morph: 1.0, morphWorld: 200 })],
+  ['motions muted', tel({ mute: 0x8005 })],
+  ['every motion muted', tel({ mute: 0xFFFF })],
 ];
 
 /* The panel mirror, from a descriptor shaped the way the SDK emits one
