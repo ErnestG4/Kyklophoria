@@ -98,6 +98,15 @@
     <button class="chip" id="cardScan">rescan</button>
     <span id="cardState" style="color: var(--dim)"></span>
   </div>
+  <div class="wrow">
+    <span class="cap">IMPORT</span>
+    <input type="file" id="wavIn" accept=".wav,audio/wav" multiple hidden>
+    <button class="chip" id="wavPick">add wavs…</button>
+    <button class="chip" id="wavMode">shape</button>
+    <button class="chip" id="wavSend">send</button>
+    <button class="chip" id="wavClear">clear</button>
+    <span id="wavState" style="color: var(--dim)"></span>
+  </div>
 </nav>
 <main>
   <div class="pane">
@@ -505,6 +514,78 @@ async function refreshCard() {
   renderCardSel();
 }
 
+/* ── importing waveforms and placing them ────────────────────────────────
+ *
+ * WaveEdit and the AKWF corpus already make and shape single cycles better
+ * than anything worth writing here, so this only imports and places: the part
+ * that is specific to an N-dimensional instrument and that no existing tool
+ * does.
+ *
+ * Placement defaults to the 24-cell's own vertices — the same arrangement the
+ * built-in Lock world uses, which puts one family of waveforms on each Givens
+ * rotation plane, so aligning with a plane finds a related set rather than
+ * twenty-four unrelated things. It is a starting point, not a cage.
+ */
+const imported = [];           /* { name, mags, fit } */
+let importMode = 'shape';
+
+/* The 24-cell: every permutation of (+-1, +-1, 0, 0), walked plane by plane so
+   vertex group g lands in Givens plane g (core/kyk_lock.h). */
+function cellPositions(count) {
+  const out = [], r = 0.42;
+  for (let i = 0; i < 4 && out.length < count; i++)
+    for (let j = i + 1; j < 4 && out.length < count; j++)
+      for (let si = -1; si <= 1 && out.length < count; si += 2)
+        for (let sj = -1; sj <= 1 && out.length < count; sj += 2) {
+          const p = [0.5, 0.5, 0.5, 0.5];
+          p[i] = 0.5 + si * r * 0.7071;
+          p[j] = 0.5 + sj * r * 0.7071;
+          out.push(p);
+        }
+  return out;
+}
+
+function renderImport() {
+  const n = imported.length;
+  $('wavMode').textContent = importMode;
+  $('wavSend').disabled = !link || !n;
+  $('wavClear').disabled = !n;
+  if (!n) { $('wavState').textContent = link ? '' : 'connect to send'; return; }
+  /* The fit is the fraction of each wave that survives projection onto the
+     sine basis. Showing the worst is the useful summary: it is the one the
+     person choosing waveforms would want to reconsider. */
+  let worst = 1, worstName = '';
+  for (const w of imported) if (w.fit < worst) { worst = w.fit; worstName = w.name; }
+  $('wavState').textContent = importMode === 'spectrum'
+    ? `${n} wave${n > 1 ? 's' : ''} · spectrum kept exactly, waveform redrawn`
+    : `${n} wave${n > 1 ? 's' : ''} · worst fit ${(100 * worst).toFixed(0)}% (${worstName})`;
+}
+
+async function addWavs(files) {
+  for (const f of files) {
+    if (imported.length >= 24) { say('24 nodes is the limit', true); break; }
+    try {
+      const cyc = MVL.wavToCycle(new Uint8Array(await f.arrayBuffer()));
+      const nd = MVL.cycleToNode(cyc, 64, importMode);
+      imported.push({ name: f.name.replace(/\.wav$/i, ''), mags: nd.mags, fit: nd.fit });
+    } catch (e) { say(f.name + ': ' + e.message, true); }
+  }
+  renderImport();
+}
+
+async function sendImported() {
+  if (!link || !imported.length) return;
+  const pos = cellPositions(imported.length);
+  const blob = MVL.buildUserWorld(imported.map((w, i) => ({ pos: pos[i], mags: w.mags })),
+                                  { n: 4, k: 64, sigma: 0.26, name: 'import' });
+  try {
+    await MVL.putWorld(link, blob, (done, all) =>
+      say(`sending ${(100 * done / all).toFixed(0)}%`));
+    say(`${imported.length} waveforms placed on the 24-cell (${blob.length} bytes)`);
+    setTimeout(() => refreshWorlds(), 250);
+  } catch (e) { say('send: ' + e.message, true); }
+}
+
 function renderTrailChips() {
   const box = $('trailChips'); box.innerHTML = '';
   const group = (items, cur, pick) => {
@@ -573,6 +654,17 @@ $('morphSel').onchange = async () => {
   try { await link.request(MVL.CMD.action, MVL.actionReq(5, [v & 0xff]), { urgent: true }); }
   catch (e) { say('morph target: ' + e.message, true); }
 };
+$('wavPick').onclick = () => $('wavIn').click();
+$('wavIn').onchange = (e) => { addWavs([...e.target.files]); e.target.value = ''; };
+$('wavMode').onclick = () => {
+  importMode = importMode === 'shape' ? 'spectrum' : 'shape';
+  /* re-project what is already loaded, or the two modes would be mixed */
+  if (imported.length) say('re-import to change mode for waves already added');
+  renderImport();
+};
+$('wavSend').onclick = sendImported;
+$('wavClear').onclick = () => { imported.length = 0; renderImport(); };
+renderImport();
 $('cardScan').onclick = async () => {
   if (!link) return;
   try { await link.request(MVL.CMD.action, MVL.actionReq(6, []), { urgent: true }); await refreshCard(); }
