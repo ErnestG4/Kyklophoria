@@ -1612,7 +1612,7 @@ function drawSound() {
   /* The spectrum used to take everything below the payload lanes, which was
      far more room than 64 bars need and left nowhere to say what the panel is
      doing. It keeps a fixed slice now and the panel mirror takes the rest. */
-  const panelH = panel ? Math.min(150, Math.max(96, H * 0.30)) : 0;
+  const panelH = panel ? Math.min(170, Math.max(110, H * 0.32)) : 0;
   const frameTop = 26, frameH = Math.max(40, H * 0.30), mid = frameTop + frameH / 2;
   const stripY = frameTop + frameH + 10;                       /* payload lanes row */
   const specCap = stripY + 34;                                  /* "spectrum" caption baseline */
@@ -1688,27 +1688,57 @@ function drawPanel(x0, y0, W, H) {
     if (tx + 40 > x0 + W) break;
     cnx.fillText(t, tx, y0 + 6); tx += cnx.measureText(t).width + 10;
   }
+  /* A knob, drawn as a knob.
+   *
+   * A bar answered "how far up" but not "which way is up": a panel knob sweeps
+   * about 270 degrees from lower-left to lower-right, and a horizontal bar made
+   * you translate. The arc is the same shape as the thing under your hand.
+   *
+   * The descriptor's `disp` hint says what sort of control it is — `snap` is a
+   * selector, so it gets detent ticks and its pointer lands on one. */
   const cols = Math.min(3, panel.pots), rows = Math.ceil(panel.pots / cols);
-  const cw = W / cols, ch = Math.max(26, (H - 18) / rows);
+  const cw = W / cols, ch = Math.max(34, (H - 18) / rows);
+  const A0 = Math.PI * 0.75, A1 = Math.PI * 2.25;
   for (let i = 0; i < panel.pots; i++) {
     const k = panel.grid[pg] && panel.grid[pg][i];
     const cx0 = x0 + (i % cols) * cw, cy0 = y0 + 18 + Math.floor(i / cols) * ch;
-    cnx.fillStyle = '#3b4756'; cnx.font = '9px ui-monospace, monospace';
-    cnx.fillText('P' + (i + 1), cx0, cy0 + 9);
-    cnx.fillStyle = k ? '#9aa7b3' : '#2a3542'; cnx.font = '10px ui-monospace, monospace';
-    const label = k ? k.name : '—';
-    let txt = label;
-    while (txt.length > 3 && cnx.measureText(txt).width > cw - 26) txt = txt.slice(0, -1);
-    cnx.fillText(txt + (txt !== label ? '…' : ''), cx0 + 20, cy0 + 9);
-    /* Where the knob is sitting, under its name — a bar rather than a number,
-       because the useful question while playing is "how far up", not "what
-       value", and a bar answers it without being read. */
+    const r = Math.min(11, ch * 0.34);
+    const kx = cx0 + r + 2, ky = cy0 + r + 1;
+    cnx.lineWidth = 2.5; cnx.lineCap = 'butt';
+    cnx.strokeStyle = '#1a2230';
+    cnx.beginPath(); cnx.arc(kx, ky, r, A0, A1); cnx.stroke();
     if (k && tel && tel.pots) {
       const v = Math.max(0, Math.min(1, tel.pots[i] || 0));
-      const bw = Math.max(18, cw - 30), bx = cx0 + 20, by = cy0 + 14;
-      cnx.fillStyle = '#1a2230'; cnx.fillRect(bx, by, bw, 3);
-      cnx.fillStyle = tint;     cnx.fillRect(bx, by, bw * v, 3);
+      const snap = k.disp && k.disp.kind === 'snap';
+      const n = snap ? Math.max(2, k.disp.count || 0) : 0;
+      const u = snap && n > 1 ? Math.round(v * (n - 1)) / (n - 1) : v;
+      const th = A0 + (A1 - A0) * u;
+      cnx.strokeStyle = tint;
+      cnx.beginPath(); cnx.arc(kx, ky, r, A0, Math.max(A0 + 0.001, th)); cnx.stroke();
+      cnx.lineWidth = 1.5;
+      cnx.beginPath();
+      cnx.moveTo(kx + Math.cos(th) * (r - 5), ky + Math.sin(th) * (r - 5));
+      cnx.lineTo(kx + Math.cos(th) * (r + 1), ky + Math.sin(th) * (r + 1));
+      cnx.stroke();
+      if (snap) {
+        cnx.strokeStyle = '#2f3a46'; cnx.lineWidth = 1;
+        for (let d = 0; d < n; d++) {
+          const dt = A0 + (A1 - A0) * (d / (n - 1));
+          cnx.beginPath();
+          cnx.moveTo(kx + Math.cos(dt) * (r + 2), ky + Math.sin(dt) * (r + 2));
+          cnx.lineTo(kx + Math.cos(dt) * (r + 4), ky + Math.sin(dt) * (r + 4));
+          cnx.stroke();
+        }
+      }
     }
+    cnx.lineWidth = 1;
+    cnx.fillStyle = '#3b4756'; cnx.font = '9px ui-monospace, monospace';
+    cnx.fillText('P' + (i + 1), cx0, cy0 + 8);
+    cnx.fillStyle = k ? '#9aa7b3' : '#2a3542'; cnx.font = '10px ui-monospace, monospace';
+    const label = k ? k.name : '—';
+    let txt = label; const avail = cw - (2 * r + 10);
+    while (txt.length > 3 && cnx.measureText(txt).width > avail) txt = txt.slice(0, -1);
+    cnx.fillText(txt + (txt !== label ? '…' : ''), cx0 + 2 * r + 6, cy0 + r + 5);
   }
 }
 
