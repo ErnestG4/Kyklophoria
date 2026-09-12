@@ -47,7 +47,11 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              page; how far is a knob and lives on the panel. */
                           kActMorphWorld = 5,
                           kActScanCard = 6,        /* re-read the card's world folder */
-                          kActLoadCardWorld = 7 }; /* load one by index into the list */
+                          kActLoadCardWorld = 7,   /* load one by index into the list */
+                          /* 0 = the world's own convention, 1 = force sine,
+                             2 = force cosine. A cosine twin of any world
+                             without doubling the world list. */
+                          kActPhase = 8 };
 
 struct ExtStats
 {

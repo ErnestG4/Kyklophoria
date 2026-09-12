@@ -508,6 +508,13 @@ struct ModuleSource : ExtSource
                 if(gWorldBusy || gCardLoadReq >= 0) return 9u;
                 gCardLoadReq = (int8_t)args[0];
                 return 0u;
+            case kActPhase:
+                if(len < 1 || args[0] > 2) return 2u;
+                gEng.L.SetPhaseOverride(args[0] == 2 ? World::Phase::Cosine : World::Phase::Sine,
+                                        args[0] != 0);
+                gEng.R.SetPhaseOverride(args[0] == 2 ? World::Phase::Cosine : World::Phase::Sine,
+                                        args[0] != 0);
+                return 0u;
             case kActMorphWorld:
                 /* 0xFF clears the target, which is the only way to get the
                    single-world path back regardless of where the knob sits. */

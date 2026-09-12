@@ -48,6 +48,7 @@ public:
         for(int k = 0; k < kMaxK; k++) { mags_[k] = 0.f; mags_bl_[k] = 0.f; }
         for(int j = 0; j < kMaxP; j++) payload_[j] = 0.f;
         DerivePhases();
+        phase_dirty_ = false;
         dirty_ = true;
     }
 
@@ -103,6 +104,8 @@ public:
         const bool render = due && dirty_ && world_ && world_->Ready();
         if(render)
         {
+            /* On the audio thread, so the tables cannot tear under a render. */
+            if(phase_dirty_) { DerivePhases(); phase_dirty_ = false; }
             for(int a = 0; a < kMaxN; a++) rendered_[a] = c_[a];
             world_->Fold(c_, p_);
             world_->Evaluate(p_, sharp, mags_, payload_, wt_);
@@ -164,7 +167,12 @@ public:
          * Nyquist, and the aliasing figure fell from -88 to -27 dBFS. Any
          * saturation stage has to be oversampled, which is an M3 job for the
          * drive lane. Until then this path stays strictly linear. */
-        for(int i = 0; i < n; i++) out[i] *= gain;
+        /* The phase trim rides with the gain rather than scaling the frame, so
+           it costs one multiply that was happening anyway and never touches the
+           stored spectrum — telemetry and the page still see the world's real
+           coefficients. */
+        const float g = gain * PhaseTrim();
+        for(int i = 0; i < n; i++) out[i] *= g;
         block_++;
     }
 
@@ -179,10 +187,53 @@ public:
     const World* MorphWorld() const { return morph_world_; }
     float        Morph() const { return morph_; }
 
+    /* Override the world's own phase convention. Phase::Random here means
+     * "use whatever the world asked for"; the other two force the issue, which
+     * is what makes a cosine twin of any world reachable without doubling the
+     * world list — including a user world somebody imported this morning. */
+    void SetPhaseOverride(World::Phase p, bool on)
+    { ph_over_ = p; ph_over_on_ = on; dirty_ = true; phase_dirty_ = true; }
+    bool PhaseOverridden() const { return ph_over_on_; }
+
+    /* What cosine phase costs in headroom.
+     *
+     * Every harmonic at zero phase means every harmonic peaks together at the
+     * start of the cycle. Measured over nine worlds at eighty-one positions
+     * each, worst-case crest roughly doubles: Saw 4.35 to 7.73, Lock 3.82 to
+     * 7.63, Unison 4.33 to 7.93, and eight of the nine land above the 4.3 the
+     * output gain allows. Plate is the exception at 3.97, because a modal
+     * spectrum is sparse enough that aligning its partials does not stack much.
+     *
+     * A fixed half rather than a measured peak on purpose: a gain that tracked
+     * the frame would move as the morph moved, and a level that breathes with
+     * the timbre is worse than one that is simply six decibels down and stays
+     * there. Turning it back up is the player's decision to make. */
+    float PhaseTrim() const
+    { return EffectivePhase() == World::Phase::Cosine ? 0.5f : 1.f; }
+
+    World::Phase EffectivePhase() const
+    { return ph_over_on_ ? ph_over_ : (world_ ? world_->PhaseMode() : World::Phase::Random); }
+
     void SetWorld(const World* w)
     {
         world_ = w;
         dirty_ = true;
+        /* The phase spectrum belongs to the world, so it has to follow one.
+         *
+         * It did not, and that was a shipping bug with teeth: phases were
+         * derived once in Init and never again, so a sine-phase world reached
+         * by *switching* rendered at whatever convention happened to be live at
+         * boot. On the module that is Braids, which is random phase — so Saw,
+         * Pulse, Edge, Lock, Shapes and the modal worlds all rendered at random
+         * phase unless one of them was the boot world. Measured, Saw fresh
+         * against Saw reached by switching differs by 3.46 at a peak of 2.25:
+         * not a subtle difference, and precisely the defect the whole
+         * sine-phase representation exists to remove.
+         *
+         * Flagged rather than derived here, because this is called from the
+         * main loop while the audio thread renders, and rewriting the phase
+         * tables underneath a render is a tear. The render picks it up. */
+        phase_dirty_ = true;
         for(int a = 0; a < kMaxN; a++) rendered_[a] = 1e9f;   /* force a re-render */
     }
 
@@ -241,12 +292,18 @@ private:
          * Otherwise a fixed random phase per harmonic, quantised to the sine
          * table so the module and the desktop agree bit for bit. */
         Rng rng;
-        const bool     sine = world_ && world_->PhaseMode() == World::Phase::Sine;
+        /* The override wins where it is on, so a cosine twin of any world —
+           including one somebody imported — is reachable without doubling the
+           world list. */
+        const World::Phase conv = EffectivePhase();
+        const bool     sine = conv == World::Phase::Sine;
+        const bool     cosn = conv == World::Phase::Cosine;
         const uint32_t seed = world_ ? world_->PhaseSeed() : 0u;
         rng.Seed(seed);
         for(int k = 0; k < kMaxK; k++)
         {
             const int idx = sine ? (kTableSize / 4)
+                          : cosn ? 0
                                  : (seed ? (int)(rng.Next() & (uint32_t)(kTableSize - 1)) : 0);
             sph_[k]       = kSinTable[idx];
             cph_[k]       = kSinTable[(idx + kTableSize / 4) & (kTableSize - 1)];
@@ -358,6 +415,11 @@ private:
     const World* world_ = nullptr;
 
     const World*   morph_world_ = nullptr;
+
+    World::Phase   ph_over_ = World::Phase::Random;
+
+    bool           ph_over_on_ = false;
+    bool           phase_dirty_ = false;
 
     float          morph_ = 0.f;
 

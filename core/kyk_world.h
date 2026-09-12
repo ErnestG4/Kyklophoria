@@ -86,7 +86,11 @@ public:
      * negative. Taking magnitudes puts a 25% pulse at 0.83 against the ideal.
      * Signed coefficients render correctly and keep blending linear, since a
      * negative coefficient is just a half-turn of phase. */
-    enum class Phase : uint8_t { Random = 0, Sine = 1 };
+    /* Cosine is every harmonic at zero phase — the peaky one. It is offered
+     * because it is a genuinely different waveform from the same spectrum, and
+     * shape is what a folder or a ring modulator downstream actually chews on.
+     * It costs headroom: see Engine::PhaseTrim. */
+    enum class Phase : uint8_t { Random = 0, Sine = 1, Cosine = 2 };
     static constexpr int kMaxVerts = 32;
 
     void UseLattice(const Space* s)

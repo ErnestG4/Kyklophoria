@@ -132,6 +132,103 @@ int main()
         ck(m, c1 < 2e-4 || ratio >= 2.0);
     }
 
+    /* ── the phase spectrum must follow the world ────────────────────────
+     *
+     * It did not. Phases were derived once in Init and never again, so a
+     * sine-phase world reached by switching rendered at whatever convention was
+     * live at boot — on the module that is Braids, which is random phase, so
+     * every world built for recognisable waveforms rendered without them unless
+     * it happened to be the boot world. Measured at the time: Saw fresh against
+     * Saw switched differed by 3.46 at a peak of 2.25.
+     *
+     * Checked in both directions, because a fix that only re-derives on the way
+     * into sine phase would leave the same bug on the way out. */
+    {
+        const uint8_t sine_w = worlds::kSaw, rand_w = worlds::kFm;
+        World A, B; solids::VertexTable ta, tb;
+        worlds::Point(sine_w, A, 8, nullptr, &ta);
+        worlds::Point(rand_w, B, 8, nullptr, &tb);
+        ck("the two worlds really do disagree about phase", A.PhaseMode() != B.PhaseMode());
+
+        float pp[kMaxN] = {0.5f, 0.35f, 0.5f, 0.5f, 0.5f, 0.5f};
+        double fresh[kFrame], switched[kFrame];
+        for(int dir = 0; dir < 2; dir++)
+        {
+            const World& want = dir ? B : A;
+            const World& other = dir ? A : B;
+            eng.Init(&want, 48000.f); eng.render_div = 1; eng.gain = 1.f;
+            eng.SetMorph(nullptr, 0.f); eng.SetPhaseOverride(World::Phase::Random, false);
+            eng.SetF0(110.f); eng.SetPosition(pp, want.N());
+            float o[24];
+            for(int i = 0; i < 6; i++) eng.Process(o, 24);
+            for(int i = 0; i < kFrame; i++) fresh[i] = eng.Frame()[i];
+
+            eng.Init(&other, 48000.f); eng.render_div = 1; eng.gain = 1.f;
+            eng.SetF0(110.f); eng.SetPosition(pp, other.N());
+            for(int i = 0; i < 6; i++) eng.Process(o, 24);
+            eng.SetWorld(&want);
+            eng.SetPosition(pp, want.N());
+            for(int i = 0; i < 6; i++) eng.Process(o, 24);
+            for(int i = 0; i < kFrame; i++) switched[i] = eng.Frame()[i];
+
+            double worst = 0;
+            for(int i = 0; i < kFrame; i++) worst = std::fmax(worst, std::fabs(fresh[i] - switched[i]));
+            char m[128];
+            std::snprintf(m, sizeof m, "%s reached by switching renders as %s at boot (worst %.4f)",
+                          dir ? "random phase" : "sine phase", dir ? "random phase" : "sine phase", worst);
+            ck(m, worst < 1e-6);
+        }
+    }
+
+    /* ── the cosine convention ──────────────────────────────────────────
+     *
+     * A cosine twin is the same spectrum rendered as a different waveform. It
+     * has to actually differ, it must not disturb the spectrum, and its peak
+     * has to stay inside what the output gain allows — which is the whole
+     * reason for the trim, since cosine phase roughly doubles the crest. */
+    {
+        World w; solids::VertexTable t;
+        worlds::Point(worlds::kSaw, w, 8, nullptr, &t);
+        float pp[kMaxN] = {0.5f, 0.35f, 0.5f, 0.5f, 0.5f, 0.5f};
+
+        eng.Init(&w, 48000.f); eng.render_div = 1; eng.gain = 1.f;
+        eng.SetMorph(nullptr, 0.f);
+        eng.SetPhaseOverride(World::Phase::Random, false);
+        eng.SetF0(110.f); eng.SetPosition(pp, w.N());
+        float o[24];
+        for(int i = 0; i < 6; i++) eng.Process(o, 24);
+        double sineFrame[kFrame], sineMags[kMaxK];
+        for(int i = 0; i < kFrame; i++) sineFrame[i] = eng.Frame()[i];
+        for(int i = 0; i < w.K(); i++) sineMags[i] = eng.Mags()[i];
+        const float trimSine = eng.PhaseTrim();
+
+        eng.SetPhaseOverride(World::Phase::Cosine, true);
+        eng.SetPosition(pp, w.N());
+        for(int i = 0; i < 6; i++) eng.Process(o, 24);
+        double dFrame = 0, dMags = 0;
+        for(int i = 0; i < kFrame; i++) dFrame = std::fmax(dFrame, std::fabs(sineFrame[i] - eng.Frame()[i]));
+        for(int i = 0; i < w.K(); i++) dMags = std::fmax(dMags, std::fabs(sineMags[i] - eng.Mags()[i]));
+
+        char m[128];
+        std::snprintf(m, sizeof m, "cosine is a different waveform (worst sample %.3f)", dFrame);
+        ck(m, dFrame > 0.05);
+        ck("and the identical spectrum", dMags == 0.0);
+        std::snprintf(m, sizeof m, "and costs headroom: trim %.2f against %.2f", eng.PhaseTrim(), trimSine);
+        ck(m, eng.PhaseTrim() < trimSine);
+
+        /* the trim has to actually contain the peak it was sized for */
+        double pk = 0, sq = 0;
+        for(int i = 0; i < kFrame; i++)
+        { const double v = eng.Frame()[i] * eng.PhaseTrim(); sq += v * v; if(std::fabs(v) > pk) pk = std::fabs(v); }
+        const double crest = pk / std::sqrt(sq / kFrame);
+        std::snprintf(m, sizeof m, "trimmed cosine peak sits under the sine peak (crest %.2f, peak %.3f)", crest, pk);
+        double spk = 0;
+        for(int i = 0; i < kFrame; i++) spk = std::fmax(spk, std::fabs(sineFrame[i] * trimSine));
+        ck(m, pk <= spk * 1.02);
+
+        eng.SetPhaseOverride(World::Phase::Random, false);
+    }
+
     if(bad) printf("morphworld_check: %d FAILURES\n", bad);
     else    printf("morphworld_check: all passed\n");
     return bad ? 1 : 0;

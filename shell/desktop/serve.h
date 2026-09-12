@@ -121,6 +121,13 @@ public:
         {
             case kyk::kActResetPhase: eng->L.ResetPhase(); eng->R.ResetPhase(); return 0u;
             case kyk::kActRenderDiv: if(len < 1 || args[0] < 1) return 2u; eng->SetRenderDiv(args[0]); return 0u;
+            case kyk::kActPhase:
+                if(len < 1 || args[0] > 2) return 2u;
+                eng->L.SetPhaseOverride(args[0] == 2 ? kyk::World::Phase::Cosine : kyk::World::Phase::Sine,
+                                        args[0] != 0);
+                eng->R.SetPhaseOverride(args[0] == 2 ? kyk::World::Phase::Cosine : kyk::World::Phase::Sine,
+                                        args[0] != 0);
+                return 0u;
             case kyk::kActMorphWorld:
             {
                 if(len < 1) return 2u;
