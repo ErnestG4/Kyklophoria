@@ -273,6 +273,74 @@ int main()
         }
     }
 
+    /* ── the aim offset belongs to a pair of worlds ──────────────────────
+     *
+     * Reported from the bench: morph Braids to FM at a hundred per cent, then
+     * set the base world to FM and leave the morph at FM — and the two sound
+     * completely different, when they should be the same thing twice.
+     *
+     * They were. The aim offset is searched for against a specific pair, and
+     * nothing invalidated it when either end changed, so the target went on
+     * being read at an offset chosen for a world that was no longer there. The
+     * offset in the reported case was about [-0.25, -0.70, -0.55, -0.65] —
+     * most of the way across the space.
+     *
+     * Fourth instance of one shape: state derived from a world, invalidated on
+     * everything except the world changing. */
+    {
+        World br, fm; solids::VertexTable t1, t2;
+        worlds::Point(worlds::kBraids, br, 8, nullptr, &t1);
+        worlds::Point(worlds::kFm, fm, 8, nullptr, &t2);
+        float p[kMaxN] = {0.4f, 0.6f, 0.45f, 0.55f, 0.5f, 0.5f};
+        float o[24];
+
+        eng.Init(&br, 48000.f); eng.render_div = 1; eng.gain = 1.f;
+        eng.SetPhaseOverride(World::Phase::Random, false);
+        eng.SetMorph(&fm, 1.f); eng.SetF0(110.f);
+        float p0[kMaxN], off[kMaxN];
+        br.Fold(p, p0);
+        AimSearch(br, fm, p0, 0.f, off);
+        eng.SetMorphOffset(off, kMaxN);
+        eng.SetPosition(p, 4);
+        for(int i = 0; i < 6; i++) eng.Process(o, 24);
+
+        double aimed = 0;
+        for(int a = 0; a < 4; a++) aimed = std::fmax(aimed, std::fabs((double)off[a]));
+        ck("the aim actually moved somewhere, so the test means something", aimed > 0.05);
+
+        eng.SetWorld(&fm);                 /* base becomes the target */
+        eng.SetMorph(&fm, 1.f);
+        eng.SetPosition(p, 4);
+        for(int i = 0; i < 6; i++) eng.Process(o, 24);
+        double after[kFrame];
+        for(int i = 0; i < kFrame; i++) after[i] = eng.Frame()[i];
+
+        eng.Init(&fm, 48000.f); eng.render_div = 1; eng.gain = 1.f;
+        eng.SetMorph(nullptr, 0.f); eng.SetF0(110.f); eng.SetPosition(p, 4);
+        for(int i = 0; i < 6; i++) eng.Process(o, 24);
+        double worst = 0;
+        for(int i = 0; i < kFrame; i++) worst = std::fmax(worst, std::fabs(after[i] - eng.Frame()[i]));
+        char m[128];
+        std::snprintf(m, sizeof m, "switching the base to the morph target gives plain that world (worst %.4f)", worst);
+        ck(m, worst < 1e-6);
+
+        /* and changing only the target clears it too */
+        World pl; solids::VertexTable t3;
+        worlds::Point(worlds::kPlate, pl, 8, nullptr, &t3);
+        eng.SetMorphOffset(off, kMaxN);
+        eng.SetMorph(&pl, 1.f);
+        double left = 0;
+        for(int a = 0; a < kMaxN; a++) left = std::fmax(left, std::fabs((double)eng.MorphOffset()[a]));
+        ck("changing the morph target clears the offset too", left == 0.0);
+
+        /* but the knob moving must not clear it */
+        eng.SetMorphOffset(off, kMaxN);
+        eng.SetMorph(&pl, 0.37f);
+        double kept = 0;
+        for(int a = 0; a < kMaxN; a++) kept = std::fmax(kept, std::fabs((double)eng.MorphOffset()[a]));
+        ck("but turning the Morph knob does not, or an aim would never survive", kept > 0.05);
+    }
+
     /* ── the cosine convention ──────────────────────────────────────────
      *
      * A cosine twin is the same spectrum rendered as a different waveform. It

@@ -190,7 +190,19 @@ public:
      * provided the caller finished building the new World before calling. */
     /* The world to blend towards, and how far. morph 0 or a null world is
      * exactly the single-world path, bit for bit. */
-    void SetMorph(const World* w, float amount) { morph_world_ = w; morph_ = amount; dirty_ = true; }
+    void SetMorph(const World* w, float amount)
+    {
+        /* The aim offset belongs to a *pair* of worlds, so changing either end
+         * makes it meaningless — and a meaningless offset is worse than none,
+         * because it silently reads the target somewhere nobody chose. Cleared
+         * on the world changing and not on the amount, since this is called
+         * every block from the Morph knob and clearing on every call would
+         * undo an aim the instant it was made. */
+        if(w != morph_world_) for(int a = 0; a < kMaxN; a++) moff_[a] = 0.f;
+        morph_world_ = w;
+        morph_ = amount;
+        dirty_ = true;
+    }
     /* Where in the other world to read. Zero means "the same coordinates",
        which is the honest default when nobody has aimed it. */
     void SetMorphOffset(const float* off, int n)
@@ -249,6 +261,9 @@ public:
          * main loop while the audio thread renders, and rewriting the phase
          * tables underneath a render is a tear. The render picks it up. */
         phase_dirty_ = true;
+        /* The aim offset was searched for against the world being replaced, so
+         * it does not describe this one. Same reason as above. */
+        for(int a = 0; a < kMaxN; a++) moff_[a] = 0.f;
         /* The band-limit hold exists to stop an audio-rate *pitch* from
          * re-rendering every block. A world switch is not pitch, and leaving
          * the hold in place meant a new world could be clamped to the old
