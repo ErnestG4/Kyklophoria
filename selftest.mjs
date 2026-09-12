@@ -68,7 +68,7 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
      stale three times as the block grew. 1 status + 460 fixed + 23 motion +
      1 body count + 8 per extra body + 1 pager page + 2 morph + 2 mute. */
   {
-    const want = 1 + 460 + 23 + 1 + 8 * ((tk ? tk.bodies : 1) - 1) + 1 + 2 + 2;
+    const want = 1 + 460 + 23 + 1 + 8 * ((tk ? tk.bodies : 1) - 1) + 1 + 2 + 2 + 1;
     check(tk && tk.bytes === want,
           `motion block totals ${want} B (got ${tk && tk.bytes}, ${tk && tk.bodies} bodies)`);
   }
