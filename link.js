@@ -433,6 +433,9 @@ function parseTelemetry(b) {
     at += b.length > at + 1 ? 2 : 0;
     t.aimed = b.length > at ? b[at] !== 0 : false;
     at += b.length > at ? 1 : 0;
+    /* where the live page's six knobs are sitting */
+    if (b.length >= at + 6) { t.pots = []; for (let i = 0; i < 6; i++) t.pots.push(b[at + i] / 255); at += 6; }
+    else t.pots = null;
   }
   t.bytes = b.length;
   return t;
