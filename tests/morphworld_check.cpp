@@ -25,6 +25,7 @@
 #include "kyk_worlds.h"
 #include "kyk_engine.h"
 #include "kyk_stereo.h"
+#include "../shell/common/kyk_aim.h"
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -221,6 +222,55 @@ int main()
                       "the payload follows a world switch with a still hand (off by %.4f, and it had %.2f to move)",
                       drift, target);
         ck(m, drift < 1e-6 && target > 1e-3);
+    }
+
+    /* ── aiming the morph ────────────────────────────────────────────────
+     *
+     * The same coordinates mean different things in different worlds, so a
+     * morph that holds them fixed travels somewhere arbitrary. Aiming has to
+     * land closer than not aiming, at every position, or it is not earning the
+     * search. The gain is largest exactly where tools/worldbasis says the two
+     * worlds' subspaces are most orthogonal, which is the shape it should have:
+     * the less two worlds agree about what their axes mean, the more there is
+     * to gain from not assuming they do. */
+    {
+        struct AP { uint8_t a, b; const char* an; const char* bn; };
+        const AP aps[] = { {worlds::kFm, worlds::kVowel, "FM", "Vowel"},
+                           {worlds::kBar, worlds::kFm, "Bar", "FM"},
+                           {worlds::kDrum, worlds::kPulse, "Drum", "Pulse"} };
+        for(const AP& ap : aps)
+        {
+            World A, B; solids::VertexTable ta, tb;
+            if(!worlds::Point(ap.a, A, 8, nullptr, &ta) || !worlds::Point(ap.b, B, 8, nullptr, &tb)) continue;
+            const int k = B.K() < A.K() ? B.K() : A.K();
+            double su = 0, sa = 0; int worse = 0, m = 0;
+            for(int t = 0; t < 16; t++)
+            {
+                float p[kMaxN] = {0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f};
+                for(int q = 0; q < 4; q++) p[q] = 0.15f + 0.7f * (float)((t >> q) & 1);
+                float here[kMaxK], mg[kMaxK], pl[kMaxP];
+                Weights wt;
+                auto unit = [&](float* v) { float e = 0; for(int i = 0; i < k; i++) e += v[i]*v[i];
+                                            const float g = e > 0 ? 1.f/std::sqrt(e) : 0.f;
+                                            for(int i = 0; i < k; i++) v[i] *= g; };
+                auto dist = [&](const float* x, const float* y)
+                { double d = 0; for(int i = 0; i < k; i++) { const double u = x[i]-y[i]; d += u*u; } return std::sqrt(d); };
+                A.Evaluate(p, 0.f, here, pl, wt); unit(here);
+                float pf[kMaxN]; B.Fold(p, pf); B.Evaluate(pf, 0.f, mg, pl, wt); unit(mg);
+                const double un = dist(mg, here);
+                float off[kMaxN]; AimSearch(A, B, p, 0.f, off);
+                float q2[kMaxN]; for(int q = 0; q < kMaxN; q++) q2[q] = p[q] + off[q];
+                B.Fold(q2, pf); B.Evaluate(pf, 0.f, mg, pl, wt); unit(mg);
+                const double ai = dist(mg, here);
+                su += un; sa += ai; if(ai > un + 1e-6) worse++;
+                m++;
+            }
+            char msg[144];
+            std::snprintf(msg, sizeof msg,
+                          "%s->%s: aiming lands closer (%.3f against %.3f), and never further at any of %d positions",
+                          ap.an, ap.bn, sa / m, su / m, m);
+            ck(msg, sa < su * 0.95 && worse == 0);
+        }
     }
 
     /* ── the cosine convention ──────────────────────────────────────────

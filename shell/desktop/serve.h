@@ -20,6 +20,7 @@
 #include "alchemy/host_link/wire.h"
 #include "kyk_ext.h"
 #include "kyk_worldrx.h"
+#include "kyk_aim.h"
 #include "kyk_telemetry.h"
 #include "script.h"
 #include "kyk_worlds.h"
@@ -123,6 +124,18 @@ public:
         {
             case kyk::kActResetPhase: eng->L.ResetPhase(); eng->R.ResetPhase(); return 0u;
             case kyk::kActRenderDiv: if(len < 1 || args[0] < 1) return 2u; eng->SetRenderDiv(args[0]); return 0u;
+            case kyk::kActAimMorph:
+            {
+                if(morphIdx == 0xFFu) return 1u;
+                const kyk::World* live = eng->L.WorldPtr();
+                if(!live || !live->Ready() || !morphWorld.Ready()) return 1u;
+                float p0[kyk::kMaxN], off[kyk::kMaxN];
+                live->Fold(eng->Control(), p0);
+                AimSearch(*live, morphWorld, p0, eng->L.sharp, off);
+                eng->L.SetMorphOffset(off, kyk::kMaxN);
+                eng->R.SetMorphOffset(off, kyk::kMaxN);
+                return 0u;
+            }
             case kyk::kActMotionMute:
             {
                 if(len < 2) return 2u;

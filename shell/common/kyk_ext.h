@@ -57,7 +57,14 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              the knob keeps its value and unmuting restores it —
                              which is the whole difference between a switch and
                              turning something down. */
-                          kActMotionMute = 9 };
+                          kActMotionMute = 9,
+                          /* search the morph world for the position whose
+                             spectrum is nearest the one playing, and read
+                             there — so a morph goes somewhere, rather than
+                             towards whatever the same coordinates collide
+                             with in a world that means something else by
+                             them. */
+                          kActAimMorph = 10 };
 constexpr uint16_t kMuteKepler = 0x8000u;
 
 struct ExtStats

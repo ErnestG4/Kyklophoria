@@ -90,6 +90,7 @@
   <div class="wrow">
     <span class="cap">MORPH</span>
     <select id="morphSel"><option value="255">off</option></select>
+    <button class="chip" id="morphAim">aim</button>
     <span id="morphState" style="color: var(--dim)"></span>
     <span class="sp"></span>
     <span class="cap">CARD</span>
@@ -712,6 +713,18 @@ $('wavMode').onclick = () => {
 $('wavSend').onclick = sendImported;
 $('wavClear').onclick = () => { imported.length = 0; renderImport(); };
 renderImport();
+/* Aiming searches the target world for the position whose spectrum is nearest
+   the one playing, and reads there. Without it a morph travels towards whatever
+   the same coordinates happen to mean in a world that means something else by
+   them. It is a button rather than something continuous because it is a
+   decision — where you are morphing *from* — not a thing that should track. */
+$('morphAim').onclick = async () => {
+  if (!link) return;
+  try {
+    await link.request(MVL.CMD.action, MVL.actionReq(10, []), { urgent: true });
+    say('aimed at the nearest match');
+  } catch (e) { say('aim: ' + e.message, true); }
+};
 $('cardScan').onclick = async () => {
   if (!link) return;
   try { await link.request(MVL.CMD.action, MVL.actionReq(6, []), { urgent: true }); await refreshCard(); }

@@ -39,7 +39,7 @@ $CXX $CORE_FLAGS $SAN tests/morph_check.cpp -o "$OUT/morph_check" || fail=1
 "$OUT/morph_check" || fail=1
 
 echo "== morphworld_check =="
-$CXX $CORE_FLAGS $SAN tests/morphworld_check.cpp -o "$OUT/morphworld_check" || fail=1
+$CXX $CORE_FLAGS -Ishell/common $SAN tests/morphworld_check.cpp -o "$OUT/morphworld_check" || fail=1
 "$OUT/morphworld_check" > "$OUT/mw.txt" || { cat "$OUT/mw.txt"; fail=1; }
 grep -q "all passed" "$OUT/mw.txt" || { cat "$OUT/mw.txt"; fail=1; }
 

@@ -37,6 +37,7 @@
 #include "kyk_telemetry.h"
 #include "kyk_ext.h"
 #include "kyk_worldrx.h"
+#include "kyk_aim.h"
 #include "alchemy/storage/sd_card.h"
 
 using namespace alchemy;
@@ -247,6 +248,7 @@ static volatile uint8_t gMorphIdx = 0xFFu;   /* what is loaded there now */
  * switch and turning something down. Chosen from the page — deciding which
  * planes are live is setup, not performance. */
 static volatile uint16_t gMute = 0u;
+static volatile uint8_t  gAimReq = 0u;   /* aim the morph at the nearest match */
 
 /* ── user worlds on the card ─────────────────────────────────────────────
  *
@@ -318,6 +320,21 @@ static size_t ReadCardWorld(uint8_t i)
 static char             gUserName[kUserNameLen + 1] = {0};
 static volatile uint8_t gWorldBusy = 0;
 static StereoEngine KYK_AXI gEng;
+
+/* Aiming runs on the main loop, never the audio callback: a few hundred world
+ * evaluations is milliseconds, which is nothing between blocks and everything
+ * inside one. Done once when a morph is aimed, not tracked. */
+static void AimMorph()
+{
+    if(gMorphIdx == 0xFFu || !gMorphWorld.Ready()) return;
+    const World* live = gEng.WorldPtr();
+    if(!live || !live->Ready()) return;
+    float p0[kMaxN], off[kMaxN];
+    live->Fold(gEng.Control(), p0);
+    AimSearch(*live, gMorphWorld, p0, gEng.sharp, off);
+    gEng.L.SetMorphOffset(off, kMaxN);
+    gEng.R.SetMorphOffset(off, kMaxN);
+}
 
 /* ── audio ↔ control shared state ────────────────────────────────────────── */
 /* Telemetry is encoded on the control thread now, so there is no snapshot
@@ -514,6 +531,11 @@ struct ModuleSource : ExtSource
                 if(gWorldBusy || gCardLoadReq >= 0) return 9u;
                 gCardLoadReq = (int8_t)args[0];
                 return 0u;
+            case kActAimMorph:
+                if(gMorphIdx == 0xFFu) return 1u;
+                if(gAimReq) return 9u;
+                gAimReq = 1u;
+                return 0u;
             case kActMotionMute:
                 if(len < 2) return 2u;
                 gMute = (uint16_t)(args[0] | (args[1] << 8));
@@ -666,6 +688,7 @@ static hostlink::Host host(presets, "kyk", "Kyklophoria", KYK_FW_VERSION, KYK_GI
  * enough that it must not happen anywhere near the audio callback. */
 static void ServeWorldRequest()
 {
+    if(gAimReq) { gAimReq = 0u; AimMorph(); return; }
     if(gCardLoadReq >= 0)
     {
         /* Card work is slow and must not happen under the audio callback, so

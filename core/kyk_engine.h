@@ -132,7 +132,14 @@ public:
             {
                 float mb[kMaxK], pb[kMaxP];
                 Weights wb;
-                morph_world_->Fold(c_, pm_);
+                /* The other world is read at an offset, because the same
+                 * coordinates mean different things in different worlds: axis 0
+                 * of FM is a modulation index and axis 0 of Plate is a strike
+                 * position. Without it a morph blends towards whatever those
+                 * happen to collide at, which is arbitrary. The offset is
+                 * searched for once, by whoever aims the morph. */
+                for(int a = 0; a < kMaxN; a++) pmo_[a] = c_[a] + moff_[a];
+                morph_world_->Fold(pmo_, pm_);
                 morph_world_->Evaluate(pm_, sharp, mb, pb, wb);
                 const float t = morph_ > 1.f ? 1.f : morph_;
                 const int   k = world_->K();
@@ -184,6 +191,14 @@ public:
     /* The world to blend towards, and how far. morph 0 or a null world is
      * exactly the single-world path, bit for bit. */
     void SetMorph(const World* w, float amount) { morph_world_ = w; morph_ = amount; dirty_ = true; }
+    /* Where in the other world to read. Zero means "the same coordinates",
+       which is the honest default when nobody has aimed it. */
+    void SetMorphOffset(const float* off, int n)
+    {
+        for(int a = 0; a < kMaxN; a++) moff_[a] = (off && a < n) ? off[a] : 0.f;
+        dirty_ = true;
+    }
+    const float* MorphOffset() const { return moff_; }
     const World* MorphWorld() const { return morph_world_; }
     float        Morph() const { return morph_; }
 
@@ -431,6 +446,8 @@ private:
     float          morph_ = 0.f;
 
     float          pm_[kMaxN] = {0.f};
+    float          pmo_[kMaxN] = {0.f};
+    float          moff_[kMaxN] = {0.f};
     float        sr_    = 48000.f;
     Osc          osc_;
     FftScratch   sc_;
