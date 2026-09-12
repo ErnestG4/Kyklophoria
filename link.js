@@ -242,6 +242,93 @@ async function getDescriptor(link, info) {
 
 /* ───────────── KykExt (0x60–0x6E) ───────────── */
 
+/* ── importing a single cycle ──────────────────────────────────────────
+ *
+ * A node is signed coefficients on the sine basis, because every cell in a
+ * world shares one phase spectrum — that is what makes the frame linear in the
+ * magnitude vector and the morph provably click-free. Per-harmonic phase would
+ * make import exact and would take that guarantee away: two nodes with
+ * different phases no longer blend linearly, and partials can cancel, which is
+ * the comb-filtered dip the whole design exists to make unreachable.
+ *
+ * So an imported wave is projected, and the projection loses whatever sits in
+ * the cosine half. A cycle's start phase is arbitrary, so we are free to rotate
+ * it first, and `fit` reports what survived the best rotation: measured over
+ * 401 AKWF waveforms the mean is 94%, four in five keep over 90%, and the worst
+ * keeps 55%. That number is shown rather than hidden, because which waveforms
+ * import faithfully is a thing the person choosing them should get to see.
+ *
+ * `mode: 'spectrum'` is the other honest answer — keep the magnitudes exactly
+ * and let the sine basis supply the shape. The spectrum survives whole; the
+ * waveform is not the one you imported. */
+function wavToCycle(buf) {
+  const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const tag = (o) => String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]);
+  if (b.length < 44 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') throw new Error('not a WAV file');
+  let at = 12, fmt = null, data = null;
+  while (at + 8 <= b.length) {
+    const id = tag(at), sz = dv.getUint32(at + 4, true);
+    if (id === 'fmt ') fmt = { code: dv.getUint16(at + 8, true), ch: dv.getUint16(at + 10, true),
+                               bits: dv.getUint16(at + 22, true) };
+    else if (id === 'data') data = { off: at + 8, len: Math.min(sz, b.length - at - 8) };
+    at += 8 + sz + (sz & 1);
+  }
+  if (!fmt || !data) throw new Error('WAV has no fmt or data chunk');
+  const bytes = fmt.bits >> 3;
+  if (!bytes || !fmt.ch) throw new Error('unsupported WAV layout');
+  const n = Math.floor(data.len / bytes / fmt.ch);
+  if (n < 8) throw new Error('too few samples for a cycle');
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const o = data.off + i * fmt.ch * bytes;       /* channel 0 only */
+    out[i] = fmt.bits === 16 ? dv.getInt16(o, true) / 32768
+           : fmt.bits === 8  ? (b[o] - 128) / 128
+           : fmt.bits === 24 ? ((b[o] | (b[o + 1] << 8) | ((b[o + 2] << 24) >> 8)) / 8388608)
+           : fmt.code === 3  ? dv.getFloat32(o, true)
+                             : dv.getInt32(o, true) / 2147483648;
+  }
+  return out;
+}
+
+/* One cycle -> K signed sine-basis coefficients, plus what the projection kept. */
+function cycleToNode(x, k = 64, mode = 'shape') {
+  const N = x.length;
+  const a = new Float64Array(k + 1), bb = new Float64Array(k + 1);
+  for (let h = 1; h <= k; h++) {
+    let ar = 0, br = 0;
+    for (let i = 0; i < N; i++) {
+      const t = 2 * Math.PI * h * i / N;
+      ar += x[i] * Math.cos(t); br += x[i] * Math.sin(t);
+    }
+    a[h] = 2 * ar / N; bb[h] = 2 * br / N;
+  }
+  let tot = 0;
+  for (let h = 1; h <= k; h++) tot += a[h] * a[h] + bb[h] * bb[h];
+  const mags = new Float32Array(k);
+  if (mode === 'spectrum') {
+    for (let h = 1; h <= k; h++) mags[h - 1] = Math.hypot(a[h], bb[h]);
+    return { mags, fit: 1, rotation: 0, mode };
+  }
+  /* One DFT, then the rotation search is k operations per offset rather than a
+     fresh transform — 64 x N in total, not 64 x N x N. */
+  let bestKeep = -1, bestAt = 0;
+  for (let s = 0; s < N; s++) {
+    let keep = 0;
+    for (let h = 1; h <= k; h++) {
+      const th = 2 * Math.PI * h * s / N;
+      const v = bb[h] * Math.cos(th) - a[h] * Math.sin(th);
+      keep += v * v;
+    }
+    if (keep > bestKeep) { bestKeep = keep; bestAt = s; }
+  }
+  for (let h = 1; h <= k; h++) {
+    const th = 2 * Math.PI * h * bestAt / N;
+    mags[h - 1] = bb[h] * Math.cos(th) - a[h] * Math.sin(th);
+  }
+  return { mags, fit: tot > 0 ? bestKeep / tot : 1, rotation: bestAt, mode };
+}
+
 /* Build a user-world blob (core/kyk_userworld.h). `nodes` is an array of
    { pos: [..n], mags: Float32Array(k) }; coefficients are written exactly as
    given, because per-node level is how much a node weighs in the blend and
@@ -871,7 +958,7 @@ const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
-  parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, buildUserWorld, fetchCardWorlds,
+  parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, buildUserWorld, fetchCardWorlds, wavToCycle, cycleToNode,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KYK = api;

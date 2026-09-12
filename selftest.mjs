@@ -64,7 +64,14 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   check(t && t.n === 4 && t.k === 64 && t.p === 8 && t.planes === 6, 'telemetry header');
   check(t && t.bytes === 461, 'telemetry body 460 B + status (got ' + (t && t.bytes) + ')');
   const tk = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
-  check(tk && tk.bytes === 484, 'motion block appends 23 B (got ' + (tk && tk.bytes) + ')');
+  /* Spelled out rather than as a magic number, because this has now gone
+     stale three times as the block grew. 1 status + 460 fixed + 23 motion +
+     1 body count + 8 per extra body + 1 pager page + 2 morph. */
+  {
+    const want = 1 + 460 + 23 + 1 + 8 * ((tk ? tk.bodies : 1) - 1) + 1 + 2;
+    check(tk && tk.bytes === want,
+          `motion block totals ${want} B (got ${tk && tk.bytes}, ${tk && tk.bodies} bodies)`);
+  }
   check(tk && tk.kepler && tk.kepler.plane < 6 && tk.kepler.rush >= 0 && tk.lock >= 0
         && tk.sharp >= 0 && tk.sharp <= 1, 'motion fields parse, sharp included');
   check(t && t.mags && t.mags.length === 64 && t.frame && t.frame.length === 256, 'spectrum + frame present');
@@ -257,6 +264,56 @@ if (doBridge) {
   await new Promise(r => setTimeout(r, 150));
   bridge.kill();
   check(logs.join('').includes('connected'), 'bridge logged the connection');
+}
+
+/* ── importing a single cycle ─────────────────────────────────────────── */
+{
+  const N = 600;
+  const mk = (f) => { const x = new Float64Array(N); for (let i = 0; i < N; i++) x[i] = f(i / N); return x; };
+
+  const sine = KYK.cycleToNode(mk(u => Math.sin(2 * Math.PI * u)));
+  check(sine.fit > 0.9999, `a pure sine fits the sine basis exactly (${sine.fit.toFixed(4)})`);
+  check(Math.abs(Math.abs(sine.mags[0]) - 1) < 1e-3 && Math.abs(sine.mags[1]) < 1e-3,
+        'and lands entirely in harmonic 1');
+
+  /* a saw is 2/(pi h): the ratio of the first two harmonics must be 2 */
+  const saw = KYK.cycleToNode(mk(u => 2 * u - 1));
+  const ratio = Math.abs(saw.mags[0] / saw.mags[1]);
+  check(saw.fit > 0.99 && Math.abs(ratio - 2) < 0.02,
+        `a saw keeps ${(100 * saw.fit).toFixed(1)}% and rolls off as 1/h (h1/h2 = ${ratio.toFixed(3)})`);
+
+  /* a cosine is the worst case: it is entirely in the half we cannot store,
+     until the rotation search moves it, which is the whole point of doing one */
+  const cos = KYK.cycleToNode(mk(u => Math.cos(2 * Math.PI * u)));
+  check(cos.fit > 0.999, `a cosine is rescued by the rotation search (${cos.fit.toFixed(4)}, offset ${cos.rotation})`);
+
+  /* spectrum mode keeps the magnitudes whatever the phase */
+  const cs = KYK.cycleToNode(mk(u => Math.cos(2 * Math.PI * u)), 64, 'spectrum');
+  check(cs.fit === 1 && Math.abs(cs.mags[0] - 1) < 1e-3,
+        'spectrum mode keeps the magnitude and discards the phase');
+
+  /* a WAV survives the round trip into a node */
+  const n = 256, wav = new Uint8Array(44 + n * 2), dv = new DataView(wav.buffer);
+  const put = (o, t) => { for (let i = 0; i < 4; i++) wav[o + i] = t.charCodeAt(i); };
+  put(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); put(8, 'WAVE');
+  put(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, 48000, true); dv.setUint32(28, 96000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  put(36, 'data'); dv.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) dv.setInt16(44 + i * 2, Math.round(32767 * Math.sin(2 * Math.PI * i / n)), true);
+  const cyc = KYK.wavToCycle(wav);
+  check(cyc.length === n, `a 16-bit mono WAV parses to ${cyc.length} samples`);
+  const node = KYK.cycleToNode(cyc);
+  check(node.fit > 0.999, 'and projects cleanly');
+
+  const blob = KYK.buildUserWorld([{ pos: [0.2, 0.5, 0.5, 0.5], mags: node.mags },
+                                   { pos: [0.8, 0.5, 0.5, 0.5], mags: saw.mags }], { name: 'import' });
+  check(blob.length === 32 + 2 * 4 * (4 + 64), `two imported nodes make a ${blob.length}-byte world`);
+  check(new DataView(blob.buffer).getUint32(0, true) === 0x574B594B && blob[8] === 2,
+        'with the right magic and node count');
+
+  let badWav = false;
+  try { KYK.wavToCycle(new Uint8Array(64)); } catch { badWav = true; }
+  check(badWav, 'a file that is not a WAV is refused rather than guessed at');
 }
 
 console.log(failures ? `selftest: ${failures} of ${checks} checks FAILED` : `selftest: all ${checks} checks passed`);
