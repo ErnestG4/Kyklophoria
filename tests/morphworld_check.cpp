@@ -24,6 +24,7 @@
  */
 #include "kyk_worlds.h"
 #include "kyk_engine.h"
+#include "kyk_stereo.h"
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -178,6 +179,48 @@ int main()
                           dir ? "random phase" : "sine phase", dir ? "random phase" : "sine phase", worst);
             ck(m, worst < 1e-6);
         }
+    }
+
+    /* ── everything derived from a world must follow it ──────────────────
+     *
+     * The phase bug above was one instance of a class, so the class is swept
+     * here. The payload is the other one that was real: it is cached against
+     * the position rather than the world, so a switch with a still hand left it
+     * holding the previous world's numbers — and the payload drives CV out A
+     * and the page's lanes, so the module reported a world it was not playing
+     * until something moved. */
+    {
+        World a, b; solids::VertexTable t1, t2;
+        worlds::Point(worlds::kFm, a, 8, nullptr, &t1);
+        worlds::Point(worlds::kDrum, b, 8, nullptr, &t2);
+        StereoEngine se;
+        se.Init(&a, 48000.f); se.spread = 0.05f; se.slew_ms = 0.f;
+        float c[kMaxN] = {0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f};
+        se.SetControl(c, 4);
+        float lo[64], ro[64];
+        for(int i = 0; i < 8; i++) se.Process(lo, ro, 24);
+        float was[kMaxP];
+        for(int j = 0; j < 8; j++) was[j] = se.Payload()[j];
+
+        se.SetWorld(&b);                       /* hand perfectly still */
+        for(int i = 0; i < 8; i++) se.Process(lo, ro, 24);
+
+        StereoEngine fresh;
+        fresh.Init(&b, 48000.f); fresh.spread = 0.05f; fresh.slew_ms = 0.f;
+        fresh.SetControl(c, 4);
+        for(int i = 0; i < 8; i++) fresh.Process(lo, ro, 24);
+
+        double drift = 0, target = 0;
+        for(int j = 0; j < 8; j++)
+        {
+            drift  = std::fmax(drift,  std::fabs((double)se.Payload()[j] - fresh.Payload()[j]));
+            target = std::fmax(target, std::fabs((double)was[j] - fresh.Payload()[j]));
+        }
+        char m[136];
+        std::snprintf(m, sizeof m,
+                      "the payload follows a world switch with a still hand (off by %.4f, and it had %.2f to move)",
+                      drift, target);
+        ck(m, drift < 1e-6 && target > 1e-3);
     }
 
     /* ── the cosine convention ──────────────────────────────────────────

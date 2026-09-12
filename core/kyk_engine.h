@@ -234,6 +234,13 @@ public:
          * main loop while the audio thread renders, and rewriting the phase
          * tables underneath a render is a tear. The render picks it up. */
         phase_dirty_ = true;
+        /* The band-limit hold exists to stop an audio-rate *pitch* from
+         * re-rendering every block. A world switch is not pitch, and leaving
+         * the hold in place meant a new world could be clamped to the old
+         * one's cutoff for up to 64 blocks — about 32 ms of the wrong
+         * brightness every time you changed world. */
+        kcut_want_ = 1 << 20;
+        hold_      = 0;
         for(int a = 0; a < kMaxN; a++) rendered_[a] = 1e9f;   /* force a re-render */
     }
 

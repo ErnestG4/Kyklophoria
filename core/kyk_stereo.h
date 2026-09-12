@@ -80,6 +80,16 @@ public:
         world_ = w;
         L.SetWorld(w);
         R.SetWorld(w);
+        /* The payload cache is keyed on the position, not the world, so a
+         * switch with a still hand left it holding the previous world's
+         * numbers — and the payload drives CV out A and the page's lanes, so
+         * the module went on reporting a world it was no longer playing until
+         * something moved. Measured: 0.50 of stale payload on an FM to Drum
+         * switch, where the correct answer was to change by exactly that.
+         *
+         * Same shape as the phase bug directly above this one: derived state
+         * that did not follow the world it was derived from. */
+        for(int a = 0; a < kMaxN; a++) payAt_[a] = 1e9f;
     }
 
     /* Engine tunables, applied to both voices. */
