@@ -635,6 +635,43 @@ struct ModuleSource : ExtSource
                 if(gWorldBusy || gSlotTargetReq >= 0) return 9u;
                 gSlotTargetReq = args[0] == 0xFFu ? (int8_t)kSlotCount : (int8_t)args[0];
                 return 0u;
+            case kActSlotSwap:
+            {
+                if(len < 2 || args[0] >= kSlotCount || args[1] >= kSlotCount) return 2u;
+                const uint8_t a = args[0], b = args[1];
+                if(a == b) return 0u;
+                /* Safe to do here, in the handler, and worth saying why: what
+                 * is *playing* is an expanded World in gWorlds and the morph
+                 * target is another in gMorphWorld, so neither reads a blob
+                 * except at the moment it is loaded. Exchanging the blobs
+                 * cannot reach the audio thread.
+                 *
+                 * Chunked through a small stack buffer rather than a second
+                 * staging area: 6.7 KB of SDRAM reserved for a swap nobody
+                 * does in a hurry is 6.7 KB spent on nothing. 13.5 KB of SDRAM
+                 * memcpy is on the order of a hundred microseconds. */
+                uint8_t        tmp[256];
+                const uint32_t n = gSlotLen[a] > gSlotLen[b] ? gSlotLen[a] : gSlotLen[b];
+                for(uint32_t off = 0; off < n; off += (uint32_t)sizeof tmp)
+                {
+                    const uint32_t c = (n - off) < (uint32_t)sizeof tmp
+                                           ? (n - off) : (uint32_t)sizeof tmp;
+                    std::memcpy(tmp, gSlotBlob[a] + off, c);
+                    std::memcpy(gSlotBlob[a] + off, gSlotBlob[b] + off, c);
+                    std::memcpy(gSlotBlob[b] + off, tmp, c);
+                }
+                const uint32_t ln = gSlotLen[a]; gSlotLen[a] = gSlotLen[b]; gSlotLen[b] = ln;
+                char nm[kUserNameLen + 1];
+                std::memcpy(nm, gSlotName[a], sizeof nm);
+                std::memcpy(gSlotName[a], gSlotName[b], sizeof nm);
+                std::memcpy(gSlotName[b], nm, sizeof nm);
+                /* The indices follow the contents. Without this, rearranging
+                   the list would leave "playing" pointing at whatever moved
+                   into that number. */
+                if(gSlotLive == a) gSlotLive = b; else if(gSlotLive == b) gSlotLive = a;
+                if(gSlotTarget == a) gSlotTarget = b; else if(gSlotTarget == b) gSlotTarget = a;
+                return 0u;
+            }
             case kActSlotFree:
                 if(len < 1 || args[0] >= kSlotCount) return 2u;
                 gSlotLen[args[0]] = 0u;

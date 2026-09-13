@@ -127,6 +127,7 @@ Request: `u8 op [, args]`. Reply: status only.
 | 11 | `u8 slot` | play the world in that slot |
 | 12 | `u8 slot` | morph towards that slot; 0xFF clears the target. This is the one thing the morph could not do before — the target index space was the built-ins, so a world you made could never be one end of a blend |
 | 13 | `u8 slot` | forget a slot |
+| 14 | `u8 a, u8 b` | exchange two slots, contents and names, with `live` and `target` following the contents rather than the numbers. Here rather than on the host because a host does not have the blob for a slot it did not store. Safe in the handler: what is playing is an expanded World and the morph target is another, so neither reads a blob except when loading one |
 | 10 | — | aim the morph: search the target world for the position whose spectrum is nearest the one playing, and read it there. Refused with status 1 when no target is set |
 
 ### 0x65 GET_WORLDS

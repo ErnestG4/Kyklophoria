@@ -147,7 +147,14 @@ which one is playing and which one the Morph knob is heading towards. Pick a
 slot and store the build set into it, or drag a `.kykw` straight onto it — the
 file is parsed and refused by the page before any of it goes on the wire, so a
 wrong file costs you a message rather than a transfer. Play any slot, make any
-slot the morph target, forget one you are done with.
+slot the morph target, forget one you are done with, and **drag one slot onto
+another to exchange them**.
+
+Exchange rather than insert, because with a fixed grid of numbered slots
+shifting the rest along renumbers everything the module is holding, including
+whatever is playing. A swap touches two. Dropping onto an empty slot is
+therefore a move, which is what it looks like. The module does the swapping: a
+host does not have the blob for a slot it did not put there, only the name.
 
 That last one is the point. Until slots existed a world you imported could be
 played and never *returned to*: a transfer replaced whatever was live, and the

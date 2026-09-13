@@ -81,7 +81,16 @@
   #worldbar input[type=text]::placeholder { color: var(--dim); opacity: .7; }
   main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 34%); gap: 0; min-height: 0; }
   /* Both views occupy the same row; whichever is not hidden fills it. */
+  /* Every row placed explicitly, so auto-placement has nothing to decide.
+     The play view fills row 2 with the world bar, but the build and worlds tabs
+     hide it — and with row 2 free, sparse auto-placement is entitled to put the
+     footer there, between the header and the pane. Pinning all of them costs
+     two declarations and removes the question. */
+  header { grid-row: 1; }
+  nav#worldbar { grid-row: 2; }
   main, #buildMain, #libMain { grid-row: 3; }
+  #drawer { grid-row: 4; }
+  footer { grid-row: 5; }
   #libMain { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
   /* The slots. A grid rather than a list because thirty-two of them is a shape
      you scan, not a thing you read top to bottom. */
@@ -2311,7 +2320,7 @@ $('audC').onclick = () => auditionPick(2);
  * page put there itself. A slot filled in an earlier session is playable and
  * its rings are not drawn, which is the honest answer rather than a guess.
  */
-let slots = null, slotSel = -1;
+let slots = null, slotSel = -1, slotDrag = -1;
 const slotNodes = {};        /* slot -> [{ name, pos }], only what we sent */
 
 async function refreshSlots() {
@@ -2347,17 +2356,51 @@ function renderSlots() {
     }
     el.appendChild(num); el.appendChild(nm); el.appendChild(badge);
     el.onclick = () => { slotSel = i; renderSlots(); renderLib(); };
-    /* Drag a .kykw straight onto a slot. The file is parsed and refused here
-       rather than on the module, so a wrong file costs nothing and says so. */
+    /* Two kinds of drop, and they are told apart by whether the browser handed
+       us a file. A .kykw from the desktop lands in this slot; a slot dragged
+       from elsewhere in the grid exchanges with this one.
+     *
+     * Exchange, not insert. With a fixed grid of numbered slots, moving one
+     * into another's place has to do *something* with the one that was there,
+     * and shifting the rest along renumbers everything the module is holding —
+     * including whatever is playing. Swapping touches exactly two. Dropping
+     * onto an empty slot is therefore a move, which is what it looks like. */
+    if (name) {
+      el.draggable = true;
+      el.addEventListener('dragstart', e => {
+        slotDrag = i;
+        if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(i)); } catch {} }
+      });
+      el.addEventListener('dragend', () => { slotDrag = -1; });
+    }
     el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drop'); });
     el.addEventListener('dragleave', () => el.classList.remove('drop'));
     el.addEventListener('drop', async e => {
       e.preventDefault(); el.classList.remove('drop');
       const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (f) await storeFile(i, f);
+      if (f) { await storeFile(i, f); return; }
+      if (slotDrag >= 0 && slotDrag !== i) await swapSlots(slotDrag, i);
+      slotDrag = -1;
     });
     box.appendChild(el);
   }
+}
+
+/* Exchange two slots. The module does it, because the page does not have the
+   blob for a slot it did not put there — it knows the name and nothing else.
+   What is playing is an expanded copy, so a swap cannot reach the audio. */
+async function swapSlots(a, b) {
+  if (!link) return;
+  try {
+    await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.slotSwap, [a & 0xff, b & 0xff]), { urgent: true });
+    /* The page's own record of where nodes are has to follow the contents too,
+       or the play view would draw the wrong world's rings after a rearrange. */
+    const na = slotNodes[a], nb = slotNodes[b];
+    if (nb) slotNodes[a] = nb; else delete slotNodes[a];
+    if (na) slotNodes[b] = na; else delete slotNodes[b];
+    if (slotSel === a) slotSel = b; else if (slotSel === b) slotSel = a;
+    await refreshSlots();
+  } catch (e) { say('swap: ' + e.message, true); }
 }
 
 async function storeFile(slot, file) {

@@ -645,6 +645,27 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   check((await act(KYK.ACT.slotTarget, 0xFF))[0] === 0, 'the target can be cleared');
   check(same(await settle(), live3), 'and the sound goes back to the world that is playing');
 
+  /* Rearranging. Has to happen on the module: a host does not have the blob
+     for a slot it did not store, only the name. */
+  await act(KYK.ACT.slotLive, 0);
+  await act(KYK.ACT.slotTarget, 3);
+  /* Captured here, not reused from earlier: with a target armed the sound is a
+     blend of both, so "unchanged" means unchanged from this moment. */
+  const beforeSwap = await settle();
+  check((await act(KYK.ACT.slotSwap, 0, 3))[0] === 0, 'two slots can be exchanged');
+  const sw = await KYK.fetchSlots(link);
+  check(sw.names[0] === 'buzz' && sw.names[3] === 'hollow', 'the contents move');
+  check(sw.live === 3 && sw.target === 0,
+        `and playing and target follow them rather than the numbers (live ${sw.live}, target ${sw.target})`);
+  /* The same world is still playing, at a different number, so the sound must
+     not have moved at all — a swap is bookkeeping and not a reload. */
+  check(same(await settle(), beforeSwap),
+        'and the sound does not move: the same two worlds are playing, at different numbers');
+  check((await act(KYK.ACT.slotSwap, 7, 7))[0] === 0, 'a slot can be swapped with itself, harmlessly');
+  check(await refused(KYK.ACT.slotSwap, 0, 99), 'a swap with a slot that does not exist is refused');
+  await act(KYK.ACT.slotSwap, 0, 3);        /* put them back */
+  await act(KYK.ACT.slotTarget, 0xFF);
+
   /* housekeeping, and the refusals */
   check(await refused(KYK.ACT.slotLive, 1), 'an empty slot cannot be played');
   check(await refused(KYK.ACT.slotTarget, 1), 'nor be a morph target');
@@ -652,10 +673,15 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   let sentToNowhere = false;
   try { await KYK.putSlot(link, 99, A); } catch { sentToNowhere = true; }
   check(sentToNowhere, 'and so is a transfer to one');
+  /* Free whatever is playing, so the second half of this is about freeing a
+     *live* slot rather than about whichever index a previous check left behind.
+     The first version of this depended on the state the test above happened to
+     end in, and broke the moment a test was inserted before it. */
+  await act(KYK.ACT.slotLive, 3);
   check((await act(KYK.ACT.slotFree, 3))[0] === 0, 'a slot can be freed');
   const after = await KYK.fetchSlots(link);
-  check(after.names[3] === null && after.live === 0xFF,
-        'which empties it and stops it claiming to be live');
+  check(after.names[3] === null, 'which empties it');
+  check(after.live === 0xFF, 'and stops it claiming to be live');
 });
 
 console.log(failures ? `selftest: ${failures} of ${checks} checks FAILED` : `selftest: all ${checks} checks passed`);

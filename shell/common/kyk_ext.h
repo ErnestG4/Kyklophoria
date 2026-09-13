@@ -90,7 +90,12 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              blobs and only what is playing is a World. */
                           kActSlotLive   = 11,   /* u8 slot: play it */
                           kActSlotTarget = 12,   /* u8 slot, 0xFF clears: morph towards it */
-                          kActSlotFree   = 13 }; /* u8 slot: forget it */
+                          kActSlotFree   = 13,   /* u8 slot: forget it */
+                          /* u8 a, u8 b: exchange two slots. Reordering has to
+                             happen here rather than on the host, because a host
+                             does not have the blob for a slot it did not put
+                             there — it knows the names and nothing else. */
+                          kActSlotSwap   = 14 };
 /* Slots, matching the card's own list size so the two stay one to one. A u8
    index then still has room for the two sentinels below. */
 constexpr int     kSlotCount   = 32;

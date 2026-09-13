@@ -275,6 +275,17 @@ public:
                 slotTarget = args[0];
                 return 0u;
             }
+            case kyk::kActSlotSwap:
+            {
+                if(len < 2 || args[0] >= kyk::kSlotCount || args[1] >= kyk::kSlotCount) return 2u;
+                const uint8_t a = args[0], b = args[1];
+                if(a == b) return 0u;
+                slotBlob[a].swap(slotBlob[b]);
+                slotName[a].swap(slotName[b]);
+                if(slotLive == a) slotLive = b; else if(slotLive == b) slotLive = a;
+                if(slotTarget == a) slotTarget = b; else if(slotTarget == b) slotTarget = a;
+                return 0u;
+            }
             case kyk::kActSlotFree:
             {
                 if(len < 1 || args[0] >= kyk::kSlotCount) return 2u;

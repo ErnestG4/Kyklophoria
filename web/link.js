@@ -26,7 +26,7 @@ const CMD = {
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4,
               morphWorld: 5, scanCard: 6, loadCardWorld: 7, phase: 8, motionMute: 9,
-              aimMorph: 10, slotLive: 11, slotTarget: 12, slotFree: 13 };
+              aimMorph: 10, slotLive: 11, slotTarget: 12, slotFree: 13, slotSwap: 14 };
 /* A morph target that is one of yours has no world index; 0xFF already means
    no target at all. */
 const MORPH_USER = 0xFE;
