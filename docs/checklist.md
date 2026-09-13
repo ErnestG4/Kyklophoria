@@ -274,6 +274,15 @@ meaningful axis and stacking four banks makes rotation meaningless.
       burning a retry: 522 ms and one timeout without the fix, under a
       millisecond with it.
 
+## Web, legibility
+
+- [x] **Text contrast, measured rather than eyeballed.** `--dim` was 3.51:1
+      against the background — under the 4.5 readable floor — and it carries
+      the world bar, the footer, the build row and every state line. The canvas
+      was worse: captions 3.64, the card fit 2.76, the empty-state hints 2.11,
+      the pages-you-are-not-on 1.72. All lifted in place with hue and
+      saturation kept, `--dim` to 7:1, nothing text under 4.5:1.
+
 ## Known warts
 
 - [ ] **v/oct is read at control rate, not audio rate.** `hw.cv[0].Volts()`
