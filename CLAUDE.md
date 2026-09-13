@@ -73,6 +73,22 @@ fifth had the same shape — every check of the send path asked whether the modu
   been drawn.
 - **Desktop timings lie about the M7** by an order of magnitude on serial
   dependency chains. `make armcost` counts instructions instead.
+- **A race is not a delay, and reading twice is not waiting.** A world change
+  is applied on the request but only reaches telemetry on the next *render*,
+  and a render is not every block. Two attempts at this failed intermittently —
+  "read twice" about one run in four, "read until two agree" about one in five,
+  because a throttled render looks exactly like a settled picture from outside.
+  What works: drive a few blocks, then require three consecutive identical
+  frames. Idle reads are bit-identical, which is what makes agreement mean
+  anything at all.
+- **Waiting longer can make a check vacuous.** Settling generously hid the very
+  bug the check was written for: without `SetWorld` the world's contents are
+  still replaced, so something else eventually forces a render and the spectrum
+  changes anyway — late, and at the wrong phase convention. The fix was to
+  assert something the bug breaks *permanently*: arriving at a sent world from
+  three different worlds must give byte-identical frames. 0 with the fix, 173
+  of 255 without, every run either way. When a check needs a timing window to
+  be right, it is usually asking the wrong question.
 - Measure before building. `tools/worldbasis` killed a translation feature
   before it was written; `tools/fmsearch` produced three wrong answers in a row
   (metric gaming, then worse gaming, then winner's curse) before an honest one.

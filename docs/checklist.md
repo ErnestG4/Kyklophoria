@@ -335,6 +335,14 @@ meaningful axis and stacking four banks makes rotation meaningless.
       compares the page's evaluation against the module's own spectrum in
       decibels, which is the only comparison the wire can settle.
 - [ ] Panel mirror (spec §8 view 4) reading the jack list from the descriptor.
+- [x] **The world-change race in the selftest.** A change is applied on the
+      request but only reaches telemetry on the next render, and a render is
+      not every block. Two versions of the wait failed intermittently before
+      one worked; worse, settling generously made the check *vacuous*, because
+      a late render picks up the new contents anyway. Replaced with something
+      the bug breaks permanently: arriving at a sent world from three different
+      worlds must give byte-identical frames — switch_check's invariant asked
+      of the one path that is not a world switch. 0 against 173 of 255.
 - [x] **A watch for draws at a coordinate that is not a number.** `arc(NaN, …)`
       is not an error on any canvas — it draws nothing, which is
       indistinguishable from a mark that is off screen — so this class of bug
