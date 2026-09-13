@@ -716,6 +716,23 @@ console.log('\n== the card: write, list, read back, and refuse to clobber');
   await KYK.putSlot(link, 2, blob);
 
   check(fs.readdirSync(dir).length === 0, 'the card starts empty');
+
+  /* A blank card has no world folder, and the first save anybody ever does has
+     to work anyway — without this it failed with a generic device error and
+     nothing in the message said the directory was missing. */
+  {
+    const blank = path.join(dir, 'nofolder');
+    const c2 = spawn(bin, ['--serve', '--gen', '--seed', '1', '--card', blank],
+                     { stdio: ['pipe', 'pipe', 'inherit'] });
+    const l2 = new KYK.Link(new KYK.StdioTransport(c2));
+    await l2.start(); await KYK.hello(l2);
+    await KYK.putSlot(l2, 0, blob);
+    let ok = true;
+    try { await KYK.saveCardWorld(l2, 0, 'first', false); } catch { ok = false; }
+    check(ok && fs.existsSync(path.join(blank, 'first.kykw')),
+          'saving to a card with no world folder makes the folder');
+    await l2.close();
+  }
   await KYK.saveCardWorld(link, 2, 'bells', false);
   check(fs.existsSync(path.join(dir, 'bells.kykw')), 'a slot can be written to the card');
   /* Byte for byte, because a world that comes back different is worse than one
