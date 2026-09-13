@@ -289,7 +289,7 @@ int main()
      * everything except the world changing. */
     {
         World br, fm; solids::VertexTable t1, t2;
-        worlds::Point(worlds::kBraids, br, 8, nullptr, &t1);
+        worlds::Point(worlds::kCrop, br, 8, nullptr, &t1);
         worlds::Point(worlds::kFm, fm, 8, nullptr, &t2);
         float p[kMaxN] = {0.4f, 0.6f, 0.45f, 0.55f, 0.5f, 0.5f};
         float o[24];

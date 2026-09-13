@@ -291,6 +291,27 @@ meaningful axis and stacking four banks makes rotation meaningless.
       the pages-you-are-not-on 1.72. All lifted in place with hue and
       saturation kept, `--dim` to 7:1, nothing text under 4.5:1.
 
+## Worlds, named and described
+
+- [x] **The world called Braids is called Crop.** It is four principal
+      components of Emilie Gillet's 256-wave bank and sounds like neither the
+      bank nor the module it came from, so naming it after somebody else's
+      instrument was both inaccurate and a liberty. The credit is in the note,
+      in THIRD_PARTY.md and in the README, which is where it belongs.
+- [x] **Every world says what its axes do.** The notes were labels — "eigenspace
+      of a 256-wave bank" says where it came from and nothing about what
+      turning a knob will do. They now name the four axes and give the formula
+      where there is one: exp(-d^2/2s^2) for the vertex blends, the Bessel
+      ranges for FM, the tilt exponents for the bend worlds, the chaining for
+      Vowel. About 2.9 KB across twenty-one worlds, which took the list from
+      one page to four — the paging was built for this and had never carried
+      more than one page in anger, so the selftest now walks it and checks
+      every world arrives exactly once.
+- [ ] The notes are one string each, so the page cannot lay out an axis list as
+      a list. A per-axis array in the world entry would let the panel mirror
+      name position 0 to 3 for the world you are actually in, which is the
+      thing the panel cannot currently tell you.
+
 ## Known warts
 
 - [ ] **v/oct is read at control rate, not audio rate.** `hw.cv[0].Volts()`

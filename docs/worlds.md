@@ -235,7 +235,7 @@ terms.
 
 | world | backend | variety | spread | twins | covers Braids | median |
 |---|---|---|---|---|---|---|
-| Braids | analytic | 1.466 | 2.14x | 0.4% | 32% | 0.0505 |
+| Crop | analytic | 1.466 | 2.14x | 0.4% | 32% | 0.0505 |
 | 24-cell | vertices | 0.658 | 3.64x | 0.4% | 16% | 0.1766 |
 | 16-cell | vertices | 0.382 | 3.14x | 2.3% | 14% | 0.2148 |
 | Tesseract | vertices | 0.469 | 4.22x | 1.2% | 16% | 0.1667 |
@@ -606,7 +606,7 @@ what you are hearing.
 # Two more, added rather than retrofitted (2026-09-09)
 
 Will's instruction after the shape tables landed: *"Let's add more instead of
-changing the ones that are there."* So Braids, the three vertex worlds, Stack
+changing the ones that are there."* So Crop, the three vertex worlds, Stack
 and the fields all still render at random phase and are untouched. These two
 are new.
 
@@ -678,7 +678,7 @@ Lock and 0.80 for Unison, against 4.1 µs for the transform they feed.
 
 | world | backend | variety | spread | twins | covers | median |
 |---|---|---|---|---|---|---|
-| Braids | analytic | 1.466 | 2.14x | 0.4% | 32% | 0.0505 |
+| Crop | analytic | 1.466 | 2.14x | 0.4% | 32% | 0.0505 |
 | 24-cell | vertices | 0.658 | 3.64x | 0.4% | 16% | 0.1766 |
 | 16-cell | vertices | 0.382 | 3.14x | 2.3% | 14% | 0.2148 |
 | Tesseract | vertices | 0.469 | 4.22x | 1.2% | 16% | 0.1667 |

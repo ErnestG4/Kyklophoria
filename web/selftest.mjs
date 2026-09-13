@@ -376,6 +376,28 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   const frame    = () => settle(t => t.frame);
   const select   = (i) => link.request(KYK.CMD.action, Uint8Array.of(4, i));
 
+  /* The world list, which is now four pages rather than one.
+   *
+   * The notes used to be six words; they now say what each of the four axes
+   * does and give the formula where there is one, which took the list from
+   * about 900 bytes to about 2.9 KB against a 1024-byte body. That is what
+   * the paging was built for, and it had never carried more than one page in
+   * anger — so this walks it and checks every world arrives exactly once. */
+  {
+    const all = await KYK.fetchWorlds(link);
+    check(all.count === 21 && all.list.length === 21,
+          `all ${all.count} worlds arrive across the pages (${all.list.length} listed)`);
+    const seen = new Set(all.list.map(w => w.index));
+    check(seen.size === all.count && [...seen].every(i => i >= 0 && i < all.count),
+          'each exactly once, and none invented');
+    check(all.list.every(w => w.name && w.note.length > 40),
+          `every world says what it is (shortest note ${Math.min(...all.list.map(w => w.note.length))} chars)`);
+    /* The corpus is somebody else's work and the credit travels with it. */
+    const crop = all.list.find(w => w.name === 'Crop');
+    check(crop && /Braids/.test(crop.note) && /Gillet/.test(crop.note),
+          'and Crop credits the bank it is four components of');
+  }
+
   await select(9);
   const before = await spectrum();
   check((await KYK.fetchWorlds(link)).current === 9, 'a built-in world is live to begin with');

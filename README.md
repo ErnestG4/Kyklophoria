@@ -147,7 +147,7 @@ would cost 1.18 MB for no gain.
 
 | world | what it is | variety | spread |
 |---|---|---|---|
-| Braids | eigenspace of Émilie Gillet's 256-wave bank | 1.47 | 2.14x |
+| Crop | the first four principal components of a 256-wave bank (Braids, Émilie Gillet) | 1.47 | 2.14x |
 | 24-cell | a waveform on each vertex of the 4-D solid | 0.66 | 3.64x |
 | 16-cell | eight vertices, on the axes: mostly mire | 0.38 | 3.14x |
 | Tesseract | sixteen, on the cube corners | 0.47 | 4.22x |
@@ -313,7 +313,7 @@ Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 
 **What has been played and what has not.** The twenty-one built-in worlds are
 what has had real time on the bench. Morphing, user worlds, import and the card
-are tested by the suite — 420 world-pair switches, 99 link checks, 105 link-level
+are tested by the suite — 420 world-pair switches, 99 link checks, 112 link-level
 and 119 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
 them as the new half of a beta.
 
@@ -330,7 +330,8 @@ us time, including the two that hard-fault on boot.
 ## Credits
 
 Combust — design and direction. Built with Claude Code.
-**Émilie Gillet / Mutable Instruments** — the Braids wave bank, the first
+**Émilie Gillet / Mutable Instruments** — the Braids wave bank that the world
+named **Crop** is four principal components of, the first
 corpus the eigenspace is baked from. **Luke / Hermetic Modular** — the
 Alchemy Lab and its SDK. The shell, the HostLink transport and the web wire
 layer come from [Audiothurgist](https://codeberg.org/combust/Audiothurgist).
