@@ -422,6 +422,21 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
         `a sent world sounds the same whichever world it replaced (worst sample ${
           Math.max(worst(arrivals[0], arrivals[1]), worst(arrivals[0], arrivals[2]))} of 255)`);
 
+  /* A morph target is a blend, not a setting that is merely accepted.
+   *
+   * Everything that tested this asked whether the action came back with status
+   * zero, which it does whether or not the engine blends anything. Selecting a
+   * target must change what is playing — the desktop shell blends at a fixed
+   * half, having no knob to turn. */
+  await select(9);
+  const solo = await spectrum();
+  const r = await link.request(KYK.CMD.action, Uint8Array.of(5, 14));
+  check(r[0] === 0, 'a morph target is accepted');
+  const blended = await spectrum();
+  check(!same(solo, blended), 'and blending towards it changes the sound');
+  await link.request(KYK.CMD.action, Uint8Array.of(5, 0xFF));
+  check(same(await spectrum(), solo), 'and clearing it puts the sound back');
+
   /* Corruption is refused rather than half-loaded. This is the first thing in
      the instrument that reads bytes a stranger wrote, and "silence beats a
      hard fault" is only true if the refusal actually happens. */
