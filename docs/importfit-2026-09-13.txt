@@ -1,40 +1,65 @@
 importfit — the whole AKWF corpus through the page's own import path
 ====================================================================
 node tools/importfit/main.mjs /path/to/AKWF          2026-09-13
-48007 waveforms, 0 unreadable, 143 s
+48007 waveforms, 0 skipped, 144 s
 
-                       mean    p50     p10     p01    worst
-sine basis only        91.4%   94.8    77.7    57.3     1.6
-band limit K=64        97.6%  100.0    96.0    46.3     0.1
+Everything below is a percentage of the file's own total energy — one
+denominator throughout. See "a correction", at the bottom.
 
-keeping under 90%:  sine 34.5% of the corpus, band limit 5.4%
-keeping under 75%:  sine  7.2%,               band limit 2.4%
+                          mean    p50     p10     p01
+  in band (the ceiling)   97.6   100.0    96.0    46.3
+  kept now                90.3    95.2    74.9    36.6
+
+  corr now                94.7    97.6    86.5    60.5
+  corr with phase         98.6   100.0    98.0    68.0
+
+  correlating under 0.90:  now 17.1% of the corpus, with phase 3.1%
+  correlating under 0.75:  now  2.7%,               with phase 1.5%
 
 What it says
 ------------
-The band limit is not what is costing import. At K=64 the median waveform is
-inside the first 64 harmonics to four figures, and only 5.4% of the corpus
-loses more than a tenth of itself to the band limit at all.
+`in band` is the ceiling: energy at harmonics 1..64 over the file's total. No
+representation at this K can beat it and none needs to. The median waveform is
+inside 64 harmonics to four figures.
 
-The sine-only projection is. A node is signed coefficients on sin(h.theta), so
-whatever sits in the cosine half is discarded — and after the rotation search
-has done its best, a *third* of the corpus still loses more than a tenth of the
-wave, and a fourteenth of it loses more than a quarter. The median goes 94.8%
-against a ceiling of 100.0%; the tenth percentile goes 77.7% against 96.0%.
+`kept now` is what import actually keeps — the sine half after the rotation
+search has done its best. The gap between the two is the cosine half, thrown
+away, and it is the larger of the two losses for most of the corpus: 7.3 points
+of the mean against 2.4 for the band limit.
 
-That gap is what a phase-correct representation would buy, and it is the whole
-of it: nothing else in the chain is anywhere near as lossy.
+The correlations are the numbers to argue from. Energy flatters a projection,
+because the part discarded is the phase relationship between partials rather
+than a scaling — and that relationship is what makes a saw a saw rather than a
+stack of sines with a saw's spectrum (README: 0.79 correlation, measured).
+Storing phase would move the median waveform correlation from 0.976 to 1.000,
+the tenth percentile from 0.865 to 0.980, and the fraction of the corpus that
+comes out under 0.90 from one in six to one in thirty-three.
+
+How the correlation is computed
+-------------------------------
+sqrt(kept/total), by Parseval — the inner product of the file with its own
+sine-only projection picks up exactly the kept terms. Checked against the
+direct time-domain correlation on sample waveforms and exact to four figures,
+because a derivation is not a measurement.
+
+A correction
+------------
+The first version of this file compared cycleToNode's `fit` against a band
+fraction and concluded from their percentiles that the band limit was not the
+binding constraint. The direction was right and the comparison was not: `fit`
+is a fraction of *in-band* energy (`tot` in cycleToNode sums h = 1..k only)
+while the band fraction is of total energy, so the two columns had different
+denominators, and percentiles of two distributions do not compose. Rerun with
+one denominator, and with the correlation added, which is what the question was
+actually about.
 
 Caveats
 -------
-The fit is a fraction of *energy*, which is not a fraction of audibility. A
-wave keeping 77% of its energy does not sound 77% right — the discarded part
-is the phase relationship between partials, which is exactly what makes a saw
-a saw rather than a stack of sines with a saw's spectrum. The earlier
-measurement of that is in README.md: a saw's magnitudes at random phase
-correlate 0.79 with a saw.
+AKWF is not a neutral sample of "waveforms people import". It is curated, heavy
+on single cycles ripped from hardware, and it is what our own README points
+people at. It is the right corpus for this question and it is still one corpus.
 
-AKWF is not a neutral sample of "waveforms people import". It is a curated
-corpus, heavy on single cycles ripped from hardware, and it is what our own
-README points people at. It is the right corpus for this question and it is
-still one corpus.
+Correlation is not perception either. It weights every partial by energy, and
+ears do not. It is a better proxy than energy and it is still a proxy — which
+is why the page can now play a waveform three ways (as imported, band-limited,
+as rendered) and let somebody listen.
