@@ -22,11 +22,15 @@ const CMD = {
   hello: 0x01, getDescriptor: 0x02,
   telemetry: 0x60, spaceInfo: 0x61, cell: 0x62, stats: 0x63, action: 0x64,
   worlds: 0x65, basis: 0x66, putWorld: 0x67, cardWorlds: 0x68,
-  putSlot: 0x69, slots: 0x6a, setControl: 0x6e,
+  putSlot: 0x69, slots: 0x6a, saveCard: 0x6b, setControl: 0x6e,
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4,
               morphWorld: 5, scanCard: 6, loadCardWorld: 7, phase: 8, motionMute: 9,
-              aimMorph: 10, slotLive: 11, slotTarget: 12, slotFree: 13, slotSwap: 14 };
+              aimMorph: 10, slotLive: 11, slotTarget: 12, slotFree: 13, slotSwap: 14,
+              cardToSlot: 15 };
+/* "that file is already there" — a well-formed request whose answer is a
+   question for the player, which is why it is not BAD_ARGS. */
+const STAT_CARD_EXISTS = 20;
 /* A morph target that is one of yours has no world index; 0xFF already means
    no target at all. */
 const MORPH_USER = 0xFE;
@@ -113,7 +117,8 @@ const u32 = (b, at) => (b[at] | (b[at + 1] << 8) | (b[at + 2] << 16) | (b[at + 3
 const f32 = (b, at) => new DataView(b.buffer, b.byteOffset + at, 4).getFloat32(0, true);
 const i8 = v => (v & 0x80) ? v - 256 : v;
 function readStr(b, at) { const n = b[at]; return [new TextDecoder('ascii').decode(b.subarray(at + 1, at + 1 + n)), at + 1 + n]; }
-const statusName = s => STATUS[s] || ('device error ' + s);
+const statusName = s => (s === STAT_CARD_EXISTS ? 'that file is already on the card'
+                                                 : STATUS[s] || ('device error ' + s));
 function concat(parts) { const all = new Uint8Array(parts.reduce((s, p) => s + p.length, 0)); let o = 0; for (const p of parts) { all.set(p, o); o += p.length; } return all; }
 const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -414,6 +419,25 @@ function buildUserWorld(nodes, { n = 4, k = 64, sigma = 0.26, name = '', sinePha
     for (let i = 0; i < k; i++) { dv.setFloat32(at, nd.mags[i] ?? 0, true); at += 4; }
   }
   return b;
+}
+
+/* Write a slot to the card as <name>.kykw. The module supplies the folder and
+   the extension, so a name cannot escape the world directory.
+
+   `overwrite` must be asked for: without it the module refuses an existing file
+   with STAT_CARD_EXISTS rather than replacing it. A card is somebody's
+   collection and this is the one destructive thing in the protocol, so the
+   default is the safe one and a host that forgets to ask cannot do harm by
+   forgetting. */
+async function saveCardWorld(link, slot, name, overwrite = false) {
+  const nm = new TextEncoder().encode(name.slice(0, 32));
+  const req = new Uint8Array(3 + nm.length);
+  req[0] = slot & 0xff;
+  req[1] = overwrite ? 1 : 0;
+  req[2] = nm.length;
+  req.set(nm, 3);
+  await link.request(CMD.saveCard, req, { urgent: true, timeoutMs: 4000 });
+  return true;
 }
 
 /* What .kykw files the card's /kyklophoria folder holds. The count comes
@@ -1113,7 +1137,8 @@ const api = {
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, putSlot, fetchSlots,
-  MORPH_USER, SLOT_COUNT, buildUserWorld, parseUserWorld, fetchCardWorlds, wavToCycle, cycleToNode,
+  MORPH_USER, SLOT_COUNT, STAT_CARD_EXISTS, buildUserWorld, parseUserWorld,
+  saveCardWorld, fetchCardWorlds, wavToCycle, cycleToNode,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KYK = api;

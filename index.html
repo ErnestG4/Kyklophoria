@@ -258,6 +258,12 @@
     <button class="chip" id="libTarget">morph towards</button>
     <button class="chip" id="libNoTarget">no target</button>
     <button class="chip" id="libFree">forget</button>
+    <span class="sp"></span>
+    <span class="cap">CARD</span>
+    <button class="chip" id="libSave">save to card</button>
+    <select id="libCardSel"></select>
+    <button class="chip" id="libLoad">into the slot</button>
+    <button class="chip" id="libRescan">rescan</button>
     <span id="libState" style="color: var(--dim)"></span>
   </div>
   <div id="slots"></div>
@@ -2446,8 +2452,26 @@ async function slotAction(op, slot) {
   } catch (e) { say('slot: ' + e.message, true); }
 }
 
+function renderLibCardSel() {
+  const sel = $('libCardSel');
+  const keep = sel.selectedIndex;
+  sel.innerHTML = '';
+  for (const nm of cardList.names || []) {
+    const o = document.createElement('option');
+    o.value = nm; o.textContent = nm.replace(/\.kykw$/i, '');
+    sel.appendChild(o);
+  }
+  if (keep >= 0 && keep < sel.children.length) sel.selectedIndex = keep;
+  else if (sel.children.length) sel.selectedIndex = 0;
+}
+
 function renderLib() {
+  renderLibCardSel();
   const filled = slots && slotSel >= 0 && slots.names[slotSel];
+  const onCard = (cardList.names || []).length > 0;
+  $('libSave').disabled = !filled;
+  $('libLoad').disabled = !link || !onCard || slotSel < 0;
+  $('libRescan').disabled = !link;
   $('libStore').disabled = !link || !imported.length || slotSel < 0;
   $('libPlay').disabled = !filled;
   $('libTarget').disabled = !filled;
@@ -2462,6 +2486,73 @@ function renderLib() {
   $('libState').textContent = `${used} of ${slots.count} held · ${sel}`;
 }
 
+/* Saving a slot to the card, and the one question worth interrupting for.
+ *
+ * The name comes from the world's own name, which is what a player called it.
+ * If a file of that name is already there, ask — and offer the suffixed name as
+ * the alternative, so the dialog carries both answers rather than making
+ * somebody rename the world and try again. The module refuses the overwrite
+ * unless it is asked for, so this dialog is the only route to replacing a file
+ * and there is no path that does it quietly. */
+function nextFreeName(base) {
+  const taken = new Set((cardList.names || []).map(n => n.replace(/\.kykw$/i, '').toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let i = 2; i < 100; i++) if (!taken.has(`${base}-${i}`.toLowerCase())) return `${base}-${i}`;
+  return base + '-x';
+}
+
+async function saveSlotToCard(slot) {
+  if (!link || slot < 0 || !slots || !slots.names[slot]) return;
+  const base = (slots.names[slot] || ('slot' + slot)).replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 24) || ('slot' + slot);
+  try {
+    await MVL.saveCardWorld(link, slot, base, false);
+    say(`${base}.kykw written to the card`);
+  } catch (e) {
+    if (!/already on the card/.test(e.message)) { say('save: ' + e.message, true); return; }
+    const alt = nextFreeName(base);
+    /* A browser always has confirm; a harness does not, and the safe answer
+       when nobody can be asked is not to overwrite. */
+    const ask = typeof confirm === 'function' ? confirm : () => false;
+    const yes = ask(`${base}.kykw is already on the card.
+
+`
+                      + `OK — replace it.
+Cancel — save as ${alt}.kykw instead.`);
+    try {
+      if (yes) { await MVL.saveCardWorld(link, slot, base, true); say(`${base}.kykw replaced`); }
+      else { await MVL.saveCardWorld(link, slot, alt, false); say(`${alt}.kykw written to the card`); }
+    } catch (e2) { say('save: ' + e2.message, true); return; }
+  }
+  await refreshCard();
+  renderLib();
+}
+
+async function loadCardIntoSlot(slot) {
+  if (!link || slot < 0) return;
+  const i = $('libCardSel').selectedIndex;
+  if (i < 0 || !cardList.names.length) return;
+  try {
+    await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.cardToSlot, [i & 0xff, slot & 0xff]), { urgent: true, timeoutMs: 4000 });
+    /* The module parsed it; the page has not, so it does not know where the
+       nodes are. Same rule as any slot filled elsewhere: it plays, and its
+       rings stay undrawn rather than being guessed. */
+    delete slotNodes[slot];
+    say(`${cardList.names[i]} into slot ${slot}`);
+    await refreshSlots();
+  } catch (e) { say('load: ' + e.message, true); }
+}
+
+$('libSave').onclick = () => saveSlotToCard(slotSel);
+$('libLoad').onclick = () => loadCardIntoSlot(slotSel);
+$('libRescan').onclick = async () => {
+  if (!link) return;
+  try { await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.scanCard, []), { urgent: true }); }
+  catch (e) { say('rescan: ' + e.message, true); }
+  await refreshCard();
+  renderCardSel();
+  renderLibCardSel();
+  renderLib();
+};
 $('libStore').onclick = () => storeBuildSet(slotSel);
 $('libPlay').onclick = () => slotAction(MVL.ACT.slotLive, slotSel);
 $('libTarget').onclick = () => slotAction(MVL.ACT.slotTarget, slotSel);
@@ -2493,7 +2584,7 @@ function setView(m) {
   if (m === 'build') { buildAxisButtons(); renderStrip(); }
   /* Ask the module what it is holding when the tab opens, rather than polling
      a list that only changes when somebody changes it. */
-  if (m === 'worlds') { refreshSlots(); renderLib(); }
+  if (m === 'worlds') { refreshSlots(); refreshCard().then(renderLib); renderLib(); }
 }
 
 /* ── dragging a node, in the build view only ──────────────────────────────
