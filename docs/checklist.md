@@ -333,6 +333,20 @@ meaningful axis and stacking four banks makes rotation meaningless.
       hit-tests a node takes a box — which two axes, where, how big — so the
       play square, the main square and the inset are three boxes and one piece
       of code.
+- [x] **The play view drew the draft, not the module's world.** It is a
+      readout, and it was showing the set being edited on the build tab —
+      including edits never sent, and sets the module had never seen. The page
+      cannot ask what the module holds (the world list says "not a built-in"
+      and GET_BASIS gives a lock world's count and sigma with no positions), so
+      it keeps a record of what it sent and drops it through one function when
+      anything could have replaced it. Found by Combust, not by the suite:
+      every check asked what the builder did and none asked what the other view
+      said about it.
+- [ ] **A world switched from the module's own panel is invisible to the page**
+      until something refreshes the world list, because telemetry carries no
+      live world index. The world bar has always had this gap; the rings now
+      share it. Either a world index in the telemetry frame or a slow poll of
+      0x65 would close it.
 - [ ] Nothing lets you hear a single node on its own. Morph at full narrows the
       basins until a vertex is that exact waveform, so the module can already
       do it; the page would only need to park the position on the node you have
@@ -356,6 +370,13 @@ meaningful axis and stacking four banks makes rotation meaningless.
       the bug breaks permanently: arriving at a sent world from three different
       worlds must give byte-identical frames — switch_check's invariant asked
       of the one path that is not a world switch. 0 against 173 of 255.
+- [x] **Gestures, not just the functions under them.** `pagecheck`'s stub threw
+      listeners away, so every placement check went at `pickNode` and
+      `moveNodeTo` directly and the handler wiring a pointer to them had no
+      coverage at all — which box was pressed, what is held, when the send
+      fires. The stub keeps listeners now and the tests press, move and
+      release. It also needed `setPointerCapture`, whose absence meant the
+      handler could not have run here even if something had called it.
 - [x] **A watch for draws at a coordinate that is not a number.** `arc(NaN, …)`
       is not an error on any canvas — it draws nothing, which is
       indistinguishable from a mark that is off screen — so this class of bug

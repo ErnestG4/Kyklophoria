@@ -120,8 +120,17 @@ in the axes a square cannot show is drawn faint, because a projection that drew
 it bright would be lying about the extra directions the whole design exists
 for. Once the set has been sent, every drop re-sends it, so you hear where you
 just put something; **re-place** is the way back to the arrangement you were
-given. The rings stay visible in the play view, where they are a readout and
-nothing more.
+given.
+
+The play view keeps the rings, and they are **what the module is holding** —
+not the set on the other tab. Those are the same thing only between a
+successful send and the next edit, and drawing the draft there had the page
+claiming the instrument contained something it did not. There is no way to ask
+the module what is in its world, so the page draws its own record of what it
+sent and throws it away the moment anything could have replaced it: a built-in
+selected, a card world loaded, the link dropped, a send that failed, or a world
+list that comes back saying a built-in is live. Emptying the builder does not
+throw it away, because the module is still playing what it was given.
 
 **Where this stops, for now.** The card is still read-only from the module, so
 a world sent over the link lives in RAM and is gone at the next boot — save it
@@ -298,7 +307,7 @@ Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 **What has been played and what has not.** The twenty-one built-in worlds are
 what has had real time on the bench. Morphing, user worlds, import and the card
 are tested by the suite — 420 world-pair switches, 99 link checks, 97 link-level
-and 69 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
+and 102 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
 them as the new half of a beta.
 
 ## Layout

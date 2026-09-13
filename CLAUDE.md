@@ -31,6 +31,20 @@ Both are in `docs/sdk-quirks.md` with the evidence. The short version:
   goes in `ALCHEMY_SDMMC_BSS` with `alignas(32)`. In the wrong section it does
   not error, it corrupts.
 
+## The play view is a readout
+
+Every mark in it comes from the module. The build tab's set is a draft, and the
+two are the same world only between a successful send and the next edit — so
+the play view draws the page's record of what it *sent* (`held`), never
+`imported`. The record is only as good as the rules for dropping it, so there
+is one function that drops it and five callers. If you add a sixth way for the
+module to end up holding something else, it goes through `heldLost`.
+
+The page cannot ask what the module is holding: the world list reports "not one
+of the built-ins" and nothing more, and `GET_BASIS` gives a lock world's count
+and sigma with no positions. A world index in the telemetry frame would fix
+that properly and close the panel-switch blind spot with it.
+
 ## The bug pattern this codebase keeps producing
 
 Five separate bugs, all the same shape: **state derived from a world,
