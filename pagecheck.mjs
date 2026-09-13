@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavSend wavClear wavState muteChips morphAim morphDirect'.split(' ');
+const IDS = 'axes btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavClear wavState muteChips morphAim morphDirect'.split(' ');
 const calls = [];
 const ctx2d = new Proxy({}, {
   get(_, k) {
@@ -86,7 +86,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -168,6 +168,111 @@ for (const [id, min] of [['worldChips', 0], ['shadeChips', 3], ['trailChips', 4]
   if (!ok) bad++;
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} #${id} populated at load (${n} children, want >= ${min})`);
 }
+/* Export: the saved file must be the arrangement you placed, under the name
+ * you typed.
+ *
+ * Strictly this is a behaviour test in a harness whose job is "does the page
+ * survive drawing a frame", and it is here because this is the only harness
+ * that runs the page's own script. The failure it guards is worth the
+ * trespass: an export that silently writes something other than what was sent
+ * to the module produces a file that sounds wrong, months later, with nothing
+ * to trace it back to. The coefficients are compared exactly, because the
+ * format chose f32 over the u8 log encoding precisely so it could round-trip.
+ */
+{
+  const NODE_MAGS = k => Float32Array.from({ length: 64 }, (_, i) => k / (i + 1));
+  const want = [NODE_MAGS(0.5), NODE_MAGS(-0.25)];
+  P.imported.length = 0;
+  want.forEach((mags, i) => P.imported.push({ name: 'w' + i, mags, fit: 1 }));
+
+  const downloads = [];
+  let lastBlob = null;
+  const realURL = globalThis.URL;
+  globalThis.URL = {
+    createObjectURL(b) { lastBlob = b; return 'blob:stub/' + downloads.length; },
+    revokeObjectURL() {},
+  };
+  globalThis.document.createElement = tag => {
+    const el = mkEl(tag);
+    if (tag === 'a') el.click = () => downloads.push({ name: el.download, blob: lastBlob });
+    return el;
+  };
+
+  async function save(typed) {
+    downloads.length = 0;
+    els.wavName.value = typed;
+    P.exportImported();
+    const d = downloads[downloads.length - 1];
+    return d ? { file: d.name, bytes: new Uint8Array(await d.blob.arrayBuffer()) } : null;
+  }
+  /* the module's own reader, in miniature (core/kyk_userworld.h) */
+  function parseKykw(b) {
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    const n = b[6], k = b[7], count = b[8];
+    const name = new TextDecoder().decode(b.subarray(16, 32)).replace(/\0+$/, '');
+    const nodes = [];
+    let at = 32;
+    for (let i = 0; i < count; i++) {
+      const pos = [], mags = new Float32Array(k);
+      for (let a = 0; a < n; a++) { pos.push(dv.getFloat32(at, true)); at += 4; }
+      for (let h = 0; h < k; h++) { mags[h] = dv.getFloat32(at, true); at += 4; }
+      nodes.push({ pos, mags });
+    }
+    return { magic: dv.getUint32(0, true), ver: dv.getUint16(4, true), n, k, count,
+             sine: (b[9] & 1) === 1, sigma: dv.getFloat32(10, true), name, nodes, end: at };
+  }
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+
+  const got = await save('my world');
+  if (!got) { bad++; console.log('  FAIL export produced no download at all'); }
+  else {
+    const w = parseKykw(got.bytes);
+    T(got.file === 'my-world.kykw', `filename is the name, made safe (${got.file})`);
+    T(w.magic === 0x574B594B && w.ver === 1, 'magic KYKW, version 1');
+    T(w.name === 'my world', `header keeps the name as typed (${JSON.stringify(w.name)})`);
+    T(w.n === 4 && w.k === 64 && w.count === 2 && w.sine, 'geometry: 4-D, 64 harmonics, 2 nodes, sine phase');
+    T(w.end === got.bytes.length, `declared geometry accounts for every byte (${got.bytes.length})`);
+    /* the same bytes the module would be sent, since both call importedBlob */
+    const sent = P.importedBlob();
+    T(sent.length === got.bytes.length && sent.every((v, i) => v === got.bytes[i]),
+      'the file is byte-for-byte what send would put on the wire');
+    let exact = true;
+    for (let i = 0; i < want.length; i++)
+      for (let h = 0; h < 64; h++) if (w.nodes[i].mags[h] !== want[i][h]) exact = false;
+    T(exact, 'every coefficient survives the round trip exactly');
+    /* placement is the 24-cell's first two vertices, not the cube centre */
+    const off = w.nodes.map(nd => nd.pos.filter(v => Math.abs(v - 0.5) > 1e-6).length);
+    T(off.every(c => c === 2), `each node sits on a 24-cell vertex (${off.join(',')} axes off centre)`);
+  }
+
+  const plain = await save('');
+  T(plain && plain.file === 'import.kykw' && parseKykw(plain.bytes).name === 'import',
+    'an unnamed world saves as import.kykw rather than .kykw');
+  const foreign = await save(' ≈ ');
+  T(foreign && foreign.file === 'import.kykw' && parseKykw(foreign.bytes).name === 'import',
+    'a name the char[16] header cannot hold falls back rather than writing mojibake');
+  const punct = await save('///');
+  T(punct && punct.file === 'import.kykw' && parseKykw(punct.bytes).name === '///',
+    'a name that is all punctuation keeps the header but not the filename');
+  /* Both halves, because buildUserWorld caps the header at sixteen on its own:
+     checking only the header passes whether or not the page truncates, and the
+     property worth having is that the file on the card and the name in the
+     module's list are the same name. */
+  const longName = await save('a very long world name indeed');
+  T(longName && parseKykw(longName.bytes).name === 'a very long worl'
+    && longName.file === 'a-very-long-worl.kykw',
+    `a long name is cut to sixteen bytes, and the file is named to match (${longName && longName.file})`);
+
+  P.imported.length = 0;
+  downloads.length = 0;
+  P.exportImported();
+  T(downloads.length === 0, 'exporting nothing saves nothing');
+
+  globalThis.URL = realURL;
+  globalThis.document.createElement = mkEl;
+  els.wavName.value = '';
+}
+console.log('');
 if (unknownIds.size) { bad++; console.log(`  FAIL page asked for undeclared ids: ${[...unknownIds].join(', ')}`); }
 console.log('');
 
