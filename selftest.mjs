@@ -338,20 +338,36 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   const blob = KYK.buildUserWorld(nodes, { n: 4, k: 64, sigma: 0.26, name: 'saved from page' });
   check(blob.length === 32 + 24 * 4 * (4 + 64), `a full 24-node world is ${blob.length} bytes`);
 
-  /* The spectrum a world change produces arrives on the *second* request: the
-     first still carries the frame that was rendered before the change landed.
-     Reading once made this read "the sound did not change" for a reason that
-     has nothing to do with worlds, so both reads are taken deliberately. */
-  const spectrum = async () => {
-    await link.request(KYK.CMD.telemetry, KYK.telemetryReq(3));
-    return KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(3))).mags;
+  /* A world change is not visible the instant the request returns: the swap
+     happens on the request, but the spectrum and the frame in telemetry are
+     rewritten by the next *render*, and a render is not every block.
+     Two wrong versions of this before the right one. "Read twice" failed about
+     one run in four, because two reads can both land before that render.
+     "Read until two agree" failed about one in five, because the picture can
+     sit unchanged across two reads and then move — which is what a render that
+     is throttled looks like from outside. Both were a race being treated as a
+     delay. Each telemetry request advances a block, so: drive a few blocks to
+     let the change reach a render at all, then require three consecutive
+     identical frames. Idle reads are bit-identical, which is what makes
+     agreement mean settled rather than merely slow. */
+  const read = async () => KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(3)));
+  const same = (a, b) => !!a && !!b && a.length === b.length && [...a].every((v, i) => v === b[i]);
+  const settle = async (pick, tries = 60) => {
+    for (let i = 0; i < 6; i++) await read();
+    let prev = pick(await read()), agree = 0;
+    for (let i = 0; i < tries; i++) {
+      const m = pick(await read());
+      if (same(prev, m)) { if (++agree >= 3) return m; } else { agree = 0; prev = m; }
+    }
+    return prev;
   };
-  /* Start from a known built-in, so "it is not one of the built-ins any more"
-     is an observation rather than the state it booted in. */
-  await link.request(KYK.CMD.action, Uint8Array.of(4, 9));
+  const spectrum = () => settle(t => t.mags);
+  const frame    = () => settle(t => t.frame);
+  const select   = (i) => link.request(KYK.CMD.action, Uint8Array.of(4, i));
+
+  await select(9);
   const before = await spectrum();
-  const wasCurrent = (await KYK.fetchWorlds(link)).current;
-  check(wasCurrent === 9, `a built-in world is live to begin with (${wasCurrent})`);
+  check((await KYK.fetchWorlds(link)).current === 9, 'a built-in world is live to begin with');
 
   let sent = 0;
   await KYK.putWorld(link, blob, (done) => { sent = done; });
@@ -359,18 +375,38 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
 
   const after = await spectrum();
   check(after && [...after].some(m => m > 0), 'the loaded world renders harmonics');
-  /* The check that matters, and the one that was missing: every built-in world
-     renders harmonics too, so a non-zero spectrum proves nothing on its own.
-     This is what caught the desktop shell loading a world and never telling
-     the engine — see PutWorld in shell/desktop/serve.h. */
-  check(before && after && [...after].some((m, i) => m !== before[i]),
-        'and it is a different sound from the world that was playing');
-  const nowCurrent = (await KYK.fetchWorlds(link)).current;
-  check(nowCurrent === 0xFF, `the live world is no longer one of the built-ins (${wasCurrent} → ${nowCurrent})`);
+  check(!same(before, after), 'and it is not the world that was playing before it');
+  check((await KYK.fetchWorlds(link)).current === 0xFF, 'the live world is no longer one of the built-ins');
+
+  /* Arriving at a sent world must be the same as arriving at it from anywhere
+     else. This is tests/switch_check.cpp's invariant — 420 world pairs, each
+     asserting that arriving at a world is identical to starting in it — asked
+     of the one path that does not go through a world switch at all.
+     It is here because the first version of this test could not tell a working
+     send from a broken one. "The spectrum changed" passes either way given
+     enough reads: without the fix the world's *contents* are still replaced,
+     so something else eventually forces a render and picks them up late and at
+     the previous world's phase convention. This cannot be fooled that way —
+     the frame is the waveform, phase and all, and if anything about the engine
+     still describes the world you came from, where you came from shows up in
+     it. Measured against a shell with the SetWorld call removed: 173 out of
+     255 worst-sample difference, against 0 here. */
+  const arrivals = [];
+  for (const from of [0, 9, 18]) {
+    await select(from);
+    await frame();
+    await KYK.putWorld(link, blob);
+    arrivals.push(await frame());
+  }
+  const worst = (a, b) => { let w = 0; for (let i = 0; i < a.length; i++) w = Math.max(w, Math.abs(a[i] - b[i])); return w; };
+  check(same(arrivals[0], arrivals[1]) && same(arrivals[0], arrivals[2]),
+        `a sent world sounds the same whichever world it replaced (worst sample ${
+          Math.max(worst(arrivals[0], arrivals[1]), worst(arrivals[0], arrivals[2]))} of 255)`);
 
   /* Corruption is refused rather than half-loaded. This is the first thing in
      the instrument that reads bytes a stranger wrote, and "silence beats a
      hard fault" is only true if the refusal actually happens. */
+  const good = await spectrum();
   for (const [what, mangle] of [
     ['a file that is not a world', b => { b[0] ^= 0xFF; }],
     ['a node count the bytes cannot cover', b => { b[8] = 24 + 1; }],
@@ -382,11 +418,8 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
     try { await KYK.putWorld(link, bad); } catch { refused = true; }
     check(refused, `${what} is refused`);
   }
-
-  /* after all that, the good world is still the one playing — a refusal must
-     leave the destination untouched rather than half-written */
-  const survived = await spectrum();
-  check(survived && [...survived].every((m, i) => m === after[i]),
+  /* and a refusal leaves the destination untouched rather than half-written */
+  check(same(await spectrum(), good),
         'a refused world leaves the one that was playing exactly as it was');
 });
 
