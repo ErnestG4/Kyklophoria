@@ -321,10 +321,23 @@ meaningful axis and stacking four banks makes rotation meaningless.
       sent, a drop re-sends it — coalesced, so a drag cannot pile up 6.5 KB
       transfers — and selecting another world or dropping the link disarms
       that, because the module is no longer holding the set.
-- [ ] Placement is still one plane at a time by design, but there is no way to
-      see the two axes you are *not* on. A second small pane showing the
-      complementary plane would cost little and remove the only real guesswork
-      left in placing a node.
+- [x] **A build view.** Placement was bolted onto the space pane, which is a
+      readout of the module: the rings sat on top of a live position display
+      and the import row was a count and a worst fit. Now a tab of its own with
+      the set as drawn cards (waveform and per-node fit), two placement squares
+      and an inspector showing the imported cycle against the one the engine
+      will render, to the same scale. The play view keeps the rings, read-only.
+- [x] **The complementary plane, live.** The inset draws the two axes the main
+      square does not and is dragged the same way, so with four dimensions a
+      node is finished without switching the pair. Everything that draws or
+      hit-tests a node takes a box — which two axes, where, how big — so the
+      play square, the main square and the inset are three boxes and one piece
+      of code.
+- [ ] Nothing lets you hear a single node on its own. Morph at full narrows the
+      basins until a vertex is that exact waveform, so the module can already
+      do it; the page would only need to park the position on the node you have
+      picked. That is the shortest path from "this card looks wrong" to knowing
+      whether it sounds wrong.
 - [x] Orbit trail and the rotation arcs. The Kepler body gets its own inset
       showing the conic in its own unrotated plane, and the coupling lock has
       a bar beside the plane gauges.

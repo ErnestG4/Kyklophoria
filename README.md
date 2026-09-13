@@ -97,17 +97,31 @@ export of an import is the file you started from. Saving needs no module
 attached; curating a folder of worlds offline is a reasonable way to use the
 page.
 
-Nodes arrive on the 24-cell's vertices and can be **dragged** where you want
-them. The space view shows two axes of four, so a drag sets those two and
-leaves the rest alone; the other two are reached by switching the pair, which
-is what the axis buttons and the arrow keys already do. That is not a
-concession to the screen — it is how the instrument is played, one plane at a
-time, and placing a node the same way puts it somewhere you can describe. A
-node far away in the axes you cannot see is drawn faint, because a projection
-that drew it bright would be lying about the extra directions the whole design
-exists for. Once the set has been sent, every drop re-sends it, so you hear
-where you just put something; **re-place** is the way back to the arrangement
-you were given.
+Building one is its own view — the **build** tab. Playing is a readout of the
+module and building is an editor for something it is not holding yet, and they
+were sharing a picture, which made the placement rings just more marks on a
+live display.
+
+The build view is the set, where each waveform sits, and what the module will
+make of it. Every import gets a card with its waveform drawn and the fraction
+of it that survived projection, so a poor fit names itself instead of hiding in
+a summary. The inspector draws the cycle you imported against the cycle the
+engine will render — to the same scale, so what the projection dropped is
+visible rather than merely reported — over the 64 signed coefficients the node
+actually is.
+
+Nodes arrive on the 24-cell's vertices and are **dragged** where you want them.
+A square shows two axes of four, so a drag sets those two and leaves the rest;
+the inset in the corner draws the other two and is live, so with four
+dimensions a node is finished without leaving the view. That is not a
+concession to the screen — the instrument is played one plane at a time, and
+placing a node the same way puts it somewhere you can describe. A node far away
+in the axes a square cannot show is drawn faint, because a projection that drew
+it bright would be lying about the extra directions the whole design exists
+for. Once the set has been sent, every drop re-sends it, so you hear where you
+just put something; **re-place** is the way back to the arrangement you were
+given. The rings stay visible in the play view, where they are a readout and
+nothing more.
 
 **Where this stops, for now.** The card is still read-only from the module, so
 a world sent over the link lives in RAM and is gone at the next boot — save it
@@ -240,8 +254,8 @@ its spectrum and the band limit, the rotation planes, the Kepler orbit and a
 CPU readout. It also mirrors the panel — which page you are on, what its six
 knobs do and where they are sitting — and carries the things that are setup
 rather than playing: the morph target and whether it is aimed, which motions are
-muted, which world to load from the card, and importing WAVs — which it can now
-name, place by hand, send and save as a file.
+muted, and which world to load from the card. Importing, placing, sending and
+saving a world of your own has a view of its own, behind the **build** tab.
 
 It is a readout first. Everything it shows comes *from* the module, including
 the state of its own controls, so two pages open at once agree and a preset load
@@ -283,8 +297,8 @@ Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 
 **What has been played and what has not.** The twenty-one built-in worlds are
 what has had real time on the bench. Morphing, user worlds, import and the card
-are tested by the suite — 420 world-pair switches, 99 link checks, 96 link-level
-and 55 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
+are tested by the suite — 420 world-pair switches, 99 link checks, 97 link-level
+and 69 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
 them as the new half of a beta.
 
 ## Layout

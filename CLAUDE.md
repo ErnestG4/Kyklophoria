@@ -104,9 +104,12 @@ Export is done: name a set on the page and **save** writes the module's own
 "save, copy to `/kyklophoria` on the card", which is a manual step but a real
 loop, and a file you can hand to somebody.
 
-Placement is done too: nodes are dragged in the space view, two axes at a time,
-and once the set has been sent every drop re-sends it so you hear where you put
-something.
+Building a world is its own view now — the **build** tab — because placement
+had been bolted onto the space pane, which is a readout of the module and not
+somewhere to edit something the module is not holding. It carries the set as
+drawn cards, two placement squares (the pair on screen and its complement, so
+four dimensions are reachable without switching), and an inspector showing what
+you imported against what the engine will actually render from it.
 
 **Next job:** writing to the card from the module, which removes the copy step
 and is the last thing between the page and a library. It is the first thing
