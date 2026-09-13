@@ -112,6 +112,7 @@
     <input type="text" id="wavName" maxlength="16" placeholder="name" spellcheck="false">
     <button class="chip" id="wavSend">send</button>
     <button class="chip" id="wavSave">save…</button>
+    <button class="chip" id="wavPlace">re-place</button>
     <button class="chip" id="wavClear">clear</button>
     <span id="wavState" style="color: var(--dim)"></span>
   </div>
@@ -325,6 +326,11 @@ async function connect(transport) {
   $('btnDrawer').hidden = !dev;
   if (dev) buildDrawer(); else $('drawer').classList.remove('show');
   buildAxisButtons();
+  /* The import row is the one place whose controls depend on the link, and it
+     was only ever re-rendered by touching it: waveforms added before
+     connecting left `send` disabled and the row still saying "connect to
+     send" after the module was right there. */
+  renderImport();
   trail.n = 0; trail.head = 0; trail.at = -1; lastBlock = -1;
   say('');
   polling = true; pollTelemetry(); pollStats();
@@ -333,6 +339,8 @@ async function disconnect() {
   polling = false;
   const l = link; link = null; tel = null; stats = null; info = null; panel = null;
   worlds = null; basis = null; basisWorld = -1; switching = -1; terrain.key = '';
+  place.sent = false;      /* whatever it was holding, it is not holding it now */
+  renderImport();
   renderWorldBar();
   if (l) { try { await l.close(); } catch {} }
   $('modinfo').textContent = 'not connected';
@@ -402,6 +410,11 @@ async function ensureBasis() {
 }
 async function selectWorld(i) {
   if (!link || !worlds || switching >= 0 || i === worlds.current) return;
+  /* The module is no longer holding the imported set, so moving a node must
+     stop putting it back. Sending it again is a thing to ask for, not
+     something a drag does to a world you deliberately switched to. */
+  place.sent = false;
+  renderImport();
   switching = i;
   renderWorldBar();
   try {
@@ -540,8 +553,16 @@ async function refreshCard() {
  * rotation plane, so aligning with a plane finds a related set rather than
  * twenty-four unrelated things. It is a starting point, not a cage.
  */
-const imported = [];           /* { name, mags, fit } */
+const imported = [];           /* { name, mags, fit, pos } */
 let importMode = 'shape';
+/* Which node the hand is on, and whether the module is holding this set.
+ *
+ * `sent` is what makes moving a node musical rather than clerical: once you
+ * have put the set on the module, every drop re-sends so you hear where you
+ * just put it. Before that it stays false and nothing goes over the link
+ * unasked — dragging must not be what switches the module off the world
+ * somebody is playing. */
+const place = { sel: -1, drag: -1, sent: false };
 
 /* The 24-cell: every permutation of (+-1, +-1, 0, 0), walked plane by plane so
    vertex group g lands in Givens plane g (core/kyk_lock.h). */
@@ -559,6 +580,100 @@ function cellPositions(count) {
   return out;
 }
 
+/* Back to the arrangement you were given. Placement is the part of curating
+   that is easy to make a mess of, and there was no way back from a mess. */
+function placeOnCell() {
+  const cell = cellPositions(24);
+  imported.forEach((w, i) => { w.pos = cell[i].slice(); });
+  place.sel = -1;
+}
+
+/* ── moving a node ────────────────────────────────────────────────────────
+ *
+ * The space view draws two axes of four, so a drag sets those two and leaves
+ * the rest alone; the other two are reached by switching the pair, which is
+ * what the axis buttons and the arrow keys already do. That is not a
+ * compromise for want of a 4-D input device — it is how the instrument is
+ * played, one Givens plane at a time, and placing a node the same way puts it
+ * somewhere you can describe.
+ *
+ * Positions are clamped to the cube. The format does not require it (the
+ * parser checks only that coefficients are finite) and a node outside is
+ * legal, merely far away — but no knob can reach outside, so a node out there
+ * would be one you could never arrive at, which is not a thing to let a drag
+ * do by accident.
+ */
+const spaceX = (x) => clamp01((x - view.ox) / view.S);
+const spaceY = (y) => clamp01(1 - (y - view.oy) / view.S);
+
+/* How far a node sits from the slice on screen, in the axes that are not on
+   it. Chebyshev rather than Euclidean because it answers the question being
+   asked — is any one of the axes I cannot see far away — and because the
+   24-cell's own neighbours differ on exactly two axes at a time. */
+function offPlane(w) {
+  const ref = tel ? tel.posL : null;
+  if (!ref) return 0;
+  let d = 0;
+  /* Bounded by the node's own dimension, not the module's. A four-dimensional
+     world sent to a module running a six-dimensional one is a real state — the
+     page draws whatever is live — and reading past the end of pos would make
+     every distance NaN and every node fully bright, which is the opposite of
+     what the fade is for. */
+  for (let a = 0; a < Math.min(w.pos.length, tel ? tel.n : 4); a++)
+    if (a !== axes[0] && a !== axes[1]) d = Math.max(d, Math.abs(w.pos[a] - ref[a]));
+  return d;
+}
+
+/* The node under the pointer, or -1.
+ *
+ * Ties are broken towards the node nearest the slice being drawn — the one
+ * that is not faded — because that is the one under the pointer as far as the
+ * eye is concerned. A node from another plane projecting onto the same spot is
+ * drawn dim, and grabbing the dim one when a bright one is there would feel
+ * like the page picked at random. */
+function pickNode(x, y) {
+  let best = -1, score = 1e9;
+  for (let i = 0; i < imported.length; i++) {
+    const w = imported[i];
+    if (axes[0] >= w.pos.length || axes[1] >= w.pos.length) continue;
+    const dx = (view.ox + w.pos[axes[0]] * view.S) - x;
+    const dy = (view.oy + (1 - w.pos[axes[1]]) * view.S) - y;
+    const d = Math.hypot(dx, dy);
+    if (d > 11) continue;
+    const sc = d + 40 * offPlane(w);
+    if (sc < score) { score = sc; best = i; }
+  }
+  return best;
+}
+
+function moveNodeTo(i, x, y) {
+  const w = imported[i];
+  if (!w || axes[0] >= w.pos.length || axes[1] >= w.pos.length) return;
+  w.pos[axes[0]] = spaceX(x);
+  w.pos[axes[1]] = spaceY(y);
+}
+
+/* Keep the module holding what is on screen, without piling up transfers.
+ *
+ * A drag can end many times in a second and a world is about 6.5 KB over
+ * seven chunked requests, so a send in flight collects one trailing resend
+ * rather than a queue of them: the last position is the one that matters and
+ * the intermediate ones are already stale. A failure turns the syncing off
+ * rather than retrying, because the alternative is a failure storm behind a
+ * link that has gone away. */
+let placeSending = false, placeAgain = false;
+async function syncPlacement() {
+  if (!link || !place.sent) return;
+  if (placeSending) { placeAgain = true; return; }
+  placeSending = true;
+  try {
+    do { placeAgain = false; await MVL.putWorld(link, importedBlob()); } while (placeAgain);
+  } catch (e) {
+    place.sent = false;
+    say('the module stopped taking the moved world: ' + e.message, true);
+  } finally { placeSending = false; renderImport(); }
+}
+
 function renderImport() {
   const n = imported.length;
   $('wavMode').textContent = importMode;
@@ -567,6 +682,7 @@ function renderImport() {
      into a file and copying it to the card is a whole way of using this page,
      and there is nothing for a link to do in it. */
   $('wavSave').disabled = !n;
+  $('wavPlace').disabled = !n;
   $('wavClear').disabled = !n;
   if (!n) { $('wavState').textContent = link ? '' : 'connect to send'; return; }
   /* The fit is the fraction of each wave that survives projection onto the
@@ -574,18 +690,30 @@ function renderImport() {
      person choosing waveforms would want to reconsider. */
   let worst = 1, worstName = '';
   for (const w of imported) if (w.fit < worst) { worst = w.fit; worstName = w.name; }
-  $('wavState').textContent = importMode === 'spectrum'
-    ? `${n} wave${n > 1 ? 's' : ''} · spectrum kept exactly, waveform redrawn`
-    : `${n} wave${n > 1 ? 's' : ''} · worst fit ${(100 * worst).toFixed(0)}% (${worstName})`;
+  const sel = imported[place.sel];
+  /* While a node is picked, the row says where that node is rather than how
+     the set as a whole projected: during placement it is the only number
+     anybody wants, and it is the one the canvas cannot show (two of its four
+     axes are off screen). */
+  $('wavState').textContent = sel
+    ? `${sel.name} at ${[...sel.pos].map(v => v.toFixed(2)).join(' ')}${place.sent ? ' · following' : ''}`
+    : importMode === 'spectrum'
+      ? `${n} wave${n > 1 ? 's' : ''} · spectrum kept exactly, waveform redrawn`
+      : `${n} wave${n > 1 ? 's' : ''} · worst fit ${(100 * worst).toFixed(0)}% (${worstName})`;
 }
 
 async function addWavs(files) {
+  const cell = cellPositions(24);
   for (const f of files) {
     if (imported.length >= 24) { say('24 nodes is the limit', true); break; }
     try {
       const cyc = MVL.wavToCycle(new Uint8Array(await f.arrayBuffer()));
       const nd = MVL.cycleToNode(cyc, 64, importMode);
-      imported.push({ name: f.name.replace(/\.wav$/i, ''), mags: nd.mags, fit: nd.fit });
+      /* A vertex to start on, which is where placement used to end. The
+         arrangement is the same one it always was; the difference is that the
+         node owns it now and can be moved off it. */
+      imported.push({ name: f.name.replace(/\.wav$/i, ''), mags: nd.mags, fit: nd.fit,
+                      pos: cell[imported.length].slice() });
     } catch (e) { say(f.name + ': ' + e.message, true); }
   }
   renderImport();
@@ -607,8 +735,7 @@ function worldName() {
    paths differing by a placement rule or a sigma is exactly the sort of thing
    nobody would notice until a saved file sounded wrong months later. */
 function importedBlob() {
-  const pos = cellPositions(imported.length);
-  return MVL.buildUserWorld(imported.map((w, i) => ({ pos: pos[i], mags: w.mags })),
+  return MVL.buildUserWorld(imported.map(w => ({ pos: w.pos, mags: w.mags })),
                             { n: 4, k: 64, sigma: 0.26, name: worldName() });
 }
 
@@ -652,7 +779,8 @@ async function sendImported() {
   try {
     await MVL.putWorld(link, blob, (done, all) =>
       say(`sending ${(100 * done / all).toFixed(0)}%`));
-    say(`${worldName()}: ${imported.length} waveforms placed on the 24-cell (${blob.length} bytes)`);
+    place.sent = true;
+    say(`${worldName()}: ${imported.length} waveforms placed (${blob.length} bytes) — moving one now follows`);
     setTimeout(() => refreshWorlds(), 250);
   } catch (e) { say('send: ' + e.message, true); }
 }
@@ -777,7 +905,8 @@ $('wavMode').onclick = () => {
 };
 $('wavSend').onclick = sendImported;
 $('wavSave').onclick = exportImported;
-$('wavClear').onclick = () => { imported.length = 0; renderImport(); };
+$('wavPlace').onclick = () => { placeOnCell(); renderImport(); syncPlacement(); };
+$('wavClear').onclick = () => { imported.length = 0; place.sel = -1; place.sent = false; renderImport(); };
 renderImport();
 /* Direct or aimed, as a pair of chips rather than a button that fires and
    leaves no trace.
@@ -957,6 +1086,41 @@ document.addEventListener('keydown', e => {
 
 /* ── drawing ────────────────────────────────────────────────────────── */
 const cs = $('space'), cx = cs.getContext('2d'), cn = $('sound'), cnx = cn.getContext('2d');
+/* ── dragging a node in the space view ────────────────────────────────────
+ *
+ * Pointer events rather than mouse events: the same handlers then work for a
+ * finger, and capture means a drag that leaves the canvas keeps going instead
+ * of stopping against the edge of the pane — which matters here, because the
+ * edge of the pane is where you push a node to put it in a corner.
+ *
+ * A press that lands on nothing clears the selection. That is what makes the
+ * import row's readout trustworthy: it names a node only while one is actually
+ * picked, so it can never be describing something you stopped touching.
+ */
+cs.addEventListener('pointerdown', e => {
+  if (!imported.length) return;
+  const r = cs.getBoundingClientRect();
+  const i = pickNode(e.clientX - r.left, e.clientY - r.top);
+  place.sel = i;
+  place.drag = i;
+  if (i >= 0) { cs.setPointerCapture(e.pointerId); e.preventDefault(); }
+  renderImport();
+});
+cs.addEventListener('pointermove', e => {
+  if (place.drag < 0) return;
+  const r = cs.getBoundingClientRect();
+  moveNodeTo(place.drag, e.clientX - r.left, e.clientY - r.top);
+  renderImport();
+});
+/* The send is on the drop, not on the move: a world is 6.5 KB and a drag is
+   sixty positions a second, and the one that matters is where you let go. */
+for (const ev of ['pointerup', 'pointercancel']) cs.addEventListener(ev, () => {
+  if (place.drag < 0) return;
+  place.drag = -1;
+  renderImport();
+  syncPlacement();
+});
+
 /* The CSS box of each canvas, measured when it changes rather than every frame.
  *
  * drawSpace and drawSound each read clientWidth and clientHeight and then call
@@ -1264,6 +1428,7 @@ function drawSpace() {
   const px = v => ox + v * S, py = v => oy + (1 - v) * S;
   const [ax, ay] = axes;
   view.S = S;                    /* the trail's pacing needs to know the scale */
+  view.ox = ox; view.oy = oy;    /* and placement needs to invert the projection */
   /* the world itself, when it is a formula we can evaluate */
   buildTerrain();
   if (basis && terrain.canvas && terrain.key && PALETTE[palIdx].lut) {
@@ -1309,6 +1474,7 @@ function drawSpace() {
     else { cx.moveTo(px(0), py(0)); cx.lineTo(px(1), py(0)); cx.moveTo(px(0), py(1)); cx.lineTo(px(1), py(1)); }
     cx.stroke(); cx.setLineDash([]);
   }
+  drawNodes(ox, oy, S, px, py);
   if (!tel) { cx.fillStyle = '#3b4756'; cx.fillText('waiting for the module', ox + S / 2 - 70, oy + S / 2); drawArcs(n, planes, null, ox, oy + S + 18, S); return; }
   /* active cell around L — only a tabulated world has cells */
   if (space && side > 1) {
@@ -1413,6 +1579,54 @@ function drawSpace() {
   if (tel.stereo) cx.fillText(`R ${fmtVec(tel.posR)}`, ox + 6, oy + S - 8);
   drawArcs(n, planes, tel, ox, oy + S + 18, S);
 }
+/* Imported nodes, where they are and which one the hand is on.
+ *
+ * Drawn before the trail and the dot, and deliberately so: this layer is
+ * setup, and the one mark that must never be lost is where the instrument
+ * actually is. Rings rather than discs, in the panel's own amber, so they read
+ * as "things you placed" against a dot that takes its colour from the timbre.
+ *
+ * A node fades with its distance from the slice on screen. Two of its four
+ * axes are not on this plane, and without the fade a node sitting a long way
+ * off in the axes you cannot see looks exactly like one under your hand —
+ * which is the projection lying about a space whose whole point is that it has
+ * more directions than a screen. Faded is the honest way to say "this is over
+ * there"; the number in the import row says how far.
+ *
+ * Names only when there are few enough for them to be readable, plus always
+ * the selected one. Twenty-four labels on a square is not a placement view, it
+ * is a wall of text. */
+function drawNodes(ox, oy, S, px, py) {
+  if (!imported.length) return;
+  const [ax, ay] = axes;
+  const labels = imported.length <= 8;
+  cx.font = '10px ui-monospace, monospace';
+  for (let i = 0; i < imported.length; i++) {
+    const w = imported[i], sel = i === place.sel;
+    /* A node has no coordinate on an axis it does not have, so it is not
+       anywhere on this plane and drawing it at the origin would be a lie. */
+    if (ax >= w.pos.length || ay >= w.pos.length) continue;
+    const x = px(clamp01(w.pos[ax])), y = py(clamp01(w.pos[ay]));
+    const near = Math.max(0.18, 1 - Math.min(1, offPlane(w) / 0.5));
+    cx.globalAlpha = sel ? 1 : near;
+    cx.beginPath(); cx.arc(x, y, sel ? 7 : 5, 0, 7);
+    cx.lineWidth = 2.5; cx.strokeStyle = 'rgba(7,9,12,0.85)'; cx.stroke();
+    cx.lineWidth = sel ? 1.8 : 1.2; cx.strokeStyle = sel ? '#ffe9a8' : '#ffcc55'; cx.stroke();
+    cx.lineWidth = 1;
+    /* A dot in the middle of the selected one, so it is still findable when it
+       is sitting on top of the position dot. */
+    if (sel) { cx.beginPath(); cx.arc(x, y, 1.6, 0, 7); cx.fillStyle = '#ffe9a8'; cx.fill(); }
+    if (labels || sel) {
+      const t = w.name.length > 12 ? w.name.slice(0, 11) + '…' : w.name;
+      cx.lineWidth = 3; cx.strokeStyle = 'rgba(7,9,12,0.75)'; cx.strokeText(t, x + 9, y + 3);
+      cx.fillStyle = sel ? '#ffe9a8' : '#c8a24a'; cx.fillText(t, x + 9, y + 3);
+      cx.lineWidth = 1;
+    }
+  }
+  cx.globalAlpha = 1;
+  cx.font = '11px ui-monospace, monospace';
+}
+
 /* How far past the edge the hand is pushing.
  *
  * On a clamped axis, once the centre leaves [0,1] the position stops moving
