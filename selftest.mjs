@@ -34,6 +34,20 @@ const close = (a, b, tol = 1e-5) => Math.abs(a - b) <= tol;
   const f = KYK.buildFrame(0x01, 7, new Uint8Array(0));
   let got = null; const p = new KYK.FrameParser(); for (const b of f) p.push(b, x => got = x);
   check(got && got.ok && got.type === 1 && got.seq === 7 && got.body.length === 0, 'frame builder ↔ parser');
+
+  /* A device that stops delimiting must not be able to exhaust the host.
+     Undelimited input is a crash mid-transmit, a wrong baud rate or line
+     noise; the answer to all three is to drop the chunk and resync, which is
+     what the SDK's own parser does and what this one had been missing. */
+  {
+    const q = new KYK.FrameParser();
+    for (let i = 0; i < (1 << 20); i++) q.push(0x41, () => {});
+    check(q.acc.length < 4096, `a megabyte of undelimited input is capped (${q.acc.length} held)`);
+    let after = null;
+    q.push(0, x => after = x);                       /* the delimiter that resyncs */
+    for (const b of KYK.buildFrame(0x01, 9, new Uint8Array(0))) q.push(b, x => after = x);
+    check(after && after.ok && after.seq === 9, 'and a real frame still parses right after it');
+  }
 }
 
 async function withChild(args, fn) {
@@ -443,6 +457,22 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   check(same(arrivals[0], arrivals[1]) && same(arrivals[0], arrivals[2]),
         `a sent world sounds the same whichever world it replaced (worst sample ${
           Math.max(worst(arrivals[0], arrivals[1]), worst(arrivals[0], arrivals[2]))} of 255)`);
+
+  /* Reading one world's formula must not change the sound of another.
+   *
+   * VertexField holds raw pointers into a VertexTable, so building a world
+   * into the table the live world points at rewrites its waveforms. GET_BASIS
+   * did exactly that: a *read* moved partials of the playing world by up to 22
+   * magnitude steps, about 8.8 dB. It is the codebase's own pattern again —
+   * contents replaced underneath something holding a pointer — in the shell
+   * the whole suite is graded against. */
+  {
+    await select(1);                      /* the 24-cell, which has a table */
+    const before = await spectrum();
+    for (const w of [2, 3]) { try { await KYK.fetchBasis(link, w, 1024); } catch { /* fine */ } }
+    check(same(await spectrum(), before),
+          'reading another world\'s formula leaves the playing world alone');
+  }
 
   /* What the engine actually renders for a node's coefficients.
    *

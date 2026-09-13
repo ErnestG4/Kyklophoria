@@ -390,8 +390,22 @@ let polling = false;
 const say = (s, bad) => { $('msg').textContent = s || ''; $('msg').style.color = bad ? 'var(--bad)' : 'var(--dim)'; };
 
 /* ── connection ─────────────────────────────────────────────────────── */
+let connectGen = 0;
 async function connect(transport) {
+  /* Two connects in flight used to leave you with none.
+   *
+   * The handshake is five round trips and takes up to a couple of seconds over
+   * serial, and the Serial button stays visible for all of it — it is hidden
+   * only on success. Press it twice and the loser's catch calls disconnect(),
+   * which tears down whatever `link` points at by then: the winner. Both die
+   * and the status line blames the link.
+   *
+   * A generation counter rather than a boolean, so the later attempt wins and
+   * the earlier one retires quietly, which is what pressing the button again
+   * means. */
+  const gen = ++connectGen;
   if (link) await disconnect();
+  if (gen !== connectGen) return;
   link = new MVL.Link(transport);
   link.onClose = () => { say('link closed'); disconnect(); };
   link.onError = e => say('link error: ' + (e && e.message || e), true);
@@ -403,7 +417,11 @@ async function connect(transport) {
     /* An analytic world has no lattice, so 0x61 refuses — that is not a
      * failure to connect. */
     space = await refreshSpace();
-  } catch (e) { say('connect failed: ' + e.message, true); await disconnect(); return; }
+  } catch (e) {
+    if (gen !== connectGen) { try { await transport.close(); } catch {} return; }
+    say('connect failed: ' + e.message, true); await disconnect(); return;
+  }
+  if (gen !== connectGen) { try { await transport.close(); } catch {} return; }
   $('modinfo').textContent = `${info.name} · fw ${info.fw} (${info.git}) · ${transport.kind}`;
   $('sMod').textContent = info.id + ' ' + info.fw;
   await refreshWorlds();
@@ -487,6 +505,17 @@ async function refreshWorlds() {
      doing it early for the sake of a responsive picture; this is the check
      that is true whoever changed the world, including the panel. */
   if (held && (!worlds || worlds.current !== 0xFF)) heldLost();
+  /* And the lattice belongs to the world too.
+   *
+   * `space` was refreshed only by selectWorld, so every other way of learning
+   * the world changed — a panel switch noticed in telemetry, a card world
+   * loaded, a world sent from here — left the play view drawing the *previous*
+   * world's lattice: 64 dots, an active-cell highlight and wrap seams over an
+   * analytic world that has none, with the footer naming the new world beside
+   * them. The sixth instance of the same pattern, and the reason it keeps
+   * happening is that there is no single place a world change passes through.
+   * This is now that place. */
+  space = await refreshSpace();
   renderWorldBar();
   describeSpace();
   await ensureBasis();
@@ -1911,7 +1940,15 @@ function renderFromMags(mags, out = CYC) {
  * at the same place. */
 function rotatedCycle(cyc, rot, out = CYC) {
   const N = cyc.length, y = new Float32Array(out);
-  for (let i = 0; i < out; i++) y[i] = cyc[(Math.round(i * N / out) + rot) % N];
+  /* Negated, for the same reason renderFromMags is: the engine plays
+     -sum m.sin(h.theta), so a trace drawn in the file's own polarity would sit
+     against the rendered one as its mirror image and every comparison would
+     read as a total loss. Both traces are drawn in the polarity the instrument
+     plays. A global sign flip is inaudible; comparing across one is not.
+     This is what the first version of the polarity fix got wrong — it flipped
+     one side of the comparison and left the other, which moved the mirror
+     rather than removing it. */
+  for (let i = 0; i < out; i++) y[i] = -cyc[(Math.round(i * N / out) + rot) % N];
   return y;
 }
 

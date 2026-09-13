@@ -67,12 +67,32 @@ function buildFrame(type, seq, body) {
 }
 /* Byte-at-a-time frame scanner: collects up to each 0x00 delimiter, COBS-
  * decodes, validates header + CRC and hands the frame to onFrame. */
+/* The cap is not optional, and its absence was a way to lose the tab.
+ *
+ * A frame is at most maxBody plus COBS overhead and a header, so anything
+ * longer is not a frame — it is a device that crashed mid-transmit, a wrong
+ * baud rate, or line noise, and the right answer to all three is to throw the
+ * chunk away at the next delimiter and resync. Without a cap this array grew
+ * for as long as the bytes kept coming: 4 MB of undelimited input took the
+ * heap to 96 MB, about 25x amplification, and the page died while the module
+ * was perfectly healthy.
+ *
+ * The SDK parser this was ported from has exactly this rule (frame.h: fill to
+ * the buffer, else set overflow_, and drop the chunk at the delimiter). The
+ * port kept the accumulate-and-decode half and left the overflow half behind. */
+const kMaxWire = 1024 + 64;
+
 class FrameParser {
-  constructor() { this.acc = []; }
+  constructor() { this.acc = []; this.over = false; }
   push(byte, onFrame) {
-    if (byte !== 0) { this.acc.push(byte); return; }
+    if (byte !== 0) {
+      if (this.acc.length < kMaxWire) this.acc.push(byte);
+      else this.over = true;
+      return;
+    }
     const chunk = Uint8Array.from(this.acc); this.acc = [];
-    if (chunk.length === 0) return;
+    const over = this.over; this.over = false;
+    if (chunk.length === 0 || over) return;
     const dec = cobsDecode(chunk); if (!dec || dec.length < 10) return;
     const dv = new DataView(dec.buffer, dec.byteOffset, dec.byteLength);
     const bodyLen = dec.length - 10;
