@@ -33,19 +33,35 @@ Both are in `docs/sdk-quirks.md` with the evidence. The short version:
 
 ## The bug pattern this codebase keeps producing
 
-Four separate bugs in one week, all the same shape: **state derived from a
-world, invalidated on everything except the world changing.** The phase
-spectrum, the payload cache, the band-limit hold, the morph aim offset. The
-phase one silently undid the entire sine-phase design for any world reached by
-switching rather than at boot.
+Five separate bugs, all the same shape: **state derived from a world,
+invalidated on everything except the world changing.** The phase spectrum, the
+payload cache, the band-limit hold, the morph aim offset. The phase one silently
+undid the entire sine-phase design for any world reached by switching rather
+than at boot.
+
+The fifth is the one to learn from, because it hid in the *test harness*:
+`PutWorld` in `shell/desktop/serve.h` replaced the live world's contents and
+never called `eng->SetWorld`, so every one of those four caches went on
+describing the world that had just been replaced. Nothing looked wrong because
+the pointer does not move — `kActSelectWorld` rebuilds `*world` in place and
+then calls `SetWorld` anyway, and the module's own path
+(`shell/alchemy/main.cpp`) double-buffers and calls it too. Only the desktop
+shell forgot, which is the worst place for it: the desktop shell is what the
+whole suite drives, so the page's send path was being graded against an engine
+that was ignoring the send.
 
 `tests/switch_check.cpp` now sweeps all 420 ordered world pairs and asserts that
 arriving at a world is identical to starting in it. If you add anything cached
-off `world_`, that test is what will catch you. An `OnWorldChanged` hook is
-still worth building so the *fix* is obvious when it fires.
+off `world_`, that test is what will catch you — *if* the path you changed
+actually goes through `SetWorld`, which is what the fifth bug turned on. An
+`OnWorldChanged` hook is still worth building so the *fix* is obvious when it
+fires, and so a path that replaces a world without it is a compile-time
+question rather than a silence.
 
 The root cause was a blind spot, not carelessness: every golden renders one
-world from boot and never switches, so nothing had ever asked the question.
+world from boot and never switches, so nothing had ever asked the question. The
+fifth had the same shape — every check of the send path asked whether the module
+*accepted* the bytes, and none asked whether the sound changed.
 
 ## Testing habits that have earned their place
 

@@ -297,6 +297,12 @@ meaningful axis and stacking four banks makes rotation meaningless.
 
 ## Web
 
+- [x] **The desktop shell was loading a sent world and not telling the engine.**
+      `PutWorld` in `shell/desktop/serve.h` wrote `*world` and never called
+      `eng->SetWorld`, so the phase convention, the render cache, the
+      band-limit hold and the aim offset all still described the previous
+      world. Fifth instance of the pattern in CLAUDE.md. Found by asking
+      whether the *sound* changed after a send, which nothing had asked.
 - [x] Orbit trail and the rotation arcs. The Kepler body gets its own inset
       showing the conic in its own unrotated plane, and the coupling lock has
       a bar beside the plane gauges.

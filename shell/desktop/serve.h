@@ -112,7 +112,27 @@ public:
             userWorld.UseUserWorld(rx.Blob(), rx.Size(), 8, nullptr, userName);
         rx.Reset();
         if(e != kyk::UserError::Ok) return 1u;
-        *world    = userWorld;
+        if(!eng) return 3u;
+        *world = userWorld;
+        /* And tell the engine, which is the whole point of the call.
+         *
+         * This was missing, and it is the fifth time this codebase has grown
+         * the same bug: state derived from a world, invalidated on everything
+         * except the world's *contents* changing. The pointer does not move
+         * here, so nothing looked wrong — but the phase convention, the
+         * rendered-position cache, the band-limit hold and the morph aim
+         * offset all still described the world that had just been replaced.
+         * A sine-phase world sent from the page rendered at whatever
+         * convention was live before it, which is exactly the defect
+         * kyk_engine.h's SetWorld comment was written about.
+         *
+         * kActSelectWorld has always done this (it rebuilds *world in place
+         * and then calls SetWorld with the same pointer); the send path simply
+         * never did. shell/alchemy/main.cpp gets it right too, so this was the
+         * desktop shell alone — which is worse than it sounds, because the
+         * desktop shell is what the whole suite drives, so the send path was
+         * being tested against an engine that was ignoring the send. */
+        eng->SetWorld(world);
         world_idx = kNoWorld;
         return 0u;
     }
