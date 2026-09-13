@@ -674,6 +674,49 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
     /* and the positions are the 24-cell's vertices, two axes off centre each */
     const off = snap.nodes.map(nd => nd.pos.filter(v => Math.abs(v - 0.5) > 1e-6).length);
     check(off.every(c => c === 2), 'each on a 24-cell vertex');
+    /* A named world, sampled without disturbing what is playing — which is
+       what "start a new world from Lock" needs, and the reason there are no
+       blank slots: a real starting point beats an empty one, and beats a slot
+       pre-filled with silence. */
+    /* Compared by *sound*, not by world index. The first version of this check
+       compared the index and passed with the bug injected — building the named
+       world into the live World leaves the index alone and replaces what you
+       are hearing, which is the whole failure it was meant to catch. */
+    check((await act(KYK.ACT.snapshot, 7, 13))[0] === 0, 'a named world can be snapshotted');
+    const lock = KYK.parseUserWorld(await KYK.fetchSlot(link, 7, 1024));
+    check(lock && lock.name === 'Lock', `named after it (${lock && lock.name})`);
+    check(new Set(lock.nodes.map(nd => nd.mags.join(','))).size === 24,
+          'with twenty-four distinct spectra, one per vertex');
+    /* Forced to re-render before comparing, and that is the whole point.
+       Replacing the live world's *contents* without telling the engine leaves it
+       rendering its cached frame, so a comparison taken straight after the
+       snapshot settles on the stale sound and passes — which is precisely the
+       pattern this codebase keeps producing. Move the position away and back:
+       the render at the original point re-reads the world, so a world that was
+       overwritten underneath shows up. */
+    /* Wait for the *position to arrive*, not for the frame to stop moving.
+       The control frame is slewed, so a frame can sit unchanged for a few reads
+       while the position is still travelling — settling on that made this check
+       fail half the time on correct code. Telemetry reports the position, so
+       wait for the thing actually being waited for. */
+    const nudge = async (v) => {
+      await link.request(KYK.CMD.setControl,
+        KYK.setControlReq(110, [v, 0.5, 0.5, 0.5], [0, 0, 0, 0, 0, 0], 0), { urgent: true });
+      for (let i = 0; i < 400; i++) {
+        const t = await read();
+        if (t.posL && Math.abs(t.posL[0] - v) < 1e-3) break;
+      }
+      return settle();
+    };
+    const atRest = await nudge(0.5);
+    await act(KYK.ACT.snapshot, 7, 13);
+    await nudge(0.8);
+    check(same(await nudge(0.5), atRest),
+          'and what was playing is untouched — sampled into scratch, not over it');
+    check(await refused(KYK.ACT.snapshot, 7, 5),
+          'a lattice world cannot be named — it would have to be expanded first');
+    await act(KYK.ACT.slotFree, 7);
+
     /* it is a real world: it loads and plays */
     check((await act(KYK.ACT.slotLive, 6))[0] === 0, 'the snapshot plays as a world in its own right');
     await act(KYK.ACT.slotFree, 6);
