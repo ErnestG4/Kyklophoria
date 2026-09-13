@@ -401,8 +401,7 @@ async function disconnect() {
   polling = false;
   const l = link; link = null; tel = null; stats = null; info = null; panel = null;
   worlds = null; basis = null; basisWorld = -1; switching = -1; terrain.key = '';
-  place.sent = false;      /* whatever it was holding, it is not holding it now */
-  renderImport();
+  heldLost();              /* whatever it was holding, it is not holding it now */
   renderWorldBar();
   if (l) { try { await l.close(); } catch {} }
   $('modinfo').textContent = 'not connected';
@@ -450,6 +449,11 @@ async function refreshWorlds() {
   try {
     worlds = await MVL.fetchWorlds(link);
   } catch { worlds = null; }
+  /* The one rule, applied to what the module actually says: a built-in is
+     live, so it is not holding ours. Everything else that drops the hold is
+     doing it early for the sake of a responsive picture; this is the check
+     that is true whoever changed the world, including the panel. */
+  if (held && (!worlds || worlds.current !== 0xFF)) heldLost();
   renderWorldBar();
   describeSpace();
   await ensureBasis();
@@ -473,10 +477,10 @@ async function ensureBasis() {
 async function selectWorld(i) {
   if (!link || !worlds || switching >= 0 || i === worlds.current) return;
   /* The module is no longer holding the imported set, so moving a node must
-     stop putting it back. Sending it again is a thing to ask for, not
-     something a drag does to a world you deliberately switched to. */
-  place.sent = false;
-  renderImport();
+     stop putting it back, and the play view must stop drawing its rings.
+     Sending it again is a thing to ask for, not something a drag does to a
+     world you deliberately switched to. */
+  heldLost();
   switching = i;
   renderWorldBar();
   try {
@@ -626,6 +630,46 @@ let importMode = 'shape';
  * somebody is playing. */
 const place = { sel: -1, drag: -1, box: null, sent: false };
 
+/* What the module is holding, as far as the page can honestly tell.
+ *
+ * The play view is a readout: every mark in it has to come from the module.
+ * The build view's set is not that — it is a draft, and between edits and a
+ * send the two are simply different worlds. Drawing the draft on the play
+ * view was the page telling you the instrument contained something it did
+ * not.
+ *
+ * There is no way to ask. The world list says a user world is live (`current`
+ * 0xFF) but not what is in it, and GET_BASIS carries a lock world's count and
+ * sigma with no positions, so this is the page's own record of what it sent —
+ * kept only while the module still reports a world that is not one of the
+ * built-ins, and dropped the moment anything could have replaced it.
+ *
+ * The blind spot that leaves: a world switched from the module's own panel is
+ * invisible here until something refreshes the world list, because telemetry
+ * does not carry the live world index. The world bar has always had the same
+ * gap, so the rings are no more wrong than the name beside them. */
+let held = null;                 /* { name, nodes: [{ name, pos }] } */
+
+/* The play view draws this and nothing else. A function rather than a field so
+   there is one answer to "what does the readout show", and it is the same
+   answer the test asks for. */
+const playNodes = () => (held ? held.nodes : []);
+
+/* A send landed, so the module now holds exactly this. */
+function heldSent() {
+  held = { name: worldName(), nodes: imported.map(w => ({ name: w.name, pos: w.pos.slice() })) };
+}
+
+/* And the module is not holding it any more. One function, because there are
+   five ways to lose it — a built-in selected, a card world loaded, the link
+   dropped, a refresh that reports a built-in is live, a send that failed — and
+   four of them were written separately the first time. */
+function heldLost() {
+  held = null;
+  place.sent = false;
+  renderImport();
+}
+
 /* The 24-cell: every permutation of (+-1, +-1, 0, 0), walked plane by plane so
    vertex group g lands in Givens plane g (core/kyk_lock.h). */
 function cellPositions(count) {
@@ -767,9 +811,9 @@ async function syncPlacement() {
   if (placeSending) { placeAgain = true; return; }
   placeSending = true;
   try {
-    do { placeAgain = false; await MVL.putWorld(link, importedBlob()); } while (placeAgain);
+    do { placeAgain = false; await MVL.putWorld(link, importedBlob()); heldSent(); } while (placeAgain);
   } catch (e) {
-    place.sent = false;
+    heldLost();
     say('the module stopped taking the moved world: ' + e.message, true);
   } finally { placeSending = false; renderImport(); }
 }
@@ -896,6 +940,7 @@ async function sendImported() {
     await MVL.putWorld(link, blob, (done, all) =>
       say(`sending ${(100 * done / all).toFixed(0)}%`));
     place.sent = true;
+    heldSent();
     say(`${worldName()}: ${imported.length} waveforms placed (${blob.length} bytes) — moving one now follows`);
     setTimeout(() => refreshWorlds(), 250);
   } catch (e) { say('send: ' + e.message, true); }
@@ -1057,6 +1102,11 @@ $('cardLoad').onclick = async () => {
   if (i < 0 || !cardList.names.length) return;
   try {
     await link.request(MVL.CMD.action, MVL.actionReq(7, [i & 0xff]), { urgent: true });
+    /* A card world is another user world: the module stops holding ours the
+       moment this lands. This was missed the first time — `sent` stayed true
+       across a card load, so the next drag would have quietly pulled the
+       module back off the world somebody had just loaded. */
+    heldLost();
     say('loading ' + cardList.names[i]);
     setTimeout(() => { refreshWorlds(); }, 250);
   } catch (e) { say('load: ' + e.message, true); }
@@ -1572,9 +1622,10 @@ function drawSpace() {
     else { cx.moveTo(px(0), py(0)); cx.lineTo(px(1), py(0)); cx.moveTo(px(0), py(1)); cx.lineTo(px(1), py(1)); }
     cx.stroke(); cx.setLineDash([]);
   }
-  /* Visible here, movable only in the build view: this is a readout of the
-     module, and a readout you can edit by brushing against it is neither. */
-  drawNodes(cx, { ax, ay, ox, oy, S }, { dim: 0.8 });
+  /* What the module is holding, not what is being drafted on the other tab,
+     and movable nowhere: this is a readout, and a readout you can edit by
+     brushing against it is neither. */
+  drawNodes(cx, { ax, ay, ox, oy, S }, playNodes(), { dim: 0.8 });
   if (!tel) { cx.fillStyle = '#3b4756'; cx.fillText('waiting for the module', ox + S / 2 - 70, oy + S / 2); drawArcs(n, planes, null, ox, oy + S + 18, S); return; }
   /* active cell around L — only a tabulated world has cells */
   if (space && side > 1) {
@@ -1697,30 +1748,30 @@ function drawSpace() {
  * Names only when there are few enough to be readable, plus always the
  * selected one. Twenty-four labels on a square is not a placement view, it is
  * a wall of text. */
-function drawNodes(g, b, { dim = 1, labels = true } = {}) {
-  if (!imported.length) return;
-  const named = labels && imported.length <= 8;
+function drawNodes(g, b, nodes, { dim = 1, labels = true, sel = -1 } = {}) {
+  if (!nodes || !nodes.length) return;
+  const named = labels && nodes.length <= 8;
   g.font = '10px ui-monospace, monospace';
-  for (let i = 0; i < imported.length; i++) {
-    const w = imported[i], sel = i === place.sel;
+  for (let i = 0; i < nodes.length; i++) {
+    const w = nodes[i], sel_ = i === sel;
     /* A node has no coordinate on an axis it does not have, so it is not
        anywhere on this square and drawing it at the origin would be a lie. */
     if (b.ax >= w.pos.length || b.ay >= w.pos.length) continue;
     const x = boxX(b, w.pos[b.ax]), y = boxY(b, w.pos[b.ay]);
     const near = Math.max(0.18, 1 - Math.min(1, offPlane(w, b) / 0.5));
     const r = b.S < 140 ? 3.5 : 5;
-    g.globalAlpha = dim * (sel ? 1 : near);
-    g.beginPath(); g.arc(x, y, sel ? r + 2 : r, 0, 7);
+    g.globalAlpha = dim * (sel_ ? 1 : near);
+    g.beginPath(); g.arc(x, y, sel_ ? r + 2 : r, 0, 7);
     g.lineWidth = 2.5; g.strokeStyle = 'rgba(7,9,12,0.85)'; g.stroke();
-    g.lineWidth = sel ? 1.8 : 1.2; g.strokeStyle = sel ? '#ffe9a8' : '#ffcc55'; g.stroke();
+    g.lineWidth = sel_ ? 1.8 : 1.2; g.strokeStyle = sel_ ? '#ffe9a8' : '#ffcc55'; g.stroke();
     g.lineWidth = 1;
     /* A dot in the middle of the selected one, so it is still findable when it
        is sitting on top of the position dot. */
-    if (sel) { g.beginPath(); g.arc(x, y, 1.6, 0, 7); g.fillStyle = '#ffe9a8'; g.fill(); }
-    if ((named || sel) && b.S >= 140) {
+    if (sel_) { g.beginPath(); g.arc(x, y, 1.6, 0, 7); g.fillStyle = '#ffe9a8'; g.fill(); }
+    if ((named || sel_) && b.S >= 140) {
       const t = w.name.length > 12 ? w.name.slice(0, 11) + '…' : w.name;
       g.lineWidth = 3; g.strokeStyle = 'rgba(7,9,12,0.75)'; g.strokeText(t, x + 9, y + 3);
-      g.fillStyle = sel ? '#ffe9a8' : '#c8a24a'; g.fillText(t, x + 9, y + 3);
+      g.fillStyle = sel_ ? '#ffe9a8' : '#c8a24a'; g.fillText(t, x + 9, y + 3);
       g.lineWidth = 1;
     }
   }
@@ -1864,7 +1915,7 @@ function drawPlane() {
     cpx.moveTo(x - 5, y); cpx.lineTo(x + 5, y); cpx.moveTo(x, y - 5); cpx.lineTo(x, y + 5);
     cpx.stroke();
   }
-  drawNodes(cpx, main);
+  drawNodes(cpx, main, imported, { sel: place.sel });
 
   /* The complementary plane, in the corner and live. Placement is one plane at
      a time by design, but until this existed the two axes you were not on were
@@ -1877,7 +1928,7 @@ function drawPlane() {
     const b = { ax: other[0], ay: other[1], ox: ox + S - iS - 10, oy: oy + S - iS - 10, S: iS };
     planeBoxes.push(b);
     drawPlaneBox(b, true);
-    drawNodes(cpx, b, { labels: false });
+    drawNodes(cpx, b, imported, { labels: false, sel: place.sel });
   }
 
   cpx.font = '11px ui-monospace, monospace';

@@ -64,7 +64,18 @@ function mkEl(tag) {
     width: 300, height: 300, clientWidth: 300, clientHeight: 300,
     appendChild(c) { this.children.push(c); return c; },
     removeChild() {}, remove() {}, setAttribute() {}, getAttribute() { return null; },
-    addEventListener() {}, removeEventListener() {}, focus() {}, click() {},
+    /* Listeners are kept rather than dropped, so a test can perform the
+       gesture instead of calling the handler's insides. The drag on the
+       placement canvas had no coverage at all while they were discarded: every
+       check went at pickNode and moveNodeTo directly, and the handler that
+       wires a pointer to them — which box was pressed, what is being dragged,
+       when the send fires — was never run. */
+    addEventListener(type, fn) { (this._on || (this._on = {}))[type] = (this._on[type] || []).concat(fn); },
+    removeEventListener() {}, focus() {}, click() {},
+    /* Pointer capture is what keeps a drag alive past the edge of the pane.
+       Absent from this stub, a pointerdown on a node threw TypeError — the
+       handler works in a browser and could not run here at all. */
+    setPointerCapture() {}, releasePointerCapture() {},
     getContext: () => ctx2d,
     getBoundingClientRect: () => ({ width: 300, height: 300, left: 0, top: 0 }),
     querySelector: () => null, querySelectorAll: () => [],
@@ -77,6 +88,11 @@ function mkEl(tag) {
   return el;
 }
 const els = Object.fromEntries(IDS.map(i => [i, mkEl('div')]));
+/* Perform an event, the way a hand would. */
+const fire = (el, type, props = {}) => {
+  for (const fn of (el._on && el._on[type]) || [])
+    fn({ clientX: 0, clientY: 0, pointerId: 1, preventDefault() {}, ...props });
+};
 /* Any id the page asks for that we did not declare is a typo or a stale
    reference, and returning a fresh div for it hides that. */
 const unknownIds = new Set();
@@ -102,7 +118,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, setView, planeBoxes, boxAt, selectNode };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -184,6 +200,200 @@ for (const [id, min] of [['worldChips', 0], ['shadeChips', 3], ['trailChips', 4]
   if (!ok) bad++;
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} #${id} populated at load (${n} children, want >= ${min})`);
 }
+/* The gesture itself: press, move, release.
+ *
+ * Everything else about placement is tested one function at a time, which
+ * leaves the part a person actually performs — which square was pressed, what
+ * is being dragged, when the send fires, what happens on a press that hits
+ * nothing — running only in a browser. These go through the real listeners.
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  const sends = [];
+  const realPut = globalThis.KYK.putWorld;
+  globalThis.KYK.putWorld = async () => { sends.push(1); return true; };
+
+  P.imported.length = 0;
+  for (let i = 0; i < 4; i++)
+    P.imported.push({ name: 'g' + i, mags: new Float32Array(64), fit: 1, mode: 'shape',
+                      pos: [0.5, 0.5, 0.5, 0.5], render: new Float32Array(64) });
+  P.placeOnCell();
+  P.setAxes([0, 1]);
+  P.setTel(null);
+  P.setView('build');
+  P.drawPlane();
+  const cp = els.plane, [main, inset] = P.planeBoxes;
+  const at = (b, u, v) => ({ clientX: b.ox + u * b.S, clientY: b.oy + (1 - v) * b.S });
+  const pos = i => [...P.imported[i].pos];
+
+  T((cp._on && cp._on.pointerdown || []).length > 0, 'the placement canvas is listening for a pointer');
+
+  /* a press that lands on nothing */
+  P.selectNode(2);
+  fire(cp, 'pointerdown', at(main, 0.5, 0.02));
+  T(P.place.sel === -1 && P.place.drag === -1, 'a press on empty space picks nothing up');
+
+  /* the drag */
+  const start = pos(1);
+  fire(cp, 'pointerdown', at(main, start[0], start[1]));
+  T(P.place.sel === 1 && P.place.drag === 1, 'a press on a node takes hold of it');
+  T(P.place.box === main, 'and remembers which square it was pressed in');
+  fire(cp, 'pointermove', at(main, 0.3, 0.7));
+  T(Math.abs(pos(1)[0] - 0.3) < 1e-6 && Math.abs(pos(1)[1] - 0.7) < 1e-6, 'moving drags it');
+  T(sends.length === 0, 'and nothing is sent while the hand is still down');
+  fire(cp, 'pointerup', {});
+  T(P.place.drag === -1 && P.place.box === null, 'letting go lets go');
+  T(P.place.sel === 1, 'and leaves it picked, because that is what you are looking at');
+
+  /* a move with nothing held must not move anything */
+  const idle = pos(1);
+  fire(cp, 'pointermove', at(main, 0.9, 0.9));
+  T(pos(1).every((v, a) => v === idle[a]), 'a pointer crossing the canvas with nothing held moves nothing');
+
+  /* the same gesture in the inset moves the axes the main square cannot */
+  fire(cp, 'pointerdown', at(inset, pos(1)[2], pos(1)[3]));
+  T(P.place.box === inset, 'a press in the inset takes hold there');
+  fire(cp, 'pointermove', at(inset, 0.2, 0.8));
+  T(Math.abs(pos(1)[2] - 0.2) < 1e-6 && Math.abs(pos(1)[3] - 0.8) < 1e-6, 'and drags the other two axes');
+  T(Math.abs(pos(1)[0] - 0.3) < 1e-6, 'while the first two stay where the main square put them');
+  fire(cp, 'pointerup', {});
+
+  /* a cancelled drag is a finished drag */
+  fire(cp, 'pointerdown', at(main, pos(1)[0], pos(1)[1]));
+  fire(cp, 'pointercancel', {});
+  T(P.place.drag === -1, 'a cancelled pointer is not still holding something');
+
+  /* and the drop sends, once the module is holding the set */
+  P.place.sent = true;
+  P.setLink({ request: async () => Uint8Array.of(0) });
+  fire(cp, 'pointerdown', at(main, pos(0)[0], pos(0)[1]));
+  fire(cp, 'pointermove', at(main, 0.6, 0.4));
+  fire(cp, 'pointerup', {});
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  T(sends.length === 1, `the drop is what sends, and it sends once (${sends.length})`);
+
+  globalThis.KYK.putWorld = realPut;
+  P.setLink(null);
+  P.heldLost();               /* this block sent one; the next starts from nothing */
+  P.imported.length = 0;
+  P.setView('play');
+}
+console.log('');
+
+/* State: the play view shows what the module has, and every way that stops
+ * being true.
+ *
+ * This is the check the feature needed and did not have. The play view drew
+ * the *draft* — the set being edited on the other tab — so it claimed the
+ * instrument contained whatever was on screen in the builder, including edits
+ * that had never been sent and sets the module had never seen. A readout that
+ * can be wrong about its own subject is worse than no readout, and nothing
+ * here would have noticed: every existing check asked what the builder did,
+ * and none asked what the other view said about it.
+ *
+ * There is no way to ask the module what it is holding, so the page keeps a
+ * record of what it sent. The record is only as good as the rules for throwing
+ * it away, which is what this exercises: one rule per way of losing it.
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  const realFetch = globalThis.KYK.fetchWorlds, realPut = globalThis.KYK.putWorld;
+  let putOk = true, current = 9;
+  globalThis.KYK.putWorld = async () => { if (!putOk) throw new Error('link closed'); return true; };
+  globalThis.KYK.fetchWorlds = async () => ({
+    current, count: 1, list: [{ index: 0, kind: 0, analytic: false, name: 'Braids', note: '' }],
+  });
+  P.setLink({ request: async () => Uint8Array.of(0), close: async () => {} });
+  els.wavName.value = 'held';
+  /* Establish the starting point rather than inherit one. A block that assumes
+     the state a previous block happened to leave behind is a block that starts
+     failing when the one above it changes, and the first version of this did
+     exactly that. */
+  P.heldLost();
+
+  const draft = () => P.imported.map(w => [...w.pos]);
+  const shown = () => P.playNodes().map(w => [...w.pos]);
+  const fill = (n) => {
+    P.imported.length = 0;
+    for (let i = 0; i < n; i++)
+      P.imported.push({ name: 'n' + i, mags: new Float32Array(64), fit: 1, mode: 'shape',
+                        pos: [0.5, 0.5, 0.5, 0.5], render: new Float32Array(64) });
+    P.placeOnCell();
+  };
+
+  fill(3);
+  T(P.playNodes().length === 0, 'a set that was never sent draws nothing on the play view');
+
+  await P.sendImported();
+  T(P.place.sent && P.playNodes().length === 3, 'a sent set is what the play view draws');
+  T(P.heldName() === 'held', `and it is recorded under the name it was sent as (${P.heldName()})`);
+
+  /* the whole point: the two views can disagree, and the readout is the one
+     that must not move until the module does */
+  P.setView('build');
+  P.drawPlane();
+  const box = P.planeBoxes[0];
+  P.moveNodeTo(0, box, box.ox + 0.9 * box.S, box.oy + 0.9 * box.S);
+  T(draft()[0][0] !== shown()[0][0], 'editing the draft does not move the readout');
+  T(shown().length === 3 && shown()[1][0] === draft()[1][0], 'the nodes nobody touched still agree');
+
+  await P.syncPlacement();
+  T(shown()[0][0] === draft()[0][0], 'and the send that follows the drop catches the readout up');
+
+  /* every way of losing it */
+  current = 9;
+  await P.refreshWorlds();
+  T(P.playNodes().length === 0 && !P.place.sent,
+    'a refresh that reports a built-in is live drops the record');
+
+  await P.sendImported();
+  current = 0xFF;
+  await P.refreshWorlds();
+  T(P.playNodes().length === 3 && P.place.sent,
+    'a refresh that still reports a user world keeps it');
+
+  P.setCardList({ count: 1, names: ['someone-elses.kykw'] });
+  els.cardSel.selectedIndex = 0;
+  await els.cardLoad.onclick();
+  T(P.playNodes().length === 0 && !P.place.sent,
+    'loading a world from the card drops it — that is another user world, not ours');
+
+  await P.sendImported();
+  els.wavClear.onclick();
+  T(P.imported.length === 0 && P.place.sel === -1, 'clear empties the draft');
+  /* Deliberately not symmetrical: emptying the builder does not reach into the
+     module and unload anything. The rings stay because the world is still
+     there, which is the difference between a readout and a mirror of the
+     editor. */
+  T(P.playNodes().length === 3, 'and the module is still holding what it was sent');
+  T(!P.place.sent, 'but there is nothing left to follow it with');
+
+  fill(2);
+  T(P.imported.length === 2 && P.playNodes().length === 3,
+    'a new draft alongside a world the module still holds');
+
+  await P.sendImported();
+  putOk = false;
+  P.syncPlacement();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  T(P.playNodes().length === 0 && !P.place.sent,
+    'a send that fails stops claiming the module has it');
+
+  putOk = true;
+  await P.sendImported();
+  await P.disconnect();
+  T(P.playNodes().length === 0 && !P.place.sent, 'and dropping the link drops it too');
+
+  globalThis.KYK.fetchWorlds = realFetch;
+  globalThis.KYK.putWorld = realPut;
+  P.setLink(null);
+  P.imported.length = 0;
+  P.setView('play');
+  els.wavName.value = '';
+  els.msg.textContent = '';
+}
+console.log('');
+
 /* The two views are two views: one is shown, the other is not, and the world
  * bar belongs to the one that plays. Worth asserting rather than eyeballing —
  * a tab that shows both at once is a layout bug you only see at one window
@@ -210,6 +420,32 @@ for (const [id, min] of [['worldChips', 0], ['shadeChips', 3], ['trailChips', 4]
     'play puts the instrument back');
 
   /* the strip is the answer to "what did I just import", so it has to be there */
+  /* The controls that depend on the link. This row was never re-rendered when
+     the link changed, so waveforms added before connecting left `send`
+     disabled with the module sitting right there. */
+  P.imported.length = 0;
+  for (let i = 0; i < 2; i++)
+    P.imported.push({ name: 'c' + i, mags: new Float32Array(64), fit: 1, mode: 'shape',
+                      pos: [0.5, 0.5, 0.5, 0.5], render: new Float32Array(64) });
+  P.setLink(null);
+  P.renderImport();
+  T(els.wavSend.disabled && !els.wavSave.disabled,
+    'with no module, saving is offered and sending is not');
+  P.setLink({});
+  P.renderImport();
+  T(!els.wavSend.disabled, 'and connecting enables it without touching the row');
+  P.setLink(null);
+
+  /* Switching to the builder brings it up to date rather than showing whatever
+     was there when the tab was last open. */
+  P.place.sel = -1;
+  els.strip.children.length = 0;
+  P.setView('build');
+  T(els.strip.children.length === 2, 'opening the tab draws the set as it is now');
+  T(els.axes.children.length > 0 && els.planeAxes.children.length > 0,
+    'and both views have their axis buttons');
+  P.setView('play');
+
   P.imported.length = 0;
   P.renderStrip();
   T(els.strip.children.length === 1, 'an empty set says so rather than showing nothing');
