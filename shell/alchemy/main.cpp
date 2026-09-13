@@ -264,6 +264,8 @@ static volatile uint8_t gSlotTarget = 0xFFu;   /* which slot is the morph target
 static volatile int8_t  gSlotStore  = -1;      /* a completed transfer's destination */
 static volatile int8_t  gSlotLiveReq = -1;
 static volatile int8_t  gSlotTargetReq = -1;
+static volatile int8_t  gCardToSlotReq  = -1;   /* destination slot, -1 = none */
+static volatile uint8_t gCardToSlotCard = 0;    /* which card entry */
 
 static volatile uint8_t gUserReq = 0u;
 static constexpr uint8_t kMorphSlot = 2u;    /* blob/space/vtable slot */
@@ -343,6 +345,63 @@ static size_t ReadCardWorld(uint8_t i)
     f_close(&gCardFil);
     return got;
 }
+/* A slot onto the card, as a file.
+ *
+ * The first thing in this instrument that *writes* to the card, so three things
+ * are deliberate.
+ *
+ * The bytes are copied into gCardStage before being handed to FatFs. That
+ * buffer is ALCHEMY_SDMMC_BSS and alignas(32) because SDMMC's IDMA cannot reach
+ * DTCM and does not error when it cannot — it corrupts (docs/sdk-quirks.md).
+ * The blob itself lives in SDRAM, and rather than reason about whether the IDMA
+ * is happy reading FMC-mapped memory, it goes through the buffer the read path
+ * already proved.
+ *
+ * Written to a temp name and renamed. A write that dies half way must not leave
+ * something ScanCard will list and ParseUserWorld will accept; a rename is
+ * atomic enough on FAT that the file either is not there or is whole.
+ *
+ * Synchronous, in the handler, unlike loading a card world — and that asymmetry
+ * is the point. Loading swaps the world the audio thread is reading, so it is
+ * deferred to the control loop; saving touches no audio state at all. What it
+ * does cost is a few milliseconds of control loop, which the panel and HostLink
+ * wait out, and it happens because somebody asked for it. kActScanCard already
+ * works this way.
+ */
+static uint8_t SaveSlotToCard(uint8_t slot, const char* name, bool overwrite)
+{
+    if(slot >= kSlotCount || !gSlotLen[slot]) return 2u;
+    if(!name || !name[0]) return 2u;
+    /* The module supplies the directory and the extension, so a host cannot
+       write outside the world folder however it spells the name. */
+    for(const char* c = name; *c; c++)
+        if(*c == '/' || *c == '\\' || *c == ':' || *c < 0x20 || *c > 0x7e) return 2u;
+    if(!gSd.EnsureMounted(daisy::System::GetNow())) return 1u;
+    alchemy::SdCard::BusyGuard busy(gSd);
+    char path[96], tmp[96];
+    std::snprintf(path, sizeof path, "%s/%s.kykw", kWorldDir, name);
+    std::snprintf(tmp, sizeof tmp, "%s/%s.part", kWorldDir, name);
+    if(!overwrite)
+    {
+        FILINFO fno;
+        if(f_stat(path, &fno) == FR_OK) return kStatCardExists;
+    }
+    const uint32_t n = gSlotLen[slot];
+    if(n > sizeof gCardStage) return 1u;
+    std::memcpy(gCardStage, gSlotBlob[slot], n);
+    if(f_open(&gCardFil, tmp, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) return 1u;
+    UINT wr = 0;
+    const bool ok = f_write(&gCardFil, gCardStage, (UINT)n, &wr) == FR_OK && wr == n;
+    f_close(&gCardFil);
+    if(!ok) { f_unlink(tmp); return 1u; }
+    /* f_rename will not replace an existing file, so the old one goes first —
+       which is why overwrite had to be asked for before we got here. */
+    if(overwrite) f_unlink(path);
+    if(f_rename(tmp, path) != FR_OK) { f_unlink(tmp); return 1u; }
+    ScanCard();
+    return 0u;
+}
+
 static char             gUserName[kUserNameLen + 1] = {0};
 static volatile uint8_t gWorldBusy = 0;
 static StereoEngine KYK_AXI gEng;
@@ -565,6 +624,12 @@ struct ModuleSource : ExtSource
         return 0u;
     }
 
+    uint8_t SaveCardWorld(uint8_t slot, const char* name, bool overwrite) override
+    {
+        if(gWorldBusy) return 9u;
+        return SaveSlotToCard(slot, name, overwrite);
+    }
+
     int Slots(uint8_t& live, uint8_t& target, const char** names, int max) override
     {
         live = gSlotLive; target = gSlotTarget;
@@ -634,6 +699,15 @@ struct ModuleSource : ExtSource
                 if(args[0] != 0xFFu && (args[0] >= kSlotCount || !gSlotLen[args[0]])) return 2u;
                 if(gWorldBusy || gSlotTargetReq >= 0) return 9u;
                 gSlotTargetReq = args[0] == 0xFFu ? (int8_t)kSlotCount : (int8_t)args[0];
+                return 0u;
+            case kActCardToSlot:
+                /* Deferred, because a card read is slow and the read path is
+                   already on the control loop. Unlike a save, which touches no
+                   audio state and is done where it is asked. */
+                if(len < 2 || args[1] >= kSlotCount) return 2u;
+                if(gWorldBusy || gCardToSlotReq >= 0) return 9u;
+                gCardToSlotCard = args[0];
+                gCardToSlotReq  = (int8_t)args[1];
                 return 0u;
             case kActSlotSwap:
             {
@@ -878,6 +952,38 @@ static void ServeWorldRequest()
             if(!gSlotName[sl][0]) { gSlotName[sl][0] = '?'; gSlotName[sl][1] = '\0'; }
         }
         gRx.Reset();
+        return;
+    }
+    /* A card file into a slot. The existing read path, landing somewhere it can
+     * be kept instead of going straight live — which is what makes the card a
+     * library rather than a one-shot load. Parsed before it is kept, so a slot
+     * never holds something that would be refused later. */
+    if(gCardToSlotReq >= 0)
+    {
+        const uint8_t sl = (uint8_t)gCardToSlotReq;
+        gCardToSlotReq = -1;
+        const size_t n = ReadCardWorld(gCardToSlotCard);
+        if(n && sl < kSlotCount && n <= kUserBlobMax)
+        {
+            /* AXI, not DTCM. A World is 7 KB and what is left of DTCM *is* the
+               stack — main loop, audio ISR on top of it, FPU stacking — so a
+               validation buffer belongs where gMorphWorld already lives. Put in
+               DTCM it took the region from 75.7% to 81.0% for a probe that runs
+               on the control thread and never touches the audio path. */
+            static World KYK_AXI probe;
+            if(probe.UseUserWorld(gCardStage, n, kBootP, nullptr) == UserError::Ok)
+            {
+                std::memcpy(gSlotBlob[sl], gCardStage, n);
+                gSlotLen[sl] = (uint32_t)n;
+                for(int c = 0; c < kUserNameLen; c++)
+                {
+                    const char ch = n > (size_t)(16 + c) ? (char)gSlotBlob[sl][16 + c] : '\0';
+                    gSlotName[sl][c] = (ch >= 0x20 && ch < 0x7f) ? ch : '\0';
+                }
+                gSlotName[sl][kUserNameLen] = '\0';
+                if(!gSlotName[sl][0]) { gSlotName[sl][0] = '?'; gSlotName[sl][1] = '\0'; }
+            }
+        }
         return;
     }
     /* Play a slot. The same double-buffered swap a card world uses: parse into

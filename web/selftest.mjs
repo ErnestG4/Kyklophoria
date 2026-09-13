@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
@@ -683,6 +684,79 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   check(after.names[3] === null, 'which empties it');
   check(after.live === 0xFF, 'and stops it claiming to be live');
 });
+
+/* ── the card, written to and not only read from ───────────────────────────
+ *
+ * Slots live in SDRAM, so everything you build dies at power-off. The card is
+ * the only thing that survives, and until now the module could only read it.
+ *
+ * The whole path had *no desktop implementation at all*, so reading from a card
+ * was untested and writing to one would have shipped the same way — which is
+ * not a thing to do with the first code in an instrument that can destroy
+ * somebody's file. `kykdesk --card <dir>` makes a directory a card, which is a
+ * card for every purpose this protocol has.
+ */
+console.log('\n== the card: write, list, read back, and refuse to clobber');
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kyk-card-'));
+  const child = spawn(bin, ['--serve', '--gen', '--seed', '1', '--card', dir],
+                      { stdio: ['pipe', 'pipe', 'inherit'] });
+  const link = new KYK.Link(new KYK.StdioTransport(child));
+  await link.start();
+  await KYK.hello(link);
+  const act = (op, ...a) => link.request(KYK.CMD.action, Uint8Array.of(op, ...a), { urgent: true });
+
+  const nodes = [];
+  for (let i = 0; i < 4; i++) {
+    const mags = new Float32Array(64);
+    for (let h = 0; h < 64; h++) mags[h] = (h % (i + 2) ? 0 : 1) / (h + 1);
+    nodes.push({ pos: [0.3 + 0.1 * i, 0.5, 0.5, 0.5], mags });
+  }
+  const blob = KYK.buildUserWorld(nodes, { n: 4, k: 64, sigma: 0.26, name: 'bells' });
+  await KYK.putSlot(link, 2, blob);
+
+  check(fs.readdirSync(dir).length === 0, 'the card starts empty');
+  await KYK.saveCardWorld(link, 2, 'bells', false);
+  check(fs.existsSync(path.join(dir, 'bells.kykw')), 'a slot can be written to the card');
+  /* Byte for byte, because a world that comes back different is worse than one
+     that does not come back. */
+  const onDisk = new Uint8Array(fs.readFileSync(path.join(dir, 'bells.kykw')));
+  check(onDisk.length === blob.length && onDisk.every((v, i) => v === blob[i]),
+        'and the bytes on the card are the bytes that were sent');
+  check(!fs.readdirSync(dir).some(f => f.endsWith('.part')),
+        'the temp file it was written through is gone');
+
+  /* the refusal, which is the whole safety story */
+  let exists = false;
+  try { await KYK.saveCardWorld(link, 2, 'bells', false); }
+  catch (e) { exists = /already on the card/.test(e.message); }
+  check(exists, 'writing over a file is refused unless overwriting is asked for');
+  await KYK.saveCardWorld(link, 2, 'bells', true);
+  check(fs.readdirSync(dir).filter(f => f.endsWith('.kykw')).length === 1,
+        'and permitted when it is, without leaving a second copy');
+
+  /* a name cannot escape the folder */
+  let escaped = false;
+  try { await KYK.saveCardWorld(link, 2, '../escape', false); } catch { escaped = true; }
+  check(escaped, 'a name that tries to leave the world folder is refused');
+  check(!fs.existsSync(path.join(dir, '..', 'escape.kykw')), 'and nothing is written outside it');
+
+  /* the card is a library: list it, and pull one back into a slot */
+  const cards = await KYK.fetchCardWorlds(link);
+  check(cards.names.includes('bells.kykw'), `the card lists it (${cards.names.join(' ')})`);
+  await act(KYK.ACT.cardToSlot, 0, 9);
+  const sl = await KYK.fetchSlots(link);
+  check(sl.names[9] === 'bells', `a card file loads into a slot (${sl.names[9]})`);
+  check((await act(KYK.ACT.slotLive, 9))[0] === 0, 'and that slot plays');
+
+  /* which closes the loop: build, slot, card, power cycle, slot, play */
+  await KYK.saveCardWorld(link, 9, 'second', false);
+  const after = await KYK.fetchCardWorlds(link);
+  check(after.names.length === 2, `two worlds on the card (${after.names.join(' ')})`);
+
+  await link.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+}
 
 console.log(failures ? `selftest: ${failures} of ${checks} checks FAILED` : `selftest: all ${checks} checks passed`);
 process.exit(failures ? 1 : 0);

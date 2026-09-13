@@ -127,6 +127,7 @@ Request: `u8 op [, args]`. Reply: status only.
 | 11 | `u8 slot` | play the world in that slot |
 | 12 | `u8 slot` | morph towards that slot; 0xFF clears the target. This is the one thing the morph could not do before — the target index space was the built-ins, so a world you made could never be one end of a blend |
 | 13 | `u8 slot` | forget a slot |
+| 15 | `u8 card, u8 slot` | load a card file into a slot, rather than straight to the live world as op 7 does. Deferred to the control loop, because a card read is slow; parsed before it is kept, so a slot never holds something that would be refused later |
 | 14 | `u8 a, u8 b` | exchange two slots, contents and names, with `live` and `target` following the contents rather than the numbers. Here rather than on the host because a host does not have the blob for a slot it did not store. Safe in the handler: what is playing is an expanded World and the morph target is another, so neither reads a blob except when loading one |
 | 10 | — | aim the morph: search the target world for the position whose spectrum is nearest the one playing, and read it there. Refused with status 1 when no target is set |
 
@@ -183,6 +184,26 @@ in as empty — and an empty slot then arrives as *absent* rather than as a blan
 name, which are different things. Same budget idiom as the other two lists: the
 reply stops before it would overflow, because one that does not fit is dropped
 silently and the host waits out its timeout.
+
+### 0x6B SAVE_CARD
+Request: `u8 slot, u8 flags` (bit0: overwrite), `u8 len, name`. Reply: status.
+
+Writes the slot to `/kyklophoria/<name>.kykw`. The module supplies the folder
+and the extension, and the shared handler refuses a name containing `/`, `\`,
+`:`, a control byte or a leading dot — so a name cannot leave the world folder.
+That check lives in the handler both shells go through, because when it lived in
+each of them one of the two forgot and `../escape` wrote outside the directory.
+
+**Status 20 means the file is already there**, and is not an error: it is a
+well-formed request whose answer is a question for the player. The module
+refuses rather than replacing unless bit0 of `flags` is set, so a host that
+never asks cannot quietly overwrite somebody's collection. The page asks, and
+offers a suffixed name as the alternative.
+
+Written through a `.part` file and renamed, so a write that dies half way leaves
+nothing the scan will list. Synchronous on the module, unlike loading a card
+world: a save touches no audio state, where a load swaps the world the audio
+thread is reading.
 
 ### 0x68 CARD_WORLDS
 Request: empty. Reply: status, `u8 count`, then `count` entries of

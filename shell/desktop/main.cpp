@@ -31,6 +31,7 @@ using namespace kykdesk;
 
 int main(int argc, char** argv)
 {
+    std::string card_dir;   /* a directory standing in for the SD card */
     std::string space_path, script_path, out_path, telem_path;
     bool        gen = false, stereo = false, serve = false, loop = false;
     GenParams   gp;
@@ -43,7 +44,8 @@ int main(int argc, char** argv)
     {
         std::string a = argv[i];
         auto        next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : ""; };
-        if(a == "--space") space_path = next();
+        if(a == "--card") card_dir = next();
+        else if(a == "--space") space_path = next();
         else if(a == "--gen") gen = true;
         else if(a == "--seed") gp.seed = (uint32_t)strtoul(next(), nullptr, 0);
         else if(a == "--N") gp.n = atoi(next());
@@ -133,7 +135,7 @@ int main(int argc, char** argv)
     eng.L.move_eps = deadband;
     eng.R.move_eps = deadband;
 
-    if(serve) return Serve(eng, world, blob, have_script ? &script : nullptr, loop, sr, block);
+    if(serve) return Serve(eng, world, blob, have_script ? &script : nullptr, loop, sr, block, card_dir);
 
     Player player;
     player.Reset(&script);

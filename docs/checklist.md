@@ -488,6 +488,35 @@ Still open, ranked, from the same reviews:
       plays every imported wave inverted. Inaudible in isolation, and changing
       it would invert every `.kykw` already written. A decision, not a bug.
 
+## The library, and the card
+
+- [x] **Thirty-two slots**, blobs in SDRAM, expanded on demand. A world you made
+      can now be played, returned to, and be *either end* of a morph — the
+      target index space was the twenty-one built-ins, so nothing you made could
+      be one before.
+- [x] **Drag a slot onto another to exchange them.** On the module, because a
+      host does not have the blob for a slot it did not store. `live` and
+      `target` follow the contents rather than the numbers.
+- [x] **The card is writable.** `/kyklophoria/<name>.kykw` through a temp file
+      and a rename; refuses an existing file unless overwriting is asked for;
+      the page asks and offers a suffixed name. Synchronous on the module,
+      unlike a card *read*, because a save touches no audio state.
+- [x] **The desktop shell has a card now** (`--card <dir>`). The whole card path
+      previously had no desktop implementation at all, so reading was untested
+      and writing would have shipped the same way — which is not a thing to do
+      with the first code here that can destroy somebody's file. It caught a
+      real hole immediately: the name check was in the module and not in the
+      desktop, and `../escape` wrote a file outside the card directory. Proof it
+      was real is that the failing run left one in /tmp. The check now lives in
+      the shared handler both shells go through.
+- [ ] The slots are still RAM: a power cycle keeps only what is on the card.
+      Auto-restoring the slots from the card at boot would close that, and is a
+      decision about boot time rather than a missing mechanism.
+- [ ] Nothing writes a `.kyk` *space* to the card, only `.kykw` worlds — and
+      `Space::Attach` has the two holes the reviews found (no coefficient
+      validation, a 32-bit overflow in its size check), both of which go live
+      the day the card reads one.
+
 ## Known warts
 
 - [ ] **v/oct is read at control rate, not audio rate.** `hw.cv[0].Volts()`

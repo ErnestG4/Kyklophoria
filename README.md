@@ -165,8 +165,20 @@ The slots are blobs in SDRAM, expanded only when one is played — a world is 7 
 of the fast memory there is little of, and a blob is 6.7 KB of the 64 MB there
 is plenty of. All thirty-two cost 216 KB of it.
 
-They do not survive a power cycle yet. Save the `.kykw` and drop it back in, or
-put it on the card; writing to the card from the module is the next job.
+**The card is writable now**, which is what makes any of this survive a power
+cycle. Pick a slot, press *save to card*, and the module writes
+`/kyklophoria/<name>.kykw` — named after the world, through a temp file and a
+rename so a write that dies half way cannot leave something the scanner will
+list and the parser will accept. If that name is already there it **refuses**,
+and the page asks whether to replace it or save as `name-2.kykw` instead. The
+refusal is in the module, not only in the dialog, so a host that forgets to ask
+cannot quietly overwrite somebody's collection.
+
+The other direction too: pick a card file and *into the slot* loads it, so the
+card is a library you keep rather than a one-shot load. That closes the loop —
+build, slot, card, power cycle, slot, play.
+
+The slots themselves are still RAM: what survives is what you put on the card.
 
 One honest limit: the module says which slots are filled and what they are
 called, not what is *in* them. So the play view can draw the rings of a slot
@@ -347,6 +359,9 @@ and audible at once: the position stops moving while the knob keeps going.
 
 ```sh
 python3 -m http.server 8080 -d web        # then press Serial
+# the desktop shell can pretend to have an SD card, which is how the card
+# path is tested without hardware:
+build/host/kykdesk --serve --gen --seed 1 --card /tmp/mycard
 python3 tools/bridge/bridge.py -- --gen --family field --side 8 --seed 1 \
     --script tests/scripts/m2_field.txt --loop     # no module needed
 ```

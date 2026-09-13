@@ -51,6 +51,10 @@ constexpr uint8_t kCmdPutWorld   = 0x67;   /* a user world, chunked host to modu
 constexpr uint8_t kCmdCardWorlds = 0x68;   /* what .kykw files the card holds */
 constexpr uint8_t kCmdPutSlot    = 0x69;   /* a user world into a numbered slot */
 constexpr uint8_t kCmdSlots      = 0x6A;   /* the slots, and which are live/target */
+constexpr uint8_t kCmdSaveCard   = 0x6B;   /* a slot onto the card, as a file */
+/* "that file is already there". Not BAD_ARGS, because the request was perfectly
+   well formed and the answer is a question for the player. */
+constexpr uint8_t kStatCardExists = 20u;
 constexpr uint8_t kCmdSetControl = 0x6E;   /* desktop bridge only */
 
 enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace = 2, kActRenderDiv = 3,
@@ -95,7 +99,10 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              happen here rather than on the host, because a host
                              does not have the blob for a slot it did not put
                              there — it knows the names and nothing else. */
-                          kActSlotSwap   = 14 };
+                          kActSlotSwap   = 14,
+                          /* u8 card, u8 slot: a card file into a slot, rather
+                             than straight to the live world as op 7 does. */
+                          kActCardToSlot = 15 };
 /* Slots, matching the card's own list size so the two stay one to one. A u8
    index then still has room for the two sentinels below. */
 constexpr int     kSlotCount   = 32;
@@ -156,6 +163,22 @@ struct ExtSource
      * `names`; a shell with no card returns zero, which is not an error. */
     virtual int CardWorlds(const char** names, int max) { (void)names; (void)max; return 0; }
 
+    /* Write a slot to the card as `name`.kykw.
+     *
+     * `overwrite` has to be asked for. A card is somebody's collection and a
+     * save that quietly replaces a file on it is the one destructive thing in
+     * this protocol — so the default refuses, with kStatCardExists, and a host
+     * that forgets to ask cannot do damage by forgetting. The page asks the
+     * player and offers a suffixed name as the alternative; the refusal here is
+     * the belt to that braces. */
+    virtual uint8_t SaveCardWorld(uint8_t slot, const char* name, bool overwrite)
+    { (void)slot; (void)name; (void)overwrite; return 1u; }
+
+    /* Read card entry `card` into slot `slot`, which is the existing read path
+       landing somewhere it can be kept rather than going straight live. */
+    virtual uint8_t CardToSlot(uint8_t card, uint8_t slot)
+    { (void)card; (void)slot; return 1u; }
+
     virtual uint8_t PutWorld(uint32_t total, uint32_t off, const uint8_t* data, int len)
     { (void)total; (void)off; (void)data; (void)len; return 1u; }
 
@@ -189,7 +212,7 @@ public:
     const char* DescriptorRootJson() const override
     {
         return "\"kyk\":{\"ext\":6,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,"
-               "\"worlds\":101,\"basis\":102,\"putslot\":105,\"slots\":106,\"control\":110}";
+               "\"worlds\":101,\"basis\":102,\"putslot\":105,\"slots\":106,\"savecard\":107,\"control\":110}";
     }
 
     void Handle(const alchemy::hostlink::ParsedFrame& f, alchemy::hostlink::FrameWriter& w, uint32_t) override
@@ -297,6 +320,36 @@ public:
                 std::memcpy(&off, f.body + 5, 4);
                 w.U8(src_.PutSlot(f.body[0], total, off, f.body + 9, (int)f.len - 9));
                 w.U32(off + (uint32_t)(f.len - 9));
+                return;
+            }
+            case kCmdSaveCard:
+            {
+                /* slot, flags (bit0: overwrite), then the bare name — no
+                   extension, no directory, both of which the module supplies so
+                   a host cannot write outside the world folder. */
+                if(f.len < 3) { w.U8(2u); return; }
+                const int nlen = f.body[2];
+                if(nlen < 1 || nlen > 32 || f.len < 3 + nlen) { w.U8(2u); return; }
+                char name[33];
+                for(int i = 0; i < nlen; i++) name[i] = (char)f.body[3 + i];
+                name[nlen] = '\0';
+                /* Validated here, in the shared handler, rather than in each
+                 * shell. The module checked and the desktop concatenated, so
+                 * `../escape` wrote outside the world folder on one of the two
+                 * — found by the test, which is the argument for having the
+                 * rule in the one place both shells go through.
+                 *
+                 * Printable, and no separator or drive letter: the module
+                 * supplies the folder and the extension, so a name has no
+                 * business containing either. */
+                for(int i = 0; i < nlen; i++)
+                {
+                    const char c = name[i];
+                    if(c == '/' || c == '\\' || c == ':' || c < 0x20 || c > 0x7e) { w.U8(2u); return; }
+                }
+                /* And no leading dot, which is how you spell `..` */
+                if(name[0] == '.') { w.U8(2u); return; }
+                w.U8(src_.SaveCardWorld(f.body[0], name, (f.body[1] & 1u) != 0u));
                 return;
             }
             case kCmdSlots:

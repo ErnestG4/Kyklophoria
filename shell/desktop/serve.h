@@ -13,6 +13,9 @@
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <vector>
+#include <algorithm>
+#include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <poll.h>
@@ -108,6 +111,15 @@ public:
     std::vector<uint8_t> slotBlob[kyk::kSlotCount];
     std::string          slotName[kyk::kSlotCount];
     uint8_t              slotLive = 0xFFu, slotTarget = 0xFFu;
+    /* A real directory standing in for the SD card.
+     *
+     * The card path had no desktop implementation at all, so reading from a
+     * card was untested and writing to one would have been too — and writing is
+     * the first thing in this instrument that can destroy somebody's file. A
+     * directory is a card for every purpose this protocol has: list, read,
+     * write, refuse to clobber. `--card <dir>` turns it on. */
+    std::string            cardDir;
+    std::vector<std::string> cardNames;
     kyk::World         userWorld;
     char               userName[kyk::kUserNameLen + 1] = {0};
 
@@ -170,6 +182,78 @@ public:
         }
         if(slotName[slot].empty()) slotName[slot] = "?";
         rx.Reset();
+        return 0u;
+    }
+
+    void ScanCard()
+    {
+        cardNames.clear();
+        if(cardDir.empty()) return;
+        DIR* d = opendir(cardDir.c_str());
+        if(!d) return;
+        while(dirent* e = readdir(d))
+        {
+            const std::string n = e->d_name;
+            if(n.size() > 5 && n.compare(n.size() - 5, 5, ".kykw") == 0) cardNames.push_back(n);
+        }
+        closedir(d);
+        std::sort(cardNames.begin(), cardNames.end());
+        if(cardNames.size() > 32) cardNames.resize(32);
+    }
+
+    int CardWorlds(const char** names, int max) override
+    {
+        if(cardDir.empty()) return 0;
+        const int n = (int)cardNames.size() < max ? (int)cardNames.size() : max;
+        for(int i = 0; i < n; i++) names[i] = cardNames[i].c_str();
+        return n;
+    }
+
+    uint8_t SaveCardWorld(uint8_t slot, const char* name, bool overwrite) override
+    {
+        if(cardDir.empty()) return 1u;
+        if(slot >= kyk::kSlotCount || slotBlob[slot].empty()) return 2u;
+        const std::string path = cardDir + "/" + name + ".kykw";
+        if(!overwrite)
+        {
+            if(FILE* f = std::fopen(path.c_str(), "rb")) { std::fclose(f); return kyk::kStatCardExists; }
+        }
+        /* Temp file and rename, the same as the module: a write that dies
+           half way must not leave something the scan will list and the parser
+           will accept. */
+        const std::string tmp = path + ".part";
+        FILE* f = std::fopen(tmp.c_str(), "wb");
+        if(!f) return 1u;
+        const size_t wrote = std::fwrite(slotBlob[slot].data(), 1, slotBlob[slot].size(), f);
+        const bool   ok    = wrote == slotBlob[slot].size() && std::fflush(f) == 0;
+        std::fclose(f);
+        if(!ok || std::rename(tmp.c_str(), path.c_str()) != 0) { std::remove(tmp.c_str()); return 1u; }
+        ScanCard();
+        return 0u;
+    }
+
+    uint8_t CardToSlot(uint8_t card, uint8_t slot) override
+    {
+        if(cardDir.empty()) return 1u;
+        if(slot >= kyk::kSlotCount || card >= cardNames.size()) return 2u;
+        const std::string path = cardDir + "/" + cardNames[card];
+        FILE* f = std::fopen(path.c_str(), "rb");
+        if(!f) return 1u;
+        std::vector<uint8_t> buf(kyk::kUserBlobMax);
+        const size_t n = std::fread(buf.data(), 1, buf.size(), f);
+        std::fclose(f);
+        /* Parsed before it is kept, so a slot never holds something the module
+           would refuse later — the read path's own guard, not a new one. */
+        kyk::World probe;
+        if(!n || probe.UseUserWorld(buf.data(), n, 8, nullptr) != kyk::UserError::Ok) return 1u;
+        slotBlob[slot].assign(buf.begin(), buf.begin() + n);
+        slotName[slot].clear();
+        for(int c = 0; c < kyk::kUserNameLen && (size_t)(16 + c) < n; c++)
+        {
+            const char ch = (char)buf[16 + c];
+            if(ch >= 0x20 && ch < 0x7f) slotName[slot].push_back(ch); else break;
+        }
+        if(slotName[slot].empty()) slotName[slot] = "?";
         return 0u;
     }
 
@@ -275,6 +359,12 @@ public:
                 slotTarget = args[0];
                 return 0u;
             }
+            case kyk::kActCardToSlot:
+            {
+                if(len < 2) return 2u;
+                return CardToSlot(args[0], args[1]);
+            }
+            case kyk::kActScanCard: ScanCard(); return 0u;
             case kyk::kActSlotSwap:
             {
                 if(len < 2 || args[0] >= kyk::kSlotCount || args[1] >= kyk::kSlotCount) return 2u;
@@ -466,12 +556,15 @@ inline double Now()
 }
 
 inline int Serve(kyk::StereoEngine& eng, kyk::World& world, std::vector<uint8_t>& blob,
-                 const Script* script, bool loop, int sr, int block)
+                 const Script* script, bool loop, int sr, int block,
+                 const std::string& card_dir = std::string())
 {
     using namespace alchemy::hostlink;
     DesktopSource src;
     src.eng = &eng; src.blob = blob.data(); src.blob_len = blob.size();
     src.world = &world;
+    src.cardDir = card_dir;
+    src.ScanCard();
     src.stats.cycles_budget = (uint32_t)(1e9 * block / sr);   /* desktop "cycles" are nanoseconds */
     kyk::KykExt ext(src);
 
