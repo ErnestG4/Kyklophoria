@@ -126,7 +126,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, bandLimit, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -869,6 +869,29 @@ console.log('');
     worst = Math.max(worst, Math.abs(want - got[i]));
   }
   T(worst < 1e-5, `the page renders -sum m.sin(h.theta), like the engine (worst ${worst.toExponential(1)})`);
+
+  /* The check that was missing, and its absence let a fix become a bug.
+   *
+   * One check held renderFromMags to the engine's formula and another held the
+   * formula to the module. Neither compared the two traces the inspector
+   * actually draws — so when the render was negated to match the engine and
+   * the imported cycle was not, the two arrived anti-phase and every waveform
+   * in the build view was drawn against its own mirror image. The fit said
+   * 100% while the traces crossed everywhere.
+   *
+   * A wave the projection keeps in full must look like what the engine makes
+   * of it. That is the property; it is one line; nothing was asserting it. */
+  {
+    const N = 600, cyc = new Float64Array(N);
+    for (let i = 0; i < N; i++) cyc[i] = 2 * (i / N) - 1;          /* a saw */
+    const nd = KYK.cycleToNode(cyc, 64, 'shape');
+    const thumb = P.rotatedCycle(cyc, nd.rotation || 0, 256);
+    const render = P.renderFromMags(nd.mags, 256);
+    let sa = 0, sb = 0, ab = 0;
+    for (let i = 0; i < 256; i++) { sa += thumb[i] * thumb[i]; sb += render[i] * render[i]; ab += thumb[i] * render[i]; }
+    const c = ab / Math.sqrt(sa * sb || 1);
+    T(c > 0.9, `imported and rendered are drawn the same way up (corr ${c.toFixed(4)}, fit ${(100 * nd.fit).toFixed(1)}%)`);
+  }
 
   /* and the band-limited trace, which is the middle term of the audition:
      everything above K removed and nothing else touched */

@@ -88,6 +88,9 @@ public:
      * testable without hardware. */
     kyk::World                morphWorld;
     kyk::solids::VertexTable  morphTable;
+    /* A third, for answering GET_BASIS without disturbing either of the two
+       that have a world pointing into them. */
+    kyk::solids::VertexTable  basisTable;
     uint8_t                   morphIdx = 0xFFu;
     uint16_t                  mute = 0u;
     float                     rateWas[kyk::kMaxPlanes] = {0.f};
@@ -252,7 +255,23 @@ public:
         total = 0;
         if(!kyk::worlds::IsAnalytic(w)) return 0;
         kyk::World tmp;
-        if(!kyk::worlds::Point(w, tmp, 8, nullptr, &vtable)) return 0;
+        /* Its own table, not the live world's.
+         *
+         * VertexField holds raw pointers into a VertexTable, so building a
+         * world into `vtable` rewrites the waveforms of whatever world is
+         * already pointing at it — and the live world built by
+         * kActSelectWorld points at exactly that. A *read* of another world's
+         * formula silently changed the sound of the one playing: measured over
+         * the wire with the 24-cell live, a GET_BASIS for the tesseract moved
+         * partials by up to 22 magnitude steps, about 8.8 dB.
+         *
+         * There has been a separate `morphTable` beside this for the same
+         * reason since morph targets were added. This one was missed. */
+        if(!kyk::worlds::Point(w, tmp, 8, nullptr, &basisTable)) return 0;
+        /* A vertex world has no formula to send, and falling through to the
+         * eigen branch reads an EigenBasis whose mean and comp pointers were
+         * never set. The module answers UNSUPPORTED here; so should this. */
+        if(tmp.Which() == kyk::World::Kind::Vertices) return 0;
         if(tmp.Which() == kyk::World::Kind::Bend)
         {
             uint8_t blob[kyk::kBendBlobBytes];
@@ -377,7 +396,7 @@ inline int Serve(kyk::StereoEngine& eng, kyk::World& world, std::vector<uint8_t>
     if(eng.SpacePtr()) { h = eng.SpacePtr()->Header(); std::memcpy(name, h.name, 32); name[32] = 0; }
     else { h.n = (uint8_t)eng.WorldPtr()->N(); h.side = 0; h.k = (uint8_t)eng.WorldPtr()->K(); h.p = (uint8_t)eng.WorldPtr()->P(); }
     const int dlen = snprintf(desc, sizeof(desc),
-        "{\"dv\":1,\"module\":{\"id\":\"kyk\",\"name\":\"kyklophoria\",\"fw\":\"0.2.0\",\"git\":\"desktop\",\"sdk\":\"bridge\",\"board\":\"desktop\"},"
+        "{\"dv\":1,\"module\":{\"id\":\"kyk\",\"name\":\"kyklophoria\",\"fw\":\"" KYK_FW_VERSION "\",\"git\":\"desktop\",\"sdk\":\"bridge\",\"board\":\"desktop\"},"
         "\"schemaHash\":0,\"size\":0,\"components\":[],%s,\"space\":{\"name\":\"%s\",\"n\":%d,\"side\":%d,\"k\":%d,\"p\":%d},\"iomap\":%s}",
         ext.DescriptorRootJson(), name, h.n, h.side, h.k, h.p, kIoMapJson);
     const uint32_t dcrc = kyk::Crc32(reinterpret_cast<const uint8_t*>(desc), (size_t)dlen);

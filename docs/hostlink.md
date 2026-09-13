@@ -1,4 +1,4 @@
-# HostLink extension — kyklophoria, `"kyk":{"ext":1}` (M1)
+# HostLink extension — kyklophoria, `"kyk":{"ext":5}`
 
 Base protocol: `../alchemy-sdk/docs/hostlink-protocol.md` (v1: COBS + CRC32
 frames, stop-and-wait, host-polled, `max_body` announced in HELLO). Both
@@ -47,11 +47,13 @@ f32 kep_x, kep_y                 │  how the position is moving on its own:
 f32 kep_rush         0..1, 1 at periapsis
 f32 couple           Kuramoto coupling strength as set
 f32 lock             0..1, how closed the orbit figure is
-u8  sharp            the Morph knob, 0..255; the page needs it to draw
+u8  sharp            the **Morph** knob (Stereo P3), 0..255: how tight the
+                     basins are. Not the same control as `morph` below
 u8  kep_bodies       how many are falling; body 0 is kep_x/kep_y above
 f32 x, y             per body 1..kep_bodies-1 — only the perturbers
 u8  page             which pager page the panel is showing
-u8  morph            the Morph knob, 0..255
+u8  morph            the **World morph** knob (Couple P6), 0..255: how far
+                     towards `morph_world`
 u8  morph_world      what it blends towards; 0xFF: nothing, so it does nothing
 u16 mute             muted motions; bits 0..14 planes, bit 15 Kepler
 u8  aimed            whether the morph reads its target somewhere else
@@ -102,14 +104,62 @@ render_div`, `u32 cycles_budget` (240 000 on the module, 500 000 ns on the
 desktop). Max and avg are over the last one-second window.
 
 ### 0x64 ACTION
-Request: `u8 op [, args]`. 0 reset phases · 3 set render_div `u8` (desktop
-only; the pot owns it on the module) · 1 next space, 2 load space `u8 len,
-name` reserved for M4. Reply: status only.
+Request: `u8 op [, args]`. Reply: status only.
+
+| op | args | what it does |
+|---|---|---|
+| 0 | — | reset phases |
+| 1 | — | next space (reserved) |
+| 2 | `u8 len, name` | load space (reserved) |
+| 3 | `u8` | set render divider (desktop only; the pot owns it on the module) |
+| 4 | `u8 world` | select a built-in world. A tabulated world must be expanded first, so this answers BUSY until it is done and the switch itself happens on the control loop — the reply returning does not mean the world has changed. Watch the live world index in the telemetry tail. |
+| 5 | `u8 world` | which world the Morph knob blends towards; 0xFF clears it. Formula worlds only. Choosing is setup and lives on the host; how far is a knob and lives on the panel. |
+| 6 | — | re-scan the card's world folder |
+| 7 | `u8 index` | load a card world by its index in the 0x68 list |
+| 8 | `u8` | phase override: 0 the world's own convention, 1 force sine, 2 force cosine — a cosine twin of any world without doubling the world list |
+| 9 | `u16 mask` | mute motions: bits 0..14 a rotation plane's rate, bit 15 Kepler. A mute rather than a zero, so the knob keeps its value and unmuting restores it |
+| 10 | — | aim the morph: search the target world for the position whose spectrum is nearest the one playing, and read it there. Refused with status 1 when no target is set |
 
 ### 0x65 GET_WORLDS
-Request: empty. Reply: `u8 count`, `u8 current`, then per world `u8 kind`
-(1 tabulated, 2 analytic), `str name`, `str note`. The list is built into the
-firmware (`core/kyk_worlds.h`), so it needs no card.
+Request: `u8 start`, optional — an empty body means zero, which is what every
+host sent before the list was paged. Reply: `u8 count` (worlds in all),
+`u8 current` (the live one; **0xFF** means a user world, which has no index),
+`u8 start`, `u8 sent`, then `sent` entries of `u8 kind`, `str name`, `str note`.
+
+**The list is paged and a host must walk it.** Names and notes came to about
+2.9 KB at twenty-one worlds against a 1024-byte body, so the module sends as
+many whole entries as fit and the host asks again from `start + sent` until it
+has `count` of them. A host that assumes one page gets the first seven worlds
+and no error.
+
+`kind` is `World::Kind` (`core/kyk_world.h`), not a two-valued flag: the
+shipping worlds use 1 through 10. A host only needs `kind != Lattice` to know a
+world has a formula it can fetch with 0x66; the specific value says which
+formula, and 0x66's own reply carries a marker for the ones that are not an
+eigenbasis.
+
+The list is built into the firmware (`core/kyk_worlds.h`), so it needs no card.
+
+### 0x67 PUT_WORLD
+Request: `u32 total, u32 offset, bytes`. Reply: status, then `u32 accepted` —
+how much of the blob the module now holds, which is `offset + len` on success.
+
+A user world (`core/kyk_userworld.h`, about 6.5 KB for twenty-four nodes)
+chunked host to module. Offsets go in order from zero and the module refuses
+anything else: random access would have a host choosing the indices the module
+writes at. Nothing loads until the last byte lands, so an interrupted transfer
+costs the transfer and not the sound that is playing, and a blob that fails any
+check leaves the live world untouched rather than half-written.
+
+### 0x68 CARD_WORLDS
+Request: empty. Reply: status, `u8 count`, then `count` entries of
+`u8 len, name` — the `.kykw` files in `/kyklophoria` on the card.
+
+The count comes before the names so a host can size its list even when the body
+ran out before the names did. Like the world list, the reply stops before it
+would overflow rather than after: a reply that does not fit is dropped silently
+and the host waits out its timeout with nothing to show for it. Use ACTION 6 to
+re-scan the folder and ACTION 7 to load one by index.
 
 ### 0x66 GET_BASIS
 Request: `u8 world, u32 offset, u16 max`. Reply: `u32 total, u32 offset,
@@ -137,8 +187,9 @@ Once received, the host owns the controls and the script stops driving
 them. The module answers UNSUPPORTED.
 
 ## Descriptor
-The root object carries `"kyk":{"ext":1,"telemetry":96,"space":97,"cell":98,
-"stats":99,"action":100,"control":110}` from `DescriptorRootJson()`. The
+The root object carries `"kyk":{"ext":5,"telemetry":96,"space":97,"cell":98,
+"stats":99,"action":100,"worlds":101,"basis":102,"control":110}` from
+`DescriptorRootJson()`. The
 desktop adds `"space":{name,n,side,k,p}` and `"iomap":[{jack,id,name,sig}…]`
 (docs/io-map.md); the module's descriptor carries the same jacks through the
 SDK's `Jacks()` component and its pages/knobs through the normal
@@ -154,5 +205,14 @@ exercises both paths and is part of `tests/run.sh`. A node twin
 prefers it; it uses only node's built-in modules, never npm.
 
 ## Versioning
-Any change to a reply layout bumps `"ext"`; the page feature-detects. `ext` is
-2 as of the world commands.
+Any change to a *command map* bumps `"ext"`; the page feature-detects. `ext` is
+**5**.
+
+The telemetry frame is the exception and grows without a bump. Everything after
+the Kepler block was added later — the bodies, the pager page, the Morph knob
+and its target, the mute mask, the aim flag, the knob positions, the knob
+values, the live world — and every one of them is optional on the way in and
+length-guarded on the way out. A host reads what it knows by offset and ignores
+the tail. That runs both ways and a host has to mean it: absent is not zero.
+A page reading a missing `world` byte as 0xFF would conclude that every module
+older than that field was playing a user world.

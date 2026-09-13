@@ -9,7 +9,7 @@ into a vector. `tools/kykspace gen|info` writes and validates files.
 
 | offset | type | field | meaning |
 |---|---|---|---|
-| 0 | u32 | `magic` | `"KYK1"` = `0x3153564D` |
+| 0 | u32 | `magic` | `"KYK1"` = `0x314B594B` |
 | 4 | u16 | `version` | 1 |
 | 6 | u8 | `n` | dimensions, 1..6 |
 | 7 | u8 | `mode` | 0 lattice · 1 scattered (reserved, M5) |

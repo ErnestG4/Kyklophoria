@@ -80,9 +80,13 @@ which is why click-freedom and the continuity guarantee come with it unchanged.
 Single-cycle WAVs import from the page: WaveEdit and the AKWF corpus already
 make and shape them better than anything here would, so this only imports and
 places. A node is signed coefficients on the sine basis, so an import loses
-whatever sits in the cosine half — measured over 401 AKWF waveforms, after
-searching for the best rotation of the cycle, the mean keeps 94.1% and the worst
-54.6%. The page shows the worst fit of a set by name rather than hiding it.
+whatever sits in the cosine half. Measured over all 48,007 AKWF waveforms
+(`docs/importfit-2026-09-13.txt`), as a fraction of each file's own energy:
+import keeps a mean 90.3%, and the wave the module renders correlates 0.947 with
+the file on average and 0.865 at the tenth percentile. Storing phase would put
+those at 0.986 and 0.980 — the band limit costs little and the missing cosine
+half costs the rest. The page shows the worst fit of a set by name rather than
+hiding it, and will play you any node three ways so you can judge it by ear.
 Per-harmonic phase would make import exact and is not available: click-freedom
 rests on every cell sharing one phase spectrum, and giving each node its own
 would let partials cancel, which is the comb-filtered dip the whole design
@@ -121,6 +125,18 @@ it bright would be lying about the extra directions the whole design exists
 for. Once the set has been sent, every drop re-sends it, so you hear where you
 just put something; **re-place** is the way back to the arrangement you were
 given.
+
+You can also **hear** it. Pick a node and the build view plays it three ways —
+as imported, band-limited to 64 harmonics, and as the module will render it —
+looping the same buffer length at rate 1.0, started together so they stay
+sample-aligned, switched by a 4 ms gain ramp so the switch itself does not
+click. Levels are matched and the gap is printed, because the quieter of two
+sounds is reliably judged the worse one. Imported against band-limited is what
+the band limit costs; band-limited against rendered is what the missing cosine
+half costs, on its own. The **shape** / **spectrum** toggle beside *add wavs*
+decides what an import even is: shape searches for the rotation of the cycle
+that keeps the most on the sine basis, spectrum keeps the magnitudes exactly
+and lets the waveform be redrawn.
 
 The play view keeps the rings, and they are **what the module is holding** —
 not the set on the other tab. Those are the same thing only between a
@@ -192,7 +208,7 @@ same way, by chaining its three resonances so the first axis moves all three.
 **Narrow worlds beat broad ones.** Saw does one thing and spends all four axes
 bending it, and at 2.03x it is second only to FM among the designed worlds —
 ahead of every world that tried to span a wide range with four balanced axes,
-Braids included. A world that already knows what it is has no axis fighting
+Crop included. A world that already knows what it is has no axis fighting
 another for the same job. Saw, Pulse and Edge exist to test that, and it held.
 
 **The modal worlds needed a time axis.** A struck thing is defined by its
@@ -215,7 +231,7 @@ function of the magnitude vector and partials cannot cancel, whatever the
 interpolator does. The usual wavetable complaint, a comb-filtered dip or a
 tick as you cross between waves, is unreachable by construction rather than
 tuned away. `tests/morph_check` holds that down, along with the level across a
-cell and the behaviour at an instant position jump — which measures 1.4x the
+cell and the behaviour at an instant position jump — which measures 0.84x the
 99.99th-percentile curvature of the same render, where a click is 50x or more.
 That is the licence to drive the position with anything at all.
 
@@ -227,8 +243,14 @@ discontinuity does not, so the ratio is about 4 for something smooth and about
 why the first wavefolder passed every other test.
 
 Band-limiting is spectral truncation, verified at −88 dBFS worst non-harmonic
-content over a five-octave sweep (`tests/alias_check`). As far as the survey
-in `docs/lit/` found, nobody else in the field publishes such a figure.
+content over a five-octave sweep (`tests/alias_check`). That figure is the
+*spectral path*, which is what nineteen of the twenty-one worlds use. The two
+Shapes worlds run their shapers on the rendered cycle instead, where there is
+no closed form in the harmonics to truncate, and they alias at −32.2 dB at full
+fold, −62.1 at full phase modulation and −59.3 at full ring modulation against
+−67.5 dry. Both numbers are ours and both are published, which is the point:
+as far as the survey in `docs/lit/` found, nobody else in the field publishes
+either.
 
 ## Building and flashing
 
@@ -246,7 +268,8 @@ make program-dfu          # with the module parked in the bootloader
 ```
 
 Nothing here needs npm. The tooling is C++ and the Python standard library;
-node is optional and used only by the web selftest.
+node is optional, and used only by the web selftest, the page harness and the
+corpus tool — never npm, and never for the page itself.
 
 Two rules the build will not catch for you. Nothing placed in `.sdram_bss` may
 have default member initialisers — `.init_array` would write SDRAM before
@@ -313,8 +336,8 @@ Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 
 **What has been played and what has not.** The twenty-one built-in worlds are
 what has had real time on the bench. Morphing, user worlds, import and the card
-are tested by the suite — 420 world-pair switches, 99 link checks, 112 link-level
-and 119 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
+are tested by the suite — 420 world-pair switches, 102 link checks, 113
+link-level and 122 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
 them as the new half of a beta.
 
 ## Layout

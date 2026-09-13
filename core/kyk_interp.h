@@ -128,7 +128,25 @@ inline void SharpenWeights(Weights& wt, float sharp)
         float w = wt.w[c];
         for(int p = 0; p < i; p++) w *= w;   /* w^(2^i) */
         const float w2 = w * w;              /* the next power up */
-        wt.w[c]        = w + (w2 - w) * f;
+        /* w·(1−f) + w²·f, not w + (w²−w)·f.
+         *
+         * They are the same in algebra and not in float. These weights get
+         * very small — w^8 of a corner weight of 0.05 is 4e-11 — and once w²
+         * is negligible beside w, `w2 - w` rounds to exactly `-w` and the
+         * whole expression evaluates to exactly zero. At sharp = 1 that zeroed
+         * every corner below about an eighth, `sum` came out zero, and the
+         * blend wrote an all-zero spectrum: the Morph knob at the top of its
+         * travel rendered *digital silence* on Stack, Field, Field II and
+         * Harmonic — measured, 0.000000 RMS against 0.98 either side of it,
+         * with the transition a full-scale-to-zero ramp over one 24-sample
+         * block. Torus survived only because a wrapped axis keeps its corner
+         * weights larger.
+         *
+         * The panel reaches it exactly: VirtualKnob::Norm() clamps at 1.0f, so
+         * the pot at the top is 1.0f and not 0.999. The form below never
+         * subtracts two nearly-equal numbers, so the small end degrades to w²
+         * rather than to zero. */
+        wt.w[c]        = w * (1.f - f) + w2 * f;
         sum += wt.w[c];
     }
     if(sum <= 0.f) return;

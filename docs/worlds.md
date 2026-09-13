@@ -757,7 +757,7 @@ rather than tilting the ones that do — modes reorder and collide as the plate
 reshapes. It measured 2.58 against 0.55 for hammer width.
 
 With those three applied: **variety 1.454, direction spread 3.05x, per-axis
-4.7x**, which sits beside Vowel at 1.50 / 2.87x and Braids at 1.47 / 2.14x.
+4.7x**, which sits beside Vowel at 1.50 / 2.87x and Crop at 1.47 / 2.14x.
 
 ## What would need deciding before building
 

@@ -136,9 +136,12 @@ meaningful axis and stacking four banks makes rotation meaningless.
       docs/importfit-2026-09-13.txt. Short version: the band limit is not the
       problem and the sine-only projection is.
 - [ ] **Import discards the cosine half, and that is the binding constraint.**
-      Measured over the whole AKWF corpus: sine-only keeps a median 94.8% and
-      a p10 of 77.7%, against a K=64 ceiling of 100.0% and 96.0%. A third of
-      the corpus loses more than a tenth of the wave to phase alone. This is
+      Measured over the whole AKWF corpus, all figures as a fraction of the
+      file's own energy: import keeps a median 95.2% and a p10 of 74.9%
+      against a K=64 ceiling of 100.0% and 96.0%, and the rendered wave
+      correlates 0.976 with the file at the median and 0.865 at the p10
+      against 1.000 and 0.980. One waveform in six comes out under 0.90; with
+      phase it would be one in thirty-three. This is
       not a CPU problem — `RenderFrame` already takes a phase per harmonic and
       builds a conjugate-symmetric half-spectrum, so a per-node complex
       coefficient is the same butterflies. What it costs is 2x the storage per
@@ -348,6 +351,96 @@ meaningful axis and stacking four banks makes rotation meaningless.
       Now pinned twice: `selftest` sends a world of known coefficients and
       correlates the frame the module returns, `pagecheck` holds the page to
       the same formula. Flipping either sign gives corr −1.0000.
+
+## The overnight reviews, 2026-09-13
+
+Five agents, scoped to the page, the firmware, the DSP core, the untrusted-input
+surface and the documented claims. What was fixed the same night:
+
+- [x] **The Morph knob at the top rendered digital silence.** `SharpenWeights`
+      lerped as `w + (w2 - w) * f`, and once `w²` is negligible beside `w` the
+      subtraction rounds to exactly `-w`, so the whole expression evaluated to
+      zero. At sharp = 1 that zeroed every small corner weight, `sum` came out
+      zero and the blend wrote an all-zero spectrum: Stack, Field, Field II and
+      Harmonic went silent, measured 0.000000 RMS against 0.98 either side.
+      `VirtualKnob::Norm()` clamps at exactly 1.0f, so the pot at the top
+      reaches it. Fixed to `w·(1−f) + w²·f`, which never subtracts two nearly
+      equal numbers.
+- [x] **No test had ever set `sharp`.** `grep sharp tests/*.cpp` returned
+      nothing, which is why the above shipped. The Morph knob is a control a
+      player turns and it was outside every sweep.
+- [x] **GET_BASIS rewrote the playing world.** `Basis()` built into the same
+      `VertexTable` the live world holds pointers into, so *reading* another
+      world's formula moved the playing world's partials by up to 22 magnitude
+      steps, ~8.8 dB. Its own table now, and a selftest check.
+- [x] **The desktop descriptor still said fw 0.2.0** while HELLO said 0.4.0 —
+      the exact drift `KYK_FW_VERSION` exists to prevent, in the one place it
+      was not used.
+- [x] **The page's frame parser had no cap.** 4 MB of undelimited input took
+      the heap to 96 MB and killed the tab while the module was fine. The SDK
+      parser it was ported from drops the chunk and resyncs; the port kept the
+      accumulate half. Capped, with a check that a real frame still parses
+      immediately after a flood.
+- [x] **Two connects in flight left you with neither.** The loser's catch tore
+      down the winner's link. Generation counter.
+- [x] **`space` was refreshed only by `selectWorld`** — the sixth instance of
+      the pattern — so a panel switch, a card load or a send left the play view
+      drawing the previous world's lattice under the new world's name.
+- [x] **The inspector drew imported against rendered as mirror images**, a
+      regression from the same night's polarity fix: one side was negated and
+      the other was not. Nothing compared the two traces the view actually
+      draws; now something does.
+
+Still open, ranked, from the same reviews:
+
+- [ ] **`SetMorph` is called every block and sets `dirty_` unconditionally**,
+      which defeats the render deadband entirely: 10,000 renders per 20,000
+      blocks against 2 with the deadband alone, on a still patch, whether or
+      not a morph target is armed. The module renders at the maximum rate the
+      divider allows, permanently — and the 33% average / 97% max reading the
+      whole CPU question is blocked on was measured with this in place. Fix and
+      re-measure before trusting any CPU number.
+- [ ] **The morph target is rebuilt in place under the audio ISR**
+      (`main.cpp:759-778`). `gMorphIdx` stays valid throughout, so the ISR
+      keeps reading a lattice being rewritten: ~10 ms of wrong sound at full
+      level on a tabulated target change. Clear the index and `dmb` first.
+- [ ] **The aim offset survives a change of morph target** in both shells:
+      `SetMorph` clears it on the pointer changing, and both shells pass the
+      address of one static World, so the guard can never fire. The morph then
+      reads the new world at coordinates searched against a different one, and
+      telemetry reports `aimed`.
+- [ ] **Two `putWorld` transfers can interleave.** `sendImported` and
+      `syncPlacement` both send urgent chunks and only the latter coalesces, so
+      a drag-drop plus a send button within the same second refuses one
+      transfer mid-stream and can leave the success message on screen.
+- [ ] **In the build view the footer may be auto-placed into row 2**, above the
+      pane, because the nav that held that row is hidden. Derived from the grid
+      spec, not seen in a browser — open the build tab and look.
+- [ ] **Stale readouts after disconnect**: block, f0, kcut, link stats, space,
+      morph state and the card and morph selects all keep the dead module's
+      values and read as live.
+- [ ] **The poll loops duplicate across a quick reconnect**, since they test
+      `polling` only after sleeping and nothing ties a loop to the link that
+      started it.
+- [ ] **`Space::Attach` validates the header and never the coefficients**, so
+      one non-finite or merely huge float in a `.kyk` NaNs the whole output.
+      Desktop-only today; live the moment the card path reads `.kyk`.
+      `ParseUserWorld` has the finite check that this one lacks.
+- [ ] **32-bit overflow in `Space::Attach`'s size check**, demonstrated on the
+      target compiler: `point_count · stride · 4` wraps, so a 64-byte file can
+      claim 4 GB and pass. Not reachable until the card reads `.kyk`.
+- [ ] **`alias_check` proves −88 dBFS for one world at one position.** Over all
+      21 at three positions, Field II measures −76.3 dBFS, and a wider scan
+      finds −67.5 — past the suite's own −80 limit.
+- [ ] **`putWorld` reads `link.maxBody`, which is never assigned**, so it
+      always chunks at 1024 regardless of what the module negotiated.
+- [ ] Audition loose ends: re-place clears the selection while the sound keeps
+      playing, gain nodes are never disconnected, and switching to the play tab
+      leaves it running with its stop button on the other tab.
+- [ ] **Does `cycleToNode` have the sign right?** The engine plays
+      −Σ m·sin(hθ) and the projection stores +sine coefficients, so the module
+      plays every imported wave inverted. Inaudible in isolation, and changing
+      it would invert every `.kykw` already written. A decision, not a bug.
 
 ## Known warts
 
