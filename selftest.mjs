@@ -573,5 +573,90 @@ console.log('\n== connecting onto a module left mid-frame');
   await link.close();
 }
 
+/* ── a library of worlds you made, and morphing between two of them ───────
+ *
+ * This is the gap the slots exist to close. The morph target index space was
+ * the twenty-one built-ins and nothing else — `kActMorphWorld` refuses any
+ * index at or past kCount — so a world you imported could be *played* and
+ * could never be one end of a blend. There was also nowhere to put a second
+ * one: a transfer replaced whatever was live. You could make a world and you
+ * could not get back to it.
+ */
+console.log('\n== slots: a library, and a morph between two of your own worlds');
+await withChild(['--serve', '--gen', '--seed', '1'], async link => {
+  const read = async () => KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
+  const same = (a, b) => !!a && !!b && a.length === b.length && [...a].every((v, i) => v === b[i]);
+  const settle = async (tries = 60) => {
+    for (let i = 0; i < 6; i++) await read();
+    let prev = (await read()).mags, agree = 0;
+    for (let i = 0; i < tries; i++) {
+      const m = (await read()).mags;
+      if (same(prev, m)) { if (++agree >= 3) return m; } else { agree = 0; prev = m; }
+    }
+    return prev;
+  };
+  const act = (op, ...a) => link.request(KYK.CMD.action, Uint8Array.of(op, ...a), { urgent: true });
+  /* A non-zero status arrives as a rejection, not as a body, so a check that
+     expects a refusal has to catch one. */
+  const refused = async (op, ...a) => { try { await act(op, ...a); return false; } catch { return true; } };
+
+  /* two worlds that sound nothing like each other */
+  const worldOf = (name, f) => {
+    const nodes = [];
+    for (let i = 0; i < 24; i++) {
+      const mags = new Float32Array(64);
+      for (let h = 0; h < 64; h++) mags[h] = f(h, i);
+      nodes.push({ pos: [0.5, 0.5, 0.5, 0.5], mags });
+    }
+    return KYK.buildUserWorld(nodes, { n: 4, k: 64, sigma: 0.26, name });
+  };
+  const A = worldOf('hollow', (h) => (h % 2 === 0 ? 1 : 0) / (h + 1));
+  const B = worldOf('buzz',   (h) => (h < 24 ? 1 : 0) / Math.sqrt(h + 1));
+
+  await KYK.putSlot(link, 0, A);
+  await KYK.putSlot(link, 3, B);
+  const sl = await KYK.fetchSlots(link);
+  check(sl && sl.count === 32, `the module reports ${sl && sl.count} slots`);
+  check(sl && sl.names[0] === 'hollow' && sl.names[3] === 'buzz',
+        `and names the two that are filled (${sl && sl.names[0]}, ${sl && sl.names[3]})`);
+  check(sl && sl.names[1] === null, 'an empty slot has no name rather than a blank one');
+
+  /* play one */
+  check((await act(KYK.ACT.slotLive, 0))[0] === 0, 'a slot can be played');
+  const live0 = await settle();
+  check((await KYK.fetchSlots(link)).live === 0, 'and the module says which one is');
+
+  /* play the other: a different sound, which is what a library is for */
+  check((await act(KYK.ACT.slotLive, 3))[0] === 0, 'and so can another');
+  const live3 = await settle();
+  check(!same(live0, live3), 'the two sound different, so both really loaded');
+
+  /* and now the thing that was impossible: morph towards one of your own */
+  check((await act(KYK.ACT.slotTarget, 0))[0] === 0, 'a slot can be the morph target');
+  const blended = await settle();
+  check(!same(blended, live3), 'morphing towards it changes the sound');
+  check(!same(blended, live0), 'and it is a blend, not a switch to the target');
+  const t = await read();
+  check(t.morphWorld === KYK.MORPH_USER,
+        `telemetry says the target is one of yours, not a built-in (${t.morphWorld})`);
+  check((await KYK.fetchSlots(link)).target === 0, 'and which slot it is');
+
+  /* clearing it puts the single-world sound back */
+  check((await act(KYK.ACT.slotTarget, 0xFF))[0] === 0, 'the target can be cleared');
+  check(same(await settle(), live3), 'and the sound goes back to the world that is playing');
+
+  /* housekeeping, and the refusals */
+  check(await refused(KYK.ACT.slotLive, 1), 'an empty slot cannot be played');
+  check(await refused(KYK.ACT.slotTarget, 1), 'nor be a morph target');
+  check(await refused(KYK.ACT.slotLive, 99), 'a slot that does not exist is refused');
+  let sentToNowhere = false;
+  try { await KYK.putSlot(link, 99, A); } catch { sentToNowhere = true; }
+  check(sentToNowhere, 'and so is a transfer to one');
+  check((await act(KYK.ACT.slotFree, 3))[0] === 0, 'a slot can be freed');
+  const after = await KYK.fetchSlots(link);
+  check(after.names[3] === null && after.live === 0xFF,
+        'which empties it and stops it claiming to be live');
+});
+
 console.log(failures ? `selftest: ${failures} of ${checks} checks FAILED` : `selftest: all ${checks} checks passed`);
 process.exit(failures ? 1 : 0);

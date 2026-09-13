@@ -21,9 +21,16 @@ const PROTO = 1;
 const CMD = {
   hello: 0x01, getDescriptor: 0x02,
   telemetry: 0x60, spaceInfo: 0x61, cell: 0x62, stats: 0x63, action: 0x64,
-  worlds: 0x65, basis: 0x66, putWorld: 0x67, cardWorlds: 0x68, setControl: 0x6e,
+  worlds: 0x65, basis: 0x66, putWorld: 0x67, cardWorlds: 0x68,
+  putSlot: 0x69, slots: 0x6a, setControl: 0x6e,
 };
-const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4 };
+const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4,
+              morphWorld: 5, scanCard: 6, loadCardWorld: 7, phase: 8, motionMute: 9,
+              aimMorph: 10, slotLive: 11, slotTarget: 12, slotFree: 13 };
+/* A morph target that is one of yours has no world index; 0xFF already means
+   no target at all. */
+const MORPH_USER = 0xFE;
+const SLOT_COUNT = 32;
 const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5, table: 6, lock: 7, unison: 8, modal: 9, bend: 10 };
 const TEL = { spectrum: 1, frame: 2, motion: 4 };
 const STATUS = ['OK', 'UNSUPPORTED', 'BAD_ARGS', 'BAD_STATE', 'BAD_CRC', 'BAD_SLOT', 'TOO_LARGE',
@@ -425,6 +432,43 @@ async function fetchCardWorlds(link) {
     at += n;
   }
   return { count, names };
+}
+
+/* Store a world in one of the module's slots — the same chunking as putWorld,
+   with the slot in front. The library is what makes a world you made reachable
+   again: until slots existed, a sent world replaced whatever was playing and
+   could never be one end of a morph. */
+async function putSlot(link, slot, blob, onProgress) {
+  const max = Math.max(64, (link.maxBody || 1024) - 32);
+  for (let off = 0; off < blob.length; off += max) {
+    const len = Math.min(max, blob.length - off);
+    const req = new Uint8Array(9 + len), dv = new DataView(req.buffer);
+    req[0] = slot & 0xff;
+    dv.setUint32(1, blob.length, true);
+    dv.setUint32(5, off, true);
+    req.set(blob.subarray(off, off + len), 9);
+    const r = await link.request(CMD.putSlot, req, { urgent: true });
+    if (r[0] !== 0) throw new Error('the module refused slot ' + slot + ' at offset ' + off + ' (status ' + r[0] + ')');
+    if (onProgress) onProgress(Math.min(blob.length, off + len), blob.length);
+  }
+  return true;
+}
+
+/* What the module is holding, which of them is playing, and which one it is
+   morphing towards. An empty slot has a null name. */
+async function fetchSlots(link) {
+  const b = await link.request(CMD.slots, new Uint8Array(0), { key: 'slots' });
+  if (!b.length || b[0] !== 0) return null;
+  const count = b[1] || 0;
+  const out = { count, live: b[2], target: b[3], names: new Array(count).fill(null) };
+  let at = 4;
+  while (at + 1 < b.length) {
+    const i = b[at], n = b[at + 1];
+    if (at + 2 + n > b.length) break;
+    if (i < count) out.names[i] = new TextDecoder().decode(b.subarray(at + 2, at + 2 + n));
+    at += 2 + n;
+  }
+  return out;
 }
 
 /* Send one, chunked. Offsets go in order from zero because the module refuses
@@ -1039,7 +1083,8 @@ const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
-  parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, buildUserWorld, fetchCardWorlds, wavToCycle, cycleToNode,
+  parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, putSlot, fetchSlots,
+  MORPH_USER, SLOT_COUNT, buildUserWorld, fetchCardWorlds, wavToCycle, cycleToNode,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KYK = api;
