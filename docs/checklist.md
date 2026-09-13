@@ -357,7 +357,23 @@ meaningful axis and stacking four banks makes rotation meaningless.
 Five agents, scoped to the page, the firmware, the DSP core, the untrusted-input
 surface and the documented claims. What was fixed the same night:
 
-- [x] **The Morph knob at the very top could render digital silence.**
+- [ ] **REVERTED — the Morph knob at the very top can render digital silence,
+      and that is the lesser problem.** The "fix" below was applied and taken
+      back out the same day, on Combust's instruction, because the hard cutoff
+      it removed is the behaviour the knob exists for: "smooth blend to hard
+      steps" (README). Written as a numerically stable lerp, the small corner
+      weights survive as w², normalise back up, and the top of the travel
+      merges worlds instead of stepping between them — reported from the rack
+      as "it just merges them even at 100%" and "can't handle variance in
+      planar impacts". The silence corner stays open, and is preferable.
+
+      If anyone closes it later: **do not change the expression.** Catch the
+      all-zero case where it is already detected (`if(sum <= 0.f) return;`) and
+      fall back to the largest weight instead of returning silence. That is
+      what infinite sharpening means, it leaves every non-degenerate position
+      bit-identical, and it was the fix that should have been written first.
+
+      The original write-up, kept because the mistake is the useful part:
       `SharpenWeights` lerped as `w + (w2 - w) * f`, and once `w²` is negligible
       beside `w` the subtraction rounds to exactly `-w`, so the expression
       evaluated to zero. Where that zeroed *every* corner weight, `sum` came out
@@ -387,6 +403,15 @@ surface and the documented claims. What was fixed the same night:
       One correction to the commit that fixed it: it says Torus survived. That
       was a single test position. Across the space Torus is affected too, at
       1.8%, the worst of the five.
+
+      What went wrong in the fixing, beyond the code: the silence was measured
+      and the thing the line was *for* was not. A rate of 0.4% to 1.8% looked
+      decisive on its own, and it is not a number that can be decisive without
+      knowing what the other 98% is doing musically. Combust had played this
+      for weeks and had not met the corner; the behaviour removed was noticed
+      within minutes of a flash. When a review finds a bug in a line somebody
+      plays every day, the question to answer first is what the line is doing
+      when it is not failing.
 - [x] **No test had ever set `sharp`.** `grep sharp tests/*.cpp` returned
       nothing, which is why the above shipped. The Morph knob is a control a
       player turns and it was outside every sweep.
