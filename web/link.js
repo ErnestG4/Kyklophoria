@@ -169,6 +169,23 @@ class Link {
       this.stats.bytesIn += bytes.length; this._win.bytes += bytes.length;
       for (let i = 0; i < bytes.length; i++) this.parser.push(bytes[i], f => this.onFrame(f));
     });
+    /* One delimiter before anything else, which is what "connect twice" was.
+     *
+     * A link does not always close tidily: the page goes away mid-frame, the
+     * cable is pulled, the module resets while a request is in flight. The
+     * module's parser is left holding the first half of a frame, and COBS has
+     * no way to know that — the next thing it sees is our HELLO, which it
+     * appends to the garbage and delimits into one malformed frame. It drops
+     * it silently (that is the protocol working: `n == 0 || overflow` and the
+     * runt check in the SDK's frame.h both say "resync"), so nothing answers,
+     * HELLO times out, and connecting fails. Clicking Serial again then
+     * works, because the *first* attempt's delimiter is what cleared the
+     * accumulator. Hence: often twice, never three times.
+     *
+     * A lone zero is the documented way to say "throw away what you have".
+     * It costs one byte and the module's parser has always known what to do
+     * with it — nothing was ever sending it. */
+    try { await this.t.write(Uint8Array.of(0)); } catch { /* the first request will report it */ }
   }
   _measure(t0) {
     const now = _now(), rtt = now - t0, s = this.stats, w = this._win;
@@ -219,8 +236,27 @@ class Link {
 }
 
 /* ───────────── standard commands ───────────── */
-async function hello(link) {
-  const b = await link.request(CMD.hello, new Uint8Array(0), { urgent: true }); let at = 5;
+/* `tries` because a link can open onto a module that is mid-something — a
+   reset, a half-sent reply, a buffer the driver held across the close — and
+   the cost of asking again is one 400 ms timeout against making the person
+   click Connect a second time. The resync in Link.start covers the common
+   case; this covers the rest. */
+async function hello(link, tries = 3) {
+  let last = null;
+  for (let i = 0; i < tries; i++) {
+    try { return await helloOnce(link); }
+    catch (e) {
+      last = e;
+      if (link.closed) break;
+      await new Promise(r => setTimeout(r, 120));
+      /* and say it again, in case this attempt is the one that resynced */
+      try { await link.t.write(Uint8Array.of(0)); } catch { /* reported below */ }
+    }
+  }
+  throw last || new Error('no answer');
+}
+async function helloOnce(link) {
+  const b = await link.request(CMD.hello, new Uint8Array(0), { urgent: true, timeoutMs: 400 }); let at = 5;
   const uid = Array.from(b.subarray(at, at + 12)).map(x => x.toString(16).padStart(2, '0')).join(''); at += 12;
   const schema = u32(b, at); at += 4; const cap = u32(b, at); at += 4; const dlen = u32(b, at); at += 4; const dcrc = u32(b, at); at += 4;
   const maxBody = u16(b, at); at += 2; const liveSize = u16(b, at); at += 2;

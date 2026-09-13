@@ -439,5 +439,40 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
         'a refused world leaves the one that was playing exactly as it was');
 });
 
+/* ── a link that opens onto a module holding half a frame ─────────────────
+ *
+ * This is "connect twice over serial", reproduced. A link does not always
+ * close tidily — the page goes away mid-frame, the cable is pulled, the module
+ * resets while a request is in flight — and the module's parser is left with
+ * the first half of a frame in its accumulator. COBS cannot know that: the
+ * next thing it sees is HELLO, which it appends to the garbage and delimits
+ * into one malformed frame, drops silently, and answers nothing. HELLO times
+ * out, connecting fails, and clicking Connect again works because the failed
+ * attempt's own delimiter is what cleared the accumulator.
+ *
+ * Driven over stdio rather than a real port, because the thing being tested is
+ * the module's framing state and kykdesk runs the same SDK parser the module
+ * does. Half a HELLO frame goes in before the link is started.
+ */
+console.log('\n== connecting onto a module left mid-frame');
+{
+  const half = KYK.buildFrame(0x01, 99, new Uint8Array(0));
+  const child = spawn(bin, ['--serve', '--gen', '--seed', '1'], { stdio: ['pipe', 'pipe', 'inherit'] });
+  child.stdin.write(Buffer.from(half.subarray(0, half.length - 3)));   /* no delimiter */
+  const link = new KYK.Link(new KYK.StdioTransport(child));
+  const t0 = Date.now();
+  await link.start();
+  let info = null, err = null;
+  try { info = await KYK.hello(link); } catch (e) { err = e; }
+  check(info && info.id === 'kyk',
+        `HELLO answers first time onto a mid-frame parser${err ? ' — ' + err.message : ''}`);
+  /* First time, not eventually: the retries would hide the whole bug. A clean
+     HELLO is under a millisecond over stdio, so anything near the 400 ms
+     timeout means an attempt was thrown away. */
+  check(Date.now() - t0 < 300, `and without burning a retry to do it (${Date.now() - t0} ms)`);
+  check(link.stats.timeouts === 0, `no request timed out (${link.stats.timeouts})`);
+  await link.close();
+}
+
 console.log(failures ? `selftest: ${failures} of ${checks} checks FAILED` : `selftest: all ${checks} checks passed`);
 process.exit(failures ? 1 : 0);

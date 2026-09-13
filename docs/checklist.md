@@ -259,6 +259,21 @@ meaningful axis and stacking four banks makes rotation meaningless.
       and the page shows them, but nothing records them, so a regression is
       only ever caught by someone playing it.
 
+## Link
+
+- [x] **Connecting twice over serial.** Not module state: a link that does not
+      close tidily leaves the module's parser holding half a frame, so the
+      first HELLO is appended to it, delimited into one malformed frame and
+      dropped — correctly; that is the resync path in the SDK's `frame.h`.
+      Nothing answers, HELLO times out, and clicking Connect again works
+      because the failed attempt's own delimiter cleared the accumulator. Hence
+      often twice and never three times. `Link.start` sends a lone zero first
+      (the documented "throw away what you have"), `hello` retries, and the
+      page raises DTR on open. The selftest writes half a frame into kykdesk
+      before starting the link and checks HELLO answers first time and without
+      burning a retry: 522 ms and one timeout without the fix, under a
+      millisecond with it.
+
 ## Known warts
 
 - [ ] **v/oct is read at control rate, not audio rate.** `hw.cv[0].Volts()`

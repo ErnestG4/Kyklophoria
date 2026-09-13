@@ -82,7 +82,7 @@ world from boot and never switches, so nothing had ever asked the question. The
 fifth had the same shape — every check of the send path asked whether the module
 *accepted* the bytes, and none asked whether the sound changed.
 
-## A long-standing annoyance, and what it was
+## Two long-standing annoyances, and what they were
 
 - **Clicking twice to change world.** The action only queues the switch; the
   module performs it on its control loop and a tabulated world is expanded
@@ -90,6 +90,17 @@ fifth had the same shape — every check of the send path asked whether the modu
   by waiting for the module to agree — now by watching the live world index in
   telemetry rather than asking for the list every 60 ms, which cost a round
   trip per attempt at exactly the moment the module was busy expanding.
+- **Connecting twice over serial.** A link does not always close tidily, and
+  the module's parser is left holding the first half of a frame. COBS cannot
+  know: the next thing it sees is HELLO, which it appends to the garbage and
+  delimits into one malformed frame, drops silently — correctly, that is the
+  resync path in the SDK's `frame.h` — and answers nothing. HELLO times out,
+  connecting fails, and clicking Connect again works *because the failed
+  attempt's own delimiter cleared the accumulator*. Hence often twice and
+  never three times. `Link.start` now sends a lone zero before anything else,
+  which is the documented way to say "throw away what you have", and `hello`
+  retries. Reproduced in the selftest by writing half a frame into the module
+  before the link starts.
 
 ## Testing habits that have earned their place
 

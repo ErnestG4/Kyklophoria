@@ -415,6 +415,12 @@ $('btnSerial').onclick = async () => {
   try {
     const port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x0483, usbProductId: 0x5740 }] });
     await port.open({ baudRate: 115200 });
+    /* Raise DTR, which a USB CDC device may be waiting for before it will
+       talk. Chrome does not raise it on open and not every stack needs it, so
+       this is defensive rather than diagnosed — but it costs one call and it
+       is the other half of why a first connect can come up silent. Wrapped
+       because setSignals is optional and throws where it is not implemented. */
+    try { await port.setSignals({ dataTerminalReady: true, requestToSend: true }); } catch {}
     await connect(new MVL.SerialTransport(port));
   } catch (e) { say('serial: ' + e.message, true); }
 };
