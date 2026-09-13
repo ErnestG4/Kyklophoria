@@ -316,5 +316,79 @@ if (doBridge) {
   check(badWav, 'a file that is not a WAV is refused rather than guessed at');
 }
 
+/* ── a world saved from the page is a world the module reads ───────────────
+ *
+ * The page's save button writes these bytes to a file and its send button puts
+ * the same bytes on the wire, so the thing worth proving is that the C++
+ * reader accepts what the JavaScript writer produced. Nothing else in the
+ * suite crosses that language boundary: tests/user_check.cpp round-trips the
+ * reader against SaveUserWorld, which would agree with itself about a format
+ * both halves got wrong.
+ */
+console.log('\n== a page-built world through the real reader');
+await withChild(['--serve', '--gen', '--seed', '1'], async link => {
+  const nodes = [];
+  for (let i = 0; i < 24; i++) {
+    const mags = new Float32Array(64);
+    for (let h = 0; h < 64; h++) mags[h] = (h % (i + 2) === 0 ? 1 : -1) / (h + 1);
+    const pos = [0.5, 0.5, 0.5, 0.5];
+    pos[i % 4] = i < 12 ? 0.2 : 0.8;
+    nodes.push({ pos, mags });
+  }
+  const blob = KYK.buildUserWorld(nodes, { n: 4, k: 64, sigma: 0.26, name: 'saved from page' });
+  check(blob.length === 32 + 24 * 4 * (4 + 64), `a full 24-node world is ${blob.length} bytes`);
+
+  /* The spectrum a world change produces arrives on the *second* request: the
+     first still carries the frame that was rendered before the change landed.
+     Reading once made this read "the sound did not change" for a reason that
+     has nothing to do with worlds, so both reads are taken deliberately. */
+  const spectrum = async () => {
+    await link.request(KYK.CMD.telemetry, KYK.telemetryReq(3));
+    return KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(3))).mags;
+  };
+  /* Start from a known built-in, so "it is not one of the built-ins any more"
+     is an observation rather than the state it booted in. */
+  await link.request(KYK.CMD.action, Uint8Array.of(4, 9));
+  const before = await spectrum();
+  const wasCurrent = (await KYK.fetchWorlds(link)).current;
+  check(wasCurrent === 9, `a built-in world is live to begin with (${wasCurrent})`);
+
+  let sent = 0;
+  await KYK.putWorld(link, blob, (done) => { sent = done; });
+  check(sent === blob.length, 'the module accepted every chunk');
+
+  const after = await spectrum();
+  check(after && [...after].some(m => m > 0), 'the loaded world renders harmonics');
+  /* The check that matters, and the one that was missing: every built-in world
+     renders harmonics too, so a non-zero spectrum proves nothing on its own.
+     This is what caught the desktop shell loading a world and never telling
+     the engine — see PutWorld in shell/desktop/serve.h. */
+  check(before && after && [...after].some((m, i) => m !== before[i]),
+        'and it is a different sound from the world that was playing');
+  const nowCurrent = (await KYK.fetchWorlds(link)).current;
+  check(nowCurrent === 0xFF, `the live world is no longer one of the built-ins (${wasCurrent} → ${nowCurrent})`);
+
+  /* Corruption is refused rather than half-loaded. This is the first thing in
+     the instrument that reads bytes a stranger wrote, and "silence beats a
+     hard fault" is only true if the refusal actually happens. */
+  for (const [what, mangle] of [
+    ['a file that is not a world', b => { b[0] ^= 0xFF; }],
+    ['a node count the bytes cannot cover', b => { b[8] = 24 + 1; }],
+    ['a harmonic count that is not ours', b => { b[7] = 200; }],
+    ['an impossible dimension', b => { b[6] = 0; }],
+  ]) {
+    const bad = blob.slice(); mangle(bad);
+    let refused = false;
+    try { await KYK.putWorld(link, bad); } catch { refused = true; }
+    check(refused, `${what} is refused`);
+  }
+
+  /* after all that, the good world is still the one playing — a refusal must
+     leave the destination untouched rather than half-written */
+  const survived = await spectrum();
+  check(survived && [...survived].every((m, i) => m === after[i]),
+        'a refused world leaves the one that was playing exactly as it was');
+});
+
 console.log(failures ? `selftest: ${failures} of ${checks} checks FAILED` : `selftest: all ${checks} checks passed`);
 process.exit(failures ? 1 : 0);
