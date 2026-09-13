@@ -67,9 +67,9 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   /* Spelled out rather than as a magic number, because this has now gone
      stale four times as the block grew. 1 status + 460 fixed + 23 motion +
      1 body count + 8 per extra body + 1 pager page + 2 morph + 2 mute +
-     1 aimed + 6 pots + 1 live world. */
+     1 aimed + 6 pots + 1 flag and 6 knob values + 1 live world. */
   {
-    const want = 1 + 460 + 23 + 1 + 8 * ((tk ? tk.bodies : 1) - 1) + 1 + 2 + 2 + 1 + 6 + 1;
+    const want = 1 + 460 + 23 + 1 + 8 * ((tk ? tk.bodies : 1) - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1;
     check(tk && tk.bytes === want,
           `motion block totals ${want} B (got ${tk && tk.bytes}, ${tk && tk.bodies} bodies)`);
   }
@@ -78,6 +78,9 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   /* The live world, in every frame. A host that has to ask for the list to
      learn this only learns it when it thinks to ask, which is never. */
   check(tk && tk.world != null, 'telemetry says which world is playing');
+  /* The desktop shell has no pager, so it must say so rather than claim six
+     knobs are at zero — which is what a bare six bytes would have said. */
+  check(tk && tk.knobs === null, 'and reports no knob values, having no pager to ask');
   check(t && t.mags && t.mags.length === 64 && t.frame && t.frame.length === 256, 'spectrum + frame present');
   check(t && t.kcut >= 1 && t.kcut <= 64, 'kcut range');
   const finite = a => Array.from(a).every(Number.isFinite);

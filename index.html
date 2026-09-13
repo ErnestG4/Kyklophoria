@@ -10,9 +10,8 @@
      text is 10 to 12 px. --dim was #5d6873, which is 3.51:1 — under the
      readable floor — and it carries the world bar, the footer, the build row
      and every state line on the page. The canvas had worse: captions 3.64,
-     the card fit text 2.76, the empty-state hints 2.11, and the pages you are
-     not on 1.72. All lifted in place, hue and saturation kept, so the
-     hierarchy still reads as a hierarchy. */
+     the card fit text 2.76, the empty-state hints 2.11. All lifted in place,
+     hue and saturation kept, so the hierarchy still reads as a hierarchy. */
   :root { --bg: #07090c; --ink: #cfd6dd; --dim: #8b9bab; --line: #1a2028; --hot: #ffcc55; --l: #62d5ff; --r: #ff7a9e; --ok: #6ee7a0; --bad: #ff5c5c;
           --dim2: #77889e;   /* one step down: the fit on a card, 5.5:1 */
           --hint: #6b819d; } /* quietest text that is still an instruction, 5.0:1 */
@@ -2479,11 +2478,32 @@ function drawPanel(x0, y0, W, H) {
     cnx.lineWidth = 2.5; cnx.lineCap = 'butt';
     cnx.strokeStyle = '#1a2230';
     cnx.beginPath(); cnx.arc(kx, ky, r, A0, A1); cnx.stroke();
-    if (k && tel && tel.pots) {
-      const v = Math.max(0, Math.min(1, tel.pots[i] || 0));
+    if (k && tel && (tel.pots || tel.knobs)) {
+      /* Two numbers, and they are different numbers.
+       *
+       * The panel catches rather than jumps: arriving on a page leaves each
+       * pot wherever your hand left it while the parameter keeps the value it
+       * had, and turning the pot through that value is what picks it up. The
+       * mirror drew the pot, which is the one thing on screen that is not what
+       * the instrument is doing — on any page you have just arrived on it was
+       * showing six numbers that were not in effect.
+       *
+       * So the value is the knob: the filled arc and the pointer, drawn in the
+       * page's own colour. The pot is a tick outside the ring, dimmer. When
+       * they agree it sits under the pointer and reads as one mark; when they
+       * do not, the gap between them is exactly how far you have to turn
+       * before the knob takes hold, which is a thing worth being able to see.
+       *
+       * Older firmware sends no values, and then the pot is all there is —
+       * which is the old behaviour, and honest, because it is all the module
+       * said. */
       const snap = k.disp && k.disp.kind === 'snap';
       const n = snap ? Math.max(2, k.disp.count || 0) : 0;
-      const u = snap && n > 1 ? Math.round(v * (n - 1)) / (n - 1) : v;
+      const detent = (x) => (snap && n > 1 ? Math.round(x * (n - 1)) / (n - 1) : x);
+      const pot = tel.pots ? Math.max(0, Math.min(1, tel.pots[i] || 0)) : null;
+      const val = tel.knobs ? Math.max(0, Math.min(1, tel.knobs[i] || 0)) : null;
+      const v = val != null ? val : pot;
+      const u = detent(v);
       const th = A0 + (A1 - A0) * u;
       cnx.strokeStyle = tint;
       cnx.beginPath(); cnx.arc(kx, ky, r, A0, Math.max(A0 + 0.001, th)); cnx.stroke();
@@ -2492,6 +2512,18 @@ function drawPanel(x0, y0, W, H) {
       cnx.moveTo(kx + Math.cos(th) * (r - 5), ky + Math.sin(th) * (r - 5));
       cnx.lineTo(kx + Math.cos(th) * (r + 1), ky + Math.sin(th) * (r + 1));
       cnx.stroke();
+      /* Where the hand is, when that is not where the value is. */
+      if (val != null && pot != null) {
+        const pt = A0 + (A1 - A0) * detent(pot);
+        const caught = Math.abs(pot - val) < 0.02;
+        cnx.strokeStyle = caught ? tint : '#8b9bab';
+        cnx.lineWidth = caught ? 1 : 1.5;
+        cnx.beginPath();
+        cnx.moveTo(kx + Math.cos(pt) * (r + 3), ky + Math.sin(pt) * (r + 3));
+        cnx.lineTo(kx + Math.cos(pt) * (r + 6), ky + Math.sin(pt) * (r + 6));
+        cnx.stroke();
+      }
+      cnx.lineWidth = 1.5;
       if (snap) {
         cnx.strokeStyle = '#2f3a46'; cnx.lineWidth = 1;
         for (let d = 0; d < n; d++) {

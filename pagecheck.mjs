@@ -38,6 +38,7 @@ const calls = [];
  * drawing code as undefined and arrives here as NaN — a whole class of bug
  * whose only symptom is something quietly missing from the picture. */
 const nanDraws = [];
+const arcLog = [], segLog = [];
 const GEOM = new Set(['arc', 'moveTo', 'lineTo', 'fillRect', 'strokeRect', 'rect', 'drawImage',
                       'fillText', 'strokeText', 'arcTo', 'quadraticCurveTo', 'bezierCurveTo']);
 const ctx2d = new Proxy({}, {
@@ -45,6 +46,13 @@ const ctx2d = new Proxy({}, {
     if (k === 'measureText') return t => ({ width: String(t).length * 6 });
     if (GEOM.has(k)) return (...a) => {
       calls.push(k);
+      /* Arcs are kept with their arguments, because some claims are about
+         where a mark is and not merely that nothing threw. The panel mirror's
+         knobs are arcs from a fixed start angle, so what they are showing is
+         recoverable from the end angle. */
+      if (k === 'arc') arcLog.push(a);
+      /* and the straight segments, which is how a pointer or a tick is drawn */
+      if (k === 'moveTo' || k === 'lineTo') segLog.push([a[0], a[1]]);
       if (a.some(v => typeof v === 'number' && !Number.isFinite(v)))
         nanDraws.push(`${k}(${a.map(v => typeof v === 'number' ? v : typeof v).join(', ')})`);
     };
@@ -137,7 +145,7 @@ function tel(over = {}) {
     frame: Int8Array.from({ length: 256 }, (_, i) => Math.round(100 * Math.sin(i / 8))),
     kepler: { running: false, plane: 0, x: 0, y: 0, rush: 0 },
     couple: 0, lock: 0, sharp: 0, bodies: 1, kepXY: [], page: 0,
-    morph: 0, morphWorld: 0xFF, mute: 0, aimed: false, world: 0xFF,
+    morph: 0, morphWorld: 0xFF, mute: 0, aimed: false, world: 0xFF, knobs: null,
     pots: [0.1, 0.3, 0.5, 0.7, 0.9, 1.0], bytes: 512,
   }, over);
 }
@@ -163,6 +171,9 @@ const CASES = [
   ['motions muted', tel({ mute: 0x8005 })],
   ['morph aimed', tel({ morph: 0.6, morphWorld: 9, aimed: true })],
   ['no knob positions on the wire', tel({ pots: null })],
+  ['knob values but no pot positions', tel({ pots: null, knobs: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6] })],
+  ['pots and values disagreeing, as they do after a page change',
+    tel({ pots: [0.9, 0.9, 0.9, 0.9, 0.9, 0.9], knobs: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6] })],
   ['every motion muted', tel({ mute: 0xFFFF })],
 ];
 
@@ -830,6 +841,72 @@ const parsed = P.parsePanel(DESC);
   if (!ok) bad++;
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} descriptor pager block parses (found ${
     parsed ? parsed.pages + ' pages x ' + parsed.pots + ' pots' : 'nothing'}, gap at Couple P6 kept null)`);
+}
+console.log('');
+
+/* The panel mirror shows what the knobs are worth, not where they are sitting.
+ *
+ * The panel catches: arriving on a page leaves each pot where your hand left
+ * it while the parameter keeps its value. The mirror drew the pot, so on any
+ * page you had just arrived on it was showing six numbers that were not in
+ * effect — which is the one thing on screen that is not what the instrument is
+ * doing.
+ *
+ * Asserted through the arcs the mirror actually draws, because "it draws the
+ * right number" is a claim about a mark on a canvas and nothing else here can
+ * see one.
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  const A0 = Math.PI * 0.75, A1 = Math.PI * 2.25;
+  /* the knob arcs: full-sweep background rings and value arcs share A0 */
+  const sweeps = () => arcLog.filter(a => a.length >= 5 && Math.abs(a[3] - A0) < 1e-9)
+                             .map(a => (a[4] - A0) / (A1 - A0));
+  const near = (xs, v) => xs.some(x => Math.abs(x - v) < 0.01);
+
+  P.setPanel(parsed);
+  P.setView('play');
+
+  /* pot and value disagreeing is the whole case */
+  arcLog.length = 0; segLog.length = 0;
+  P.setTel(tel({ pots: [0.9, 0.9, 0.9, 0.9, 0.9, 0.9], knobs: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2] }));
+  P.drawSound();
+  const drawn = sweeps();
+  T(near(drawn, 0.2), 'the knob is drawn at the value the parameter has');
+  T(!near(drawn, 0.9), 'and not at the pot, which is somewhere else entirely');
+
+  /* And the pot is still shown, outside the ring, at its own angle — "both
+     atop one another" is the point, and a mirror that showed only the value
+     would be just as incomplete as one that showed only the pot: the gap
+     between them is how far there is to turn before the knob takes hold.
+     Found from the knob arcs themselves rather than from assumed geometry, so
+     this cannot pass by measuring the wrong circle. */
+  const knobs = arcLog.filter(a => a.length >= 5 && Math.abs(a[3] - A0) < 1e-9 && a[2] > 4);
+  const tickAt = (frac) => knobs.some(([kx, ky, r]) => segLog.some(([x, y]) => {
+    const d = Math.hypot(x - kx, y - ky);
+    if (d < r + 2 || d > r + 7) return false;
+    let th = Math.atan2(y - ky, x - kx);
+    while (th < A0 - 1e-9) th += 2 * Math.PI;
+    return Math.abs((th - A0) / (A1 - A0) - frac) < 0.02;
+  }));
+  T(knobs.length > 0, `the mirror drew knobs to measure (${knobs.length})`);
+  T(tickAt(0.9), 'and the pot is marked outside the ring, where the hand actually is');
+  T(!tickAt(0.55), 'and nowhere else');
+
+  /* older firmware sends no values, and then the pot is all there is */
+  arcLog.length = 0; segLog.length = 0;
+  P.setTel(tel({ pots: [0.9, 0.9, 0.9, 0.9, 0.9, 0.9], knobs: null }));
+  P.drawSound();
+  T(near(sweeps(), 0.9), 'with no values on the wire it falls back to the pot');
+
+  /* and values with no pots is the other way round */
+  arcLog.length = 0; segLog.length = 0;
+  P.setTel(tel({ pots: null, knobs: [0.35, 0.35, 0.35, 0.35, 0.35, 0.35] }));
+  P.drawSound();
+  T(near(sweeps(), 0.35), 'and values alone are enough to draw it');
+
+  P.setTel(null);
+  P.setPanel(null);
 }
 console.log('');
 

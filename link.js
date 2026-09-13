@@ -476,6 +476,17 @@ function parseTelemetry(b) {
        predates it, which is not the same as "no world" and must not be read as
        one — a host that treats absent as 0xFF would believe every older module
        was playing a user world. */
+    /* What the live page's six knobs are worth, which is not where the pots
+       are sitting: the panel catches, so a page you have just arrived on shows
+       a parameter holding its value while the pot is somewhere else entirely.
+       Null when the module has no pager to ask — a shell reporting six zeroes
+       and six knobs that really are at zero are not the same claim, so the
+       validity byte is what separates them. */
+    if (b.length > at) {
+      const valid = b[at] !== 0;
+      t.knobs = valid && b.length >= at + 7 ? Array.from(b.subarray(at + 1, at + 7), v => v / 255) : null;
+      at += b.length >= at + 7 ? 7 : 1;
+    } else t.knobs = null;
     t.world = b.length > at ? b[at] : null;
     at += b.length > at ? 1 : 0;
   }
