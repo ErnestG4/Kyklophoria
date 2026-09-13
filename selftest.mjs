@@ -65,15 +65,19 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   check(t && t.bytes === 461, 'telemetry body 460 B + status (got ' + (t && t.bytes) + ')');
   const tk = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
   /* Spelled out rather than as a magic number, because this has now gone
-     stale three times as the block grew. 1 status + 460 fixed + 23 motion +
-     1 body count + 8 per extra body + 1 pager page + 2 morph + 2 mute. */
+     stale four times as the block grew. 1 status + 460 fixed + 23 motion +
+     1 body count + 8 per extra body + 1 pager page + 2 morph + 2 mute +
+     1 aimed + 6 pots + 1 live world. */
   {
-    const want = 1 + 460 + 23 + 1 + 8 * ((tk ? tk.bodies : 1) - 1) + 1 + 2 + 2 + 1 + 6;
+    const want = 1 + 460 + 23 + 1 + 8 * ((tk ? tk.bodies : 1) - 1) + 1 + 2 + 2 + 1 + 6 + 1;
     check(tk && tk.bytes === want,
           `motion block totals ${want} B (got ${tk && tk.bytes}, ${tk && tk.bodies} bodies)`);
   }
   check(tk && tk.kepler && tk.kepler.plane < 6 && tk.kepler.rush >= 0 && tk.lock >= 0
         && tk.sharp >= 0 && tk.sharp <= 1, 'motion fields parse, sharp included');
+  /* The live world, in every frame. A host that has to ask for the list to
+     learn this only learns it when it thinks to ask, which is never. */
+  check(tk && tk.world != null, 'telemetry says which world is playing');
   check(t && t.mags && t.mags.length === 64 && t.frame && t.frame.length === 256, 'spectrum + frame present');
   check(t && t.kcut >= 1 && t.kcut <= 64, 'kcut range');
   const finite = a => Array.from(a).every(Number.isFinite);
@@ -351,6 +355,10 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
      identical frames. Idle reads are bit-identical, which is what makes
      agreement mean settled rather than merely slow. */
   const read = async () => KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(3)));
+  /* The live world rides in the motion block — the tail is the only part of
+     the frame that can grow — so asking for spectrum and frame alone does not
+     carry it. The page asks for all three, which is why this does too. */
+  const readAll = async () => KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
   const same = (a, b) => !!a && !!b && a.length === b.length && [...a].every((v, i) => v === b[i]);
   const settle = async (pick, tries = 60) => {
     for (let i = 0; i < 6; i++) await read();
@@ -368,6 +376,7 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   await select(9);
   const before = await spectrum();
   check((await KYK.fetchWorlds(link)).current === 9, 'a built-in world is live to begin with');
+  check((await readAll()).world === 9, 'and telemetry says so without being asked for the list');
 
   let sent = 0;
   await KYK.putWorld(link, blob, (done) => { sent = done; });
@@ -377,6 +386,13 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   check(after && [...after].some(m => m > 0), 'the loaded world renders harmonics');
   check(!same(before, after), 'and it is not the world that was playing before it');
   check((await KYK.fetchWorlds(link)).current === 0xFF, 'the live world is no longer one of the built-ins');
+  /* And the frame agrees, which is what lets a page notice a world it did not
+     ask for — a switch from the module's own panel, or another host sending a
+     world while this one watches. */
+  check((await readAll()).world === 0xFF, 'and the frame says a user world is playing');
+  await select(14);
+  for (let i = 0; i < 20 && (await readAll()).world !== 14; i++) { /* it switches on the control loop */ }
+  check((await readAll()).world === 14, 'a switch away from it shows up in the frame too');
 
   /* Arriving at a sent world must be the same as arriving at it from anywhere
      else. This is tests/switch_check.cpp's invariant — 420 world pairs, each

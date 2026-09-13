@@ -137,7 +137,7 @@ function tel(over = {}) {
     frame: Int8Array.from({ length: 256 }, (_, i) => Math.round(100 * Math.sin(i / 8))),
     kepler: { running: false, plane: 0, x: 0, y: 0, rush: 0 },
     couple: 0, lock: 0, sharp: 0, bodies: 1, kepXY: [], page: 0,
-    morph: 0, morphWorld: 0xFF, mute: 0, aimed: false,
+    morph: 0, morphWorld: 0xFF, mute: 0, aimed: false, world: 0xFF,
     pots: [0.1, 0.3, 0.5, 0.7, 0.9, 1.0], bytes: 512,
   }, over);
 }
@@ -391,6 +391,90 @@ console.log('');
   P.setView('play');
   els.wavName.value = '';
   els.msg.textContent = '';
+}
+console.log('');
+
+/* The module says which world it is playing, in every frame, and the page has
+ * to believe it over its own last instruction.
+ *
+ * Before this the live world was known only by asking for the list, and
+ * nothing asked unprompted — so a world changed from the module's own panel
+ * left the world bar naming the previous one and the play view drawing the
+ * rings of a world that was no longer loaded, indefinitely.
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  const realFetch = globalThis.KYK.fetchWorlds, realPut = globalThis.KYK.putWorld;
+  let fetched = 0;
+  globalThis.KYK.putWorld = async () => true;
+  globalThis.KYK.fetchWorlds = async () => {
+    fetched++;
+    return { current: 0xFF, count: 2, list: [
+      { index: 0, kind: 0, analytic: false, name: 'Braids', note: '' },
+      { index: 1, kind: 0, analytic: false, name: 'Stack', note: '' }] };
+  };
+  P.setLink({ request: async () => Uint8Array.of(0), close: async () => {} });
+  P.heldLost();
+  P.imported.length = 0;
+  for (let i = 0; i < 2; i++)
+    P.imported.push({ name: 'u' + i, mags: new Float32Array(64), fit: 1, mode: 'shape',
+                      pos: [0.5, 0.5, 0.5, 0.5], render: new Float32Array(64) });
+  P.placeOnCell();
+  await P.sendImported();
+  await P.refreshWorlds();
+  T(P.playNodes().length === 2, 'the module is holding our set to begin with');
+
+  /* a frame that still says a user world is live changes nothing */
+  P.onTelemetry(tel({ world: 0xFF }));
+  T(P.playNodes().length === 2, 'a frame reporting a user world leaves it alone');
+
+  /* and one that names a built-in means somebody else changed it */
+  fetched = 0;
+  P.onTelemetry(tel({ world: 1 }));
+  T(P.playNodes().length === 0 && !P.place.sent,
+    'a frame naming a built-in drops the record — the panel can switch worlds too');
+  T(fetched > 0, 'and asks for the list, so the name beside it catches up');
+
+  /* noticed once, not sixty times a second */
+  fetched = 0;
+  for (let i = 0; i < 5; i++) P.onTelemetry(tel({ world: 1 }));
+  T(fetched === 0, 'the same world arriving again asks nothing');
+  /* let the refresh the change above started finish, or the next case starts
+     with the in-flight guard already raised and measures nothing */
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+
+  /* Two different worlds in successive frames, with the list still in flight.
+     This is the only thing the in-flight guard does — the "same world again"
+     case above never reaches it — so without this it is untested code. */
+  {
+    let inFlight = 0, release = null;
+    globalThis.KYK.fetchWorlds = () => {
+      inFlight++;
+      return new Promise(r => { release = () => r({ current: 0xFF, count: 1,
+        list: [{ index: 0, kind: 0, analytic: false, name: 'Braids', note: '' }] }); });
+    };
+    P.onTelemetry(tel({ world: 0 }));
+    P.onTelemetry(tel({ world: 1 }));
+    T(inFlight === 1, `a second change while the list is in flight does not start another (${inFlight})`);
+    release();
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    P.onTelemetry(tel({ world: 0 }));
+    T(inFlight === 2, 'and once it lands, the next change asks again');
+  }
+
+  /* firmware that predates the field must not read as "no world" */
+  globalThis.KYK.fetchWorlds = async () => ({ current: 0xFF, count: 1,
+    list: [{ index: 0, kind: 0, analytic: false, name: 'Braids', note: '' }] });
+  await P.sendImported();
+  for (let i = 0; i < 3; i++) P.onTelemetry(tel({ world: null }));
+  T(P.playNodes().length === 2 && P.place.sent,
+    'a frame from firmware too old to say is not read as a world change');
+
+  globalThis.KYK.fetchWorlds = realFetch;
+  globalThis.KYK.putWorld = realPut;
+  P.setLink(null);
+  P.heldLost();
+  P.imported.length = 0;
 }
 console.log('');
 

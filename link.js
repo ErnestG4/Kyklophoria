@@ -436,6 +436,12 @@ function parseTelemetry(b) {
     /* where the live page's six knobs are sitting */
     if (b.length >= at + 6) { t.pots = []; for (let i = 0; i < 6; i++) t.pots.push(b[at + i] / 255); at += 6; }
     else t.pots = null;
+    /* Which world is live, 0xFF for a user world. Null from firmware that
+       predates it, which is not the same as "no world" and must not be read as
+       one — a host that treats absent as 0xFF would believe every older module
+       was playing a user world. */
+    t.world = b.length > at ? b[at] : null;
+    at += b.length > at ? 1 : 0;
   }
   t.bytes = b.length;
   return t;
