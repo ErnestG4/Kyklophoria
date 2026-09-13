@@ -504,7 +504,14 @@ console.log('');
   const stored = [];
   globalThis.KYK.fetchSlots = async () => JSON.parse(JSON.stringify(state));
   globalThis.KYK.putSlot = async (l, slot, blob) => { stored.push({ slot, len: blob.length }); state.names[slot] = 'built'; return true; };
-  P.setLink({ request: async () => Uint8Array.of(0), close: async () => {} });
+  /* Record the swaps the page asks for, so the drag can be checked rather than
+     assumed: the action carries the two slot numbers and nothing else does. */
+  const swapped = [];
+  P.setLink({ request: async (type, body) => {
+    if (type === globalThis.KYK.CMD.action && body && body[0] === globalThis.KYK.ACT.slotSwap)
+      swapped.push({ a: body[1], b: body[2] });
+    return Uint8Array.of(0);
+  }, close: async () => {} });
   P.heldLost();
 
   P.setView('worlds');
@@ -552,6 +559,30 @@ console.log('');
   T(/live/.test(badges[5] || ''), `the playing slot says so (${badges[5]})`);
   T(/tgt/.test(badges[9] || ''), `and so does the morph target (${badges[9]})`);
   T(!els.libNoTarget.disabled, 'and the target can be cleared while there is one');
+
+  /* Dragging one slot onto another exchanges them, and the page's record of
+     where each slot's nodes are has to follow the contents — otherwise the play
+     view draws the wrong world's rings after a rearrange. */
+  state.names[5] = 'built'; state.names[9] = 'from a past life';
+  state.live = 5; state.target = 9;
+  await P.refreshSlots();
+  const nodesAt5 = P.slotNodes[5];
+  T(!!nodesAt5 && !P.slotNodes[9], 'before the swap, only one of the two has known nodes');
+  const src = els.slots.children[5], dst = els.slots.children[9];
+  fire(src, 'dragstart', { dataTransfer: { setData() {}, effectAllowed: '' } });
+  fire(dst, 'drop', { dataTransfer: { files: [] } });
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  T(swapped.length === 1 && swapped[0].a === 5 && swapped[0].b === 9,
+    `the drag exchanges the two slots (${JSON.stringify(swapped[0] || null)})`);
+  T(P.slotNodes[9] === nodesAt5 && !P.slotNodes[5],
+    'and the page\'s note of where the nodes are moves with the contents');
+
+  /* a file dropped on a slot is a store, not a swap */
+  swapped.length = 0;
+  fire(src, 'dragstart', { dataTransfer: { setData() {}, effectAllowed: '' } });
+  fire(dst, 'drop', { dataTransfer: { files: [{ name: 'x.kykw', arrayBuffer: async () => new Uint8Array(4).buffer }] } });
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  T(swapped.length === 0, 'a dropped file is a store and never a swap');
 
   globalThis.KYK.fetchSlots = realFetch; globalThis.KYK.putSlot = realPut;
   P.setLink(null); P.heldLost(); P.imported.length = 0; P.setSlotSel(-1);
