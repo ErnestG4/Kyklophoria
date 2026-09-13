@@ -130,7 +130,24 @@ meaningful axis and stacking four banks makes rotation meaningless.
       puts its vertices on the cube corners, so axis-aligned motion aims
       straight at them, which is the most direct form of the lock.
 - [ ] **AKWF**, several thousand CC0 single cycles. 256 waves is thin for
-      four principal components.
+      four principal components. The corpus is *analysed* now even though no
+      world is baked from it: `tools/importfit` runs all 48,007 waveforms
+      through the page's own import path, and the answer is in
+      docs/importfit-2026-09-13.txt. Short version: the band limit is not the
+      problem and the sine-only projection is.
+- [ ] **Import discards the cosine half, and that is the binding constraint.**
+      Measured over the whole AKWF corpus: sine-only keeps a median 94.8% and
+      a p10 of 77.7%, against a K=64 ceiling of 100.0% and 96.0%. A third of
+      the corpus loses more than a tenth of the wave to phase alone. This is
+      not a CPU problem — `RenderFrame` already takes a phase per harmonic and
+      builds a conjugate-symmetric half-spectrum, so a per-node complex
+      coefficient is the same butterflies. What it costs is 2x the storage per
+      node, 2x the multiply-adds in the blend, and the thing the shared phase
+      spectrum was chosen to make unreachable: partials that cancel when two
+      nodes are blended. Every other wavetable synth has that, because
+      crossfading frames *is* that. Before building it, extend `make armcost`
+      to the blend loop — nothing has ever measured render against blend, and
+      "small next to an FFT" is a guess until it is counted.
 - [x] **The Erica-like world** — shipped as `Family::Stack`, world 1. One
       waveform idea per axis: stack count on a logarithmic axis so n×2 and n/2
       are equal and opposite steps, spectral tilt, pulse width, parity. I

@@ -1,0 +1,40 @@
+importfit — the whole AKWF corpus through the page's own import path
+====================================================================
+node tools/importfit/main.mjs /path/to/AKWF          2026-09-13
+48007 waveforms, 0 unreadable, 143 s
+
+                       mean    p50     p10     p01    worst
+sine basis only        91.4%   94.8    77.7    57.3     1.6
+band limit K=64        97.6%  100.0    96.0    46.3     0.1
+
+keeping under 90%:  sine 34.5% of the corpus, band limit 5.4%
+keeping under 75%:  sine  7.2%,               band limit 2.4%
+
+What it says
+------------
+The band limit is not what is costing import. At K=64 the median waveform is
+inside the first 64 harmonics to four figures, and only 5.4% of the corpus
+loses more than a tenth of itself to the band limit at all.
+
+The sine-only projection is. A node is signed coefficients on sin(h.theta), so
+whatever sits in the cosine half is discarded — and after the rotation search
+has done its best, a *third* of the corpus still loses more than a tenth of the
+wave, and a fourteenth of it loses more than a quarter. The median goes 94.8%
+against a ceiling of 100.0%; the tenth percentile goes 77.7% against 96.0%.
+
+That gap is what a phase-correct representation would buy, and it is the whole
+of it: nothing else in the chain is anywhere near as lossy.
+
+Caveats
+-------
+The fit is a fraction of *energy*, which is not a fraction of audibility. A
+wave keeping 77% of its energy does not sound 77% right — the discarded part
+is the phase relationship between partials, which is exactly what makes a saw
+a saw rather than a stack of sines with a saw's spectrum. The earlier
+measurement of that is in README.md: a saw's magnitudes at random phase
+correlate 0.79 with a saw.
+
+AKWF is not a neutral sample of "waveforms people import". It is a curated
+corpus, heavy on single cycles ripped from hardware, and it is what our own
+README points people at. It is the right corpus for this question and it is
+still one corpus.
