@@ -434,6 +434,35 @@ async function fetchCardWorlds(link) {
   return { count, names };
 }
 
+/* Read a .kykw back (core/kyk_userworld.h). The page needs this for two
+   reasons: to refuse a dropped file that is not a world *before* putting it on
+   the wire, and to know where a world's nodes sit so the play view can draw
+   them. Returns null rather than throwing — a file somebody dragged in is not
+   an exceptional condition, it is Tuesday. */
+function parseUserWorld(b) {
+  if (!b || b.length < 32) return null;
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  if (dv.getUint32(0, true) !== 0x574B594B || dv.getUint16(4, true) !== 1) return null;
+  const n = b[6], k = b[7], count = b[8];
+  if (n < 2 || n > 6 || k < 1 || k > 64 || count < 1 || count > 24) return null;
+  /* exactly, not at least: a blob whose length disagrees with its own header is
+     not a blob we understand, whichever way the disagreement runs */
+  if (b.length !== 32 + count * 4 * (n + k)) return null;
+  const sigma = dv.getFloat32(10, true);
+  if (!(sigma >= 0.01 && sigma <= 4)) return null;
+  const name = new TextDecoder().decode(b.subarray(16, 32)).replace(/\0.*$/, '');
+  const nodes = [];
+  let at = 32;
+  for (let i = 0; i < count; i++) {
+    const pos = [], mags = new Float32Array(k);
+    for (let a = 0; a < n; a++) { pos.push(dv.getFloat32(at, true)); at += 4; }
+    for (let h = 0; h < k; h++) { mags[h] = dv.getFloat32(at, true); at += 4; }
+    if (pos.some(v => !Number.isFinite(v)) || mags.some(v => !Number.isFinite(v))) return null;
+    nodes.push({ pos, mags });
+  }
+  return { n, k, count, sigma, name, sinePhase: (b[9] & 1) === 1, nodes };
+}
+
 /* Store a world in one of the module's slots — the same chunking as putWorld,
    with the slot in front. The library is what makes a world you made reachable
    again: until slots existed, a sent world replaced whatever was playing and
@@ -1084,7 +1113,7 @@ const api = {
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, putSlot, fetchSlots,
-  MORPH_USER, SLOT_COUNT, buildUserWorld, fetchCardWorlds, wavToCycle, cycleToNode,
+  MORPH_USER, SLOT_COUNT, buildUserWorld, parseUserWorld, fetchCardWorlds, wavToCycle, cycleToNode,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KYK = api;

@@ -81,7 +81,26 @@
   #worldbar input[type=text]::placeholder { color: var(--dim); opacity: .7; }
   main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 34%); gap: 0; min-height: 0; }
   /* Both views occupy the same row; whichever is not hidden fills it. */
-  main, #buildMain { grid-row: 3; }
+  main, #buildMain, #libMain { grid-row: 3; }
+  #libMain { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  /* The slots. A grid rather than a list because thirty-two of them is a shape
+     you scan, not a thing you read top to bottom. */
+  #slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+           gap: 6px; padding: 8px 10px; overflow: auto; align-content: start; }
+  .slot { border: 1px solid #263039; border-radius: 3px; background: #0f141a;
+          padding: 4px 6px 5px; cursor: pointer; min-width: 0; }
+  .slot:hover { border-color: #3a4855; }
+  .slot.on { border-color: var(--hot); }
+  /* Dashed for empty, because an empty slot is a place to put something rather
+     than a thing — and it is also a drop target, which dashed already says. */
+  .slot.empty { border-style: dashed; color: var(--dim); }
+  .slot.drop { border-color: var(--l); border-style: solid; }
+  .slot .sn { font-size: 9px; color: var(--dim); letter-spacing: .08em; }
+  .slot .snm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slot.on .snm { color: var(--hot); }
+  .slot .sb { font-size: 9px; letter-spacing: .06em; min-height: 11px; }
+  .slot .sb .live { color: var(--ok); }
+  .slot .sb .tgt { color: var(--r); }
   #buildMain { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
   #buildMain .brow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
                      padding: 5px 12px; border-bottom: 1px solid var(--line);
@@ -132,6 +151,7 @@
   <span class="name">Kyklophoria</span>
   <button class="tab on" id="tabPlay">play</button>
   <button class="tab" id="tabBuild">build</button>
+  <button class="tab" id="tabLib">worlds</button>
   <span id="modinfo" style="color:var(--dim)">not connected</span>
   <span class="sp"></span>
   <span id="msg"></span>
@@ -219,6 +239,19 @@
     </div>
   </div>
   <div id="strip"></div>
+</section>
+<section id="libMain" hidden>
+  <div class="brow">
+    <span class="cap">WORLDS</span>
+    <button class="chip" id="libStore">store the build set</button>
+    <span class="sp"></span>
+    <button class="chip" id="libPlay">play</button>
+    <button class="chip" id="libTarget">morph towards</button>
+    <button class="chip" id="libNoTarget">no target</button>
+    <button class="chip" id="libFree">forget</button>
+    <span id="libState" style="color: var(--dim)"></span>
+  </div>
+  <div id="slots"></div>
 </section>
 <div id="drawer"></div>
 <footer>
@@ -2263,14 +2296,150 @@ $('audA').onclick = () => auditionPick(0);
 $('audB').onclick = () => auditionPick(1);
 $('audC').onclick = () => auditionPick(2);
 
+/* ── the worlds tab: a library of what the module is holding ──────────────
+ *
+ * The gap this closes was not on the page. A world you imported could be
+ * played and could never be *returned to*: a transfer replaced whatever was
+ * live, and the morph target index space was the twenty-one built-ins, so your
+ * own worlds could never be one end of a blend. The module has thirty-two slots
+ * now (blobs in SDRAM, expanded on demand) and this is the view of them.
+ *
+ * What the page knows and does not know: the module reports which slots are
+ * filled, their names, which is playing and which is the target. It does not
+ * report what is *in* one — there is no command for that and a slot is 6.5 KB
+ * — so the node positions the play view draws are only known for slots this
+ * page put there itself. A slot filled in an earlier session is playable and
+ * its rings are not drawn, which is the honest answer rather than a guess.
+ */
+let slots = null, slotSel = -1;
+const slotNodes = {};        /* slot -> [{ name, pos }], only what we sent */
+
+async function refreshSlots() {
+  if (!link) { slots = null; renderSlots(); return; }
+  try { slots = await MVL.fetchSlots(link); } catch { slots = null; }
+  renderSlots();
+  /* The buttons are a function of the list too — what can be played, targeted
+     or forgotten changes the moment the list does, and re-rendering only the
+     grid left them describing the list before last. */
+  renderLib();
+}
+
+function renderSlots() {
+  const box = $('slots');
+  box.innerHTML = '';
+  const n = slots ? slots.count : MVL.SLOT_COUNT;
+  for (let i = 0; i < n; i++) {
+    const name = slots ? slots.names[i] : null;
+    const el = document.createElement('div');
+    el.className = 'slot' + (name ? '' : ' empty') + (i === slotSel ? ' on' : '');
+    const num = document.createElement('div');
+    num.className = 'sn'; num.textContent = String(i).padStart(2, '0');
+    const nm = document.createElement('div');
+    nm.className = 'snm';
+    nm.textContent = name || 'empty';
+    nm.title = name || 'empty — drop a .kykw here, or store the build set';
+    const badge = document.createElement('div');
+    badge.className = 'sb';
+    if (slots && slots.live === i) { const b = document.createElement('span'); b.className = 'live'; b.textContent = 'playing'; badge.appendChild(b); }
+    if (slots && slots.target === i) {
+      if (badge.firstChild) badge.appendChild(document.createTextNode(' '));
+      const b = document.createElement('span'); b.className = 'tgt'; b.textContent = 'target'; badge.appendChild(b);
+    }
+    el.appendChild(num); el.appendChild(nm); el.appendChild(badge);
+    el.onclick = () => { slotSel = i; renderSlots(); renderLib(); };
+    /* Drag a .kykw straight onto a slot. The file is parsed and refused here
+       rather than on the module, so a wrong file costs nothing and says so. */
+    el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drop'); });
+    el.addEventListener('dragleave', () => el.classList.remove('drop'));
+    el.addEventListener('drop', async e => {
+      e.preventDefault(); el.classList.remove('drop');
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) await storeFile(i, f);
+    });
+    box.appendChild(el);
+  }
+}
+
+async function storeFile(slot, file) {
+  if (!link) { say('connect a module to store a world', true); return; }
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const w = MVL.parseUserWorld(bytes);
+    if (!w) { say(`${file.name} is not a .kykw world`, true); return; }
+    await MVL.putSlot(link, slot, bytes, (d, a) => say(`storing ${(100 * d / a).toFixed(0)}%`));
+    slotNodes[slot] = w.nodes.map((nd, i) => ({ name: w.name ? `${w.name} ${i}` : String(i), pos: nd.pos.slice() }));
+    say(`${w.name || file.name} in slot ${slot} — ${w.count} node${w.count > 1 ? 's' : ''}`);
+    await refreshSlots();
+  } catch (e) { say('store: ' + e.message, true); }
+}
+
+async function storeBuildSet(slot) {
+  if (!link || !imported.length) return;
+  try {
+    const blob = importedBlob();
+    await MVL.putSlot(link, slot, blob, (d, a) => say(`storing ${(100 * d / a).toFixed(0)}%`));
+    slotNodes[slot] = imported.map(w => ({ name: w.name, pos: w.pos.slice() }));
+    say(`${worldName()} in slot ${slot} (${blob.length} bytes)`);
+    await refreshSlots();
+  } catch (e) { say('store: ' + e.message, true); }
+}
+
+/* Playing a slot changes what the module is holding, so the play view's rings
+   have to follow it — to this slot's nodes if we know them, and to nothing if
+   we do not. The one thing they must never do is keep drawing the last set. */
+async function slotAction(op, slot) {
+  if (!link) return;
+  try {
+    await link.request(MVL.CMD.action, MVL.actionReq(op, [slot & 0xff]), { urgent: true });
+    if (op === MVL.ACT.slotLive) {
+      const known = slotNodes[slot];
+      if (known) { held = { name: (slots && slots.names[slot]) || 'slot ' + slot, nodes: known.map(k => ({ name: k.name, pos: k.pos.slice() })) }; }
+      else heldLost();
+      place.sent = false;          /* the module holds a slot now, not the draft */
+      renderImport();
+    }
+    await refreshSlots();
+    renderLib();
+  } catch (e) { say('slot: ' + e.message, true); }
+}
+
+function renderLib() {
+  const filled = slots && slotSel >= 0 && slots.names[slotSel];
+  $('libStore').disabled = !link || !imported.length || slotSel < 0;
+  $('libPlay').disabled = !filled;
+  $('libTarget').disabled = !filled;
+  $('libFree').disabled = !filled;
+  $('libNoTarget').disabled = !link || !slots || slots.target === 0xFF;
+  if (!link) { $('libState').textContent = 'connect a module to see its worlds'; return; }
+  if (!slots) { $('libState').textContent = 'this module has no slots — older firmware'; return; }
+  const used = slots.names.filter(Boolean).length;
+  const sel = slotSel < 0 ? 'pick a slot'
+    : filled ? `slot ${slotSel}: ${slots.names[slotSel]}${slotNodes[slotSel] ? '' : ' (nodes unknown — stored elsewhere)'}`
+             : `slot ${slotSel} is empty — drop a .kykw on it, or store the build set`;
+  $('libState').textContent = `${used} of ${slots.count} held · ${sel}`;
+}
+
+$('libStore').onclick = () => storeBuildSet(slotSel);
+$('libPlay').onclick = () => slotAction(MVL.ACT.slotLive, slotSel);
+$('libTarget').onclick = () => slotAction(MVL.ACT.slotTarget, slotSel);
+$('libNoTarget').onclick = () => slotAction(MVL.ACT.slotTarget, 0xFF);
+$('libFree').onclick = () => {
+  if (slotNodes[slotSel]) delete slotNodes[slotSel];
+  slotAction(MVL.ACT.slotFree, slotSel);
+};
+renderSlots();
+renderLib();
+
 /* ── switching views ───────────────────────────────────────────────────── */
 let viewMode = 'play';
 function setView(m) {
   viewMode = m;
   $('tabPlay').classList.toggle('on', m === 'play');
   $('tabBuild').classList.toggle('on', m === 'build');
+  $('tabLib').classList.toggle('on', m === 'worlds');
   $('playMain').hidden = m !== 'play';
   $('buildMain').hidden = m !== 'build';
+  $('libMain').hidden = m !== 'worlds';
   /* The world bar is all play-side — which world, how it is shaded, what is
      muted — and none of it applies to a world that is not loaded yet. */
   $('worldbar').hidden = m !== 'play';
@@ -2279,6 +2448,9 @@ function setView(m) {
   resize();
   for (const c of CANVASES) measure(c);
   if (m === 'build') { buildAxisButtons(); renderStrip(); }
+  /* Ask the module what it is holding when the tab opens, rather than polling
+     a list that only changes when somebody changes it. */
+  if (m === 'worlds') { refreshSlots(); renderLib(); }
 }
 
 /* ── dragging a node, in the build view only ──────────────────────────────
@@ -2318,6 +2490,7 @@ for (const ev of ['pointerup', 'pointercancel']) cp.addEventListener(ev, () => {
 });
 $('tabPlay').onclick = () => setView('play');
 $('tabBuild').onclick = () => setView('build');
+$('tabLib').onclick = () => setView('worlds');
 
 /* How far past the edge the hand is pushing.
  *
