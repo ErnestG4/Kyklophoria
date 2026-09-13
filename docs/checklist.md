@@ -357,15 +357,36 @@ meaningful axis and stacking four banks makes rotation meaningless.
 Five agents, scoped to the page, the firmware, the DSP core, the untrusted-input
 surface and the documented claims. What was fixed the same night:
 
-- [x] **The Morph knob at the top rendered digital silence.** `SharpenWeights`
-      lerped as `w + (w2 - w) * f`, and once `w²` is negligible beside `w` the
-      subtraction rounds to exactly `-w`, so the whole expression evaluated to
-      zero. At sharp = 1 that zeroed every small corner weight, `sum` came out
-      zero and the blend wrote an all-zero spectrum: Stack, Field, Field II and
-      Harmonic went silent, measured 0.000000 RMS against 0.98 either side.
-      `VirtualKnob::Norm()` clamps at exactly 1.0f, so the pot at the top
-      reaches it. Fixed to `w·(1−f) + w²·f`, which never subtracts two nearly
-      equal numbers.
+- [x] **The Morph knob at the very top could render digital silence.**
+      `SharpenWeights` lerped as `w + (w2 - w) * f`, and once `w²` is negligible
+      beside `w` the subtraction rounds to exactly `-w`, so the expression
+      evaluated to zero. Where that zeroed *every* corner weight, `sum` came out
+      zero and the blend wrote an all-zero spectrum. Fixed to `w·(1−f) + w²·f`,
+      which never subtracts two nearly equal numbers.
+
+      **Scope, measured over 500 random positions per world**, because the first
+      write-up of this overstated it badly and Combust's own impression that
+      morph worked well was the more accurate report:
+
+      | | silent at sharp = 1.0 | at sharp = 0.99 |
+      |---|---|---|
+      | the five lattice worlds | 0.4% to 1.8% of positions | 0.0% |
+      | the sixteen formula worlds | 0.0% | 0.0% |
+
+      So it needed the pot at its absolute top — `VirtualKnob::Norm()` clamps at
+      exactly 1.0f, and 0.99 is clean — on one of five worlds, at about one
+      position in a hundred. A dropout you would hit occasionally and blame on
+      the patch, not a knob that mutes the instrument.
+
+      `SharpenWeights` is reached only from the lattice branch
+      (`kyk_world.h:355`). The other sixteen worlds each handle `sharp`
+      themselves, and `EvalLock` narrows sigma — so "Morph tightens the lock" on
+      the 24-cell and Lock, which is where the knob is most musical, runs on a
+      path this bug never touched.
+
+      One correction to the commit that fixed it: it says Torus survived. That
+      was a single test position. Across the space Torus is affected too, at
+      1.8%, the worst of the five.
 - [x] **No test had ever set `sharp`.** `grep sharp tests/*.cpp` returned
       nothing, which is why the above shipped. The Morph knob is a control a
       player turns and it was outside every sweep.
