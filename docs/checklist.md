@@ -276,6 +276,14 @@ meaningful axis and stacking four banks makes rotation meaningless.
 
 ## Web, legibility
 
+- [x] **The knob mirror drew the pot, not the value.** The panel catches, so
+      arriving on a page leaves each pot where the hand left it while the
+      parameter keeps its value — meaning the mirror was showing six numbers
+      that were not in effect on every page you had just arrived on. Telemetry
+      now carries `u8 vals_valid · u8 vals[6]` from `pager.Value(pot)`, and the
+      mirror draws the value as the knob with the pot as a tick outside the
+      ring. When they agree it reads as one mark; when they do not, the gap is
+      how far there is to turn before the knob takes hold.
 - [x] **Text contrast, measured rather than eyeballed.** `--dim` was 3.51:1
       against the background — under the 4.5 readable floor — and it carries
       the world bar, the footer, the build row and every state line. The canvas

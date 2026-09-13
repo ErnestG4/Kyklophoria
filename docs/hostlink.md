@@ -56,10 +56,21 @@ u8  morph_world      what it blends towards; 0xFF: nothing, so it does nothing
 u16 mute             muted motions; bits 0..14 planes, bit 15 Kepler
 u8  aimed            whether the morph reads its target somewhere else
 u8  pots[6]          the live page's knob positions
+u8  vals_valid       whether the six below mean anything
+u8  vals[6]          what the live page's six knobs are *worth* — not where
+                     they are sitting; the panel catches
 u8  world            which world is playing; 0xFF: a user world, no index ─┘
 ```
 N=4, K=64, P=8 with spectrum and frame: 460 bytes; with motion as well and one
-body, 497.
+body, 504.
+
+`pots` and `vals` are two different numbers and the difference is the point.
+The panel catches rather than jumps: arriving on a page leaves each pot where
+the hand left it while the parameter keeps the value it had, and turning the
+pot through that value is what picks it up. A host with only `pots` is drawing
+the one thing that is not what the instrument is doing. `vals_valid` is 0 where
+a shell has no pager to ask — six zeroes and six knobs that really are at zero
+are not the same claim.
 
 The motion block is deliberately last, and everything after `sharp` was added
 to it later — the bodies, the pager page, the Morph knob and its target, the

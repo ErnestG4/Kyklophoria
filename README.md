@@ -261,7 +261,9 @@ counts instructions rather than trusting a stopwatch on a laptop.
 space, over a shaded map of the world you are standing in, with the live frame,
 its spectrum and the band limit, the rotation planes, the Kepler orbit and a
 CPU readout. It also mirrors the panel — which page you are on, what its six
-knobs do and where they are sitting — and carries the things that are setup
+knobs do, what each is currently worth and where the pot itself is sitting,
+which are two different numbers because the panel catches — and carries the
+things that are setup
 rather than playing: the morph target and whether it is aimed, which motions are
 muted, and which world to load from the card. Importing, placing, sending and
 saving a world of your own has a view of its own, behind the **build** tab.
@@ -311,8 +313,8 @@ Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 
 **What has been played and what has not.** The twenty-one built-in worlds are
 what has had real time on the bench. Morphing, user worlds, import and the card
-are tested by the suite — 420 world-pair switches, 99 link checks, 104 link-level
-and 110 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
+are tested by the suite — 420 world-pair switches, 99 link checks, 105 link-level
+and 119 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
 them as the new half of a beta.
 
 ## Layout

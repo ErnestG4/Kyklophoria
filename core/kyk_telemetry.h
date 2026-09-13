@@ -20,6 +20,15 @@
  *                        than the current coordinates
  *             u8 pots[6] — the live page's knob positions, so the panel mirror
  *                        can show where they are and not only what they are
+ *             u8 vals_valid · u8 vals[6] — the *value* each of the live page's
+ *                        knobs currently has, which is not where the knob is
+ *                        sitting. The panel catches: move to another page and
+ *                        the pot is somewhere while the parameter holds what
+ *                        it had, until the pot is turned through it. Showing
+ *                        only the pot said the wrong thing about every page
+ *                        you had just arrived on. Zero when the shell has no
+ *                        pager to ask (the desktop), because six zeroes and
+ *                        "six knobs at zero" are not the same claim.
  *             u8 world — which world is live (0xFF: a user world, which has
  *                        no index). Not motion either, for the same reason the
  *                        Morph knob is here: the tail is the only part of the
@@ -95,7 +104,7 @@ struct Put
 inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, int cap,
                            uint8_t page = 0, uint8_t morph_world = 0xFFu,
                            uint16_t mute = 0u, const uint8_t* pots = nullptr,
-                           uint8_t world = 0xFFu)
+                           uint8_t world = 0xFFu, const uint8_t* vals = nullptr)
 {
     const World* s = e.WorldPtr();
     if(!s || !s->Ready()) return 0;
@@ -177,6 +186,15 @@ inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, i
          * through the descriptor's blob would be the seventeen-round-trip path
          * that makes other modules feel sluggish from the web. */
         for(int i = 0; i < 6; i++) w.U8(pots ? pots[i] : 0u);
+        /* And what those six knobs are worth, which is a different number.
+         *
+         * The panel catches rather than jumps: arriving on a page leaves each
+         * pot wherever the hand left it while the parameter keeps the value it
+         * had, and turning the pot through that value is what picks it up. A
+         * mirror that draws only the pot is therefore drawing the one thing on
+         * screen that is not what the instrument is doing. */
+        w.U8(vals ? 1u : 0u);
+        for(int i = 0; i < 6; i++) w.U8(vals ? vals[i] : 0u);
         /* Which world is playing. 0xFF means a user world, which has no index.
          *
          * Without this a host only learns the live world by asking for the
@@ -198,7 +216,7 @@ inline int TelemetrySize(int n, int k, int p, uint8_t flags)
     int       sz     = 4 + 4 + 6 + 2 + 4 + 4 * (4 * n + planes + p);
     if(flags & kTelSpectrum) sz += k;
     if(flags & kTelFrame) sz += kTelFramePts;
-    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2 + 1 + 6 + 1;
+    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1;
     return sz;
 }
 
