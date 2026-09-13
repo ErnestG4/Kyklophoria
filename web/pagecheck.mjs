@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes planeAxes plane inspect strip tabPlay tabBuild playMain buildMain worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavState muteChips morphAim morphDirect'.split(' ');
+const IDS = 'axes planeAxes plane inspect strip tabPlay tabBuild playMain buildMain worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavState audPlay audA audB audC audState muteChips morphAim morphDirect'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -126,7 +126,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, bandLimit, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -841,6 +841,46 @@ const parsed = P.parsePanel(DESC);
   if (!ok) bad++;
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} descriptor pager block parses (found ${
     parsed ? parsed.pages + ' pages x ' + parsed.pots + ' pots' : 'nothing'}, gap at Couple P6 kept null)`);
+}
+console.log('');
+
+/* The page's idea of the render has to be the module's idea of it.
+ *
+ * The build view draws what the engine will make of a waveform beside the one
+ * you imported, and plays them against each other. That is only worth anything
+ * if the page computes what the engine computes — and it did not: the engine
+ * renders minus sum m.sin(h.theta) and the page summed plus, so every rendered
+ * trace was drawn mirrored and every fit looked worse than it was.
+ *
+ * web/selftest.mjs pins the same convention against the real engine, by
+ * sending a world of known coefficients and correlating the frame that comes
+ * back. This is the other half of that: the page agreeing with it. Two
+ * harnesses, one truth, and neither can drift without the other noticing.
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  const mags = new Float32Array(64);
+  for (let h = 0; h < 6; h++) mags[h] = (h % 2 ? -1 : 1) / (h + 1);
+  const got = P.renderFromMags(mags, 256);
+  let worst = 0;
+  for (let i = 0; i < 256; i++) {
+    let want = 0;
+    for (let h = 0; h < 64; h++) want -= mags[h] * Math.sin(2 * Math.PI * (h + 1) * i / 256);
+    worst = Math.max(worst, Math.abs(want - got[i]));
+  }
+  T(worst < 1e-5, `the page renders -sum m.sin(h.theta), like the engine (worst ${worst.toExponential(1)})`);
+
+  /* and the band-limited trace, which is the middle term of the audition:
+     everything above K removed and nothing else touched */
+  const y = new Float32Array(64);
+  for (let i = 0; i < 64; i++) y[i] = Math.sin(2 * Math.PI * 3 * i / 64) + 0.5 * Math.sin(2 * Math.PI * 20 * i / 64);
+  const keptAll = P.bandLimit(y, 30), cut = P.bandLimit(y, 10);
+  const rms = a => Math.sqrt([...a].reduce((s, v) => s + v * v, 0) / a.length);
+  let d = 0;
+  for (let i = 0; i < 64; i++) d = Math.max(d, Math.abs(keptAll[i] - y[i]));
+  T(d < 1e-4, `a band limit above every partial changes nothing (worst ${d.toExponential(1)})`);
+  T(Math.abs(rms(cut) - rms(y) * Math.sqrt(1 / 1.25)) < 0.02,
+    'and one below the second partial removes exactly that partial');
 }
 console.log('');
 

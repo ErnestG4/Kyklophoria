@@ -329,6 +329,26 @@ meaningful axis and stacking four banks makes rotation meaningless.
       name position 0 to 3 for the world you are actually in, which is the
       thing the panel cannot currently tell you.
 
+## Hearing it
+
+- [x] **A/B the same waveform three ways.** The build view plays the selected
+      node as imported, band-limited to K, and as the module will render it —
+      all three looping the same buffer length at rate 1.0, started together so
+      they stay sample-aligned, switched by gain with a 4 ms ramp so the switch
+      itself does not click. Levels matched, because the quieter of two sounds
+      is reliably judged the worse one and the projection genuinely loses
+      energy. Imported against band-limited is what K costs; band-limited
+      against rendered is what the *phase* costs, which is the question the
+      whole representation argument turns on.
+- [x] **The page had the render upside down.** `RenderFrame` sums
+      mag·cos(hθ+φ), and for a sine-phase world the engine's φ makes that
+      *minus* sin(hθ). The page summed plus, so the inspector drew every
+      rendered trace mirrored against the imported one and every fit looked
+      worse than it was. Inaudible on its own; wrong everywhere it was used.
+      Now pinned twice: `selftest` sends a world of known coefficients and
+      correlates the frame the module returns, `pagecheck` holds the page to
+      the same formula. Flipping either sign gives corr −1.0000.
+
 ## Known warts
 
 - [ ] **v/oct is read at control rate, not audio rate.** `hw.cv[0].Volts()`
