@@ -522,7 +522,15 @@ Still open, ranked, from the same reviews:
       coefficients would replace 1.3 KB of formula with 6.5 KB of samples that
       cannot be re-rendered at another K, under the same name, beside the
       original which already ships in the firmware.
-- [ ] **What that idea is actually reaching for is a starting point to edit**,
+- [x] **Capture what is playing**, which is what that idea was reaching for. A
+      button on the build page opens the live world as an editable set: read back
+      exactly if it came from a slot, sampled at the 24-cell vertices if it is a
+      built-in. Needed two things on the wire — 0x6C to read a slot back, and
+      action 16 to snapshot — because the page can evaluate FM, Vowel and the
+      modal and bend worlds from their formulas but not a lattice world and not
+      a Lock world, and "edit the world I just made" is the case that matters
+      most.
+- [ ] ~~What that idea is actually reaching for is a starting point to edit~~,
       and that is worth building: snapshot the *live* world into a slot by
       sampling it at the 24-cell vertices, so any world — FM, Plate, Vowel —
       becomes twenty-four waveforms you can hand-edit rather than starting from

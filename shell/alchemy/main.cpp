@@ -265,6 +265,7 @@ static volatile int8_t  gSlotStore  = -1;      /* a completed transfer's destina
 static volatile int8_t  gSlotLiveReq = -1;
 static volatile int8_t  gSlotTargetReq = -1;
 static volatile int8_t  gCardToSlotReq  = -1;   /* destination slot, -1 = none */
+static volatile int8_t  gSnapReq        = -1;   /* snapshot the live world here */
 static volatile uint8_t gCardToSlotCard = 0;    /* which card entry */
 
 static volatile uint8_t gUserReq = 0u;
@@ -634,6 +635,19 @@ struct ModuleSource : ExtSource
         return 0u;
     }
 
+    int SlotBlob(uint8_t slot, uint32_t offset, uint8_t* out, int max, uint32_t& total) override
+    {
+        if(slot >= kSlotCount) { total = 0; return -1; }
+        /* An empty slot is a state, not an error: total 0 and status ok. */
+        if(!gSlotLen[slot]) { total = 0; return 0; }
+        total = gSlotLen[slot];
+        if(offset >= total) return 0;
+        uint32_t n = total - offset;
+        if(n > (uint32_t)max) n = (uint32_t)max;
+        std::memcpy(out, gSlotBlob[slot] + offset, n);
+        return (int)n;
+    }
+
     uint8_t SaveCardWorld(uint8_t slot, const char* name, bool overwrite) override
     {
         if(gWorldBusy) return 9u;
@@ -709,6 +723,11 @@ struct ModuleSource : ExtSource
                 if(args[0] != 0xFFu && (args[0] >= kSlotCount || !gSlotLen[args[0]])) return 2u;
                 if(gWorldBusy || gSlotTargetReq >= 0) return 9u;
                 gSlotTargetReq = args[0] == 0xFFu ? (int8_t)kSlotCount : (int8_t)args[0];
+                return 0u;
+            case kActSnapshot:
+                if(len < 1 || args[0] >= kSlotCount) return 2u;
+                if(gWorldBusy || gSnapReq >= 0) return 9u;
+                gSnapReq = (int8_t)args[0];
                 return 0u;
             case kActCardToSlot:
                 /* Deferred, because a card read is slow and the read path is
@@ -962,6 +981,72 @@ static void ServeWorldRequest()
             if(!gSlotName[sl][0]) { gSlotName[sl][0] = '?'; gSlotName[sl][1] = '\0'; }
         }
         gRx.Reset();
+        return;
+    }
+    /* Sample the live world at the 24-cell vertices into a slot, as a world
+     * somebody can open and edit.
+     *
+     * Only a Lock-shaped world can be handed over as nodes, and exactly one of
+     * the twenty-one built-ins is — so for a formula world this is the only
+     * thing there is, and it is honestly a snapshot: twenty-four spectra read
+     * off the formula at twenty-four points. It will be rendered at sine phase,
+     * so a phase-blind world will not sound like its original, and for the
+     * vertex worlds — which currently put a "saw" and a "square" on their
+     * vertices that are neither — it will sound better.
+     *
+     * Built straight into the slot rather than through a staging buffer: the
+     * blob is the only copy needed and a second 6.7 KB of scratch for it would
+     * be 6.7 KB spent on nothing. */
+    if(gSnapReq >= 0)
+    {
+        const uint8_t sl = (uint8_t)gSnapReq;
+        gSnapReq = -1;
+        const World& live = gWorlds[gBufIdx];
+        if(sl < kSlotCount && live.Ready())
+        {
+            const int n = 4;
+            const int k = live.K() < kShapeK ? live.K() : kShapeK;
+            const size_t need = UserBlobSize(n, k, kWorldNodes);
+            if(need <= kUserBlobMax)
+            {
+                uint8_t* p = gSlotBlob[sl];
+                std::memset(p, 0, need);
+                const uint32_t magic = kUserMagic;
+                std::memcpy(p, &magic, 4);
+                const uint16_t ver = kUserVersion;
+                std::memcpy(p + 4, &ver, 2);
+                p[6] = (uint8_t)n; p[7] = (uint8_t)k; p[8] = (uint8_t)kWorldNodes; p[9] = 1u;
+                const float sigma = 0.26f;
+                std::memcpy(p + 10, &sigma, 4);
+                const char* nm = gWorldIdx == 0xFFu ? "snapshot" : worlds::Get(gWorldIdx).name;
+                std::snprintf((char*)(p + 16), kUserNameLen + 1, "%s", nm);
+                size_t at = kUserHeader;
+                for(int v = 0; v < kWorldNodes; v++)
+                {
+                    /* the 24-cell's own vertices, plane by plane, which is the
+                       arrangement import and the Lock world both use */
+                    float pos[kMaxN] = {0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f};
+                    int   c = 0;
+                    for(int i = 0; i < 4; i++)
+                        for(int j = i + 1; j < 4; j++)
+                            for(int si = -1; si <= 1; si += 2)
+                                for(int sj = -1; sj <= 1; sj += 2, c++)
+                                    if(c == v)
+                                    {
+                                        pos[i] = 0.5f + (float)si * 0.42f * 0.7071f;
+                                        pos[j] = 0.5f + (float)sj * 0.42f * 0.7071f;
+                                    }
+                    float   mags[kMaxK] = {0.f}, pay[kMaxP] = {0.f}, folded[kMaxN];
+                    Weights wt;
+                    live.Fold(pos, folded);
+                    live.Evaluate(folded, gEng.sharp, mags, pay, wt);
+                    for(int a = 0; a < n; a++) { std::memcpy(p + at, &pos[a], 4); at += 4; }
+                    for(int i = 0; i < k; i++) { std::memcpy(p + at, &mags[i], 4); at += 4; }
+                }
+                gSlotLen[sl] = (uint32_t)need;
+                std::snprintf(gSlotName[sl], sizeof gSlotName[sl], "%s", nm);
+            }
+        }
         return;
     }
     /* A card file into a slot. The existing read path, landing somewhere it can

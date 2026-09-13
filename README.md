@@ -128,6 +128,15 @@ for. Once the set has been sent, every drop re-sends it, so you hear where you
 just put something; **re-place** is the way back to the arrangement you were
 given.
 
+**Capture what is playing** opens the live world as an editable set, which is
+the other way into the build view. A world that came from a slot comes back
+*exactly* — the bytes it was given. A built-in cannot be handed over as nodes at
+all, because a formula is not twenty-four spectra, so the module samples it at
+the 24-cell vertices and takes a free slot to put it in. That is honestly a
+snapshot: it renders at sine phase, so a phase-blind world will not sound like
+its original — and for the vertex worlds, which put a "saw" and a "square" on
+their vertices that are neither, it will sound better.
+
 You can also **hear** it. Pick a node and the build view plays it three ways —
 as imported, band-limited to 64 harmonics, and as the module will render it —
 looping the same buffer length at rate 1.0, started together so they stay
@@ -386,8 +395,8 @@ Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 
 **What has been played and what has not.** The twenty-one built-in worlds are
 what has had real time on the bench. Morphing, user worlds, import and the card
-are tested by the suite — 420 world-pair switches, 102 link checks, 113
-link-level and 122 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
+are tested by the suite — 420 world-pair switches, 102 link checks, 165
+link-level and 140 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
 them as the new half of a beta.
 
 ## Layout

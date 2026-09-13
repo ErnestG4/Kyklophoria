@@ -127,6 +127,7 @@ Request: `u8 op [, args]`. Reply: status only.
 | 11 | `u8 slot` | play the world in that slot |
 | 12 | `u8 slot` | morph towards that slot; 0xFF clears the target. This is the one thing the morph could not do before — the target index space was the built-ins, so a world you made could never be one end of a blend |
 | 13 | `u8 slot` | forget a slot |
+| 16 | `u8 slot` | sample the *live* world at the 24-cell vertices and write it into that slot as a world somebody can edit. For a built-in this is the only thing there is — a formula cannot be handed over as nodes — and it is honestly a snapshot: rendered at sine phase, so a phase-blind world will not sound like its original. For a world that came from a slot, read that slot with 0x6C instead and get it exactly |
 | 15 | `u8 card, u8 slot` | load a card file into a slot, rather than straight to the live world as op 7 does. Deferred to the control loop, because a card read is slow; parsed before it is kept, so a slot never holds something that would be refused later |
 | 14 | `u8 a, u8 b` | exchange two slots, contents and names, with `live` and `target` following the contents rather than the numbers. Here rather than on the host because a host does not have the blob for a slot it did not store. Safe in the handler: what is playing is an expanded World and the morph target is another, so neither reads a blob except when loading one |
 | 10 | — | aim the morph: search the target world for the position whose spectrum is nearest the one playing, and read it there. Refused with status 1 when no target is set |
@@ -184,6 +185,18 @@ in as empty — and an empty slot then arrives as *absent* rather than as a blan
 name, which are different things. Same budget idiom as the other two lists: the
 reply stops before it would overflow, because one that does not fit is dropped
 silently and the host waits out its timeout.
+
+### 0x6C GET_SLOT
+Request: `u8 slot, u32 offset, u16 max`. Reply: status, `u32 total, u32 offset,
+u16 n, bytes[n]`; chunk until `total` bytes are in hand. **An empty slot answers
+status 0 with `total` 0** — a state, not an error. Status 1 means the module has
+no slots at all.
+
+This is what lets a host open a world it did not itself send. Without it the page
+could draw the nodes only of slots it had put there, and "capture what is playing
+so I can edit it" — the most obvious thing to want of a world you just made — was
+impossible: `GET_BASIS` gives a Lock world's count and sigma and no spectra, and
+a lattice world has no formula to give at all.
 
 ### 0x6B SAVE_CARD
 Request: `u8 slot, u8 flags` (bit0: overwrite), `u8 len, name`. Reply: status.

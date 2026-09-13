@@ -646,6 +646,39 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   check((await act(KYK.ACT.slotTarget, 0xFF))[0] === 0, 'the target can be cleared');
   check(same(await settle(), live3), 'and the sound goes back to the world that is playing');
 
+  /* Reading a slot back, and capturing what is playing.
+   *
+   * The page could not open a world it had not itself sent: GET_BASIS gives a
+   * Lock world's count and sigma and no spectra, and a lattice world has no
+   * formula at all. So "capture what is playing so I can edit it" — which is
+   * the most obvious thing to want of a world you just made — was impossible
+   * from the page. */
+  {
+    const back = await KYK.fetchSlot(link, 0, 1024);
+    check(back && back.length === A.length && back.every((v, i) => v === A[i]),
+          'a slot reads back byte for byte');
+    check(await KYK.fetchSlot(link, 1, 1024) === null, 'an empty slot reads back as nothing');
+
+    /* a built-in cannot be handed over as nodes, so it is sampled */
+    await act(KYK.ACT.selectWorld, 9);                 /* FM, a formula world */
+    check((await act(KYK.ACT.snapshot, 6))[0] === 0, 'a built-in can be snapshotted into a slot');
+    const snap = KYK.parseUserWorld(await KYK.fetchSlot(link, 6, 1024));
+    check(snap && snap.count === 24 && snap.k === 64,
+          `and comes back as a world of ${snap && snap.count} nodes`);
+    check(snap && snap.name === 'FM', `named after what it came from (${snap && snap.name})`);
+    /* the nodes must differ from each other: a snapshot that sampled one point
+       twenty-four times would parse perfectly and be useless */
+    const distinct = new Set(snap.nodes.map(nd => nd.mags.join(','))).size;
+    check(distinct > 8, `sampled at twenty-four different points (${distinct} distinct spectra)`);
+    check(snap.nodes.every(nd => nd.mags.some(v => v !== 0)), 'and none of them is silent');
+    /* and the positions are the 24-cell's vertices, two axes off centre each */
+    const off = snap.nodes.map(nd => nd.pos.filter(v => Math.abs(v - 0.5) > 1e-6).length);
+    check(off.every(c => c === 2), 'each on a 24-cell vertex');
+    /* it is a real world: it loads and plays */
+    check((await act(KYK.ACT.slotLive, 6))[0] === 0, 'the snapshot plays as a world in its own right');
+    await act(KYK.ACT.slotFree, 6);
+  }
+
   /* Rearranging. Has to happen on the module: a host does not have the blob
      for a slot it did not store, only the name. */
   await act(KYK.ACT.slotLive, 0);

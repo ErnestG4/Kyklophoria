@@ -220,6 +220,7 @@
     <button class="chip" id="wavPick">add wavs…</button>
     <button class="chip" id="wavMode">shape</button>
     <button class="chip" id="wavClear">clear</button>
+    <button class="chip" id="wavCapture">capture what is playing</button>
     <span class="sp"></span>
     <span class="cap">WORLD</span>
     <input type="text" id="wavName" maxlength="16" placeholder="name" spellcheck="false">
@@ -960,6 +961,7 @@ function renderImport() {
      into a file and copying it to the card is a whole way of using this page,
      and there is nothing for a link to do in it. */
   $('wavSave').disabled = !n;
+  $('wavCapture').disabled = !link;
   $('wavPlace').disabled = !n;
   $('wavClear').disabled = !n;
   if (!n) { $('wavState').textContent = link ? '' : 'connect to send'; return; }
@@ -1056,6 +1058,56 @@ function exportImported() {
      browser you did not test in. */
   setTimeout(() => URL.revokeObjectURL(url), 10000);
   say(`saved ${file}.kykw — ${imported.length} node${imported.length > 1 ? 's' : ''}, ${blob.length} bytes`);
+}
+
+/* Open whatever the module is playing, as an editable set.
+ *
+ * Two routes, and which one you get depends on what is live. A world that came
+ * from a slot is read back *exactly* — the bytes it was given. A built-in cannot
+ * be handed over as nodes at all, because a formula is not twenty-four spectra,
+ * so the module samples it at the 24-cell vertices and what you get is honestly
+ * a snapshot: it renders at sine phase, so a phase-blind world will not sound
+ * like the original, and for the vertex worlds it will sound better.
+ *
+ * The snapshot needs somewhere to live, so it takes a free slot and says which.
+ * That is not a workaround — having it in a slot is useful, and it means capture
+ * and the library are the same object rather than two ideas about the same
+ * bytes. */
+async function captureLive() {
+  if (!link) return;
+  try {
+    let slot = slots ? slots.live : 0xFF;
+    let sampled = false;
+    if (slot === 0xFF || !slots || !slots.names[slot]) {
+      /* nothing of ours is playing, so sample the built-in into a free slot */
+      await refreshSlots();
+      const free = slots ? slots.names.findIndex(n => !n) : -1;
+      if (free < 0) { say('every slot is full — forget one first', true); return; }
+      await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.snapshot, [free]), { urgent: true, timeoutMs: 4000 });
+      slot = free;
+      sampled = true;
+      await refreshSlots();
+    }
+    const blob = await MVL.fetchSlot(link, slot, info ? info.maxBody : 1024);
+    const w = blob && MVL.parseUserWorld(blob);
+    if (!w) { say('the module did not hand back a world', true); return; }
+    auditionStop();
+    imported.length = 0;
+    w.nodes.forEach((nd, i) => imported.push({
+      name: `${w.name || 'world'} ${i}`,
+      mags: nd.mags, fit: 1, mode: 'captured',
+      pos: nd.pos.slice(),
+      render: renderFromMags(nd.mags),
+      /* No `thumb`: there is no imported cycle behind a captured node, so the
+         inspector draws and plays only what the engine makes of it. Inventing a
+         second trace here would be inventing the thing import measures. */
+    }));
+    place.sel = -1; place.sent = false;
+    $('wavName').value = (w.name || 'capture').slice(0, 16);
+    renderStrip(); renderImport(); renderAudition();
+    say(`${w.count} nodes from ${sampled ? `a snapshot of ${w.name} (slot ${slot})` : `slot ${slot}`}`
+        + (sampled ? ' — sampled at the vertices, and rendered at sine phase' : ''));
+  } catch (e) { say('capture: ' + e.message, true); }
 }
 
 async function sendImported() {
@@ -1192,6 +1244,7 @@ $('wavMode').onclick = () => {
 };
 $('wavSend').onclick = sendImported;
 $('wavSave').onclick = exportImported;
+$('wavCapture').onclick = captureLive;
 $('wavPlace').onclick = () => { placeOnCell(); renderStrip(); renderImport(); syncPlacement(); };
 $('wavClear').onclick = () => {
   auditionStop();
@@ -2166,7 +2219,9 @@ function drawInspect() {
      spectrum mode the magnitudes are kept and the phase is thrown away on
      purpose, so the waveform differing is the mode working rather than a loss
      worth reporting as one. */
-  if (w.mode === 'spectrum')
+  if (w.mode === 'captured')
+    line('captured from the module · no imported cycle to compare against', '#869cb1');
+  else if (w.mode === 'spectrum')
     line('spectrum kept exactly · the waveform is redrawn at sine phase', '#869cb1');
   else
     line(`keeps ${(100 * w.fit).toFixed(1)}% of the wave`, w.fit < 0.8 ? '#ff9a5c' : '#8b98a6');

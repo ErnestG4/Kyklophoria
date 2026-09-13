@@ -52,6 +52,7 @@ constexpr uint8_t kCmdCardWorlds = 0x68;   /* what .kykw files the card holds */
 constexpr uint8_t kCmdPutSlot    = 0x69;   /* a user world into a numbered slot */
 constexpr uint8_t kCmdSlots      = 0x6A;   /* the slots, and which are live/target */
 constexpr uint8_t kCmdSaveCard   = 0x6B;   /* a slot onto the card, as a file */
+constexpr uint8_t kCmdGetSlot    = 0x6C;   /* a slot's blob back to the host */
 /* "that file is already there". Not BAD_ARGS, because the request was perfectly
    well formed and the answer is a question for the player. */
 constexpr uint8_t kStatCardExists = 20u;
@@ -102,7 +103,14 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                           kActSlotSwap   = 14,
                           /* u8 card, u8 slot: a card file into a slot, rather
                              than straight to the live world as op 7 does. */
-                          kActCardToSlot = 15 };
+                          kActCardToSlot = 15,
+                          /* u8 slot: sample the *live* world at the 24-cell
+                             vertices and write it into that slot as a world you
+                             can edit. For a built-in there is nothing else to
+                             do — a formula cannot be handed over as nodes — and
+                             for a world that came from a slot the host should
+                             read that slot instead and get it exactly. */
+                          kActSnapshot   = 16 };
 /* Slots, matching the card's own list size so the two stay one to one. A u8
    index then still has room for the two sentinels below. */
 constexpr int     kSlotCount   = 32;
@@ -179,6 +187,12 @@ struct ExtSource
     virtual uint8_t CardToSlot(uint8_t card, uint8_t slot)
     { (void)card; (void)slot; return 1u; }
 
+    /* A slot's bytes back to the host, chunked. The host can then draw its
+       nodes, or open it for editing — neither of which it could do for a slot
+       it had not put there itself. */
+    virtual int SlotBlob(uint8_t slot, uint32_t offset, uint8_t* out, int max, uint32_t& total)
+    { (void)slot; (void)offset; (void)out; (void)max; total = 0; return -1; }
+
     virtual uint8_t PutWorld(uint32_t total, uint32_t off, const uint8_t* data, int len)
     { (void)total; (void)off; (void)data; (void)len; return 1u; }
 
@@ -212,7 +226,7 @@ public:
     const char* DescriptorRootJson() const override
     {
         return "\"kyk\":{\"ext\":6,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,"
-               "\"worlds\":101,\"basis\":102,\"putslot\":105,\"slots\":106,\"savecard\":107,\"control\":110}";
+               "\"worlds\":101,\"basis\":102,\"putslot\":105,\"slots\":106,\"savecard\":107,\"getslot\":108,\"control\":110}";
     }
 
     void Handle(const alchemy::hostlink::ParsedFrame& f, alchemy::hostlink::FrameWriter& w, uint32_t) override
@@ -320,6 +334,26 @@ public:
                 std::memcpy(&off, f.body + 5, 4);
                 w.U8(src_.PutSlot(f.body[0], total, off, f.body + 9, (int)f.len - 9));
                 w.U32(off + (uint32_t)(f.len - 9));
+                return;
+            }
+            case kCmdGetSlot:
+            {
+                /* slot, u32 offset, u16 max — the same shape as GET_BASIS */
+                if(f.len < 7) { w.U8(2u); return; }
+                uint32_t off;
+                uint16_t want;
+                std::memcpy(&off, f.body + 1, 4);
+                std::memcpy(&want, f.body + 5, 2);
+                static uint8_t buf[alchemy::hostlink::kMaxBody];
+                const int cap = (int)sizeof buf - 11 < (int)want ? (int)sizeof buf - 11 : (int)want;
+                uint32_t  total = 0;
+                const int n = src_.SlotBlob(f.body[0], off, buf, cap < 0 ? 0 : cap, total);
+                if(n < 0) { w.U8(1u); return; }
+                w.U8(0u);
+                w.U32(total);
+                w.U32(off);
+                w.U16((uint16_t)n);
+                for(int i = 0; i < n; i++) w.U8(buf[i]);
                 return;
             }
             case kCmdSaveCard:

@@ -261,6 +261,74 @@ public:
         return 0u;
     }
 
+    int SlotBlob(uint8_t slot, uint32_t offset, uint8_t* out, int max, uint32_t& total) override
+    {
+        if(slot >= kyk::kSlotCount) { total = 0; return -1; }
+        /* An empty slot is a legitimate state and not an unsupported operation:
+           total 0 with status ok, so a host reads "nothing there" rather than
+           an error it has to interpret. -1 is for a shell with no slots. */
+        if(slotBlob[slot].empty()) { total = 0; return 0; }
+        total = (uint32_t)slotBlob[slot].size();
+        if(offset >= total) return 0;
+        uint32_t n = total - offset;
+        if(n > (uint32_t)max) n = (uint32_t)max;
+        std::memcpy(out, slotBlob[slot].data() + offset, n);
+        return (int)n;
+    }
+
+    /* Sample the live world at the 24-cell vertices and write it into a slot as
+     * a world somebody can edit.
+     *
+     * Only a Lock-shaped world can be *handed over* as nodes, and of the
+     * twenty-one built-ins exactly one is — so for everything else a snapshot is
+     * the only thing there is, and it is honestly a snapshot: twenty-four
+     * spectra read off a formula at twenty-four points, which will be rendered
+     * at sine phase and so will not sound like a phase-blind original. */
+    uint8_t Snapshot(uint8_t slot)
+    {
+        if(slot >= kyk::kSlotCount || !world || !world->Ready()) return 2u;
+        const int n = 4, k = world->K() < kyk::kShapeK ? world->K() : kyk::kShapeK;
+        std::vector<uint8_t> out(kyk::UserBlobSize(n, k, kyk::kWorldNodes));
+        uint8_t* p = out.data();
+        std::memset(p, 0, out.size());
+        const uint32_t magic = kyk::kUserMagic;
+        std::memcpy(p, &magic, 4);
+        const uint16_t ver = kyk::kUserVersion;
+        std::memcpy(p + 4, &ver, 2);
+        p[6] = (uint8_t)n; p[7] = (uint8_t)k; p[8] = (uint8_t)kyk::kWorldNodes; p[9] = 1u;
+        const float sigma = 0.26f;
+        std::memcpy(p + 10, &sigma, 4);
+        std::snprintf((char*)(p + 16), 17, "%s", world_idx == kNoWorld ? "snapshot"
+                                                 : kyk::worlds::Get(world_idx).name);
+        size_t at = kyk::kUserHeader;
+        for(int v = 0; v < kyk::kWorldNodes; v++)
+        {
+            /* the 24-cell's own vertices, the same arrangement import uses */
+            float pos[kyk::kMaxN] = {0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f};
+            int   c = 0;
+            for(int i = 0; i < 4 && c <= v; i++)
+                for(int j = i + 1; j < 4 && c <= v; j++)
+                    for(int si = -1; si <= 1 && c <= v; si += 2)
+                        for(int sj = -1; sj <= 1 && c <= v; sj += 2, c++)
+                            if(c == v)
+                            {
+                                pos[i] = 0.5f + (float)si * 0.42f * 0.7071f;
+                                pos[j] = 0.5f + (float)sj * 0.42f * 0.7071f;
+                            }
+            float mags[kyk::kMaxK] = {0.f}, pay[kyk::kMaxP] = {0.f};
+            kyk::Weights wt;
+            float folded[kyk::kMaxN];
+            world->Fold(pos, folded);
+            world->Evaluate(folded, eng ? eng->sharp : 0.f, mags, pay, wt);
+            for(int a = 0; a < n; a++) { std::memcpy(out.data() + at, &pos[a], 4); at += 4; }
+            for(int i = 0; i < k; i++) { std::memcpy(out.data() + at, &mags[i], 4); at += 4; }
+        }
+        slotBlob[slot].assign(out.begin(), out.end());
+        slotName[slot] = (const char*)(out.data() + 16);
+        if(slotName[slot].empty()) slotName[slot] = "snapshot";
+        return 0u;
+    }
+
     int Slots(uint8_t& live, uint8_t& target, const char** names, int max) override
     {
         live = slotLive; target = slotTarget;
@@ -363,6 +431,9 @@ public:
                 slotTarget = args[0];
                 return 0u;
             }
+            case kyk::kActSnapshot:
+                if(len < 1) return 2u;
+                return Snapshot(args[0]);
             case kyk::kActCardToSlot:
             {
                 if(len < 2) return 2u;
