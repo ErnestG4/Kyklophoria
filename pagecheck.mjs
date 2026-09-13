@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes planeAxes plane inspect strip tabPlay tabBuild tabLib playMain buildMain libMain slots libStore libPlay libTarget libNoTarget libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavCapture wavNew wavState audPlay audA audB audC audState muteChips morphAim morphDirect'.split(' ');
+const IDS = 'axes planeAxes plane inspect strip tabPlay tabBuild tabLib playMain buildMain libMain slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -126,7 +126,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderSlots, renderLib, refreshSlots, slotAction, storeBuildSet, setSlotSel: v => { slotSel = v; }, slotNodes, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -489,103 +489,124 @@ console.log('');
 }
 console.log('');
 
-/* The worlds tab: the library, and what playing a slot does to the readout.
+/* The worlds tab: one library of every world, and what playing one does to the
+ * readout.
+ *
+ * It used to be thirty-two empty slots, which on a fresh module is a grid of
+ * nothing and reads as broken — and the built-ins lived in a chip row on another
+ * tab, so "the list of worlds" existed in two places and neither was the list.
+ * One grid now, the ones that ship then the ones you made, one selection and one
+ * set of verbs.
  *
  * The module reports which slots are filled and which is playing; it does not
  * report what is *in* one. So the rings in the play view can only follow a slot
- * this page put there itself, and the one thing they must never do is keep
- * drawing the previous set — which is the trap the play view already fell into
- * once with the draft.
+ * this page put there, and the one thing they must never do is keep drawing the
+ * previous world.
  */
 {
   const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
   const realFetch = globalThis.KYK.fetchSlots, realPut = globalThis.KYK.putSlot;
   let state = { count: 32, live: 0xFF, target: 0xFF, names: new Array(32).fill(null) };
-  const stored = [];
+  const stored = [], swapped = [];
   globalThis.KYK.fetchSlots = async () => JSON.parse(JSON.stringify(state));
   globalThis.KYK.putSlot = async (l, slot, blob) => { stored.push({ slot, len: blob.length }); state.names[slot] = 'built'; return true; };
-  /* Record the swaps the page asks for, so the drag can be checked rather than
-     assumed: the action carries the two slot numbers and nothing else does. */
-  const swapped = [];
   P.setLink({ request: async (type, body) => {
     if (type === globalThis.KYK.CMD.action && body && body[0] === globalThis.KYK.ACT.slotSwap)
       swapped.push({ a: body[1], b: body[2] });
     return Uint8Array.of(0);
   }, close: async () => {} });
+  P.setWorlds({ current: 0, count: 3, list: [
+    { index: 0, kind: 2, analytic: true, name: 'Crop', note: 'four components' },
+    { index: 1, kind: 3, analytic: true, name: '24-cell', note: 'a waveform per vertex' },
+    { index: 13, kind: 5, analytic: true, name: 'Lock', note: 'real waveforms' }] });
   P.heldLost();
 
   P.setView('worlds');
   T(els.playMain.hidden && els.buildMain.hidden && !els.libMain.hidden, 'the worlds tab shows only itself');
   await new Promise(r => setImmediate(r));
-  T(els.slots.children.length === 32, `all thirty-two slots are drawn (${els.slots.children.length})`);
 
-  /* an empty selection offers nothing to do with it */
-  P.setSlotSel(-1); P.renderLib();
-  T(els.libPlay.disabled && els.libTarget.disabled && els.libFree.disabled,
-    'with no slot picked there is nothing to play, target or forget');
+  /* The whole point of the pass: a fresh module is not a grid of nothing. */
+  const tiles = [...els.slots.children];
+  const heads = tiles.filter(c => c.className === 'libhead').length;
+  const builtins = tiles.filter(c => /builtin/.test(c.className)).length;
+  const slotTiles = tiles.filter(c => c.className.startsWith('slot') && !/builtin/.test(c.className)).length;
+  T(builtins === 3, `the worlds that ship are listed (${builtins})`);
+  T(slotTiles === 32, `and yours beside them (${slotTiles})`);
+  T(heads === 2, 'under headings, so the two kinds are not one undifferentiated grid');
 
-  /* store the build set into a slot */
+  /* nothing selected offers no verbs */
+  P.setLibSel(null); P.renderLib();
+  T(els.libPlay.disabled && els.libTarget.disabled && els.libEdit.disabled,
+    'with nothing picked there is nothing to play, target or open');
+
+  /* a world that ships can be played, targeted and opened — but not forgotten */
+  P.setLibSel({ kind: 'builtin', i: 1 }); P.renderLib();
+  T(!els.libPlay.disabled && !els.libTarget.disabled && !els.libEdit.disabled,
+    'one that ships can be played, targeted and opened');
+  T(els.libFree.disabled && els.libSave.disabled,
+    'and cannot be forgotten or written to the card, because it is not yours');
+
+  /* an empty slot offers nothing either */
+  P.setLibSel({ kind: 'slot', i: 4 }); P.renderLib();
+  T(els.libPlay.disabled && els.libFree.disabled, 'an empty slot offers nothing to do with it');
+
+  /* keeping the build set: no slot number to pick, which was the broken part */
   P.imported.length = 0;
   for (let i = 0; i < 3; i++)
     P.imported.push({ name: 's' + i, mags: new Float32Array(64), fit: 1, mode: 'shape',
                       pos: [0.2 + 0.1 * i, 0.6, 0.5, 0.5], render: new Float32Array(64) });
-  P.setSlotSel(5);
-  await P.storeBuildSet(5);
-  T(stored.length === 1 && stored[0].slot === 5, `the build set goes into the slot you picked (${stored[0] && stored[0].slot})`);
+  await P.keepBuildSet();
+  T(stored.length === 1 && stored[0].slot === 0,
+    `"add to worlds" takes the first free slot rather than asking for a number (${stored[0] && stored[0].slot})`);
   T(stored[0] && stored[0].len === 32 + 3 * 4 * (4 + 64), `as a whole world (${stored[0] && stored[0].len} bytes)`);
-  T(!!P.slotNodes[5] && P.slotNodes[5].length === 3, 'and the page remembers where its nodes are');
+  T(!!P.slotNodes[0] && P.slotNodes[0].length === 3, 'and the page remembers where its nodes are');
 
-  /* playing it moves the play view's rings to that slot */
-  state.live = 5;
-  await P.slotAction(P.ACT_SLOT_LIVE !== undefined ? P.ACT_SLOT_LIVE : globalThis.KYK.ACT.slotLive, 5);
-  T(P.playNodes().length === 3, 'playing a slot is what the play view draws');
-  T(Math.abs(P.playNodes()[0].pos[0] - 0.2) < 1e-6, 'at that slot\'s positions');
-  T(!P.place.sent, 'and the draft stops following, because the module holds a slot now');
+  /* and it is now one of yours, with the verbs that implies */
+  P.setLibSel({ kind: 'slot', i: 0 }); P.renderLib();
+  T(!els.libFree.disabled && !els.libSave.disabled, 'a world of yours can be forgotten and saved to the card');
 
-  /* a slot whose contents this page never saw draws nothing rather than guessing */
+  /* playing it moves the play view's rings to it */
+  state.live = 0;
+  await P.slotAction(globalThis.KYK.ACT.slotLive, 0);
+  T(P.playNodes().length === 3, 'playing one of yours is what the play view draws');
+  T(Math.abs(P.playNodes()[0].pos[0] - 0.2) < 1e-6, 'at its own positions');
+  T(!P.place.sent, 'and the draft stops following, because the module holds a world now');
+
+  /* one whose contents this page never saw draws nothing rather than guessing */
   state.names[9] = 'from a past life';
   state.live = 9;
   await P.slotAction(globalThis.KYK.ACT.slotLive, 9);
-  T(P.playNodes().length === 0,
-    'a slot stored in another session plays, and its rings are not invented');
+  T(P.playNodes().length === 0, 'one stored in another session plays, and its rings are not invented');
 
-  /* the badges */
-  state.live = 5; state.target = 9;
+  /* the badges, on both kinds */
+  state.live = 0; state.target = 9;
   await P.refreshSlots();
-  /* The stub does not synthesise textContent from children the way a browser
-     does, so read the badge's spans rather than its text. */
-  const badges = [...els.slots.children].map(c =>
-    (c.children[2] ? c.children[2].children : []).map(x => x.className).join(' '));
-  T(/live/.test(badges[5] || ''), `the playing slot says so (${badges[5]})`);
-  T(/tgt/.test(badges[9] || ''), `and so does the morph target (${badges[9]})`);
-  T(!els.libNoTarget.disabled, 'and the target can be cleared while there is one');
+  const badgeOf = (idx) => {
+    const t = [...els.slots.children].filter(c => c.className.startsWith('slot') && !/builtin/.test(c.className));
+    return (t[idx] && t[idx].children[2] ? t[idx].children[2].children : []).map(x => x.className).join(' ');
+  };
+  T(/live/.test(badgeOf(0)), `the playing world says so (${badgeOf(0)})`);
+  T(/tgt/.test(badgeOf(9)), `and so does the morph target (${badgeOf(9)})`);
 
-  /* Dragging one slot onto another exchanges them, and the page's record of
-     where each slot's nodes are has to follow the contents — otherwise the play
-     view draws the wrong world's rings after a rearrange. */
-  state.names[5] = 'built'; state.names[9] = 'from a past life';
-  state.live = 5; state.target = 9;
-  await P.refreshSlots();
-  const nodesAt5 = P.slotNodes[5];
-  T(!!nodesAt5 && !P.slotNodes[9], 'before the swap, only one of the two has known nodes');
-  const src = els.slots.children[5], dst = els.slots.children[9];
-  fire(src, 'dragstart', { dataTransfer: { setData() {}, effectAllowed: '' } });
-  fire(dst, 'drop', { dataTransfer: { files: [] } });
-  for (let i = 0; i < 8; i++) await Promise.resolve();
-  T(swapped.length === 1 && swapped[0].a === 5 && swapped[0].b === 9,
-    `the drag exchanges the two slots (${JSON.stringify(swapped[0] || null)})`);
-  T(P.slotNodes[9] === nodesAt5 && !P.slotNodes[5],
-    'and the page\'s note of where the nodes are moves with the contents');
-
-  /* a file dropped on a slot is a store, not a swap */
+  /* dragging one slot onto another exchanges them, contents and notes together */
+  const slotEls = [...els.slots.children].filter(c => c.className.startsWith('slot') && !/builtin/.test(c.className));
+  const nodesAt0 = P.slotNodes[0];
   swapped.length = 0;
-  fire(src, 'dragstart', { dataTransfer: { setData() {}, effectAllowed: '' } });
-  fire(dst, 'drop', { dataTransfer: { files: [{ name: 'x.kykw', arrayBuffer: async () => new Uint8Array(4).buffer }] } });
+  fire(slotEls[0], 'dragstart', { dataTransfer: { setData() {}, effectAllowed: '' } });
+  fire(slotEls[9], 'drop', { dataTransfer: { files: [] } });
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  T(swapped.length === 1 && swapped[0].a === 0 && swapped[0].b === 9,
+    `the drag exchanges the two (${JSON.stringify(swapped[0] || null)})`);
+  T(P.slotNodes[9] === nodesAt0 && !P.slotNodes[0],
+    'and the page\'s note of where the nodes are moves with the contents');
+  swapped.length = 0;
+  fire(slotEls[0], 'dragstart', { dataTransfer: { setData() {}, effectAllowed: '' } });
+  fire(slotEls[9], 'drop', { dataTransfer: { files: [{ name: 'x.kykw', arrayBuffer: async () => new Uint8Array(4).buffer }] } });
   for (let i = 0; i < 8; i++) await Promise.resolve();
   T(swapped.length === 0, 'a dropped file is a store and never a swap');
 
   globalThis.KYK.fetchSlots = realFetch; globalThis.KYK.putSlot = realPut;
-  P.setLink(null); P.heldLost(); P.imported.length = 0; P.setSlotSel(-1);
+  P.setLink(null); P.heldLost(); P.imported.length = 0; P.setLibSel(null); P.setWorlds(null);
   P.setView('play');
 }
 console.log('');
