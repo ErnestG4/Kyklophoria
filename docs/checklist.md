@@ -509,6 +509,26 @@ Still open, ranked, from the same reviews:
       desktop, and `../escape` wrote a file outside the card directory. Proof it
       was real is that the failing run left one in /tmp. The check now lives in
       the shared handler both shells go through.
+- [x] **A blank card gets its world folder made for it** on the first save,
+      rather than failing with a generic device error and no hint that the
+      directory was missing. Created on the save path and not behind an
+      "initialize" the player has to know to press first, because needing to be
+      told to press a button first is the same bug with an extra step.
+- [ ] **Exporting the built-in worlds to the card is not worth doing, and here
+      is the reason so nobody re-proposes it.** `SaveUserWorld` refuses anything
+      that is not `Kind::Lock`, and exactly one of the twenty-one is — `Lock`
+      itself. FM is a Bessel formula of four parameters, the modal worlds are
+      formulas, the fields are 256-point lattices. Writing them as 24 nodes x 64
+      coefficients would replace 1.3 KB of formula with 6.5 KB of samples that
+      cannot be re-rendered at another K, under the same name, beside the
+      original which already ships in the firmware.
+- [ ] **What that idea is actually reaching for is a starting point to edit**,
+      and that is worth building: snapshot the *live* world into a slot by
+      sampling it at the 24-cell vertices, so any world — FM, Plate, Vowel —
+      becomes twenty-four waveforms you can hand-edit rather than starting from
+      twenty-four imported wavs. Honest label required: the snapshot is
+      rendered at sine phase, so a phase-blind world will not sound like its
+      original, and for some of them it will sound better.
 - [ ] The slots are still RAM: a power cycle keeps only what is on the card.
       Auto-restoring the slots from the card at boot would close that, and is a
       decision about boot time rather than a missing mechanism.

@@ -16,6 +16,7 @@
 #include <vector>
 #include <algorithm>
 #include <dirent.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <poll.h>
@@ -213,6 +214,9 @@ public:
     {
         if(cardDir.empty()) return 1u;
         if(slot >= kyk::kSlotCount || slotBlob[slot].empty()) return 2u;
+        /* The same as the module: a card with no world folder gets one, rather
+           than a generic failure on the first save anybody ever tries. */
+        ::mkdir(cardDir.c_str(), 0777);
         const std::string path = cardDir + "/" + name + ".kykw";
         if(!overwrite)
         {

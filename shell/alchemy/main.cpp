@@ -378,6 +378,16 @@ static uint8_t SaveSlotToCard(uint8_t slot, const char* name, bool overwrite)
         if(*c == '/' || *c == '\\' || *c == ':' || *c < 0x20 || *c > 0x7e) return 2u;
     if(!gSd.EnsureMounted(daisy::System::GetNow())) return 1u;
     alchemy::SdCard::BusyGuard busy(gSd);
+    /* Make the folder if it is not there.
+     *
+     * A blank card has no /kyklophoria, and without this the first save anybody
+     * ever does fails with a generic device error: f_open cannot create a file
+     * in a directory that does not exist, and nothing in the message says so.
+     * Created here rather than behind an "initialize" the player has to know
+     * about, because needing to be told to press a button first is the same bug
+     * with an extra step. FR_EXIST is success. */
+    const FRESULT mk = f_mkdir(kWorldDir);
+    if(mk != FR_OK && mk != FR_EXIST) return 1u;
     char path[96], tmp[96];
     std::snprintf(path, sizeof path, "%s/%s.kykw", kWorldDir, name);
     std::snprintf(tmp, sizeof tmp, "%s/%s.part", kWorldDir, name);
