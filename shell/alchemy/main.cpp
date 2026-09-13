@@ -194,8 +194,12 @@ static constexpr int kBootN = 4, kBootSide = 8, kBootK = 64, kBootP = 8;
 /* Two lattice buffers, so a tabulated world can be expanded while the current
  * one keeps playing; the swap is then a single pointer write. Analytic worlds
  * need neither buffer nor wait, which is why the module boots into one. */
-static uint8_t KYK_SDRAM gBlob[3][Space::BlobSize(kBootN, kBootK, kBootP, kBootSide, false)];
-static Space   gSpace[3];
+/* Four, not three: live, spare, morph target, and one scratch for opening a
+   world to edit. SDRAM is at six per cent of sixty-four megabytes, so the
+   scratch costs 1.2 MB of the one resource here there is plenty of — and buys
+   "any world can be opened" instead of "sixteen of the twenty-one can". */
+static uint8_t KYK_SDRAM gBlob[4][Space::BlobSize(kBootN, kBootK, kBootP, kBootSide, false)];
+static Space   gSpace[4];
 /* Two worlds in the double buffer a switch swaps between, and a third for
  * whatever the Morph knob is blending towards — it has to stay live while the
  * other two are swapped underneath it.
@@ -213,7 +217,7 @@ static World   KYK_AXI gMorphWorld;
 /* A vertex world's table, one per world buffer so a switch never rewrites
  * the table the other one is still playing from. SDRAM: at K=128 each is
  * 17 KB, which DTCM cannot spare. */
-static solids::VertexTable KYK_SDRAM gVertTable[3];
+static solids::VertexTable KYK_SDRAM gVertTable[4];
 /* Anything in SDRAM must be trivially constructible.
  *
  * .init_array runs before main(), and main() is where hw.Init() brings up the
@@ -280,6 +284,9 @@ static volatile uint8_t gCardToSlotCard = 0;    /* which card entry */
 
 static volatile uint8_t gUserReq = 0u;
 static constexpr uint8_t kMorphSlot = 2u;    /* blob/space/vtable slot */
+/* Scratch for building a world nobody is listening to, so opening one to edit
+   disturbs neither what is playing nor what it is morphing towards. */
+static constexpr uint8_t kScratchSlot = 3u;
 static volatile uint8_t gMorphReq = 0xFFu;   /* world index to load there */
 static volatile uint8_t gMorphIdx = 0xFFu;   /* what is loaded there now */
 /* Which motions are switched off. A mute, not a zero: the knobs keep their
@@ -738,11 +745,7 @@ struct ModuleSource : ExtSource
             {
                 if(len < 1 || args[0] >= kSlotCount) return 2u;
                 const uint8_t which = len >= 2 ? args[1] : 0xFFu;
-                /* A named world must be one with a formula. A lattice would
-                   have to be expanded into a megabyte of SDRAM first, and the
-                   live path already covers one that is already expanded. */
-                if(which != 0xFFu && (which >= worlds::kCount || !worlds::IsAnalytic(which)))
-                    return 2u;
+                if(which != 0xFFu && which >= worlds::kCount) return 2u;
                 if(gWorldBusy || gSnapReq >= 0) return 9u;
                 gSnapWorld = which;
                 gSnapReq   = (int8_t)args[0];
@@ -1029,7 +1032,23 @@ static void ServeWorldRequest()
         gSnapWorld = 0xFFu;
         const World* srcp = &gWorlds[gBufIdx];
         if(which != 0xFFu)
-            srcp = worlds::Point(which, gScratch, kBootP, nullptr, nullptr) ? &gScratch : nullptr;
+        {
+            /* Built into scratch — its own blob, space and vertex table — so
+               opening a world to edit leaves the live world and the morph
+               target alone. A lattice is expanded here too, which costs the
+               same 8 to 11 ms that selecting it would. */
+            bool ok = false;
+            if(worlds::IsAnalytic(which))
+                ok = worlds::Point(which, gScratch, kBootP, nullptr, &gVertTable[kScratchSlot]);
+            else
+            {
+                const size_t sn = worlds::Expand(which, kBootN, kBootSide, kBootK, kBootP,
+                                                 gBlob[kScratchSlot], sizeof(gBlob[kScratchSlot]));
+                ok = sn != 0 && gSpace[kScratchSlot].Attach(gBlob[kScratchSlot], sn) == SpaceError::Ok;
+                if(ok) gScratch.UseLattice(&gSpace[kScratchSlot]);
+            }
+            srcp = ok ? &gScratch : nullptr;
+        }
         const World& live = *(srcp ? srcp : &gWorlds[gBufIdx]);
         if(sl < kSlotCount && srcp && live.Ready())
         {

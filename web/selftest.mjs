@@ -713,8 +713,18 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
     await nudge(0.8);
     check(same(await nudge(0.5), atRest),
           'and what was playing is untouched — sampled into scratch, not over it');
-    check(await refused(KYK.ACT.snapshot, 7, 5),
-          'a lattice world cannot be named — it would have to be expanded first');
+    /* Any world can be opened, not only the sixteen with a formula. A lattice
+       is expanded into its own scratch blob — 1.2 MB of a 64 MB SDRAM, which is
+       the one resource here there is plenty of — because "sixteen of the
+       twenty-one can be edited" is a worse thing to explain than it is to fix. */
+    await act(KYK.ACT.slotFree, 7);
+    check((await act(KYK.ACT.snapshot, 7, 5))[0] === 0, 'a lattice world can be opened too');
+    const field = KYK.parseUserWorld(await KYK.fetchSlot(link, 7, 1024));
+    check(field && field.name === 'Field', `named after it (${field && field.name})`);
+    check(field && new Set(field.nodes.map(nd => nd.mags.join(','))).size > 8,
+          'with the lattice sampled at the vertices, not one point twenty-four times');
+    check(same(await nudge(0.5), atRest),
+          'and expanding it into scratch left what was playing alone');
     await act(KYK.ACT.slotFree, 7);
 
     /* it is a real world: it loads and plays */

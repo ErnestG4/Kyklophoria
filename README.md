@@ -128,6 +128,13 @@ for. Once the set has been sent, every drop re-sends it, so you hear where you
 just put something; **re-place** is the way back to the arrangement you were
 given.
 
+**Add to worlds** keeps what you have built, in the first free slot, and says
+which. It is on the build tab because that is where you made the thing: having to
+change tabs, find a slot by number and press a button referring to "the build
+set" was a flow that only made sense to whoever wrote it. **Play it now** puts it
+on the module without keeping it, which is the one you want while you are still
+moving nodes around.
+
 **New from Lock** is where you start when you have no wavs in mind. Lock is
 twenty-four real waveforms on the 24-cell, one family per rotation plane, which
 is a far better thing to edit than an empty set — and better than a slot
@@ -136,15 +143,6 @@ holds a world or holds nothing and says so. A blank world that plays is silence,
 and silence that looks deliberate is the worst state a synth can show you. It is
 sampled by name rather than by being made live, so pressing it does not interrupt
 whatever you are listening to.
-
-**Capture what is playing** opens the live world as an editable set, which is
-the other way into the build view. A world that came from a slot comes back
-*exactly* — the bytes it was given. A built-in cannot be handed over as nodes at
-all, because a formula is not twenty-four spectra, so the module samples it at
-the 24-cell vertices and takes a free slot to put it in. That is honestly a
-snapshot: it renders at sine phase, so a phase-blind world will not sound like
-its original — and for the vertex worlds, which put a "saw" and a "square" on
-their vertices that are neither, it will sound better.
 
 You can also **hear** it. Pick a node and the build view plays it three ways —
 as imported, band-limited to 64 harmonics, and as the module will render it —
@@ -160,13 +158,22 @@ and lets the waveform be redrawn.
 
 ## A library of your own worlds
 
-The **worlds** tab is the module's library: thirty-two slots, what is in each,
-which one is playing and which one the Morph knob is heading towards. Pick a
-slot and store the build set into it, or drag a `.kykw` straight onto it — the
-file is parsed and refused by the page before any of it goes on the wire, so a
-wrong file costs you a message rather than a transfer. Play any slot, make any
-slot the morph target, forget one you are done with, and **drag one slot onto
-another to exchange them**.
+The **worlds** tab is every world there is: the twenty-one that ship, then the
+ones you made. One grid, one selection, and three verbs that work on either kind
+— **play** it, **morph towards** it, **open to edit** it. Only the ones that are
+yours can also be forgotten or written to the card, because the others are in the
+firmware.
+
+Opening one to edit puts it in the build tab. One of yours comes back exactly,
+the bytes it was given. One that ships is sampled at the 24-cell vertices and
+says so, because a formula is not twenty-four spectra — it borrows a free slot to
+be read back through and gives it straight back, so looking at a world costs you
+nothing.
+
+Drag a `.kykw` from the desktop onto a slot to load it — the file is parsed and
+refused by the page before any of it goes on the wire, so a wrong file costs a
+message rather than a transfer — and **drag one slot onto another to exchange
+them**.
 
 Exchange rather than insert, because with a fixed grid of numbered slots
 shifting the rest along renumbers everything the module is holding, including

@@ -99,6 +99,8 @@ public:
        that is playing. */
     kyk::World                snapWorld;
     kyk::solids::VertexTable  snapTable;
+    std::vector<uint8_t>      snapBlob;
+    kyk::Space                snapSpace;
     uint8_t                   morphIdx = 0xFFu;
     uint16_t                  mute = 0u;
     float                     rateWas[kyk::kMaxPlanes] = {0.f};
@@ -296,8 +298,22 @@ public:
         const kyk::World* src = world;
         if(which != 0xFFu)
         {
-            if(which >= kyk::worlds::kCount || !kyk::worlds::IsAnalytic(which)) return 2u;
-            if(!kyk::worlds::Point(which, snapWorld, 8, nullptr, &snapTable)) return 2u;
+            if(which >= kyk::worlds::kCount) return 2u;
+            if(kyk::worlds::IsAnalytic(which))
+            {
+                if(!kyk::worlds::Point(which, snapWorld, 8, nullptr, &snapTable)) return 2u;
+            }
+            else
+            {
+                /* A lattice is expanded into its own scratch, so any world can
+                   be opened for editing and not only the sixteen with a
+                   formula. */
+                const size_t need = kyk::Space::BlobSize(4, 64, 8, 8, false);
+                if(snapBlob.size() < need) snapBlob.resize(need);
+                const size_t n = kyk::worlds::Expand(which, 4, 8, 64, 8, snapBlob.data(), snapBlob.size());
+                if(!n || snapSpace.Attach(snapBlob.data(), n) != kyk::SpaceError::Ok) return 2u;
+                snapWorld.UseLattice(&snapSpace);
+            }
             src = &snapWorld;
         }
         if(!src || !src->Ready()) return 2u;

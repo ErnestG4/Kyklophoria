@@ -110,6 +110,12 @@
   .slot .sb { font-size: 9px; letter-spacing: .06em; min-height: 11px; }
   .slot .sb .live { color: var(--ok); }
   .slot .sb .tgt { color: var(--r); }
+  /* The ones that ship read as a different class of thing from the ones you
+     made — same tile, quieter ground, and they cannot be forgotten. */
+  .slot.builtin { background: #0c1116; border-color: #1f2832; }
+  .slot.builtin .sn { color: #4f5b68; }
+  #slots .libhead { grid-column: 1 / -1; font-size: 10px; letter-spacing: .1em;
+                    color: var(--dim); padding: 6px 2px 0; }
   #buildMain { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
   #buildMain .brow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
                      padding: 5px 12px; border-bottom: 1px solid var(--line);
@@ -221,12 +227,12 @@
     <button class="chip" id="wavMode">shape</button>
     <button class="chip" id="wavClear">clear</button>
     <button class="chip" id="wavNew">new from Lock</button>
-    <button class="chip" id="wavCapture">capture what is playing</button>
     <span class="sp"></span>
     <span class="cap">WORLD</span>
     <input type="text" id="wavName" maxlength="16" placeholder="name" spellcheck="false">
     <button class="chip" id="wavPlace">re-place</button>
-    <button class="chip" id="wavSend">send</button>
+    <button class="chip" id="wavKeep">add to worlds</button>
+    <button class="chip" id="wavSend">play it now</button>
     <button class="chip" id="wavSave">save…</button>
     <span id="wavState" style="color: var(--dim)"></span>
   </div>
@@ -254,11 +260,10 @@
 <section id="libMain" hidden>
   <div class="brow">
     <span class="cap">WORLDS</span>
-    <button class="chip" id="libStore">store the build set</button>
-    <span class="sp"></span>
     <button class="chip" id="libPlay">play</button>
     <button class="chip" id="libTarget">morph towards</button>
     <button class="chip" id="libNoTarget">no target</button>
+    <button class="chip" id="libEdit">open to edit</button>
     <button class="chip" id="libFree">forget</button>
     <span class="sp"></span>
     <span class="cap">CARD</span>
@@ -962,8 +967,8 @@ function renderImport() {
      into a file and copying it to the card is a whole way of using this page,
      and there is nothing for a link to do in it. */
   $('wavSave').disabled = !n;
-  $('wavCapture').disabled = !link;
   $('wavNew').disabled = !link;
+  $('wavKeep').disabled = !link || !n;
   $('wavPlace').disabled = !n;
   $('wavClear').disabled = !n;
   if (!n) { $('wavState').textContent = link ? '' : 'connect to send'; return; }
@@ -1075,37 +1080,39 @@ function exportImported() {
  * That is not a workaround — having it in a slot is useful, and it means capture
  * and the library are the same object rather than two ideas about the same
  * bytes. */
-/* Start a world from Lock.
+/* Open a world in the build tab, whichever kind it is.
  *
- * Lock is the natural blank canvas: twenty-four real waveforms on the 24-cell,
- * one family per rotation plane, which is a far better thing to edit than an
- * empty set — and better than a slot pre-filled with silence, since a blank
- * world that plays is silence, and silence that looks deliberate is the worst
- * state a synth can show you. Hence no "blank" slots: a slot either holds a
- * world or holds nothing and says so.
+ * One of yours comes back *exactly* — the bytes it was given. One that ships
+ * cannot be handed over as nodes at all, because a formula is not twenty-four
+ * spectra, so the module samples it at the 24-cell vertices and the result says
+ * it is a snapshot: it renders at sine phase, so a phase-blind world will not
+ * sound like its original, and for the vertex worlds it will sound better.
  *
- * Sampled by name rather than by making it live, so pressing this does not
- * interrupt the patch you are listening to. */
-const newFromLock = () => captureLive(13);
-
-async function captureLive(named = 0xFF) {
+ * A sampled world needs somewhere to live while it is read back, and it borrows
+ * a free slot and gives it back. Opening one to look at it should not cost you a
+ * slot; keeping it is what "add to worlds" is for.
+ */
+async function openForEdit(spec) {
   if (!link) return;
   try {
-    let slot = named === 0xFF && slots ? slots.live : 0xFF;
-    let sampled = false;
-    if (slot === 0xFF || !slots || !slots.names[slot]) {
-      /* nothing of ours is playing, so sample the built-in into a free slot */
+    let slot = spec.slot, borrowed = -1;
+    if (slot === undefined) {
       await refreshSlots();
-      const free = slots ? slots.names.findIndex(n => !n) : -1;
+      const free = freeSlot();
       if (free < 0) { say('every slot is full — forget one first', true); return; }
-      const args = named === 0xFF ? [free] : [free, named & 0xff];
+      const args = [free, spec.world & 0xff];
       await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.snapshot, args), { urgent: true, timeoutMs: 4000 });
       slot = free;
-      sampled = true;
+      borrowed = free;
       await refreshSlots();
     }
     const blob = await MVL.fetchSlot(link, slot, info ? info.maxBody : 1024);
     const w = blob && MVL.parseUserWorld(blob);
+    if (borrowed >= 0) {
+      /* given back, so looking at a world costs nothing */
+      try { await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.slotFree, [borrowed]), { urgent: true }); } catch {}
+      await refreshSlots();
+    }
     if (!w) { say('the module did not hand back a world', true); return; }
     auditionStop();
     imported.length = 0;
@@ -1114,17 +1121,25 @@ async function captureLive(named = 0xFF) {
       mags: nd.mags, fit: 1, mode: 'captured',
       pos: nd.pos.slice(),
       render: renderFromMags(nd.mags),
-      /* No `thumb`: there is no imported cycle behind a captured node, so the
+      /* No `thumb`: there is no imported cycle behind one of these, so the
          inspector draws and plays only what the engine makes of it. Inventing a
-         second trace here would be inventing the thing import measures. */
+         second trace would be inventing the thing import measures. */
     }));
     place.sel = -1; place.sent = false;
-    $('wavName').value = (w.name || 'capture').slice(0, 16);
+    $('wavName').value = (w.name || 'world').slice(0, 16);
     renderStrip(); renderImport(); renderAudition();
-    say(`${w.count} nodes from ${sampled ? `a snapshot of ${w.name} (slot ${slot})` : `slot ${slot}`}`
-        + (sampled ? ' — sampled at the vertices, and rendered at sine phase' : ''));
-  } catch (e) { say('capture: ' + e.message, true); }
+    setView('build');
+    say(borrowed >= 0
+        ? `${w.name} opened — ${w.count} nodes sampled at the vertices, rendered at sine phase`
+        : `${w.name} opened — ${w.count} nodes, exactly as stored`);
+  } catch (e) { say('open: ' + e.message, true); }
 }
+
+/* Lock is the natural blank canvas: twenty-four real waveforms on the 24-cell,
+   one family per rotation plane, which beats an empty set and beats a slot
+   pre-filled with silence — a blank world plays silence, and silence that looks
+   deliberate is the worst state a synth can show. */
+const newFromLock = () => openForEdit({ world: 13 });
 
 async function sendImported() {
   if (!link || !imported.length) return;
@@ -1261,7 +1276,7 @@ $('wavMode').onclick = () => {
 $('wavSend').onclick = sendImported;
 $('wavSave').onclick = exportImported;
 $('wavNew').onclick = newFromLock;
-$('wavCapture').onclick = () => captureLive();
+$('wavKeep').onclick = keepBuildSet;
 $('wavPlace').onclick = () => { placeOnCell(); renderStrip(); renderImport(); syncPlacement(); };
 $('wavClear').onclick = () => {
   auditionStop();
@@ -2398,51 +2413,57 @@ $('audC').onclick = () => auditionPick(2);
  * page put there itself. A slot filled in an earlier session is playable and
  * its rings are not drawn, which is the honest answer rather than a guess.
  */
-let slots = null, slotSel = -1, slotDrag = -1;
-const slotNodes = {};        /* slot -> [{ name, pos }], only what we sent */
+/* The library is every world there is: the twenty-one that ship, then yours.
+ *
+ * It used to be thirty-two empty slots, which on a fresh module is a grid of
+ * nothing and reads as broken. The built-ins were in a chip row on the play tab
+ * and the slots were here, so "the list of worlds" existed in two places and
+ * neither was the list. One grid, one selection, one set of verbs — play it,
+ * morph towards it, open it to edit — and only the ones that are yours can also
+ * be forgotten or written to the card.
+ */
+let slots = null, slotDrag = -1;
+let libSel = null;                 /* { kind: 'builtin' | 'slot', i } */
+const slotNodes = {};              /* slot -> [{ name, pos }], only what we sent */
+
+const libIsSel = (kind, i) => !!libSel && libSel.kind === kind && libSel.i === i;
+const slotFilled = (i) => !!(slots && slots.names[i]);
 
 async function refreshSlots() {
-  if (!link) { slots = null; renderSlots(); return; }
+  if (!link) { slots = null; renderLibrary(); return; }
   try { slots = await MVL.fetchSlots(link); } catch { slots = null; }
-  renderSlots();
-  /* The buttons are a function of the list too — what can be played, targeted
-     or forgotten changes the moment the list does, and re-rendering only the
-     grid left them describing the list before last. */
+  renderLibrary();
   renderLib();
 }
 
-function renderSlots() {
-  const box = $('slots');
-  box.innerHTML = '';
-  const n = slots ? slots.count : MVL.SLOT_COUNT;
-  for (let i = 0; i < n; i++) {
-    const name = slots ? slots.names[i] : null;
-    const el = document.createElement('div');
-    el.className = 'slot' + (name ? '' : ' empty') + (i === slotSel ? ' on' : '');
-    const num = document.createElement('div');
-    num.className = 'sn'; num.textContent = String(i).padStart(2, '0');
-    const nm = document.createElement('div');
-    nm.className = 'snm';
-    nm.textContent = name || 'empty';
-    nm.title = name || 'empty — drop a .kykw here, or store the build set';
-    const badge = document.createElement('div');
-    badge.className = 'sb';
-    if (slots && slots.live === i) { const b = document.createElement('span'); b.className = 'live'; b.textContent = 'playing'; badge.appendChild(b); }
-    if (slots && slots.target === i) {
-      if (badge.firstChild) badge.appendChild(document.createTextNode(' '));
-      const b = document.createElement('span'); b.className = 'tgt'; b.textContent = 'target'; badge.appendChild(b);
-    }
-    el.appendChild(num); el.appendChild(nm); el.appendChild(badge);
-    el.onclick = () => { slotSel = i; renderSlots(); renderLib(); };
-    /* Two kinds of drop, and they are told apart by whether the browser handed
-       us a file. A .kykw from the desktop lands in this slot; a slot dragged
-       from elsewhere in the grid exchanges with this one.
-     *
-     * Exchange, not insert. With a fixed grid of numbered slots, moving one
-     * into another's place has to do *something* with the one that was there,
-     * and shifting the rest along renumbers everything the module is holding —
-     * including whatever is playing. Swapping touches exactly two. Dropping
-     * onto an empty slot is therefore a move, which is what it looks like. */
+/* One tile, whichever kind it is. The differences are what it is called, what
+   badges it carries, and whether it can be dragged. */
+function libTile(kind, i, name, note) {
+  const el = document.createElement('div');
+  const empty = kind === 'slot' && !name;
+  el.className = 'slot' + (empty ? ' empty' : '') + (libIsSel(kind, i) ? ' on' : '')
+               + (kind === 'builtin' ? ' builtin' : '');
+  const num = document.createElement('div');
+  num.className = 'sn';
+  num.textContent = kind === 'builtin' ? 'BUILT IN' : String(i).padStart(2, '0');
+  const nm = document.createElement('div');
+  nm.className = 'snm';
+  nm.textContent = name || 'empty';
+  nm.title = note || name || 'empty — drop a .kykw here, or add one from the build tab';
+  const badge = document.createElement('div');
+  badge.className = 'sb';
+  const live = kind === 'builtin' ? (worlds && worlds.current === i && slots && slots.live === 0xFF)
+                                  : (slots && slots.live === i);
+  const tgt  = kind === 'builtin' ? (tel && tel.morphWorld === i)
+                                  : (slots && slots.target === i);
+  if (live) { const b = document.createElement('span'); b.className = 'live'; b.textContent = 'playing'; badge.appendChild(b); }
+  if (tgt) {
+    if (badge.firstChild) badge.appendChild(document.createTextNode(' '));
+    const b = document.createElement('span'); b.className = 'tgt'; b.textContent = 'target'; badge.appendChild(b);
+  }
+  el.appendChild(num); el.appendChild(nm); el.appendChild(badge);
+  el.onclick = () => { libSel = { kind, i }; renderLibrary(); renderLib(); };
+  if (kind === 'slot') {
     if (name) {
       el.draggable = true;
       el.addEventListener('dragstart', e => {
@@ -2460,8 +2481,23 @@ function renderSlots() {
       if (slotDrag >= 0 && slotDrag !== i) await swapSlots(slotDrag, i);
       slotDrag = -1;
     });
-    box.appendChild(el);
   }
+  return el;
+}
+
+function renderLibrary() {
+  const box = $('slots');
+  box.innerHTML = '';
+  const head = (text) => {
+    const h = document.createElement('div');
+    h.className = 'libhead'; h.textContent = text;
+    box.appendChild(h);
+  };
+  head(worlds ? `the ${worlds.count} that ship` : 'the worlds that ship');
+  if (worlds) for (const w of worlds.list) box.appendChild(libTile('builtin', w.index, w.name, w.note));
+  head(slots ? `yours — ${slots.names.filter(Boolean).length} of ${slots.count}` : 'yours');
+  const n = slots ? slots.count : MVL.SLOT_COUNT;
+  for (let i = 0; i < n; i++) box.appendChild(libTile('slot', i, slots ? slots.names[i] : null, null));
 }
 
 /* Exchange two slots. The module does it, because the page does not have the
@@ -2471,12 +2507,11 @@ async function swapSlots(a, b) {
   if (!link) return;
   try {
     await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.slotSwap, [a & 0xff, b & 0xff]), { urgent: true });
-    /* The page's own record of where nodes are has to follow the contents too,
-       or the play view would draw the wrong world's rings after a rearrange. */
     const na = slotNodes[a], nb = slotNodes[b];
     if (nb) slotNodes[a] = nb; else delete slotNodes[a];
     if (na) slotNodes[b] = na; else delete slotNodes[b];
-    if (slotSel === a) slotSel = b; else if (slotSel === b) slotSel = a;
+    if (libIsSel('slot', a)) libSel = { kind: 'slot', i: b };
+    else if (libIsSel('slot', b)) libSel = { kind: 'slot', i: a };
     await refreshSlots();
   } catch (e) { say('swap: ' + e.message, true); }
 }
@@ -2494,34 +2529,98 @@ async function storeFile(slot, file) {
   } catch (e) { say('store: ' + e.message, true); }
 }
 
-async function storeBuildSet(slot) {
-  if (!link || !imported.length) return;
-  try {
-    const blob = importedBlob();
-    await MVL.putSlot(link, slot, blob, (d, a) => say(`storing ${(100 * d / a).toFixed(0)}%`));
-    slotNodes[slot] = imported.map(w => ({ name: w.name, pos: w.pos.slice() }));
-    say(`${worldName()} in slot ${slot} (${blob.length} bytes)`);
-    await refreshSlots();
-  } catch (e) { say('store: ' + e.message, true); }
+/* The first slot with nothing in it, which is what "add to worlds" needs so
+   nobody has to pick a number. */
+function freeSlot() {
+  if (!slots) return -1;
+  return slots.names.findIndex(n => !n);
 }
 
-/* Playing a slot changes what the module is holding, so the play view's rings
-   have to follow it — to this slot's nodes if we know them, and to nothing if
-   we do not. The one thing they must never do is keep drawing the last set. */
+/* Keep the build set. The verb lives on the build tab because that is where you
+   made the thing — having to change tabs, find a slot by number and press a
+   button that refers to "the build set" was the flow that was broken. */
+async function keepBuildSet() {
+  if (!link || !imported.length) return;
+  try {
+    await refreshSlots();
+    const slot = freeSlot();
+    if (slot < 0) { say('every slot is full — forget one on the worlds tab', true); return; }
+    const blob = importedBlob();
+    await MVL.putSlot(link, slot, blob, (d, a) => say(`keeping ${(100 * d / a).toFixed(0)}%`));
+    slotNodes[slot] = imported.map(w => ({ name: w.name, pos: w.pos.slice() }));
+    say(`${worldName()} is now in your worlds, slot ${slot}`);
+    await refreshSlots();
+  } catch (e) { say('add: ' + e.message, true); }
+}
+
+/* Play whatever is selected, whichever kind it is. */
+async function libPlay() {
+  if (!link || !libSel) return;
+  try {
+    if (libSel.kind === 'builtin') { heldLost(); await selectWorld(libSel.i); }
+    else await slotAction(MVL.ACT.slotLive, libSel.i);
+    await refreshSlots();
+  } catch (e) { say('play: ' + e.message, true); }
+}
+
+/* Morph towards whatever is selected. Built-ins go through the world-index
+   path, yours through the slot path — two commands, one verb, because "what am
+   I blending towards" is one question. */
+async function libTargetSel(clear) {
+  if (!link) return;
+  try {
+    if (clear) {
+      await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.morphWorld, [0xFF]), { urgent: true });
+      await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.slotTarget, [0xFF]), { urgent: true });
+    } else if (!libSel) return;
+    else if (libSel.kind === 'builtin')
+      await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.morphWorld, [libSel.i]), { urgent: true });
+    else
+      await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.slotTarget, [libSel.i]), { urgent: true });
+    await refreshSlots();
+    renderMorphSel();
+  } catch (e) { say('target: ' + e.message, true); }
+}
+
 async function slotAction(op, slot) {
   if (!link) return;
   try {
     await link.request(MVL.CMD.action, MVL.actionReq(op, [slot & 0xff]), { urgent: true });
     if (op === MVL.ACT.slotLive) {
       const known = slotNodes[slot];
-      if (known) { held = { name: (slots && slots.names[slot]) || 'slot ' + slot, nodes: known.map(k => ({ name: k.name, pos: k.pos.slice() })) }; }
+      if (known) held = { name: (slots && slots.names[slot]) || 'slot ' + slot, nodes: known.map(k => ({ name: k.name, pos: k.pos.slice() })) };
       else heldLost();
-      place.sent = false;          /* the module holds a slot now, not the draft */
+      place.sent = false;
       renderImport();
     }
     await refreshSlots();
-    renderLib();
   } catch (e) { say('slot: ' + e.message, true); }
+}
+
+function renderLib() {
+  renderLibCardSel();
+  const sel = libSel;
+  const mine = sel && sel.kind === 'slot' && slotFilled(sel.i);
+  const any = sel && (sel.kind === 'builtin' || mine);
+  $('libPlay').disabled = !link || !any;
+  $('libTarget').disabled = !link || !any;
+  $('libEdit').disabled = !link || !any;
+  $('libFree').disabled = !link || !mine;
+  $('libSave').disabled = !link || !mine;
+  $('libNoTarget').disabled = !link;
+  $('libLoad').disabled = !link || !(cardList.names || []).length || !sel || sel.kind !== 'slot';
+  $('libRescan').disabled = !link;
+  if (!link) { $('libState').textContent = 'connect a module to see its worlds'; return; }
+  if (!sel) { $('libState').textContent = 'pick a world — anything here can be played, morphed towards, or opened to edit'; return; }
+  if (sel.kind === 'builtin') {
+    const w = worlds && worlds.list.find(x => x.index === sel.i);
+    $('libState').textContent = w ? `${w.name} — ${w.note}` : 'a world that ships';
+  } else if (mine) {
+    $('libState').textContent = `slot ${sel.i}: ${slots.names[sel.i]}`
+      + (slotNodes[sel.i] ? '' : ' (nodes unknown — stored elsewhere)');
+  } else {
+    $('libState').textContent = `slot ${sel.i} is empty — drop a .kykw on it, or add one from the build tab`;
+  }
 }
 
 function renderLibCardSel() {
@@ -2537,35 +2636,9 @@ function renderLibCardSel() {
   else if (sel.children.length) sel.selectedIndex = 0;
 }
 
-function renderLib() {
-  renderLibCardSel();
-  const filled = slots && slotSel >= 0 && slots.names[slotSel];
-  const onCard = (cardList.names || []).length > 0;
-  $('libSave').disabled = !filled;
-  $('libLoad').disabled = !link || !onCard || slotSel < 0;
-  $('libRescan').disabled = !link;
-  $('libStore').disabled = !link || !imported.length || slotSel < 0;
-  $('libPlay').disabled = !filled;
-  $('libTarget').disabled = !filled;
-  $('libFree').disabled = !filled;
-  $('libNoTarget').disabled = !link || !slots || slots.target === 0xFF;
-  if (!link) { $('libState').textContent = 'connect a module to see its worlds'; return; }
-  if (!slots) { $('libState').textContent = 'this module has no slots — older firmware'; return; }
-  const used = slots.names.filter(Boolean).length;
-  const sel = slotSel < 0 ? 'pick a slot'
-    : filled ? `slot ${slotSel}: ${slots.names[slotSel]}${slotNodes[slotSel] ? '' : ' (nodes unknown — stored elsewhere)'}`
-             : `slot ${slotSel} is empty — drop a .kykw on it, or store the build set`;
-  $('libState').textContent = `${used} of ${slots.count} held · ${sel}`;
-}
-
-/* Saving a slot to the card, and the one question worth interrupting for.
- *
- * The name comes from the world's own name, which is what a player called it.
- * If a file of that name is already there, ask — and offer the suffixed name as
- * the alternative, so the dialog carries both answers rather than making
- * somebody rename the world and try again. The module refuses the overwrite
- * unless it is asked for, so this dialog is the only route to replacing a file
- * and there is no path that does it quietly. */
+/* Saving one of yours to the card, and the one question worth interrupting for.
+   The module refuses an overwrite that was not asked for, so this dialog is the
+   only route to replacing a file and there is no path that does it quietly. */
 function nextFreeName(base) {
   const taken = new Set((cardList.names || []).map(n => n.replace(/\.kykw$/i, '').toLowerCase()));
   if (!taken.has(base.toLowerCase())) return base;
@@ -2573,8 +2646,9 @@ function nextFreeName(base) {
   return base + '-x';
 }
 
-async function saveSlotToCard(slot) {
-  if (!link || slot < 0 || !slots || !slots.names[slot]) return;
+async function saveSelectedToCard() {
+  if (!link || !libSel || libSel.kind !== 'slot' || !slotFilled(libSel.i)) return;
+  const slot = libSel.i;
   const base = (slots.names[slot] || ('slot' + slot)).replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 24) || ('slot' + slot);
   try {
     await MVL.saveCardWorld(link, slot, base, false);
@@ -2582,14 +2656,9 @@ async function saveSlotToCard(slot) {
   } catch (e) {
     if (!/already on the card/.test(e.message)) { say('save: ' + e.message, true); return; }
     const alt = nextFreeName(base);
-    /* A browser always has confirm; a harness does not, and the safe answer
-       when nobody can be asked is not to overwrite. */
     const ask = typeof confirm === 'function' ? confirm : () => false;
-    const yes = ask(`${base}.kykw is already on the card.
-
-`
-                      + `OK — replace it.
-Cancel — save as ${alt}.kykw instead.`);
+    const yes = ask(`${base}.kykw is already on the card.\n\n`
+                  + `OK — replace it.\nCancel — save as ${alt}.kykw instead.`);
     try {
       if (yes) { await MVL.saveCardWorld(link, slot, base, true); say(`${base}.kykw replaced`); }
       else { await MVL.saveCardWorld(link, slot, alt, false); say(`${alt}.kykw written to the card`); }
@@ -2599,41 +2668,47 @@ Cancel — save as ${alt}.kykw instead.`);
   renderLib();
 }
 
-async function loadCardIntoSlot(slot) {
-  if (!link || slot < 0) return;
+async function loadCardIntoSlot() {
+  if (!link || !libSel || libSel.kind !== 'slot') return;
   const i = $('libCardSel').selectedIndex;
   if (i < 0 || !cardList.names.length) return;
   try {
-    await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.cardToSlot, [i & 0xff, slot & 0xff]), { urgent: true, timeoutMs: 4000 });
-    /* The module parsed it; the page has not, so it does not know where the
+    await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.cardToSlot, [i & 0xff, libSel.i & 0xff]), { urgent: true, timeoutMs: 4000 });
+    /* The module parsed it; the page did not, so it does not know where the
        nodes are. Same rule as any slot filled elsewhere: it plays, and its
-       rings stay undrawn rather than being guessed. */
-    delete slotNodes[slot];
-    say(`${cardList.names[i]} into slot ${slot}`);
+       rings stay undrawn rather than guessed. */
+    delete slotNodes[libSel.i];
+    say(`${cardList.names[i]} into slot ${libSel.i}`);
     await refreshSlots();
   } catch (e) { say('load: ' + e.message, true); }
 }
 
-$('libSave').onclick = () => saveSlotToCard(slotSel);
-$('libLoad').onclick = () => loadCardIntoSlot(slotSel);
+$('libPlay').onclick = libPlay;
+$('libTarget').onclick = () => libTargetSel(false);
+$('libNoTarget').onclick = () => libTargetSel(true);
+$('libEdit').onclick = () => {
+  if (!libSel) return;
+  /* Opening a world to edit is the same act for both kinds and reads the same
+     way: it appears in the build tab. A world of yours comes back exactly; one
+     that ships is sampled, and says so. */
+  openForEdit(libSel.kind === 'slot' ? { slot: libSel.i } : { world: libSel.i });
+};
+$('libFree').onclick = () => {
+  if (!libSel || libSel.kind !== 'slot') return;
+  delete slotNodes[libSel.i];
+  slotAction(MVL.ACT.slotFree, libSel.i);
+};
+$('libSave').onclick = saveSelectedToCard;
+$('libLoad').onclick = loadCardIntoSlot;
 $('libRescan').onclick = async () => {
   if (!link) return;
   try { await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.scanCard, []), { urgent: true }); }
   catch (e) { say('rescan: ' + e.message, true); }
   await refreshCard();
   renderCardSel();
-  renderLibCardSel();
   renderLib();
 };
-$('libStore').onclick = () => storeBuildSet(slotSel);
-$('libPlay').onclick = () => slotAction(MVL.ACT.slotLive, slotSel);
-$('libTarget').onclick = () => slotAction(MVL.ACT.slotTarget, slotSel);
-$('libNoTarget').onclick = () => slotAction(MVL.ACT.slotTarget, 0xFF);
-$('libFree').onclick = () => {
-  if (slotNodes[slotSel]) delete slotNodes[slotSel];
-  slotAction(MVL.ACT.slotFree, slotSel);
-};
-renderSlots();
+renderLibrary();
 renderLib();
 
 /* ── switching views ───────────────────────────────────────────────────── */
