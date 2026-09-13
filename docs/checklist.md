@@ -313,8 +313,18 @@ meaningful axis and stacking four banks makes rotation meaningless.
       band-limit hold and the aim offset all still described the previous
       world. Fifth instance of the pattern in CLAUDE.md. Found by asking
       whether the *sound* changed after a send, which nothing had asked.
-- [ ] Move imported nodes rather than taking the 24-cell placement. The format
-      already carries arbitrary positions, so this is page work.
+- [x] **Move imported nodes.** Dragged in the space view with pointer events, so
+      a finger works too: a drag sets the two axes on screen and leaves the
+      rest, and the other two are reached by switching the pair. Nodes fade
+      with their distance from the slice being drawn, which is the only honest
+      way for a plane to say "this one is over there". Once the set has been
+      sent, a drop re-sends it — coalesced, so a drag cannot pile up 6.5 KB
+      transfers — and selecting another world or dropping the link disarms
+      that, because the module is no longer holding the set.
+- [ ] Placement is still one plane at a time by design, but there is no way to
+      see the two axes you are *not* on. A second small pane showing the
+      complementary plane would cost little and remove the only real guesswork
+      left in placing a node.
 - [x] Orbit trail and the rotation arcs. The Kepler body gets its own inset
       showing the conic in its own unrotated plane, and the coupling lock has
       a bar beside the plane gauges.
@@ -325,6 +335,13 @@ meaningful axis and stacking four banks makes rotation meaningless.
       compares the page's evaluation against the module's own spectrum in
       decibels, which is the only comparison the wire can settle.
 - [ ] Panel mirror (spec §8 view 4) reading the jack list from the descriptor.
+- [x] **A watch for draws at a coordinate that is not a number.** `arc(NaN, …)`
+      is not an error on any canvas — it draws nothing, which is
+      indistinguishable from a mark that is off screen — so this class of bug
+      shows up only as something quietly missing. `pagecheck` now records the
+      geometry calls and fails on a non-finite argument. It caught a node drawn
+      on an axis it does not have (a 4-D set placed while the module reports
+      6-D) the first time it was armed.
 - [ ] Attract mode: replay a recorded telemetry log so the page demos itself
       with no module attached.
 - [ ] The dev drawer only appears over the bridge, which is right, but there

@@ -27,11 +27,27 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavClear wavState muteChips morphAim morphDirect'.split(' ');
+const IDS = 'axes btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavState muteChips morphAim morphDirect'.split(' ');
 const calls = [];
+/* Where the page asked for a mark at a coordinate that is not a number.
+ *
+ * A stub canvas swallows this and so does a real one: `arc(NaN, ...)` is not
+ * an error anywhere, it simply draws nothing, which is indistinguishable from
+ * a mark that is off screen or behind something. The page reads positions off
+ * the wire and off imported files, so "this index does not exist" reaches the
+ * drawing code as undefined and arrives here as NaN — a whole class of bug
+ * whose only symptom is something quietly missing from the picture. */
+const nanDraws = [];
+const GEOM = new Set(['arc', 'moveTo', 'lineTo', 'fillRect', 'strokeRect', 'rect', 'drawImage',
+                      'fillText', 'strokeText', 'arcTo', 'quadraticCurveTo', 'bezierCurveTo']);
 const ctx2d = new Proxy({}, {
   get(_, k) {
     if (k === 'measureText') return t => ({ width: String(t).length * 6 });
+    if (GEOM.has(k)) return (...a) => {
+      calls.push(k);
+      if (a.some(v => typeof v === 'number' && !Number.isFinite(v)))
+        nanDraws.push(`${k}(${a.map(v => typeof v === 'number' ? v : typeof v).join(', ')})`);
+    };
     if (k === 'createImageData') return (w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h });
     if (k === 'canvas') return mkEl('canvas');
     return (...a) => { calls.push(k); return undefined; };
@@ -86,7 +102,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; } };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -168,6 +184,140 @@ for (const [id, min] of [['worldChips', 0], ['shadeChips', 3], ['trailChips', 4]
   if (!ok) bad++;
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} #${id} populated at load (${n} children, want >= ${min})`);
 }
+/* Placement: a drag must move the node you grabbed, on the two axes you can
+ * see, and leave the other two alone.
+ *
+ * That last clause is the whole design and the easiest thing to get silently
+ * wrong — a placement editor that quietly rewrites the axes it is not showing
+ * would look right on screen and put the node somewhere nobody chose. The
+ * pixel geometry is inverted here rather than assumed, so this also fails if
+ * drawSpace's projection and the pointer's idea of it ever drift apart.
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  P.imported.length = 0;
+  for (let i = 0; i < 6; i++)
+    P.imported.push({ name: 'node' + i, mags: new Float32Array(64), fit: 1, pos: [0.5, 0.5, 0.5, 0.5] });
+  P.placeOnCell();
+  P.setAxes([0, 1]);
+  P.setTel(null);
+  P.drawSpace();                       /* which is what publishes the view box */
+  const V = P.view;
+  T(V.S > 0 && Number.isFinite(V.ox) && Number.isFinite(V.oy),
+    `the view box is known without a module attached (S ${V.S})`);
+
+  const at = (u, v) => [V.ox + u * V.S, V.oy + (1 - v) * V.S];
+  const pos = i => [...P.imported[i].pos];
+
+  /* grab the node that is drawn where we press */
+  const target = 3, before = pos(target);
+  T(P.pickNode(...at(before[0], before[1])) === target,
+    'a press on a node picks that node');
+  T(P.pickNode(...at(0.5, 0.02)) === -1, 'a press on empty space picks nothing');
+
+  /* the drag itself */
+  const others = [0, 1, 2, 4, 5].map(pos);
+  P.moveNodeTo(target, ...at(0.25, 0.75));
+  const moved = pos(target);
+  T(Math.abs(moved[0] - 0.25) < 1e-6 && Math.abs(moved[1] - 0.75) < 1e-6,
+    `the node lands where the pointer did (${moved[0].toFixed(3)} ${moved[1].toFixed(3)})`);
+  T(moved[2] === before[2] && moved[3] === before[3],
+    'and the two axes that are not on screen are untouched');
+  T([0, 1, 2, 4, 5].every((n, j) => pos(n).every((v, a) => v === others[j][a])),
+    'no other node moved');
+
+  /* the other half of the space, reached the way the instrument reaches it */
+  P.setAxes([2, 3]);
+  P.moveNodeTo(target, ...at(0.1, 0.9));
+  const deep = pos(target);
+  T(Math.abs(deep[2] - 0.1) < 1e-6 && Math.abs(deep[3] - 0.9) < 1e-6,
+    'switching the axis pair moves the other two');
+  T(deep[0] === moved[0] && deep[1] === moved[1],
+    'and leaves the first two where they were put');
+
+  /* the cube is the reachable space, so a drag cannot leave it */
+  P.moveNodeTo(target, V.ox - 400, V.oy - 400);
+  const out = pos(target);
+  T(out.every(v => v >= 0 && v <= 1), `a drag past the edge clamps (${out[2].toFixed(2)} ${out[3].toFixed(2)})`);
+
+  /* re-place is the way back */
+  P.placeOnCell();
+  const home = pos(target);
+  T(home.filter(v => Math.abs(v - 0.5) > 1e-6).length === 2,
+    're-place puts every node back on a 24-cell vertex');
+  T(P.place.sel === -1, 'and drops the selection, which no longer means anything');
+
+  /* A plane the nodes have no coordinates on. Reachable: the module reports
+     six dimensions, you switch to the (4,5) plane, and your imported set is
+     four-dimensional. Nothing is there to grab and nothing can be put there. */
+  P.setAxes([4, 5]);
+  const frozen = pos(target);
+  T(P.pickNode(...at(0.5, 0.5)) === -1, 'nothing is grabbable on a plane the nodes do not have');
+  P.moveNodeTo(target, ...at(0.5, 0.5));
+  T(pos(target).every((v, a) => v === frozen[a]), 'and nothing can be dropped onto one');
+
+  /* what gets saved is what was placed, which is the point of all of it */
+  P.setAxes([0, 1]);
+  P.moveNodeTo(0, ...at(0.8, 0.3));
+  const blob = P.importedBlob();
+  const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+  T(Math.abs(dv.getFloat32(32, true) - 0.8) < 1e-6 && Math.abs(dv.getFloat32(36, true) - 0.3) < 1e-6,
+    'the world carries the moved position, not the vertex it started on');
+
+}
+console.log('');
+
+/* Following: once the module holds the set, moving a node re-sends it — but a
+ * drag ends many times a second and a world is about 6.5 KB, so the sends must
+ * collapse rather than queue. Driven through a stubbed transfer that can be
+ * released by hand, because the thing being tested is the ordering.
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  const tick = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+  const sends = [], pending = [];
+  const realPut = globalThis.KYK.putWorld;
+  globalThis.KYK.putWorld = (l, blob) => new Promise((res, rej) => {
+    sends.push(blob.length); pending.push({ res, rej });
+  });
+  P.setLink({});                 /* only needs to be non-null; the send is stubbed */
+
+  /* Not awaited: if this ever *does* send, the stub never resolves and awaiting
+     it would hang the run instead of failing it. */
+  P.place.sent = false;
+  P.syncPlacement();
+  await tick();
+  T(sends.length === 0, 'moving a node sends nothing until the set has been sent once');
+
+  P.place.sent = true;
+  const first = P.syncPlacement();
+  await tick();
+  T(sends.length === 1, 'the first drop starts a send');
+  P.syncPlacement(); P.syncPlacement(); P.syncPlacement();
+  await tick();
+  T(sends.length === 1, 'three more drops while it is in flight start nothing');
+  pending.shift().res(true);
+  await tick();
+  T(sends.length === 2, 'and collapse into exactly one resend, not three');
+  pending.shift().res(true);
+  await first;
+  T(sends.length === 2 && P.place.sent, 'which settles, still following');
+
+  /* A link that has gone away must stop the following rather than retry into
+     it: the alternative is a failure every time the hand moves. */
+  const failing = P.syncPlacement();
+  await tick();
+  pending.shift().rej(new Error('link closed'));
+  await failing;
+  T(!P.place.sent, 'a send that fails stops the following rather than storming');
+  T(els.msg.textContent.includes('stopped taking'), `and says so (${els.msg.textContent})`);
+
+  globalThis.KYK.putWorld = realPut;
+  P.setLink(null);
+  els.msg.textContent = '';
+}
+console.log('');
+
 /* Export: the saved file must be the arrangement you placed, under the name
  * you typed.
  *
@@ -183,7 +333,8 @@ for (const [id, min] of [['worldChips', 0], ['shadeChips', 3], ['trailChips', 4]
   const NODE_MAGS = k => Float32Array.from({ length: 64 }, (_, i) => k / (i + 1));
   const want = [NODE_MAGS(0.5), NODE_MAGS(-0.25)];
   P.imported.length = 0;
-  want.forEach((mags, i) => P.imported.push({ name: 'w' + i, mags, fit: 1 }));
+  want.forEach((mags, i) => P.imported.push({ name: 'w' + i, mags, fit: 1, pos: [0.5, 0.5, 0.5, 0.5] }));
+  P.placeOnCell();
 
   const downloads = [];
   let lastBlob = null;
@@ -288,6 +439,21 @@ const parsed = P.parsePanel(DESC);
 }
 console.log('');
 
+/* Every draw case runs with imported nodes on the canvas and one of them
+   selected, because that is now a state the space view can be in at any time.
+   The case that matters is n=6: a four-dimensional set placed while the module
+   reports six dimensions puts axes on screen that the nodes do not have, and
+   the node layer has to say "not here" rather than draw at the origin or at
+   NaN. Nothing throws either way — that is what nanDraws is for. */
+{
+  const cell = [];
+  for (let i = 0; i < 5; i++) cell.push({ name: 'placed' + i, mags: new Float32Array(64), fit: 1,
+                                          pos: [0.2 + 0.15 * i, 0.8 - 0.1 * i, 0.5, 0.35] });
+  P.imported.length = 0;
+  P.imported.push(...cell);
+  P.place.sel = 2;
+}
+
 for (const [name, t] of CASES) {
   P.setTel(t);
   try {
@@ -309,5 +475,20 @@ for (const [name, t] of CASES) {
     if (line) console.log(`          ${line.trim()}`);
   }
 }
+/* The same plane, drawn. A missing guard here throws nothing and paints
+   nothing: it asks the canvas for a mark at NaN, which is why the watch below
+   exists rather than a try/catch. */
+P.setTel(tel({ n: 6 }));
+P.setAxes([4, 5]);
+try { P.drawSpace(); P.drawSound(); } catch (e) { bad++; console.log(`  THROW drawing the (4,5) plane: ${e.message}`); }
+P.setAxes([0, 1]);
+
+if (nanDraws.length) {
+  bad++;
+  const shown = [...new Set(nanDraws)].slice(0, 6);
+  console.log(`\n  FAIL ${nanDraws.length} draw${nanDraws.length > 1 ? 's' : ''} at a coordinate that is not a number:`);
+  for (const d of shown) console.log(`          ${d}`);
+} else console.log('\n  ok   nothing was drawn at a coordinate that is not a number');
+
 console.log(bad ? `\npagecheck: ${bad} of ${CASES.length} cases throw` : '\npagecheck: every case survived');
 process.exit(bad ? 1 : 0);

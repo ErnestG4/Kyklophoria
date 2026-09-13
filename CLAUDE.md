@@ -88,8 +88,19 @@ Export is done: name a set on the page and **save** writes the module's own
 "save, copy to `/kyklophoria` on the card", which is a manual step but a real
 loop, and a file you can hand to somebody.
 
-**Next job:** moving imported nodes rather than taking the 24-cell placement —
-placement is the half of curating the page cannot do, and the format already
-carries arbitrary positions, so this is page work and no firmware change.
-After that, writing to the card from the module, which removes the copy step
-and is the last thing standing between the page and a library.
+Placement is done too: nodes are dragged in the space view, two axes at a time,
+and once the set has been sent every drop re-sends it so you hear where you put
+something.
+
+**Next job:** writing to the card from the module, which removes the copy step
+and is the last thing between the page and a library. It is the first thing
+here that *writes* to the SD card, so re-read `docs/sdk-quirks.md` on SDMMC
+before starting: the IDMA cannot reach DTCM, and in the wrong section it does
+not error, it corrupts.
+
+One thing the placement work turned up that is worth keeping: `web/pagecheck.mjs`
+now records any draw call given a coordinate that is not a number. A stub
+canvas swallows `arc(NaN, …)` and so does a real one — it draws nothing, which
+looks exactly like a mark that is off screen — so this is a class of bug whose
+only symptom is something quietly missing from the picture. It caught a node
+being drawn on an axis it does not have the first time it was armed.

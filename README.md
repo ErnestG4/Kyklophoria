@@ -97,11 +97,22 @@ export of an import is the file you started from. Saving needs no module
 attached; curating a folder of worlds offline is a reasonable way to use the
 page.
 
-**Where this stops, for now.** Import places nodes on the 24-cell's own vertices
-and there is no way to move them yet. The card is still read-only from the
-module, so a world sent over the link lives in RAM and is gone at the next boot
-— save it and copy it across to keep it. None of this is needed to play the
-instrument; it is needed to keep what you make.
+Nodes arrive on the 24-cell's vertices and can be **dragged** where you want
+them. The space view shows two axes of four, so a drag sets those two and
+leaves the rest alone; the other two are reached by switching the pair, which
+is what the axis buttons and the arrow keys already do. That is not a
+concession to the screen — it is how the instrument is played, one plane at a
+time, and placing a node the same way puts it somewhere you can describe. A
+node far away in the axes you cannot see is drawn faint, because a projection
+that drew it bright would be lying about the extra directions the whole design
+exists for. Once the set has been sent, every drop re-sends it, so you hear
+where you just put something; **re-place** is the way back to the arrangement
+you were given.
+
+**Where this stops, for now.** The card is still read-only from the module, so
+a world sent over the link lives in RAM and is gone at the next boot — save it
+and copy it across to keep it. None of this is needed to play the instrument;
+it is needed to keep what you make.
 
 ## Worlds
 
@@ -230,7 +241,7 @@ CPU readout. It also mirrors the panel — which page you are on, what its six
 knobs do and where they are sitting — and carries the things that are setup
 rather than playing: the morph target and whether it is aimed, which motions are
 muted, which world to load from the card, and importing WAVs — which it can now
-name, send and save as a file.
+name, place by hand, send and save as a file.
 
 It is a readout first. Everything it shows comes *from* the module, including
 the state of its own controls, so two pages open at once agree and a preset load
@@ -265,16 +276,15 @@ flash together, or the page will parse an older shape than the module sends.
 ## Not built yet
 
 Writing to the card from the module, so keeping a world does not mean moving a
-file by hand. Moving imported nodes rather than taking the placement you are
-given. FM and sync
+file by hand. FM and sync
 inputs. The filter, drive and FM-index payload lanes — only CV out A is routed.
 Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 (non-lattice) spaces.
 
 **What has been played and what has not.** The twenty-one built-in worlds are
 what has had real time on the bench. Morphing, user worlds, import and the card
-are tested by the suite — 420 world-pair switches, 99 link checks, 96 web
-checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
+are tested by the suite — 420 world-pair switches, 99 link checks, 96 link-level
+and 55 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
 them as the new half of a beta.
 
 ## Layout
