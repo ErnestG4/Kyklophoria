@@ -139,6 +139,56 @@ fifth had the same shape — every check of the send path asked whether the modu
   before it was written; `tools/fmsearch` produced three wrong answers in a row
   (metric gaming, then worse gaming, then winner's curse) before an honest one.
 
+## If you point agents at this
+
+Scope them by **paradigm, not by file**. Combust's correction, and it is the
+right one: five agents each told "find issues in your region" is five auditors
+with one lens looking at five places, which is a partition of the codebase and
+not of expertise. What you want is one artifact seen through several kinds of
+attention.
+
+The lenses that fit this instrument:
+
+- **A player's ears.** Is each world worth turning a knob on? Where is the travel
+  dead, which axes fight, what does the instrument not do that a hand reaches
+  for? This is the one an agent is weakest at and the one that matters most, so
+  its job is a shortlist of places to point your ears rather than a verdict. It
+  can still do real work: `tools/kykworlds` measures variety per unit of travel,
+  direction spread and duplicate cells, `tools/importfit` measures what import
+  costs, and "three of Harmonic's four axes are inert" is findable from those.
+- **Instrument ergonomics.** Six pots, three buttons, six pages, three tabs. What
+  is unreachable, unlabelled, or makes you remember state the instrument will not
+  show you.
+- **Physics and acoustics.** The modal worlds are tuned physical models and Vowel
+  is a voice model. Is the physics honest, and what would somebody who builds
+  vibraphones say is missing?
+- **Numerics and algorithms.** The lens that found the real bug in the 2026-09-13
+  pass. Keep it.
+- **Representation.** Not the code: what a 4-D space of 64 harmonics with a
+  shared phase spectrum can and cannot hold. The cosine question lives here, and
+  so does whether K = 64 is the right number.
+
+Two mechanics that matter as much as the lenses:
+
+- **Give them a space to argue in.** Each writes its own file (no append races),
+  then every agent is handed the others' files and asked where it disagrees, what
+  it withdraws, and what it now thinks the top three are. Two rounds, same agents
+  both times, so the one defending the physics is the one who wrote it. Five
+  monologues is not a design review.
+- **Do not tell an improvement pass to "verify before reporting".** That
+  instruction is right for bug-hunting and it suppresses exactly the
+  improvement-shaped thinking you wanted. Ask instead for every claim to be
+  labelled *measured*, *reasoned* or *hunch*, and for hunches not to be
+  suppressed.
+
+What the file-partitioned pass actually produced, for calibration: one real
+OOM fix, one real corrupting-read fix, a long list of chores, and one finding
+whose "fix" removed a behaviour that was being used every day. The gap that
+mattered — that a world you made could never be one end of a morph — was found
+by Combust playing the instrument for an evening. Agents are good at "is this
+line wrong" and bad at "is this instrument missing something", because the second
+question needs hands.
+
 ## Where things stand
 
 Beta. The twenty-one built-in worlds have real bench time; morphing, user
