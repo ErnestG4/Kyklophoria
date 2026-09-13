@@ -52,9 +52,17 @@
   #worldbar .cap { letter-spacing: .1em; flex: none; }
   #worldbar .sp { flex: 1; }
   #worldChips, #shadeChips { display: flex; gap: 6px; flex-wrap: wrap; }
-  /* one line, clipped rather than pushing the row taller */
-  #worldNote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
-               white-space: nowrap; font-style: italic; }
+  /* A row of its own, and allowed to wrap.
+     
+     It was one line, clipped with an ellipsis, sharing a row with the shade
+     and tail chips — which was right when a note was "one line, for the
+     page's list" and six words long. The notes now say what each of the four
+     axes does and give the formula where there is one, because a world is a
+     space you steer by hand and this is the only place that can tell you what
+     you are steering. Clipping that at forty characters would be keeping the
+     cost and throwing away the point. */
+  #worldNote { flex: 1 1 100%; min-width: 0; white-space: normal; line-height: 1.4;
+               font-style: italic; }
   #worldNote.peek { color: var(--ink); font-style: normal; }
   .chip { background: #0f141a; color: var(--dim); border: 1px solid #263039; border-radius: 3px;
           padding: 1px 8px; font: inherit; cursor: pointer; white-space: nowrap; }
@@ -138,13 +146,14 @@
     <span id="worldChips"></span>
   </div>
   <div class="wrow">
-    <span id="worldNote"></span>
-    <span class="sp"></span>
     <span class="cap">SHADE</span>
     <span id="shadeChips"></span>
     <span class="sp"></span>
     <span class="cap">TAIL</span>
     <span id="trailChips"></span>
+  </div>
+  <div class="wrow">
+    <span id="worldNote"></span>
   </div>
   <div class="wrow">
     <span class="cap">MORPH</span>
