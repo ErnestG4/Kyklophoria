@@ -444,6 +444,35 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
         `a sent world sounds the same whichever world it replaced (worst sample ${
           Math.max(worst(arrivals[0], arrivals[1]), worst(arrivals[0], arrivals[2]))} of 255)`);
 
+  /* What the engine actually renders for a node's coefficients.
+   *
+   * The page draws "what the module will make of this waveform" beside the
+   * imported one, and plays the two against each other, so the page's idea of
+   * the render has to be the module's idea of it. It was not: RenderFrame sums
+   * mag.cos(h.theta + phi) and for a sine-phase world the engine's phi makes
+   * that *minus* sin(h.theta), while the page summed plus sin — so every
+   * rendered trace was drawn mirrored and every fit looked worse than it was.
+   *
+   * Every node identical, so where the position sits cannot matter. */
+  {
+    const mags = new Float32Array(64);
+    for (let h = 0; h < 6; h++) mags[h] = (h % 2 ? -1 : 1) / (h + 1);
+    const ns = [];
+    for (let i = 0; i < 24; i++) ns.push({ pos: [0.5, 0.5, 0.5, 0.5], mags });
+    await KYK.putWorld(link, KYK.buildUserWorld(ns, { n: 4, k: 64, sigma: 0.26, name: 'convention' }));
+    const f = await frame();
+    const N = f.length, want = new Float64Array(N);
+    for (let i = 0; i < N; i++) {
+      let y = 0;
+      for (let h = 0; h < 64; h++) y -= mags[h] * Math.sin(2 * Math.PI * (h + 1) * i / N);
+      want[i] = y;
+    }
+    let sa = 0, sb = 0, ab = 0;
+    for (let i = 0; i < N; i++) { sa += want[i] * want[i]; sb += f[i] * f[i]; ab += want[i] * f[i]; }
+    const c = ab / Math.sqrt(sa * sb || 1);
+    check(c > 0.999, `a node renders as -sum m.sin(h.theta), no shift (corr ${c.toFixed(4)})`);
+  }
+
   /* A morph target is a blend, not a setting that is merely accepted.
    *
    * Everything that tested this asked whether the action came back with status

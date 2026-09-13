@@ -199,6 +199,14 @@
     <button class="chip" id="wavSave">save…</button>
     <span id="wavState" style="color: var(--dim)"></span>
   </div>
+  <div class="brow">
+    <span class="cap">HEAR</span>
+    <button class="chip" id="audPlay">audition</button>
+    <button class="chip" id="audA">as imported</button>
+    <button class="chip" id="audB">band-limited</button>
+    <button class="chip" id="audC">as rendered</button>
+    <span id="audState" style="color: var(--dim)"></span>
+  </div>
   <div class="bmid">
     <div class="pane">
       <canvas id="plane"></canvas>
@@ -859,8 +867,12 @@ async function syncPlacement() {
 function selectNode(i) {
   if (place.sel === i) return;
   place.sel = i;
+  /* What is playing belongs to the node it was built from, so picking another
+     one stops it rather than leaving a sound with no label. */
+  if (audition.node >= 0 && audition.node !== i) auditionStop();
   renderStrip();
   renderImport();
+  renderAudition();
 }
 
 function renderImport() {
@@ -1105,6 +1117,7 @@ $('wavSend').onclick = sendImported;
 $('wavSave').onclick = exportImported;
 $('wavPlace').onclick = () => { placeOnCell(); renderStrip(); renderImport(); syncPlacement(); };
 $('wavClear').onclick = () => {
+  auditionStop();
   imported.length = 0; place.sel = -1; place.sent = false;
   renderStrip(); renderImport();
 };
@@ -1868,14 +1881,23 @@ const CYC = 512;                 /* points per drawn cycle: plenty at 64 harmoni
  * the sound — it is the waveform the engine builds when Morph locks onto that
  * vertex. Worth drawing precisely because it is the part import throws away:
  * a node is a projection onto the sine basis, and what did not survive is only
- * visible by putting the two side by side. */
+ * visible by putting the two side by side.
+ *
+ * Negated, and that is not a detail. `RenderFrame` sums mag·cos(hθ + φ), and
+ * for a sine-phase world the engine's φ makes that −sin(hθ) — checked against
+ * the module rather than assumed: a user world of known coefficients sent to
+ * kykdesk comes back correlating 1.0000 at shift 0 and *negative* polarity
+ * against this sum. The first version of this function had the sign the other
+ * way, so the inspector drew the rendered trace mirrored against the imported
+ * one and every fit looked worse than it was. Inaudible on its own — a global
+ * polarity flip always is — and wrong on screen, which is where this is used. */
 function renderFromMags(mags, out = CYC) {
   const y = new Float32Array(out);
   for (let h = 0; h < mags.length; h++) {
     const a = mags[h];
     if (!a) continue;
     const w = 2 * Math.PI * (h + 1) / out;
-    for (let i = 0; i < out; i++) y[i] += a * Math.sin(w * i);
+    for (let i = 0; i < out; i++) y[i] -= a * Math.sin(w * i);
   }
   return y;
 }
@@ -2072,6 +2094,137 @@ function drawInspect() {
   if (w.fit < 0.8 && w.mode !== 'spectrum')
     line('a node is a projection onto the sine basis;', '#869cb1'), line('what sat in the cosine half is gone', '#869cb1');
 }
+
+/* ── hearing what import costs ────────────────────────────────────────────
+ *
+ * The corpus measurement is in energy, and energy is not audibility: a wave
+ * keeping 77% of its energy does not sound 77% right, because what goes is the
+ * phase relationship between partials. The only way to settle whether that
+ * matters is to listen to the same wave three ways, so this plays all three at
+ * once and switches between them.
+ *
+ *   as imported    the cycle from the file, every harmonic it has
+ *   band-limited   the same cycle with everything above K discarded, which is
+ *                  the ceiling any representation at this K has
+ *   as rendered    what the module will actually make of it: the signed sine
+ *                  coefficients the node stores, which is the imported cycle
+ *                  with its cosine half thrown away
+ *
+ * Imported against band-limited is what the band limit costs. Band-limited
+ * against rendered is what the *phase* costs, on its own, which is the number
+ * the whole representation question turns on.
+ *
+ * All three are one cycle in a buffer of the same length, looped at rate 1.0:
+ * no resampling, no pitch shift, nothing that treats one of them differently
+ * from the others. They start together and stay sample-aligned, so switching
+ * is instant and phase-locked rather than a restart you have to remember
+ * across. The fundamental is whatever sampleRate/512 comes to, around 86 to 94
+ * Hz — low on purpose, because that puts the most harmonics where you can hear
+ * them.
+ *
+ * Levels are matched. The projection genuinely loses energy and the quieter of
+ * two sounds is reliably judged the worse one, so comparing them at their own
+ * levels would answer a different question than the one being asked. The gap
+ * is printed instead.
+ */
+const audition = { ctx: null, gains: [], srcs: [], which: 2, node: -1 };
+
+/* Everything above harmonic K, removed. Round trip through a DFT rather than a
+   filter: the point is to be exactly the band limit and nothing else. */
+function bandLimit(y, K) {
+  const N = y.length, out = new Float32Array(N);
+  for (let h = 1; h <= K; h++) {
+    let re = 0, im = 0;
+    for (let i = 0; i < N; i++) {
+      const th = 2 * Math.PI * h * i / N;
+      re += y[i] * Math.cos(th); im += y[i] * Math.sin(th);
+    }
+    re *= 2 / N; im *= 2 / N;
+    for (let i = 0; i < N; i++) {
+      const th = 2 * Math.PI * h * i / N;
+      out[i] += re * Math.cos(th) + im * Math.sin(th);
+    }
+  }
+  return out;
+}
+const rmsOf = (y) => { let s = 0; for (const v of y) s += v * v; return Math.sqrt(s / y.length); };
+
+function auditionStop() {
+  for (const s of audition.srcs) { try { s.stop(); } catch {} }
+  audition.srcs = []; audition.gains = []; audition.node = -1;
+  renderAudition();
+}
+
+function auditionStart() {
+  const w = imported[place.sel];
+  if (!w || !w.thumb || !w.render) return;
+  auditionStop();
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { say('this browser has no Web Audio', true); return; }
+    audition.ctx = audition.ctx || new AC();
+  } catch (e) { say('audio: ' + e.message, true); return; }
+  const ctx = audition.ctx;
+  if (ctx.state === 'suspended') ctx.resume();
+  const waves = [w.thumb, bandLimit(w.thumb, 64), w.render];
+  const r = waves.map(rmsOf);
+  const ref = r[0] || 1;
+  audition.srcs = []; audition.gains = [];
+  const t0 = ctx.currentTime + 0.08;          /* one start time for all three */
+  const match = r.map(v => 0.25 * (ref / (v || ref)));
+  waves.forEach((y, i) => {
+    const buf = ctx.createBuffer(1, y.length, ctx.sampleRate);
+    buf.copyToChannel(Float32Array.from(y), 0);
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    const g = ctx.createGain();
+    /* matched to the imported wave's level, so what you hear is timbre */
+    g.gain.value = i === audition.which ? match[i] : 0;
+    src.connect(g); g.connect(ctx.destination);
+    src.start(t0);
+    audition.srcs.push(src); audition.gains.push(g);
+  });
+  audition.node = place.sel;
+  /* The matched gains, worked out once. Switching then only chooses which of
+     them is open, so the levels cannot drift apart from the ones the state
+     line is reporting. */
+  audition.match = r.map(v => 0.25 * (ref / (v || ref)));
+  audition.levels = r.map(v => 20 * Math.log10((v || 1e-9) / ref));
+  renderAudition();
+}
+
+function auditionPick(i) {
+  audition.which = i;
+  audition.gains.forEach((g, j) => {
+    /* A short ramp rather than a step. A hard gain switch clicks, and a click
+       is precisely the artefact this exists to listen for — it would be heard
+       as a property of whichever version you switched to. */
+    g.gain.setTargetAtTime(j === i ? audition.match[j] : 0, audition.ctx.currentTime, 0.004);
+  });
+  renderAudition();
+}
+
+function renderAudition() {
+  const w = imported[place.sel], live = audition.node >= 0;
+  $('audPlay').disabled = !w || !w.thumb;
+  $('audPlay').classList.toggle('on', live);
+  $('audPlay').textContent = live ? 'stop' : 'audition';
+  ['audA', 'audB', 'audC'].forEach((id, i) => {
+    $(id).disabled = !live;
+    $(id).classList.toggle('on', live && audition.which === i);
+  });
+  if (!w) { $('audState').textContent = 'pick a waveform to hear it'; return; }
+  if (!live) { $('audState').textContent = `${w.name} — three ways, levels matched`; return; }
+  const f0 = audition.ctx ? audition.ctx.sampleRate / CYC : 0;
+  const drop = audition.levels ? audition.levels[2] : 0;
+  $('audState').textContent =
+    `${imported[audition.node].name} at ${f0.toFixed(1)} Hz · rendered sits ${drop.toFixed(1)} dB down, matched here`;
+}
+renderAudition();
+$('audPlay').onclick = () => (audition.node >= 0 ? auditionStop() : auditionStart());
+$('audA').onclick = () => auditionPick(0);
+$('audB').onclick = () => auditionPick(1);
+$('audC').onclick = () => auditionPick(2);
 
 /* ── switching views ───────────────────────────────────────────────────── */
 let viewMode = 'play';
