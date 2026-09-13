@@ -104,12 +104,20 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                           /* u8 card, u8 slot: a card file into a slot, rather
                              than straight to the live world as op 7 does. */
                           kActCardToSlot = 15,
-                          /* u8 slot: sample the *live* world at the 24-cell
-                             vertices and write it into that slot as a world you
-                             can edit. For a built-in there is nothing else to
-                             do — a formula cannot be handed over as nodes — and
-                             for a world that came from a slot the host should
-                             read that slot instead and get it exactly. */
+                          /* u8 slot [, u8 world]: sample a world at the
+                             24-cell vertices and write it into that slot as a
+                             world you can edit. With no second argument, or
+                             0xFF, it samples whatever is *live*; with a world
+                             index it samples that built-in instead, without
+                             disturbing what is playing — which is what "start
+                             a new world from Lock" needs. Formula worlds only
+                             for the named form: a lattice has to be expanded
+                             into a megabyte first, and the live path already
+                             covers one that is.
+                             A formula cannot be handed over as nodes, so this
+                             is the only way to get one as a set of spectra; a
+                             world that came from a slot should be read back
+                             with 0x6C instead and arrives exactly. */
                           kActSnapshot   = 16 };
 /* Slots, matching the card's own list size so the two stay one to one. A u8
    index then still has room for the two sentinels below. */

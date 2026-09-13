@@ -265,7 +265,17 @@ static volatile int8_t  gSlotStore  = -1;      /* a completed transfer's destina
 static volatile int8_t  gSlotLiveReq = -1;
 static volatile int8_t  gSlotTargetReq = -1;
 static volatile int8_t  gCardToSlotReq  = -1;   /* destination slot, -1 = none */
-static volatile int8_t  gSnapReq        = -1;   /* snapshot the live world here */
+static volatile int8_t  gSnapReq        = -1;   /* snapshot into this slot */
+static volatile uint8_t gSnapWorld      = 0xFFu; /* which world, 0xFF = the live one */
+/* One World of control-thread scratch, in AXI.
+ *
+ * AXI and not DTCM: a World is 7 KB and what is left of DTCM *is* the stack —
+ * main loop, audio ISR on top of it, FPU exception stacking. Put in DTCM this
+ * took the region from 75.7% to 81.0% for something that runs on the control
+ * thread and never touches the audio path, which is exactly where gMorphWorld
+ * already lives. Shared by the card-file validator and the named snapshot
+ * rather than one each, because 7 KB is 7 KB. */
+static World KYK_AXI gScratch;
 static volatile uint8_t gCardToSlotCard = 0;    /* which card entry */
 
 static volatile uint8_t gUserReq = 0u;
@@ -725,10 +735,19 @@ struct ModuleSource : ExtSource
                 gSlotTargetReq = args[0] == 0xFFu ? (int8_t)kSlotCount : (int8_t)args[0];
                 return 0u;
             case kActSnapshot:
+            {
                 if(len < 1 || args[0] >= kSlotCount) return 2u;
+                const uint8_t which = len >= 2 ? args[1] : 0xFFu;
+                /* A named world must be one with a formula. A lattice would
+                   have to be expanded into a megabyte of SDRAM first, and the
+                   live path already covers one that is already expanded. */
+                if(which != 0xFFu && (which >= worlds::kCount || !worlds::IsAnalytic(which)))
+                    return 2u;
                 if(gWorldBusy || gSnapReq >= 0) return 9u;
-                gSnapReq = (int8_t)args[0];
+                gSnapWorld = which;
+                gSnapReq   = (int8_t)args[0];
                 return 0u;
+            }
             case kActCardToSlot:
                 /* Deferred, because a card read is slow and the read path is
                    already on the control loop. Unlike a save, which touches no
@@ -1001,8 +1020,18 @@ static void ServeWorldRequest()
     {
         const uint8_t sl = (uint8_t)gSnapReq;
         gSnapReq = -1;
-        const World& live = gWorlds[gBufIdx];
-        if(sl < kSlotCount && live.Ready())
+        /* A named world is built into scratch, so sampling one leaves whatever
+           is playing alone — which is what "start a new world from Lock" wants.
+           A null vertex table is deliberate: the vertex worlds hold pointers
+           into one, so Point refuses them here rather than being handed a table
+           the morph is using. Reach those through the live path instead. */
+        const uint8_t which = gSnapWorld;
+        gSnapWorld = 0xFFu;
+        const World* srcp = &gWorlds[gBufIdx];
+        if(which != 0xFFu)
+            srcp = worlds::Point(which, gScratch, kBootP, nullptr, nullptr) ? &gScratch : nullptr;
+        const World& live = *(srcp ? srcp : &gWorlds[gBufIdx]);
+        if(sl < kSlotCount && srcp && live.Ready())
         {
             const int n = 4;
             const int k = live.K() < kShapeK ? live.K() : kShapeK;
@@ -1018,7 +1047,8 @@ static void ServeWorldRequest()
                 p[6] = (uint8_t)n; p[7] = (uint8_t)k; p[8] = (uint8_t)kWorldNodes; p[9] = 1u;
                 const float sigma = 0.26f;
                 std::memcpy(p + 10, &sigma, 4);
-                const char* nm = gWorldIdx == 0xFFu ? "snapshot" : worlds::Get(gWorldIdx).name;
+                const uint8_t named = which != 0xFFu ? which : gWorldIdx;
+                const char*   nm    = named == 0xFFu ? "snapshot" : worlds::Get(named).name;
                 std::snprintf((char*)(p + 16), kUserNameLen + 1, "%s", nm);
                 size_t at = kUserHeader;
                 for(int v = 0; v < kWorldNodes; v++)
@@ -1060,13 +1090,7 @@ static void ServeWorldRequest()
         const size_t n = ReadCardWorld(gCardToSlotCard);
         if(n && sl < kSlotCount && n <= kUserBlobMax)
         {
-            /* AXI, not DTCM. A World is 7 KB and what is left of DTCM *is* the
-               stack — main loop, audio ISR on top of it, FPU stacking — so a
-               validation buffer belongs where gMorphWorld already lives. Put in
-               DTCM it took the region from 75.7% to 81.0% for a probe that runs
-               on the control thread and never touches the audio path. */
-            static World KYK_AXI probe;
-            if(probe.UseUserWorld(gCardStage, n, kBootP, nullptr) == UserError::Ok)
+            if(gScratch.UseUserWorld(gCardStage, n, kBootP, nullptr) == UserError::Ok)
             {
                 std::memcpy(gSlotBlob[sl], gCardStage, n);
                 gSlotLen[sl] = (uint32_t)n;

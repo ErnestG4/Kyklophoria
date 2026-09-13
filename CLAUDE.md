@@ -128,6 +128,13 @@ fifth had the same shape — every check of the send path asked whether the modu
   three different worlds must give byte-identical frames. 0 with the fix, 173
   of 255 without, every run either way. When a check needs a timing window to
   be right, it is usually asking the wrong question.
+- **Wait for the thing you are waiting for.** A check that nudged the control
+  frame and then waited for the *frame* to stop changing failed half the time on
+  correct code, because the control frame is slewed and a frame can sit
+  unchanged for several reads while the position is still travelling. Telemetry
+  reports the position; waiting for that is deterministic. Every flaky wait in
+  this suite has had the same shape — a proxy for the real condition, chosen
+  because it was easier to observe.
 - Measure before building. `tools/worldbasis` killed a translation feature
   before it was written; `tools/fmsearch` produced three wrong answers in a row
   (metric gaming, then worse gaming, then winner's curse) before an honest one.

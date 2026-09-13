@@ -128,6 +128,15 @@ for. Once the set has been sent, every drop re-sends it, so you hear where you
 just put something; **re-place** is the way back to the arrangement you were
 given.
 
+**New from Lock** is where you start when you have no wavs in mind. Lock is
+twenty-four real waveforms on the 24-cell, one family per rotation plane, which
+is a far better thing to edit than an empty set — and better than a slot
+pre-filled with silence, which is why there are no blank slots: a slot either
+holds a world or holds nothing and says so. A blank world that plays is silence,
+and silence that looks deliberate is the worst state a synth can show you. It is
+sampled by name rather than by being made live, so pressing it does not interrupt
+whatever you are listening to.
+
 **Capture what is playing** opens the live world as an editable set, which is
 the other way into the build view. A world that came from a slot comes back
 *exactly* — the bytes it was given. A built-in cannot be handed over as nodes at

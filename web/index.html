@@ -220,6 +220,7 @@
     <button class="chip" id="wavPick">add wavs…</button>
     <button class="chip" id="wavMode">shape</button>
     <button class="chip" id="wavClear">clear</button>
+    <button class="chip" id="wavNew">new from Lock</button>
     <button class="chip" id="wavCapture">capture what is playing</button>
     <span class="sp"></span>
     <span class="cap">WORLD</span>
@@ -962,6 +963,7 @@ function renderImport() {
      and there is nothing for a link to do in it. */
   $('wavSave').disabled = !n;
   $('wavCapture').disabled = !link;
+  $('wavNew').disabled = !link;
   $('wavPlace').disabled = !n;
   $('wavClear').disabled = !n;
   if (!n) { $('wavState').textContent = link ? '' : 'connect to send'; return; }
@@ -1073,17 +1075,31 @@ function exportImported() {
  * That is not a workaround — having it in a slot is useful, and it means capture
  * and the library are the same object rather than two ideas about the same
  * bytes. */
-async function captureLive() {
+/* Start a world from Lock.
+ *
+ * Lock is the natural blank canvas: twenty-four real waveforms on the 24-cell,
+ * one family per rotation plane, which is a far better thing to edit than an
+ * empty set — and better than a slot pre-filled with silence, since a blank
+ * world that plays is silence, and silence that looks deliberate is the worst
+ * state a synth can show you. Hence no "blank" slots: a slot either holds a
+ * world or holds nothing and says so.
+ *
+ * Sampled by name rather than by making it live, so pressing this does not
+ * interrupt the patch you are listening to. */
+const newFromLock = () => captureLive(13);
+
+async function captureLive(named = 0xFF) {
   if (!link) return;
   try {
-    let slot = slots ? slots.live : 0xFF;
+    let slot = named === 0xFF && slots ? slots.live : 0xFF;
     let sampled = false;
     if (slot === 0xFF || !slots || !slots.names[slot]) {
       /* nothing of ours is playing, so sample the built-in into a free slot */
       await refreshSlots();
       const free = slots ? slots.names.findIndex(n => !n) : -1;
       if (free < 0) { say('every slot is full — forget one first', true); return; }
-      await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.snapshot, [free]), { urgent: true, timeoutMs: 4000 });
+      const args = named === 0xFF ? [free] : [free, named & 0xff];
+      await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.snapshot, args), { urgent: true, timeoutMs: 4000 });
       slot = free;
       sampled = true;
       await refreshSlots();
@@ -1244,7 +1260,8 @@ $('wavMode').onclick = () => {
 };
 $('wavSend').onclick = sendImported;
 $('wavSave').onclick = exportImported;
-$('wavCapture').onclick = captureLive;
+$('wavNew').onclick = newFromLock;
+$('wavCapture').onclick = () => captureLive();
 $('wavPlace').onclick = () => { placeOnCell(); renderStrip(); renderImport(); syncPlacement(); };
 $('wavClear').onclick = () => {
   auditionStop();

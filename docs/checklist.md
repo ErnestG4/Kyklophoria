@@ -530,6 +530,13 @@ Still open, ranked, from the same reviews:
       modal and bend worlds from their formulas but not a lattice world and not
       a Lock world, and "edit the world I just made" is the case that matters
       most.
+- [x] **New from Lock**, which is the answer to "should slots be blank-inited".
+      They should not: a blank world plays silence, and silence that looks
+      deliberate is the worst state a synth can show. A slot is either a world or
+      nothing and says which. What was wanted was a *starting point*, and Lock is
+      the natural one — twenty-four real waveforms, one family per rotation
+      plane. Snapshotted by name so it does not interrupt the patch, which took
+      an optional world index on action 16.
 - [ ] ~~What that idea is actually reaching for is a starting point to edit~~,
       and that is worth building: snapshot the *live* world into a slot by
       sampling it at the 24-cell vertices, so any world — FM, Plate, Vowel —

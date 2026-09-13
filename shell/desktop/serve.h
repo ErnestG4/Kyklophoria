@@ -95,6 +95,10 @@ public:
     /* A third, for answering GET_BASIS without disturbing either of the two
        that have a world pointing into them. */
     kyk::solids::VertexTable  basisTable;
+    /* Scratch for sampling a named world, so a snapshot never touches the one
+       that is playing. */
+    kyk::World                snapWorld;
+    kyk::solids::VertexTable  snapTable;
     uint8_t                   morphIdx = 0xFFu;
     uint16_t                  mute = 0u;
     float                     rateWas[kyk::kMaxPlanes] = {0.f};
@@ -284,10 +288,20 @@ public:
      * the only thing there is, and it is honestly a snapshot: twenty-four
      * spectra read off a formula at twenty-four points, which will be rendered
      * at sine phase and so will not sound like a phase-blind original. */
-    uint8_t Snapshot(uint8_t slot)
+    uint8_t Snapshot(uint8_t slot, uint8_t which = 0xFFu)
     {
-        if(slot >= kyk::kSlotCount || !world || !world->Ready()) return 2u;
-        const int n = 4, k = world->K() < kyk::kShapeK ? world->K() : kyk::kShapeK;
+        if(slot >= kyk::kSlotCount) return 2u;
+        /* A named built-in is built into scratch, so sampling one does not
+           disturb the world that is playing. */
+        const kyk::World* src = world;
+        if(which != 0xFFu)
+        {
+            if(which >= kyk::worlds::kCount || !kyk::worlds::IsAnalytic(which)) return 2u;
+            if(!kyk::worlds::Point(which, snapWorld, 8, nullptr, &snapTable)) return 2u;
+            src = &snapWorld;
+        }
+        if(!src || !src->Ready()) return 2u;
+        const int n = 4, k = src->K() < kyk::kShapeK ? src->K() : kyk::kShapeK;
         std::vector<uint8_t> out(kyk::UserBlobSize(n, k, kyk::kWorldNodes));
         uint8_t* p = out.data();
         std::memset(p, 0, out.size());
@@ -298,8 +312,9 @@ public:
         p[6] = (uint8_t)n; p[7] = (uint8_t)k; p[8] = (uint8_t)kyk::kWorldNodes; p[9] = 1u;
         const float sigma = 0.26f;
         std::memcpy(p + 10, &sigma, 4);
-        std::snprintf((char*)(p + 16), 17, "%s", world_idx == kNoWorld ? "snapshot"
-                                                 : kyk::worlds::Get(world_idx).name);
+        const uint8_t named = which != 0xFFu ? which : world_idx;
+        std::snprintf((char*)(p + 16), 17, "%s",
+                      named == kNoWorld ? "snapshot" : kyk::worlds::Get(named).name);
         size_t at = kyk::kUserHeader;
         for(int v = 0; v < kyk::kWorldNodes; v++)
         {
@@ -318,8 +333,8 @@ public:
             float mags[kyk::kMaxK] = {0.f}, pay[kyk::kMaxP] = {0.f};
             kyk::Weights wt;
             float folded[kyk::kMaxN];
-            world->Fold(pos, folded);
-            world->Evaluate(folded, eng ? eng->sharp : 0.f, mags, pay, wt);
+            src->Fold(pos, folded);
+            src->Evaluate(folded, eng ? eng->sharp : 0.f, mags, pay, wt);
             for(int a = 0; a < n; a++) { std::memcpy(out.data() + at, &pos[a], 4); at += 4; }
             for(int i = 0; i < k; i++) { std::memcpy(out.data() + at, &mags[i], 4); at += 4; }
         }
@@ -433,7 +448,7 @@ public:
             }
             case kyk::kActSnapshot:
                 if(len < 1) return 2u;
-                return Snapshot(args[0]);
+                return Snapshot(args[0], len >= 2 ? args[1] : 0xFFu);
             case kyk::kActCardToSlot:
             {
                 if(len < 2) return 2u;
