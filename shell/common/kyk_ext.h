@@ -49,6 +49,8 @@ constexpr uint8_t kCmdWorlds     = 0x65;   /* the list, and which one is live */
 constexpr uint8_t kCmdBasis      = 0x66;   /* an analytic world's formula, chunked */
 constexpr uint8_t kCmdPutWorld   = 0x67;   /* a user world, chunked host to module */
 constexpr uint8_t kCmdCardWorlds = 0x68;   /* what .kykw files the card holds */
+constexpr uint8_t kCmdPutSlot    = 0x69;   /* a user world into a numbered slot */
+constexpr uint8_t kCmdSlots      = 0x6A;   /* the slots, and which are live/target */
 constexpr uint8_t kCmdSetControl = 0x6E;   /* desktop bridge only */
 
 enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace = 2, kActRenderDiv = 3,
@@ -80,7 +82,21 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              toggle rather than a fire-and-forget button,
                              because an aim you cannot see is an aim you will be
                              surprised by. */
-                          kActAimMorph = 10 };
+                          kActAimMorph = 10,
+                          /* The worlds you made, kept as blobs and expanded on
+                             demand. A blob is 6.7 KB in SDRAM, which is at 5%
+                             of 64 MB, while an expanded World is 7 KB of DTCM
+                             or AXI with seventeen spare — so the library is
+                             blobs and only what is playing is a World. */
+                          kActSlotLive   = 11,   /* u8 slot: play it */
+                          kActSlotTarget = 12,   /* u8 slot, 0xFF clears: morph towards it */
+                          kActSlotFree   = 13 }; /* u8 slot: forget it */
+/* Slots, matching the card's own list size so the two stay one to one. A u8
+   index then still has room for the two sentinels below. */
+constexpr int     kSlotCount   = 32;
+/* A morph target that is one of yours has no world index, so it needs a name
+   of its own on the wire — 0xFF already means "no target at all". */
+constexpr uint8_t kMorphUser   = 0xFEu;
 constexpr uint16_t kMuteKepler = 0x8000u;
 
 struct ExtStats
@@ -138,6 +154,19 @@ struct ExtSource
     virtual uint8_t PutWorld(uint32_t total, uint32_t off, const uint8_t* data, int len)
     { (void)total; (void)off; (void)data; (void)len; return 1u; }
 
+    /* A world into a numbered slot, chunked exactly like PutWorld. Separate
+       from PutWorld rather than a destination byte on it, because PutWorld's
+       request layout is eight fixed bytes followed by payload and there is no
+       room in it to say anything new without a rule for telling the two shapes
+       apart. */
+    virtual uint8_t PutSlot(uint8_t slot, uint32_t total, uint32_t off, const uint8_t* data, int len)
+    { (void)slot; (void)total; (void)off; (void)data; (void)len; return 1u; }
+
+    /* Which slots hold something, and which of them is playing or being
+       morphed towards. `names[i]` is null for an empty slot. */
+    virtual int Slots(uint8_t& live, uint8_t& target, const char** names, int max)
+    { (void)live; (void)target; (void)names; (void)max; return -1; }
+
     virtual uint8_t SetControl(float f0, const float* c, int n, const float* angles, int planes, float spread)
     {
         (void)f0; (void)c; (void)n; (void)angles; (void)planes; (void)spread;
@@ -154,8 +183,8 @@ public:
     uint8_t     LastCmd() const override { return 0x6Fu; }
     const char* DescriptorRootJson() const override
     {
-        return "\"kyk\":{\"ext\":5,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,"
-               "\"worlds\":101,\"basis\":102,\"control\":110}";
+        return "\"kyk\":{\"ext\":6,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,"
+               "\"worlds\":101,\"basis\":102,\"putslot\":105,\"slots\":106,\"control\":110}";
     }
 
     void Handle(const alchemy::hostlink::ParsedFrame& f, alchemy::hostlink::FrameWriter& w, uint32_t) override
@@ -251,6 +280,49 @@ public:
                     w.U8(kinds[i]);
                     w.Str(names[i] ? names[i] : "");
                     w.Str(notes[i] ? notes[i] : "");
+                }
+                return;
+            }
+            case kCmdPutSlot:
+            {
+                /* slot, then the same u32 total / u32 offset PutWorld uses */
+                if(f.len < 9) { w.U8(2u); return; }
+                uint32_t total, off;
+                std::memcpy(&total, f.body + 1, 4);
+                std::memcpy(&off, f.body + 5, 4);
+                w.U8(src_.PutSlot(f.body[0], total, off, f.body + 9, (int)f.len - 9));
+                w.U32(off + (uint32_t)(f.len - 9));
+                return;
+            }
+            case kCmdSlots:
+            {
+                const char* names[kSlotCount];
+                uint8_t     live = 0xFFu, target = 0xFFu;
+                const int   n = src_.Slots(live, target, names, kSlotCount);
+                if(n < 0) { w.U8(1u); return; }
+                w.U8(0u);
+                w.U8((uint8_t)n);
+                w.U8(live);
+                w.U8(target);
+                /* Same budget idiom as the other two lists: stop before the
+                   body would overflow, because a reply that does not fit is
+                   dropped silently and the host waits out its timeout. */
+                const int budget = (int)alchemy::hostlink::kMaxBody - 24;
+                int       used = 0;
+                /* Only the slots that hold something. `count` above says how
+                   many there are in total, so a host fills the rest in as
+                   empty — and an empty slot then arrives as *absent* rather
+                   than as a blank name, which are different things. */
+                for(int i = 0; i < n; i++)
+                {
+                    const char* nm = names[i];
+                    if(!nm) continue;
+                    const int len = (int)std::strlen(nm);
+                    if(len > 255 || used + len + 2 > budget) break;
+                    w.U8((uint8_t)i);
+                    w.U8((uint8_t)len);
+                    for(int c = 0; c < len; c++) w.U8((uint8_t)nm[c]);
+                    used += len + 2;
                 }
                 return;
             }

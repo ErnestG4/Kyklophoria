@@ -103,6 +103,11 @@ public:
      * zero here the morph path could not be exercised without hardware. */
     float                     morphAmt = 0.5f;
     kyk::WorldReceiver rx;
+    /* The same library the module keeps, so the suite can drive it. Blobs, not
+       expanded Worlds, for the reason in kyk_ext.h. */
+    std::vector<uint8_t> slotBlob[kyk::kSlotCount];
+    std::string          slotName[kyk::kSlotCount];
+    uint8_t              slotLive = 0xFFu, slotTarget = 0xFFu;
     kyk::World         userWorld;
     char               userName[kyk::kUserNameLen + 1] = {0};
 
@@ -146,6 +151,34 @@ public:
         eng->SetWorld(world);
         world_idx = kNoWorld;
         return 0u;
+    }
+
+    uint8_t PutSlot(uint8_t slot, uint32_t total, uint32_t off,
+                    const uint8_t* data, int len) override
+    {
+        if(slot >= kyk::kSlotCount) return 2u;
+        const uint8_t st = rx.Take(total, off, data, len);
+        if(st != 0u || !rx.Done()) return st;
+        slotBlob[slot].assign(rx.Blob(), rx.Blob() + rx.Size());
+        /* The name out of the header, printable bytes only — the module's list
+           draws bytes and this one feeds a <select>. */
+        slotName[slot].clear();
+        for(int c = 0; c < kyk::kUserNameLen && (size_t)(16 + c) < rx.Size(); c++)
+        {
+            const char ch = (char)rx.Blob()[16 + c];
+            if(ch >= 0x20 && ch < 0x7f) slotName[slot].push_back(ch); else break;
+        }
+        if(slotName[slot].empty()) slotName[slot] = "?";
+        rx.Reset();
+        return 0u;
+    }
+
+    int Slots(uint8_t& live, uint8_t& target, const char** names, int max) override
+    {
+        live = slotLive; target = slotTarget;
+        const int n = max < kyk::kSlotCount ? max : kyk::kSlotCount;
+        for(int i = 0; i < n; i++) names[i] = slotBlob[i].empty() ? nullptr : slotName[i].c_str();
+        return n;
     }
 
     uint8_t Action(uint8_t op, const uint8_t* args, int len) override
@@ -211,6 +244,48 @@ public:
                 if(!kyk::worlds::Point(args[0], morphWorld, 8, nullptr, &morphTable)) return 3u;
                 eng->SetMorph(&morphWorld, morphAmt);
                 morphIdx = args[0];
+                return 0u;
+            }
+            case kyk::kActSlotLive:
+            {
+                if(len < 1 || args[0] >= kyk::kSlotCount) return 2u;
+                if(slotBlob[args[0]].empty()) return 2u;
+                if(userWorld.UseUserWorld(slotBlob[args[0]].data(), slotBlob[args[0]].size(),
+                                          8, nullptr, userName) != kyk::UserError::Ok) return 1u;
+                *world    = userWorld;
+                eng->SetWorld(world);
+                world_idx = kNoWorld;
+                slotLive  = args[0];
+                return 0u;
+            }
+            case kyk::kActSlotTarget:
+            {
+                if(len < 1) return 2u;
+                if(args[0] == 0xFFu)
+                {
+                    eng->SetMorph(nullptr, 0.f);
+                    morphIdx = 0xFFu; slotTarget = 0xFFu;
+                    return 0u;
+                }
+                if(args[0] >= kyk::kSlotCount || slotBlob[args[0]].empty()) return 2u;
+                if(morphWorld.UseUserWorld(slotBlob[args[0]].data(), slotBlob[args[0]].size(),
+                                           8, nullptr) != kyk::UserError::Ok) return 1u;
+                eng->SetMorph(&morphWorld, morphAmt);
+                morphIdx   = kyk::kMorphUser;
+                slotTarget = args[0];
+                return 0u;
+            }
+            case kyk::kActSlotFree:
+            {
+                if(len < 1 || args[0] >= kyk::kSlotCount) return 2u;
+                slotBlob[args[0]].clear();
+                slotName[args[0]].clear();
+                if(slotLive == args[0]) slotLive = 0xFFu;
+                if(slotTarget == args[0])
+                {
+                    eng->SetMorph(nullptr, 0.f);
+                    morphIdx = 0xFFu; slotTarget = 0xFFu;
+                }
                 return 0u;
             }
             case kyk::kActSelectWorld:

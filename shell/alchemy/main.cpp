@@ -239,6 +239,32 @@ static volatile uint8_t gWorldReq = 0xFFu;   /* 0xFF: nothing pending */
 /* AXI SRAM, not DTCM. It is nearly seven kilobytes that the audio path never
  * touches — only a transfer does — and DTCM is the scarcest memory here. */
 static WorldReceiver KYK_AXI gRx;
+/* The worlds you have loaded, as blobs.
+ *
+ * A World is 7 KB and has to live in DTCM or AXI, where there are about
+ * seventeen spare; a .kykw blob is 6.7 KB and lives in SDRAM, which is at 5% of
+ * 64 MB. So the library is blobs and only what is *playing* is an expanded
+ * World — parsing one is a memcpy into a LockField, no FFT and no lattice
+ * expansion, so expanding on demand costs nothing you can hear.
+ *
+ * 216 KB for all thirty-two. Nothing in here may have a default member
+ * initialiser: .init_array runs before hw.Init() brings up the FMC, and a
+ * constructor here would store into a controller that is not up. Plain arrays
+ * of trivial types, guarded by the static_assert below. */
+static uint8_t KYK_SDRAM gSlotBlob[kSlotCount][kUserBlobMax];
+static_assert(std::is_trivially_default_constructible<decltype(gSlotBlob)>::value,
+              "gSlotBlob is in SDRAM and must not be constructed before hw.Init()");
+/* Lengths and names are small, so they stay in ordinary memory where they are
+   live at reset and can be read while the FMC is still down. */
+static uint32_t gSlotLen[kSlotCount];
+static char     gSlotName[kSlotCount][kUserNameLen + 1];
+static volatile uint8_t gSlotLive   = 0xFFu;   /* which slot is playing, if any */
+static volatile uint8_t gSlotTarget = 0xFFu;   /* which slot is the morph target */
+/* Requests, served on the control loop like every other world change. */
+static volatile int8_t  gSlotStore  = -1;      /* a completed transfer's destination */
+static volatile int8_t  gSlotLiveReq = -1;
+static volatile int8_t  gSlotTargetReq = -1;
+
 static volatile uint8_t gUserReq = 0u;
 static constexpr uint8_t kMorphSlot = 2u;    /* blob/space/vtable slot */
 static volatile uint8_t gMorphReq = 0xFFu;   /* world index to load there */
@@ -526,6 +552,27 @@ struct ModuleSource : ExtSource
         return 0u;
     }
 
+    uint8_t PutSlot(uint8_t slot, uint32_t total, uint32_t off,
+                    const uint8_t* data, int len) override
+    {
+        if(slot >= kSlotCount) return 2u;
+        if(gUserReq || gSlotStore >= 0 || gWorldBusy) return 9u;
+        const uint8_t st = gRx.Take(total, off, data, len);
+        if(st != 0u) return st;
+        /* The same receiver PutWorld uses. One host, one transfer at a time,
+           and the guard above says so rather than letting two interleave. */
+        if(gRx.Done()) gSlotStore = (int8_t)slot;
+        return 0u;
+    }
+
+    int Slots(uint8_t& live, uint8_t& target, const char** names, int max) override
+    {
+        live = gSlotLive; target = gSlotTarget;
+        const int n = max < kSlotCount ? max : kSlotCount;
+        for(int i = 0; i < n; i++) names[i] = gSlotLen[i] ? gSlotName[i] : nullptr;
+        return n;
+    }
+
     uint8_t Action(uint8_t op, const uint8_t* args, int len) override
     {
         switch(op)
@@ -575,6 +622,24 @@ struct ModuleSource : ExtSource
                 if(args[0] != 0xFFu && args[0] >= worlds::kCount) return 2u;
                 if(gWorldBusy) return 9u;
                 gMorphReq = args[0];
+                return 0u;
+            case kActSlotLive:
+                if(len < 1 || args[0] >= kSlotCount) return 2u;
+                if(!gSlotLen[args[0]]) return 2u;          /* nothing in it */
+                if(gWorldBusy || gSlotLiveReq >= 0) return 9u;
+                gSlotLiveReq = (int8_t)args[0];
+                return 0u;
+            case kActSlotTarget:
+                if(len < 1) return 2u;
+                if(args[0] != 0xFFu && (args[0] >= kSlotCount || !gSlotLen[args[0]])) return 2u;
+                if(gWorldBusy || gSlotTargetReq >= 0) return 9u;
+                gSlotTargetReq = args[0] == 0xFFu ? (int8_t)kSlotCount : (int8_t)args[0];
+                return 0u;
+            case kActSlotFree:
+                if(len < 1 || args[0] >= kSlotCount) return 2u;
+                gSlotLen[args[0]] = 0u;
+                if(gSlotLive == args[0]) gSlotLive = 0xFFu;
+                if(gSlotTarget == args[0]) { gSlotTarget = 0xFFu; gMorphReq = 0xFFu; }
                 return 0u;
             default: return 1u;
         }
@@ -752,6 +817,75 @@ static void ServeWorldRequest()
             gWorldIdx = 0xFFu;          /* not one of the built-ins any more */
         }
         gWorldBusy = 0;
+        return;
+    }
+    /* A completed transfer into a slot. Just bytes: nothing is parsed until
+     * somebody asks to play it, so a blob that turns out to be rubbish costs a
+     * slot and not the sound. The name is read out of the header here so the
+     * list can show it without parsing the whole thing every time. */
+    if(gSlotStore >= 0)
+    {
+        const uint8_t sl = (uint8_t)gSlotStore;
+        gSlotStore = -1;
+        const size_t n = gRx.Size();
+        if(sl < kSlotCount && n && n <= kUserBlobMax)
+        {
+            std::memcpy(gSlotBlob[sl], gRx.Blob(), n);
+            gSlotLen[sl] = (uint32_t)n;
+            for(int c = 0; c < kUserNameLen; c++)
+            {
+                const char ch = n > (size_t)(16 + c) ? (char)gSlotBlob[sl][16 + c] : '\0';
+                gSlotName[sl][c] = (ch >= 0x20 && ch < 0x7f) ? ch : '\0';
+            }
+            gSlotName[sl][kUserNameLen] = '\0';
+            if(!gSlotName[sl][0]) { gSlotName[sl][0] = '?'; gSlotName[sl][1] = '\0'; }
+        }
+        gRx.Reset();
+        return;
+    }
+    /* Play a slot. The same double-buffered swap a card world uses: parse into
+     * the buffer the audio thread is not reading, then point the engine at it. */
+    if(gSlotLiveReq >= 0)
+    {
+        const uint8_t sl = (uint8_t)gSlotLiveReq;
+        gSlotLiveReq = -1;
+        if(sl < kSlotCount && gSlotLen[sl])
+        {
+            gWorldBusy = 1;
+            const uint8_t wi = (uint8_t)(gBufIdx ^ 1u);
+            if(gWorlds[wi].UseUserWorld(gSlotBlob[sl], gSlotLen[sl], kBootP, nullptr, gUserName)
+               == UserError::Ok)
+            {
+                __asm__ volatile("dmb" ::: "memory");
+                gEng.SetWorld(&gWorlds[wi]);
+                gBufIdx   = wi;
+                gWorldIdx = 0xFFu;
+                gSlotLive = sl;
+            }
+            gWorldBusy = 0;
+        }
+        return;
+    }
+    /* Morph towards a slot. This is the thing that was unrepresentable: the
+     * morph target index space was the twenty-one built-ins and nothing else,
+     * so a world you made could never be one end of a blend. It parses into the
+     * morph slot, which is its own World for exactly this reason. */
+    if(gSlotTargetReq >= 0)
+    {
+        const uint8_t sl = (uint8_t)gSlotTargetReq;
+        gSlotTargetReq = -1;
+        if(sl >= kSlotCount)                       /* the clear sentinel */
+        {
+            gEng.SetMorph(nullptr, 0.f);
+            gMorphIdx = 0xFFu; gSlotTarget = 0xFFu;
+        }
+        else if(gSlotLen[sl]
+                && gMorphWorld.UseUserWorld(gSlotBlob[sl], gSlotLen[sl], kBootP, nullptr) == UserError::Ok)
+        {
+            __asm__ volatile("dmb" ::: "memory");
+            gMorphIdx   = kMorphUser;
+            gSlotTarget = sl;
+        }
         return;
     }
     /* The morph target, built into its own slot so a world switch can swap the
