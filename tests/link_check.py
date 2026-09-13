@@ -123,6 +123,10 @@ def telemetry(link, flags):
         at += 1 if len(b) > at else 0
         t['pots'] = list(b[at:at+6]) if len(b) >= at + 6 else []
         at += 6 if len(b) >= at + 6 else 0
+        # which world is live; 0xFF is a user world, which has no index. None
+        # from firmware that predates it, which is not the same as 0xFF.
+        t['world'] = b[at] if len(b) > at else None
+        at += 1 if len(b) > at else 0
     t['size'] = len(b)
     check(at == len(b), f'telemetry body consumed exactly ({at} of {len(b)})')
     return t
@@ -152,9 +156,15 @@ def stdio_tests():
     t = telemetry(link, 3)
     check((t['n'], t['k'], t['p'], t['planes']) == (4, 64, 8, 6), 'telemetry dims')
     t7 = telemetry(link, 7)
-    # 23 for the original block, 1 for the body count, 8 per perturber
-    want = 460 + 23 + 1 + 8 * (t7['bodies'] - 1) + 1 + 2 + 2 + 1 + 6
+    # 23 for the original block, 1 for the body count, 8 per perturber, then
+    # page, morph+target, mute, aimed, six pots, and the live world index
+    want = 460 + 23 + 1 + 8 * (t7['bodies'] - 1) + 1 + 2 + 2 + 1 + 6 + 1
     check(t7['size'] == want, f"motion block appends {want - 460} bytes (size {t7['size']}, {t7['bodies']} bodies)")
+    # Which world is playing, in every frame. Without it a host only learns
+    # this by asking for the list, and nothing asks unprompted — so a world
+    # changed from the module's own panel stayed invisible.
+    check(t7['world'] is not None and t7['world'] <= 0xFF, f"telemetry names the live world ({t7['world']})")
+    check('world' not in t, 'and it rides in the motion block, not the fixed part')
     check(t7['kep_plane'] < 6 and 0.0 <= t7['kep_rush'] <= 1.0, 'kepler fields sane')
     check(t7['couple'] >= 0.0 and 0.0 <= t7['lock'] <= 1.0, 'coupling fields sane')
     check(t['size'] == 460, f"telemetry size {t['size']}")

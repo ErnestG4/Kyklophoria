@@ -40,10 +40,15 @@ the play view draws the page's record of what it *sent* (`held`), never
 is one function that drops it and five callers. If you add a sixth way for the
 module to end up holding something else, it goes through `heldLost`.
 
-The page cannot ask what the module is holding: the world list reports "not one
-of the built-ins" and nothing more, and `GET_BASIS` gives a lock world's count
-and sigma with no positions. A world index in the telemetry frame would fix
-that properly and close the panel-switch blind spot with it.
+The page cannot ask what the module is *holding* — the world list reports "not
+one of the built-ins" and nothing more, and `GET_BASIS` gives a lock world's
+count and sigma with no positions — but it does know *which* world, because
+every telemetry frame now carries the live index (0xFF for a user world). So a
+world changed from the module's own panel drops the record within a frame, and
+the world bar corrects itself instead of naming whatever the page last asked
+for. Absent is not 0xFF: firmware older than the field sends nothing, and
+reading that as "a user world" would be a lie about every module that predates
+it.
 
 ## The bug pattern this codebase keeps producing
 
@@ -76,6 +81,15 @@ The root cause was a blind spot, not carelessness: every golden renders one
 world from boot and never switches, so nothing had ever asked the question. The
 fifth had the same shape — every check of the send path asked whether the module
 *accepted* the bytes, and none asked whether the sound changed.
+
+## A long-standing annoyance, and what it was
+
+- **Clicking twice to change world.** The action only queues the switch; the
+  module performs it on its control loop and a tabulated world is expanded
+  first, so reading the world list straight back returned the old value. Fixed
+  by waiting for the module to agree — now by watching the live world index in
+  telemetry rather than asking for the list every 60 ms, which cost a round
+  trip per attempt at exactly the moment the module was busy expanding.
 
 ## Testing habits that have earned their place
 

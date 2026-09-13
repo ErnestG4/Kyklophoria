@@ -47,14 +47,31 @@ f32 kep_x, kep_y                 │  how the position is moving on its own:
 f32 kep_rush         0..1, 1 at periapsis
 f32 couple           Kuramoto coupling strength as set
 f32 lock             0..1, how closed the orbit figure is
-u8  sharp            the Morph knob, 0..255; the page needs it to draw ─┘
+u8  sharp            the Morph knob, 0..255; the page needs it to draw
+u8  kep_bodies       how many are falling; body 0 is kep_x/kep_y above
+f32 x, y             per body 1..kep_bodies-1 — only the perturbers
+u8  page             which pager page the panel is showing
+u8  morph            the Morph knob, 0..255
+u8  morph_world      what it blends towards; 0xFF: nothing, so it does nothing
+u16 mute             muted motions; bits 0..14 planes, bit 15 Kepler
+u8  aimed            whether the morph reads its target somewhere else
+u8  pots[6]          the live page's knob positions
+u8  world            which world is playing; 0xFF: a user world, no index ─┘
 ```
-N=4, K=64, P=8 with spectrum and frame: 460 bytes; with motion as well, 483.
+N=4, K=64, P=8 with spectrum and frame: 460 bytes; with motion as well and one
+body, 497.
 
-The motion block is deliberately last. A host written against an earlier
-firmware reads every field it knows by fixed offset and ignores the tail, so
-the block could be added without a protocol version bump — which is the whole
-reason for putting growth at the end rather than in the middle.
+The motion block is deliberately last, and everything after `sharp` was added
+to it later — the bodies, the pager page, the Morph knob and its target, the
+mute mask, the aim flag, the knob positions, and the live world. A host written
+against an earlier firmware reads every field it knows by fixed offset and
+ignores the tail, so none of them needed a protocol version bump. That is the
+whole reason for putting growth at the end rather than in the middle.
+
+It runs the other way too, and a host has to mean it: every one of those fields
+is optional on the way in, and absent is not the same as zero. `world` in
+particular — a host that read a missing byte as 0xFF would conclude that every
+module older than this field was playing a user world.
 
 ### 0x61 GET_SPACE_INFO
 Reply: the 64-byte `SpaceHeader` (docs/space-format.md), `u32 crc32` of the

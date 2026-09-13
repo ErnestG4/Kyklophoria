@@ -295,6 +295,11 @@ Published at https://combust.codeberg.page/Kyklophoria/, which is https and
 therefore a secure context, so Serial works there from any machine. The page
 and the firmware share a descriptor version (`ext`, currently 5); publish and
 flash together, or the page will parse an older shape than the module sends.
+The telemetry frame is the exception and grows without a bump — everything
+after the Kepler block was added later, each field optional on the way in — so
+a newer page against older firmware loses those readouts and nothing else.
+Absent is not zero there: a page that read a missing live-world byte as 0xFF
+would conclude every older module was playing a user world.
 
 ## Not built yet
 
@@ -306,8 +311,8 @@ Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 
 **What has been played and what has not.** The twenty-one built-in worlds are
 what has had real time on the bench. Morphing, user worlds, import and the card
-are tested by the suite — 420 world-pair switches, 99 link checks, 97 link-level
-and 102 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
+are tested by the suite — 420 world-pair switches, 99 link checks, 104 link-level
+and 110 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
 them as the new half of a beta.
 
 ## Layout

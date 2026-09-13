@@ -20,6 +20,14 @@
  *                        than the current coordinates
  *             u8 pots[6] — the live page's knob positions, so the panel mirror
  *                        can show where they are and not only what they are
+ *             u8 world — which world is live (0xFF: a user world, which has
+ *                        no index). Not motion either, for the same reason the
+ *                        Morph knob is here: the tail is the only part of the
+ *                        frame that can grow without moving anything.
+ *                        The world list is the only other way to
+ *                        learn this and nothing asks it unprompted, so a world
+ *                        changed from the panel was invisible to a host until
+ *                        it happened to refresh. A byte a frame closes that.
  *
  * That last block is how the position is moving of its own accord: the
  * falling body, and how hard the orbit planes are pulling on each other. It
@@ -86,7 +94,8 @@ struct Put
 /* Returns bytes written, or 0 if cap is too small. */
 inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, int cap,
                            uint8_t page = 0, uint8_t morph_world = 0xFFu,
-                           uint16_t mute = 0u, const uint8_t* pots = nullptr)
+                           uint16_t mute = 0u, const uint8_t* pots = nullptr,
+                           uint8_t world = 0xFFu)
 {
     const World* s = e.WorldPtr();
     if(!s || !s->Ready()) return 0;
@@ -168,6 +177,16 @@ inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, i
          * through the descriptor's blob would be the seventeen-round-trip path
          * that makes other modules feel sluggish from the web. */
         for(int i = 0; i < 6; i++) w.U8(pots ? pots[i] : 0u);
+        /* Which world is playing. 0xFF means a user world, which has no index.
+         *
+         * Without this a host only learns the live world by asking for the
+         * list, and nothing asks unprompted — so a world changed from the
+         * module's own panel left the page naming the previous one, and (once
+         * the page started drawing the nodes of the world it had sent) drawing
+         * rings for a world that was no longer loaded. A readout that can be
+         * wrong about its subject is worse than no readout, and the fix is a
+         * byte a frame. */
+        w.U8(world);
     }
     return w.ok ? w.n : 0;
 }
@@ -179,7 +198,7 @@ inline int TelemetrySize(int n, int k, int p, uint8_t flags)
     int       sz     = 4 + 4 + 6 + 2 + 4 + 4 * (4 * n + planes + p);
     if(flags & kTelSpectrum) sz += k;
     if(flags & kTelFrame) sz += kTelFramePts;
-    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2 + 1 + 6;
+    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2 + 1 + 6 + 1;
     return sz;
 }
 

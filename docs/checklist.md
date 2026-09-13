@@ -342,11 +342,15 @@ meaningful axis and stacking four banks makes rotation meaningless.
       anything could have replaced it. Found by Combust, not by the suite:
       every check asked what the builder did and none asked what the other view
       said about it.
-- [ ] **A world switched from the module's own panel is invisible to the page**
-      until something refreshes the world list, because telemetry carries no
-      live world index. The world bar has always had this gap; the rings now
-      share it. Either a world index in the telemetry frame or a slow poll of
-      0x65 would close it.
+- [x] **A world switched from the module's own panel is invisible to the page.**
+      Closed the proper way: `u8 world` at the end of the telemetry motion
+      block, 0xFF for a user world. The page drops the held record and corrects
+      the world bar within a frame, and `selectWorld` now waits on the stream
+      it is already reading instead of asking for the world list every 60 ms —
+      a round trip per attempt, at exactly the moment the module is busy
+      expanding a world. One byte a frame. Absent is not 0xFF: firmware that
+      predates the field sends nothing, and reading that as a user world would
+      libel every older module.
 - [ ] Nothing lets you hear a single node on its own. Morph at full narrows the
       basins until a vertex is that exact waveform, so the module can already
       do it; the page would only need to park the position on the node you have

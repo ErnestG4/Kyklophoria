@@ -402,6 +402,7 @@ async function disconnect() {
   const l = link; link = null; tel = null; stats = null; info = null; panel = null;
   worlds = null; basis = null; basisWorld = -1; switching = -1; terrain.key = '';
   heldLost();              /* whatever it was holding, it is not holding it now */
+  seenWorld = -2;          /* and the next module to answer is a fresh question */
   renderWorldBar();
   if (l) { try { await l.close(); } catch {} }
   $('modinfo').textContent = 'not connected';
@@ -494,16 +495,27 @@ async function selectWorld(i) {
      * control loop, and a tabulated world has to be expanded first. So the
      * request returning does not mean the world has changed yet. Reading the
      * list straight back gave the old value, which is why this used to take
-     * two clicks. Poll until the module agrees, or give up. */
+     * two clicks. Wait until the module agrees, or give up.
+     *
+     * Telemetry now carries the live world index, so this watches the stream
+     * the page is already reading rather than asking for the list again every
+     * 60 ms — which cost a round trip per attempt and competed with the
+     * telemetry poll for the link at exactly the moment the module was busy
+     * expanding a world. Older firmware does not send it, and there the old
+     * question is still the only one available. */
     const deadline = Date.now() + 8000;
     for (;;) {
-      await new Promise(r => setTimeout(r, 60));
-      let w = null;
-      try { w = await MVL.fetchWorlds(link); } catch { /* keep waiting */ }
-      if (w) worlds = w;
-      if (w && w.current === i) break;
+      await new Promise(r => setTimeout(r, 40));
+      if (tel && tel.world != null) { if (tel.world === i) break; }
+      else {
+        let w = null;
+        try { w = await MVL.fetchWorlds(link); } catch { /* keep waiting */ }
+        if (w) worlds = w;
+        if (w && w.current === i) break;
+      }
       if (Date.now() > deadline) { say('world: the module did not switch', true); break; }
     }
+    try { worlds = await MVL.fetchWorlds(link); } catch { /* keep what we have */ }
     space = await refreshSpace();
     trail.n = 0; trail.head = 0; trail.at = -1;
     renderWorldBar();
@@ -1131,7 +1143,38 @@ async function pollStats() {
     await new Promise(r => setTimeout(r, 1000));
   }
 }
+/* The last world the module said it was playing, so a change is noticed once
+   rather than acted on sixty times a second. */
+let seenWorld = -2, worldPoke = false;
+
+/* The module says which world is live in every frame, so the page can stop
+ * believing its own last instruction.
+ *
+ * Before this the live world was known only by asking for the list, and
+ * nothing asked unprompted: a world changed from the module's own panel left
+ * the world bar naming the previous one indefinitely, and left the play view
+ * drawing the rings of a world that was no longer loaded. Both are readouts,
+ * and a readout that can be wrong about its own subject is worse than none.
+ */
+function noticeWorld(t) {
+  if (t.world == null || t.world === seenWorld) return;   /* null: older firmware */
+  seenWorld = t.world;
+  /* Ours is the only world with no index, so anything else means the module is
+     holding something we did not put there. */
+  if (t.world !== 0xFF && held) heldLost();
+  if (switching >= 0) return;            /* a switch we asked for is settling */
+  if (!worlds || worlds.current === t.world) return;
+  /* Show it immediately, then settle the rest — the name is in the list we
+     already have, while the basis and the space description need asking for. */
+  worlds.current = t.world;
+  renderWorldBar();
+  if (worldPoke) return;
+  worldPoke = true;
+  refreshWorlds().finally(() => { worldPoke = false; });
+}
+
 function onTelemetry(t) {
+  noticeWorld(t);
   if (lastBlock < 0) describeSpace();   /* an analytic world gets its dims from here */
   if (t.block !== lastBlock) {
     lastBlock = t.block; framesSeen++;
