@@ -230,7 +230,7 @@ static_assert(std::is_trivially_default_constructible<solids::VertexTable>::valu
 static_assert(std::is_trivially_default_constructible<decltype(gBlob)>::value,
               "SDRAM objects must not have default member initialisers");
 static uint8_t gBufIdx    = 0;
-static volatile uint8_t gWorldIdx = worlds::kBraids;
+static volatile uint8_t gWorldIdx = worlds::kCrop;
 static volatile uint8_t gWorldReq = 0xFFu;   /* 0xFF: nothing pending */
 /* A user world arriving over HostLink. The chunks land here from the main
  * loop; the parse and the swap happen in ServeWorldRequest with the same
@@ -827,7 +827,7 @@ int main()
 
     /* Boot into an analytic world: it is a formula, so there is nothing to
      * expand and the module makes sound immediately. */
-    worlds::Point(worlds::kBraids, gWorlds[0], kBootP, nullptr, &gVertTable[0]);
+    worlds::Point(worlds::kCrop, gWorlds[0], kBootP, nullptr, &gVertTable[0]);
     gEng.Init(&gWorlds[0], hw.SampleRate());
 
     hw.j8.EnableCvOutput();
@@ -869,6 +869,18 @@ int main()
      * per orbit, which reads as an orbit rather than a wash. The default that
      * shipped sat at 47.9 degrees. */
     pager.SetStored(4, 3, 0.25f, phys);
+    /* World morph at nothing.
+     *
+     * The SDK seeds every stored value at 0.5, which is right for a knob whose
+     * centre is its rest — the orbit rates are stopped at the centre and the
+     * Rate multiplier is 1x there. It is wrong for this one: choosing a morph
+     * target is setup, done on the page, and with a stored half-turn the
+     * instant a target is chosen the sound is already halfway into another
+     * world. Engaging something should not move it. At zero the knob is where
+     * it claims to be, and pot-catch means the physical knob has to travel up
+     * from the bottom before it takes hold, which is the behaviour you want
+     * from a blend you have just armed. */
+    pager.SetStored(5, 5, 0.f, phys);
 
     gSd.Init();
     ScanCard();          /* so the folder is already listed when a page connects */

@@ -91,6 +91,13 @@ public:
     uint8_t                   morphIdx = 0xFFu;
     uint16_t                  mute = 0u;
     float                     rateWas[kyk::kMaxPlanes] = {0.f};
+    /* How far this shell blends when a morph target is set.
+     *
+     * Not the module's default and not pretending to be: the module's is a
+     * knob, stored at zero so that arming a target does not move the sound on
+     * its own (shell/alchemy/main.cpp). This shell has no knobs at all, so a
+     * fixed half-turn is what makes the blend reachable from a test — with a
+     * zero here the morph path could not be exercised without hardware. */
     float                     morphAmt = 0.5f;
     kyk::WorldReceiver rx;
     kyk::World         userWorld;
