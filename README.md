@@ -13,7 +13,9 @@ payload lanes are not routed, and the panel layout is still a first draft.
 
 ## Controls
 
-**B1** taps through six pages. **B2 + B3** held opens Settings.
+**B1** taps through six pages. **B2 + B3** held opens Settings. The page has
+three tabs: **play** is a readout of the instrument, **build** makes a world out
+of imported waveforms, **worlds** is the library of the ones you have made.
 
 | | Play | Rotate | Stereo |
 |---|---|---|---|
@@ -137,6 +139,32 @@ half costs, on its own. The **shape** / **spectrum** toggle beside *add wavs*
 decides what an import even is: shape searches for the rotation of the cycle
 that keeps the most on the sine basis, spectrum keeps the magnitudes exactly
 and lets the waveform be redrawn.
+
+## A library of your own worlds
+
+The **worlds** tab is the module's library: thirty-two slots, what is in each,
+which one is playing and which one the Morph knob is heading towards. Pick a
+slot and store the build set into it, or drag a `.kykw` straight onto it — the
+file is parsed and refused by the page before any of it goes on the wire, so a
+wrong file costs you a message rather than a transfer. Play any slot, make any
+slot the morph target, forget one you are done with.
+
+That last one is the point. Until slots existed a world you imported could be
+played and never *returned to*: a transfer replaced whatever was live, and the
+morph target could only ever be one of the twenty-one built-ins, so nothing you
+made could be one end of a blend. Now it can be both ends.
+
+The slots are blobs in SDRAM, expanded only when one is played — a world is 7 KB
+of the fast memory there is little of, and a blob is 6.7 KB of the 64 MB there
+is plenty of. All thirty-two cost 216 KB of it.
+
+They do not survive a power cycle yet. Save the `.kykw` and drop it back in, or
+put it on the card; writing to the card from the module is the next job.
+
+One honest limit: the module says which slots are filled and what they are
+called, not what is *in* them. So the play view can draw the rings of a slot
+this page put there and not of one stored in an earlier session — that one
+plays, and its rings are left undrawn rather than guessed at.
 
 The play view keeps the rings, and they are **what the module is holding** —
 not the set on the other tab. Those are the same thing only between a

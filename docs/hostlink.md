@@ -63,6 +63,12 @@ u8  vals[6]          what the live page's six knobs are *worth* — not where
                      they are sitting; the panel catches
 u8  world            which world is playing; 0xFF: a user world, no index ─┘
 ```
+`morph_world` carries one more value than it used to: **0xFE** means the target
+is a world of yours rather than a built-in, since it has no index. 0xFF still
+means no target at all, and *absent* means firmware too old to say — three
+different things.
+```
+```
 N=4, K=64, P=8 with spectrum and frame: 460 bytes; with motion as well and one
 body, 504.
 
@@ -118,6 +124,9 @@ Request: `u8 op [, args]`. Reply: status only.
 | 7 | `u8 index` | load a card world by its index in the 0x68 list |
 | 8 | `u8` | phase override: 0 the world's own convention, 1 force sine, 2 force cosine — a cosine twin of any world without doubling the world list |
 | 9 | `u16 mask` | mute motions: bits 0..14 a rotation plane's rate, bit 15 Kepler. A mute rather than a zero, so the knob keeps its value and unmuting restores it |
+| 11 | `u8 slot` | play the world in that slot |
+| 12 | `u8 slot` | morph towards that slot; 0xFF clears the target. This is the one thing the morph could not do before — the target index space was the built-ins, so a world you made could never be one end of a blend |
+| 13 | `u8 slot` | forget a slot |
 | 10 | — | aim the morph: search the target world for the position whose spectrum is nearest the one playing, and read it there. Refused with status 1 when no target is set |
 
 ### 0x65 GET_WORLDS
@@ -150,6 +159,29 @@ anything else: random access would have a host choosing the indices the module
 writes at. Nothing loads until the last byte lands, so an interrupted transfer
 costs the transfer and not the sound that is playing, and a blob that fails any
 check leaves the live world untouched rather than half-written.
+
+### 0x69 PUT_SLOT
+Request: `u8 slot, u32 total, u32 offset, bytes`. Reply: status, `u32 accepted`.
+
+A user world into one of `kSlotCount` (32) slots, chunked exactly as 0x67 is.
+Separate from PUT_WORLD rather than a destination byte added to it, because
+PUT_WORLD's request is eight fixed bytes followed by payload and there is no
+room in it to say anything new without a rule for telling the two shapes apart.
+
+Slots hold *blobs*, not expanded worlds: a `World` is 7 KB and needs DTCM or
+AXI, a blob is 6.7 KB and lives in SDRAM, and parsing one into a playing world
+is a memcpy into a LockField with no FFT and no lattice expansion. All 32 cost
+216 KB of a 64 MB SDRAM.
+
+### 0x6A SLOTS
+Request: empty. Reply: status, `u8 count`, `u8 live` (0xFF none), `u8 target`
+(0xFF none), then one entry per *filled* slot: `u8 index, u8 len, name`.
+
+Only filled slots appear. `count` says how many exist, so a host fills the rest
+in as empty — and an empty slot then arrives as *absent* rather than as a blank
+name, which are different things. Same budget idiom as the other two lists: the
+reply stops before it would overflow, because one that does not fit is dropped
+silently and the host waits out its timeout.
 
 ### 0x68 CARD_WORLDS
 Request: empty. Reply: status, `u8 count`, then `count` entries of
