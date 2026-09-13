@@ -22,12 +22,12 @@ const CMD = {
   hello: 0x01, getDescriptor: 0x02,
   telemetry: 0x60, spaceInfo: 0x61, cell: 0x62, stats: 0x63, action: 0x64,
   worlds: 0x65, basis: 0x66, putWorld: 0x67, cardWorlds: 0x68,
-  putSlot: 0x69, slots: 0x6a, saveCard: 0x6b, setControl: 0x6e,
+  putSlot: 0x69, slots: 0x6a, saveCard: 0x6b, getSlot: 0x6c, setControl: 0x6e,
 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4,
               morphWorld: 5, scanCard: 6, loadCardWorld: 7, phase: 8, motionMute: 9,
               aimMorph: 10, slotLive: 11, slotTarget: 12, slotFree: 13, slotSwap: 14,
-              cardToSlot: 15 };
+              cardToSlot: 15, snapshot: 16 };
 /* "that file is already there" — a well-formed request whose answer is a
    question for the player, which is why it is not BAD_ARGS. */
 const STAT_CARD_EXISTS = 20;
@@ -419,6 +419,31 @@ function buildUserWorld(nodes, { n = 4, k = 64, sigma = 0.26, name = '', sinePha
     for (let i = 0; i < k; i++) { dv.setFloat32(at, nd.mags[i] ?? 0, true); at += 4; }
   }
   return b;
+}
+
+/* A slot's bytes back from the module, chunked like the descriptor and the
+   basis. This is what lets the page open a world it did not itself send — draw
+   its nodes, or capture it into the build view to edit. */
+async function fetchSlot(link, slot, maxBody = 1024) {
+  const chunk = Math.max(16, maxBody - 32);
+  const parts = [];
+  let off = 0, total = 0;
+  for (let guard = 0; guard < 512; guard++) {
+    const req = new Uint8Array(7), dv = new DataView(req.buffer);
+    req[0] = slot & 0xff;
+    dv.setUint32(1, off, true);
+    dv.setUint16(5, chunk, true);
+    const b = await link.request(CMD.getSlot, req, { urgent: true });
+    total = u32(b, 1);
+    const n = u16(b, 9);
+    if (!n) break;
+    parts.push(b.slice(11, 11 + n));
+    off += n;
+    if (off >= total) break;
+  }
+  if (!total) return null;
+  const all = concat(parts);
+  return all.length === total ? all : null;
 }
 
 /* Write a slot to the card as <name>.kykw. The module supplies the folder and
@@ -1138,7 +1163,7 @@ const api = {
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, putSlot, fetchSlots,
   MORPH_USER, SLOT_COUNT, STAT_CARD_EXISTS, buildUserWorld, parseUserWorld,
-  saveCardWorld, fetchCardWorlds, wavToCycle, cycleToNode,
+  saveCardWorld, fetchSlot, fetchCardWorlds, wavToCycle, cycleToNode,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KYK = api;
