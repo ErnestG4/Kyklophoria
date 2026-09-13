@@ -26,8 +26,19 @@ namespace kyk {
  *          real-valued transform, level headroom, morph sharpness
  *   0.3.0  Kepler and Couple pages, gravity that wraps when the space does,
  *          Kuramoto coupling on the orbit ratios, the FM and vowel worlds, a
- *          Torus world, six decibels of headroom in the magnitude byte */
-#define KYK_FW_VERSION "0.3.0"
+ *          Torus world, six decibels of headroom in the magnitude byte
+ *   0.4.0  eight more worlds, to twenty-one: Shapes and Shapes R, Lock,
+ *          Unison, the three modal worlds and the three single-shape ones.
+ *          Sine phase with signed coefficients, so a saw is a saw and a
+ *          vertex you arrive at is the waveform it says it is. Worlds you
+ *          write yourself: send one from the page, or drop .kykw files in
+ *          /kyklophoria on the card. Cross-world morphing with a target you
+ *          choose and can aim, starting at zero so arming it does not move
+ *          the sound. Motion mutes. The world that was called Braids is
+ *          called Crop, and every world now says what its four axes do.
+ *          Telemetry carries the live world index and what each knob on the
+ *          live page is worth, so the page stops guessing at both. */
+#define KYK_FW_VERSION "0.4.0"
 
 constexpr uint8_t kCmdTelemetry  = 0x60;
 constexpr uint8_t kCmdSpaceInfo  = 0x61;
