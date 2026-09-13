@@ -83,8 +83,13 @@ Beta. The twenty-one built-in worlds have real bench time; morphing, user
 worlds, import and the SD card are well tested by the suite and barely played.
 `README.md` says which is which and where each feature stops.
 
-**Next job:** export a `.kykw` file from the page (a download). Import and
-placement work and send to the module, but nothing can be *kept* — a sent world
-lives in RAM and the card is read-only. Export closes the loop with no firmware
-change and makes sharing real. After that: moving imported nodes rather than
-taking the 24-cell placement, and writing to the card from the module.
+Export is done: name a set on the page and **save** writes the module's own
+`.kykw`, byte-for-byte what **send** puts on the wire. Keeping a world is now
+"save, copy to `/kyklophoria` on the card", which is a manual step but a real
+loop, and a file you can hand to somebody.
+
+**Next job:** moving imported nodes rather than taking the 24-cell placement —
+placement is the half of curating the page cannot do, and the format already
+carries arbitrary positions, so this is page work and no firmware change.
+After that, writing to the card from the module, which removes the copy step
+and is the last thing standing between the page and a library.

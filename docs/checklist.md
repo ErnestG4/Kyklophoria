@@ -297,12 +297,24 @@ meaningful axis and stacking four banks makes rotation meaningless.
 
 ## Web
 
+- [x] **Export a `.kykw` from the page.** A name field and a save button on the
+      import row. Send and save build the blob in one place, so the file is
+      byte-for-byte what goes on the wire; the name lands both in the char[16]
+      header and in the filename, so the file on the card and the name in the
+      module's list agree. Checked in `web/pagecheck.mjs` (round trip, naming,
+      placement) and in `web/selftest.mjs`, which now puts a page-built world
+      through the real C++ reader — the only place in the suite that crosses
+      the language boundary, since `tests/user_check.cpp` round-trips the
+      reader against our own writer and would agree with itself about a format
+      both halves got wrong.
 - [x] **The desktop shell was loading a sent world and not telling the engine.**
       `PutWorld` in `shell/desktop/serve.h` wrote `*world` and never called
       `eng->SetWorld`, so the phase convention, the render cache, the
       band-limit hold and the aim offset all still described the previous
       world. Fifth instance of the pattern in CLAUDE.md. Found by asking
       whether the *sound* changed after a send, which nothing had asked.
+- [ ] Move imported nodes rather than taking the 24-cell placement. The format
+      already carries arbitrary positions, so this is page work.
 - [x] Orbit trail and the rotation arcs. The Kepler body gets its own inset
       showing the conic in its own unrotated plane, and the coupling lock has
       a bar beside the plane gauges.

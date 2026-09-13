@@ -41,6 +41,10 @@
      control for a long list. */
   #worldbar select { background: #0f141a; color: var(--ink); border: 1px solid #263039;
                      border-radius: 3px; padding: 1px 4px; font: inherit; max-width: 180px; }
+  #worldbar input[type=text] { background: #0f141a; color: var(--ink); border: 1px solid #263039;
+                     border-radius: 3px; padding: 1px 4px; font: inherit; width: 9em; }
+  #worldbar input[type=text]:focus { outline: none; border-color: var(--hot); }
+  #worldbar input[type=text]::placeholder { color: var(--dim); opacity: .7; }
   main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 34%); gap: 0; min-height: 0; }
   .pane { position: relative; min-width: 0; min-height: 0; border-right: 1px solid var(--line); }
   .pane:last-child { border-right: 0; }
@@ -105,7 +109,9 @@
     <input type="file" id="wavIn" accept=".wav,audio/wav" multiple hidden>
     <button class="chip" id="wavPick">add wavs…</button>
     <button class="chip" id="wavMode">shape</button>
+    <input type="text" id="wavName" maxlength="16" placeholder="name" spellcheck="false">
     <button class="chip" id="wavSend">send</button>
+    <button class="chip" id="wavSave">save…</button>
     <button class="chip" id="wavClear">clear</button>
     <span id="wavState" style="color: var(--dim)"></span>
   </div>
@@ -557,6 +563,10 @@ function renderImport() {
   const n = imported.length;
   $('wavMode').textContent = importMode;
   $('wavSend').disabled = !link || !n;
+  /* Saving deliberately does not need a module. Curating a set of waveforms
+     into a file and copying it to the card is a whole way of using this page,
+     and there is nothing for a link to do in it. */
+  $('wavSave').disabled = !n;
   $('wavClear').disabled = !n;
   if (!n) { $('wavState').textContent = link ? '' : 'connect to send'; return; }
   /* The fit is the fraction of each wave that survives projection onto the
@@ -581,15 +591,68 @@ async function addWavs(files) {
   renderImport();
 }
 
+/* The name goes both in the file and on it: sixteen bytes in the blob header
+   (core/kyk_userworld.h) and the stem of the download, so the world you hear
+   on the module and the file sitting on the card are the same thing under the
+   same name. Non-ASCII is dropped rather than transliterated — the header is a
+   char[16] and the module's list draws bytes, so an accented name would arrive
+   as mojibake on a 128x64 screen. */
+function worldName() {
+  const raw = ($('wavName').value || '').replace(/[^\x20-\x7e]/g, '').trim();
+  return (raw || 'import').slice(0, 16);
+}
+
+/* Send and save build the world here and nowhere else, so what you heard and
+   what you kept cannot drift apart. That is not hypothetical tidiness: the two
+   paths differing by a placement rule or a sigma is exactly the sort of thing
+   nobody would notice until a saved file sounded wrong months later. */
+function importedBlob() {
+  const pos = cellPositions(imported.length);
+  return MVL.buildUserWorld(imported.map((w, i) => ({ pos: pos[i], mags: w.mags })),
+                            { n: 4, k: 64, sigma: 0.26, name: worldName() });
+}
+
+/* Export, which is the point of import.
+ *
+ * A sent world lives in RAM and the card is read-only from the module, so
+ * until now nothing anyone placed could be kept: close the tab or power the
+ * module down and the arrangement was gone. The bytes are the module's own
+ * `.kykw` — drop the file in /kyklophoria on the card and it is in the CARD
+ * list at the next scan, and it is the same file to hand to somebody else.
+ *
+ * The blob round-trips exactly by design (f32 coefficients, not the u8 log
+ * encoding telemetry uses), so the file holds the coefficients the module was
+ * sent and not a quantised likeness of them. Reading a `.kykw` back into the
+ * page is not built: the card and the module can load one, this can only
+ * write one. */
+function exportImported() {
+  if (!imported.length) return;
+  const blob = importedBlob(), name = worldName();
+  /* The header keeps the name as typed; the filename cannot. Spaces and
+     anything a filesystem would argue about become dashes, and a name that is
+     nothing but punctuation falls back rather than saving as ".kykw". */
+  const file = name.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'import';
+  const url = URL.createObjectURL(new Blob([blob], { type: 'application/octet-stream' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file + '.kykw';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  /* Revoked late rather than immediately: revoking in the same task cancels
+     the download in Firefox, which is a bug that only ever shows up in the one
+     browser you did not test in. */
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  say(`saved ${file}.kykw — ${imported.length} node${imported.length > 1 ? 's' : ''}, ${blob.length} bytes`);
+}
+
 async function sendImported() {
   if (!link || !imported.length) return;
-  const pos = cellPositions(imported.length);
-  const blob = MVL.buildUserWorld(imported.map((w, i) => ({ pos: pos[i], mags: w.mags })),
-                                  { n: 4, k: 64, sigma: 0.26, name: 'import' });
+  const blob = importedBlob();
   try {
     await MVL.putWorld(link, blob, (done, all) =>
       say(`sending ${(100 * done / all).toFixed(0)}%`));
-    say(`${imported.length} waveforms placed on the 24-cell (${blob.length} bytes)`);
+    say(`${worldName()}: ${imported.length} waveforms placed on the 24-cell (${blob.length} bytes)`);
     setTimeout(() => refreshWorlds(), 250);
   } catch (e) { say('send: ' + e.message, true); }
 }
@@ -713,6 +776,7 @@ $('wavMode').onclick = () => {
   renderImport();
 };
 $('wavSend').onclick = sendImported;
+$('wavSave').onclick = exportImported;
 $('wavClear').onclick = () => { imported.length = 0; renderImport(); };
 renderImport();
 /* Direct or aimed, as a pair of chips rather than a button that fires and

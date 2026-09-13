@@ -88,12 +88,20 @@ rests on every cell sharing one phase spectrum, and giving each node its own
 would let partials cancel, which is the comb-filtered dip the whole design
 exists to make unreachable.
 
+Name a set and **save** it and the page writes a `.kykw` — the module's own
+format, the same bytes **send** puts on the wire, so what you heard is what you
+kept. Copy it into `/kyklophoria` on the card and it is in the module's list at
+the next scan, or hand the file to somebody else. The coefficients are f32
+rather than the log encoding telemetry uses precisely so this round-trips: an
+export of an import is the file you started from. Saving needs no module
+attached; curating a folder of worlds offline is a reasonable way to use the
+page.
+
 **Where this stops, for now.** Import places nodes on the 24-cell's own vertices
-and there is no way to move them yet; a world sent from the page lives in RAM
-and is gone at the next boot. The SD card is read-only here — put `.kykw` files
-in `/kyklophoria` on it from a computer and the module lists and loads them —
-so saving one you built on the page means the card cannot help yet. None of
-this is needed to play the instrument; it is needed to keep what you make.
+and there is no way to move them yet. The card is still read-only from the
+module, so a world sent over the link lives in RAM and is gone at the next boot
+— save it and copy it across to keep it. None of this is needed to play the
+instrument; it is needed to keep what you make.
 
 ## Worlds
 
@@ -221,7 +229,8 @@ its spectrum and the band limit, the rotation planes, the Kepler orbit and a
 CPU readout. It also mirrors the panel — which page you are on, what its six
 knobs do and where they are sitting — and carries the things that are setup
 rather than playing: the morph target and whether it is aimed, which motions are
-muted, which world to load from the card, and importing WAVs.
+muted, which world to load from the card, and importing WAVs — which it can now
+name, send and save as a file.
 
 It is a readout first. Everything it shows comes *from* the module, including
 the state of its own controls, so two pages open at once agree and a preset load
@@ -255,15 +264,16 @@ flash together, or the page will parse an older shape than the module sends.
 
 ## Not built yet
 
-Writing to the card, so a world you build on the page can be kept. Moving
-imported nodes rather than taking the placement you are given. FM and sync
+Writing to the card from the module, so keeping a world does not mean moving a
+file by hand. Moving imported nodes rather than taking the placement you are
+given. FM and sync
 inputs. The filter, drive and FM-index payload lanes — only CV out A is routed.
 Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 (non-lattice) spaces.
 
 **What has been played and what has not.** The twenty-one built-in worlds are
 what has had real time on the bench. Morphing, user worlds, import and the card
-are tested by the suite — 420 world-pair switches, 99 link checks, 85 web
+are tested by the suite — 420 world-pair switches, 99 link checks, 96 web
 checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
 them as the new half of a beta.
 
