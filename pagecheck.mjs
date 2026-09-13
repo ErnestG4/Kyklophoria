@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavState muteChips morphAim morphDirect'.split(' ');
+const IDS = 'axes planeAxes plane inspect strip tabPlay tabBuild playMain buildMain worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavState muteChips morphAim morphDirect'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -102,7 +102,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; } };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, setView, planeBoxes, boxAt, selectNode };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -184,61 +184,130 @@ for (const [id, min] of [['worldChips', 0], ['shadeChips', 3], ['trailChips', 4]
   if (!ok) bad++;
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} #${id} populated at load (${n} children, want >= ${min})`);
 }
-/* Placement: a drag must move the node you grabbed, on the two axes you can
- * see, and leave the other two alone.
+/* The two views are two views: one is shown, the other is not, and the world
+ * bar belongs to the one that plays. Worth asserting rather than eyeballing —
+ * a tab that shows both at once is a layout bug you only see at one window
+ * size, and a tab that shows neither looks like a crash.
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  /* This one is a grep, and a grep is weak evidence — but the thing it guards
+     cannot be reached from here at all. There is no CSS in this harness, so
+     `hidden` being beaten by an id rule is invisible to every check below:
+     the properties would all read correctly while the page rendered both
+     views on top of each other. Asserting the override exists is the most
+     this harness can honestly do; the line it looks for was verified to be
+     missing before it was added. */
+  const css = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
+  T(/\[hidden\]\s*\{[^}]*display:\s*none\s*!important/.test(css),
+    'the stylesheet makes [hidden] beat the id rules that set display');
+
+  P.setView('build');
+  T(els.playMain.hidden && !els.buildMain.hidden, 'build shows the builder and hides the instrument');
+  T(els.worldbar.hidden, 'and hides the world bar, which is all play-side');
+  P.setView('play');
+  T(!els.playMain.hidden && els.buildMain.hidden && !els.worldbar.hidden,
+    'play puts the instrument back');
+
+  /* the strip is the answer to "what did I just import", so it has to be there */
+  P.imported.length = 0;
+  P.renderStrip();
+  T(els.strip.children.length === 1, 'an empty set says so rather than showing nothing');
+  for (let i = 0; i < 3; i++)
+    P.imported.push({ name: 'w' + i, mags: new Float32Array(64), fit: 1, mode: 'shape',
+                      pos: [0.5, 0.5, 0.5, 0.5], render: new Float32Array(64) });
+  P.renderStrip();
+  T(els.strip.children.length === 3, `one card per waveform (${els.strip.children.length})`);
+}
+console.log('');
+
+/* Placement: a drag must move the node you grabbed, on the two axes that
+ * square is drawing, and leave the others alone.
  *
  * That last clause is the whole design and the easiest thing to get silently
  * wrong — a placement editor that quietly rewrites the axes it is not showing
  * would look right on screen and put the node somewhere nobody chose. The
- * pixel geometry is inverted here rather than assumed, so this also fails if
- * drawSpace's projection and the pointer's idea of it ever drift apart.
+ * pixel geometry is inverted from the squares the view actually published, so
+ * this also fails if the drawing and the pointer's idea of it drift apart.
  */
 {
   const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
   P.imported.length = 0;
   for (let i = 0; i < 6; i++)
-    P.imported.push({ name: 'node' + i, mags: new Float32Array(64), fit: 1, pos: [0.5, 0.5, 0.5, 0.5] });
+    P.imported.push({ name: 'node' + i, mags: new Float32Array(64), fit: 1, mode: 'shape',
+                      pos: [0.5, 0.5, 0.5, 0.5] });
   P.placeOnCell();
   P.setAxes([0, 1]);
   P.setTel(null);
-  P.drawSpace();                       /* which is what publishes the view box */
-  const V = P.view;
-  T(V.S > 0 && Number.isFinite(V.ox) && Number.isFinite(V.oy),
-    `the view box is known without a module attached (S ${V.S})`);
+  P.setView('build');
+  P.drawPlane();                       /* which is what publishes the squares */
 
-  const at = (u, v) => [V.ox + u * V.S, V.oy + (1 - v) * V.S];
+  const boxes = P.planeBoxes;
+  T(boxes.length === 2, `the plane publishes a square and its complement (${boxes.length})`);
+  const [main, inset] = boxes;
+  T(main && main.ax === 0 && main.ay === 1, 'the main square draws the axis pair you chose');
+  /* With four dimensions the complement is unique, which is the whole reason
+     the inset can finish a placement rather than merely hint at one. */
+  T(inset && inset.ax === 2 && inset.ay === 3,
+    `and the inset draws the two axes that are left (${inset && inset.ax}×${inset && inset.ay})`);
+  /* Fully inside, all four edges. "Its corner is past the main square's
+     corner" was the first version of this and it passed with the inset pushed
+     clean off the side of the canvas. */
+  T(inset.S < main.S
+    && inset.ox >= main.ox && inset.oy >= main.oy
+    && inset.ox + inset.S <= main.ox + main.S
+    && inset.oy + inset.S <= main.oy + main.S,
+    'the inset sits wholly inside the square it complements');
+
+  const at = (b, u, v) => [b.ox + u * b.S, b.oy + (1 - v) * b.S];
   const pos = i => [...P.imported[i].pos];
 
   /* grab the node that is drawn where we press */
   const target = 3, before = pos(target);
-  T(P.pickNode(...at(before[0], before[1])) === target,
+  T(P.pickNode(main, ...at(main, before[0], before[1])) === target,
     'a press on a node picks that node');
-  T(P.pickNode(...at(0.5, 0.02)) === -1, 'a press on empty space picks nothing');
+  T(P.pickNode(main, ...at(main, 0.5, 0.02)) === -1, 'a press on empty space picks nothing');
 
   /* the drag itself */
   const others = [0, 1, 2, 4, 5].map(pos);
-  P.moveNodeTo(target, ...at(0.25, 0.75));
+  P.moveNodeTo(target, main, ...at(main, 0.25, 0.75));
   const moved = pos(target);
   T(Math.abs(moved[0] - 0.25) < 1e-6 && Math.abs(moved[1] - 0.75) < 1e-6,
     `the node lands where the pointer did (${moved[0].toFixed(3)} ${moved[1].toFixed(3)})`);
   T(moved[2] === before[2] && moved[3] === before[3],
-    'and the two axes that are not on screen are untouched');
+    'and the two axes that are not on that square are untouched');
   T([0, 1, 2, 4, 5].every((n, j) => pos(n).every((v, a) => v === others[j][a])),
     'no other node moved');
 
-  /* the other half of the space, reached the way the instrument reaches it */
-  P.setAxes([2, 3]);
-  P.moveNodeTo(target, ...at(0.1, 0.9));
+  /* the other half of the space, without leaving the view */
+  P.moveNodeTo(target, inset, ...at(inset, 0.1, 0.9));
   const deep = pos(target);
   T(Math.abs(deep[2] - 0.1) < 1e-6 && Math.abs(deep[3] - 0.9) < 1e-6,
-    'switching the axis pair moves the other two');
+    'a drag in the inset moves the other two axes');
   T(deep[0] === moved[0] && deep[1] === moved[1],
     'and leaves the first two where they were put');
 
+  /* and the same thing the long way round, by switching the pair */
+  P.setAxes([2, 3]);
+  P.drawPlane();
+  T(P.planeBoxes[0].ax === 2 && P.planeBoxes[1].ax === 0,
+    'switching the pair swaps the square and its inset');
+  P.moveNodeTo(target, P.planeBoxes[0], ...at(P.planeBoxes[0], 0.4, 0.6));
+  T(Math.abs(pos(target)[2] - 0.4) < 1e-6 && Math.abs(pos(target)[3] - 0.6) < 1e-6,
+    'and the main square then moves what the inset used to');
+  P.setAxes([0, 1]);
+  P.drawPlane();
+
+  /* a press where the squares overlap belongs to the one on top */
+  const over = P.boxAt(...at(P.planeBoxes[1], 0.5, 0.5));
+  T(over === P.planeBoxes[1], 'a press where they overlap lands in the inset, which is drawn on top');
+  T(P.boxAt(...at(P.planeBoxes[0], 0.1, 0.9)) === P.planeBoxes[0], 'and elsewhere in the main square');
+  T(P.boxAt(-50, -50) === null, 'and nowhere at all outside both');
+
   /* the cube is the reachable space, so a drag cannot leave it */
-  P.moveNodeTo(target, V.ox - 400, V.oy - 400);
+  P.moveNodeTo(target, main, main.ox - 400, main.oy - 400);
   const out = pos(target);
-  T(out.every(v => v >= 0 && v <= 1), `a drag past the edge clamps (${out[2].toFixed(2)} ${out[3].toFixed(2)})`);
+  T(out.every(v => v >= 0 && v <= 1), `a drag past the edge clamps (${out[0].toFixed(2)} ${out[1].toFixed(2)})`);
 
   /* re-place is the way back */
   P.placeOnCell();
@@ -251,19 +320,24 @@ for (const [id, min] of [['worldChips', 0], ['shadeChips', 3], ['trailChips', 4]
      six dimensions, you switch to the (4,5) plane, and your imported set is
      four-dimensional. Nothing is there to grab and nothing can be put there. */
   P.setAxes([4, 5]);
+  P.setTel(tel({ n: 6 }));
+  P.drawPlane();
+  const far = P.planeBoxes[0];
   const frozen = pos(target);
-  T(P.pickNode(...at(0.5, 0.5)) === -1, 'nothing is grabbable on a plane the nodes do not have');
-  P.moveNodeTo(target, ...at(0.5, 0.5));
+  T(P.pickNode(far, ...at(far, 0.5, 0.5)) === -1, 'nothing is grabbable on a plane the nodes do not have');
+  P.moveNodeTo(target, far, ...at(far, 0.5, 0.5));
   T(pos(target).every((v, a) => v === frozen[a]), 'and nothing can be dropped onto one');
+  P.setAxes([0, 1]);
+  P.setTel(null);
+  P.drawPlane();
 
   /* what gets saved is what was placed, which is the point of all of it */
-  P.setAxes([0, 1]);
-  P.moveNodeTo(0, ...at(0.8, 0.3));
+  P.moveNodeTo(0, P.planeBoxes[0], ...at(P.planeBoxes[0], 0.8, 0.3));
   const blob = P.importedBlob();
   const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
   T(Math.abs(dv.getFloat32(32, true) - 0.8) < 1e-6 && Math.abs(dv.getFloat32(36, true) - 0.3) < 1e-6,
     'the world carries the moved position, not the vertex it started on');
-
+  P.setView('play');
 }
 console.log('');
 
@@ -446,21 +520,40 @@ console.log('');
    the node layer has to say "not here" rather than draw at the origin or at
    NaN. Nothing throws either way — that is what nanDraws is for. */
 {
-  const cell = [];
-  for (let i = 0; i < 5; i++) cell.push({ name: 'placed' + i, mags: new Float32Array(64), fit: 1,
-                                          pos: [0.2 + 0.15 * i, 0.8 - 0.1 * i, 0.5, 0.35] });
+  const wave = (k) => Float32Array.from({ length: 64 }, (_, h) => k / (h + 1));
   P.imported.length = 0;
-  P.imported.push(...cell);
+  P.imported.push(
+    { name: 'placed0', mags: wave(0.5), fit: 1, mode: 'shape', pos: [0.2, 0.8, 0.5, 0.35],
+      render: wave(0.5), thumb: wave(0.5) },
+    { name: 'a name quite a lot longer than the box', mags: wave(-0.3), fit: 0.62, mode: 'shape',
+      pos: [0.35, 0.7, 0.5, 0.35], render: wave(-0.3), thumb: wave(-0.31) },
+    { name: 'spectral', mags: wave(0.2), fit: 1, mode: 'spectrum', pos: [0.5, 0.6, 0.5, 0.35],
+      render: wave(0.2), thumb: wave(0.9) },
+    /* a node with nothing drawn for it: the inspector must not assume the
+       traces exist, since only an import makes them */
+    { name: 'bare', mags: wave(0.4), fit: 0.95, mode: 'shape', pos: [0.65, 0.5, 0.5, 0.35] },
+    /* and one that is silent, where every peak is zero and a normaliser that
+       divides by it would produce the NaN the watch below is looking for */
+    { name: 'silent', mags: new Float32Array(64), fit: 0, mode: 'shape', pos: [0.8, 0.4, 0.5, 0.35],
+      render: new Float32Array(64), thumb: new Float32Array(64) },
+  );
   P.place.sel = 2;
 }
 
+let caseIdx = 0;
 for (const [name, t] of CASES) {
   P.setTel(t);
+  /* Every case is seen by both views, and the selection walks through the set
+     (including nothing selected) so the inspector's branches — a poor fit, a
+     spectrum-mode node, one with no traces drawn for it, a silent one, and no
+     node at all — are all reached across the sweep rather than in theory. */
+  P.place.sel = (caseIdx++ % (P.imported.length + 1)) - 1;
   try {
     if (t) P.onTelemetry(t);
     /* the individual draws, not frame(), which now swallows throws on purpose */
     P.setPanel(null);
     P.drawSpace(); P.drawSound(); P.drawStatus();
+    P.setView('build'); P.drawPlane(); P.drawInspect(); P.renderStrip(); P.setView('play');
     /* and again with the panel mirror live, on every pager page plus one out
        of range, since tel.page comes off the wire and is not to be trusted */
     P.setPanel(parsed);

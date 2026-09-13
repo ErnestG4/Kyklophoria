@@ -7,11 +7,28 @@
 <style>
   :root { --bg: #07090c; --ink: #cfd6dd; --dim: #5d6873; --line: #1a2028; --hot: #ffcc55; --l: #62d5ff; --r: #ff7a9e; --ok: #6ee7a0; --bad: #ff5c5c; }
   * { box-sizing: border-box; }
+  /* `hidden` has to beat our own layout rules, and by default it does not.
+     The browser's stylesheet says [hidden] { display: none }, which is an
+     attribute selector and loses to any rule with an id in it — and the three
+     things this page hides (#playMain, #buildMain, #worldbar) all set display
+     from an id. Without this the build view and the instrument render on top
+     of each other and the tabs do nothing, which no amount of testing against
+     a stub canvas would ever notice. */
+  [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace; height: 100%; overflow: hidden; }
   body { display: grid; grid-template-rows: auto auto 1fr auto auto; height: 100vh; }
   header { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
   header .name { font-weight: 600; letter-spacing: .08em; color: var(--hot); }
   header .sp { flex: 1; }
+  /* Two jobs, two views. Playing is a readout of the module; building a world
+     is an editor for something the module is not holding yet. They were one
+     view, and the placement rings ended up sitting on top of a live position
+     readout, which is the picture telling you two unrelated things in the same
+     marks. */
+  .tab { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--dim);
+         font: inherit; letter-spacing: .1em; padding: 2px 6px 1px; cursor: pointer; }
+  .tab:hover { color: var(--ink); }
+  .tab.on { color: var(--hot); border-bottom-color: var(--hot); }
   button { background: #0f141a; color: var(--ink); border: 1px solid #263039; border-radius: 3px; padding: 3px 9px; font: inherit; cursor: pointer; }
   button:hover { border-color: #3a4855; } button.on { border-color: var(--hot); color: var(--hot); }
   button:disabled { opacity: .4; cursor: default; }
@@ -46,6 +63,33 @@
   #worldbar input[type=text]:focus { outline: none; border-color: var(--hot); }
   #worldbar input[type=text]::placeholder { color: var(--dim); opacity: .7; }
   main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 34%); gap: 0; min-height: 0; }
+  /* Both views occupy the same row; whichever is not hidden fills it. */
+  main, #buildMain { grid-row: 3; }
+  #buildMain { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
+  #buildMain .brow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+                     padding: 5px 12px; border-bottom: 1px solid var(--line);
+                     font-size: 11px; color: var(--dim); }
+  #buildMain .brow .cap { letter-spacing: .1em; flex: none; }
+  #buildMain .brow .sp { flex: 1; }
+  #buildMain .bmid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 32%); min-height: 0; }
+  #buildMain input[type=text] { background: #0f141a; color: var(--ink); border: 1px solid #263039;
+                     border-radius: 3px; padding: 1px 4px; font: inherit; width: 9em; }
+  #buildMain input[type=text]:focus { outline: none; border-color: var(--hot); }
+  /* The strip is the answer to "what did I just import": one card per wave,
+     drawn, named and graded, rather than a count and the worst fit. */
+  #strip { display: flex; gap: 6px; align-items: flex-start; padding: 6px 10px;
+           border-top: 1px solid var(--line); overflow-x: auto; min-height: 72px; }
+  #strip .empty { color: var(--dim); font-size: 11px; padding: 18px 4px; }
+  .card { flex: 0 0 auto; width: 106px; background: #0f141a; border: 1px solid #263039;
+          border-radius: 3px; padding: 3px; cursor: pointer; }
+  .card:hover { border-color: #3a4855; }
+  .card.on { border-color: var(--hot); }
+  .card canvas { display: block; width: 98px; height: 32px; }
+  .card .cn { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden;
+              text-overflow: ellipsis; }
+  .card.on .cn { color: var(--hot); }
+  .card .cf { font-size: 9px; color: #4d5866; }
+  .card .cf.poor { color: #ff9a5c; }
   .pane { position: relative; min-width: 0; min-height: 0; border-right: 1px solid var(--line); }
   .pane:last-child { border-right: 0; }
   canvas { display: block; width: 100%; height: 100%; }
@@ -69,6 +113,8 @@
 <body>
 <header>
   <span class="name">Kyklophoria</span>
+  <button class="tab on" id="tabPlay">play</button>
+  <button class="tab" id="tabBuild">build</button>
   <span id="modinfo" style="color:var(--dim)">not connected</span>
   <span class="sp"></span>
   <span id="msg"></span>
@@ -105,23 +151,11 @@
     <span id="cardState" style="color: var(--dim)"></span>
   </div>
   <div class="wrow">
-    <span class="cap">IMPORT</span>
-    <input type="file" id="wavIn" accept=".wav,audio/wav" multiple hidden>
-    <button class="chip" id="wavPick">add wavs…</button>
-    <button class="chip" id="wavMode">shape</button>
-    <input type="text" id="wavName" maxlength="16" placeholder="name" spellcheck="false">
-    <button class="chip" id="wavSend">send</button>
-    <button class="chip" id="wavSave">save…</button>
-    <button class="chip" id="wavPlace">re-place</button>
-    <button class="chip" id="wavClear">clear</button>
-    <span id="wavState" style="color: var(--dim)"></span>
-  </div>
-  <div class="wrow">
     <span class="cap">MOTION</span>
     <span id="muteChips"></span>
   </div>
 </nav>
-<main>
+<main id="playMain">
   <div class="pane">
     <canvas id="space"></canvas>
     <div class="overlay" id="axes"></div>
@@ -132,6 +166,34 @@
     <div class="label">SOUND</div>
   </div>
 </main>
+<section id="buildMain" hidden>
+  <div class="brow">
+    <span class="cap">WAVES</span>
+    <input type="file" id="wavIn" accept=".wav,audio/wav" multiple hidden>
+    <button class="chip" id="wavPick">add wavs…</button>
+    <button class="chip" id="wavMode">shape</button>
+    <button class="chip" id="wavClear">clear</button>
+    <span class="sp"></span>
+    <span class="cap">WORLD</span>
+    <input type="text" id="wavName" maxlength="16" placeholder="name" spellcheck="false">
+    <button class="chip" id="wavPlace">re-place</button>
+    <button class="chip" id="wavSend">send</button>
+    <button class="chip" id="wavSave">save…</button>
+    <span id="wavState" style="color: var(--dim)"></span>
+  </div>
+  <div class="bmid">
+    <div class="pane">
+      <canvas id="plane"></canvas>
+      <div class="overlay" id="planeAxes"></div>
+      <div class="label">PLACE</div>
+    </div>
+    <div class="pane">
+      <canvas id="inspect"></canvas>
+      <div class="label">WAVE</div>
+    </div>
+  </div>
+  <div id="strip"></div>
+</section>
 <div id="drawer"></div>
 <footer>
   <span>module <b id="sMod">—</b></span>
@@ -562,7 +624,7 @@ let importMode = 'shape';
  * just put it. Before that it stays false and nothing goes over the link
  * unasked — dragging must not be what switches the module off the world
  * somebody is playing. */
-const place = { sel: -1, drag: -1, sent: false };
+const place = { sel: -1, drag: -1, box: null, sent: false };
 
 /* The 24-cell: every permutation of (+-1, +-1, 0, 0), walked plane by plane so
    vertex group g lands in Givens plane g (core/kyk_lock.h). */
@@ -590,12 +652,18 @@ function placeOnCell() {
 
 /* ── moving a node ────────────────────────────────────────────────────────
  *
- * The space view draws two axes of four, so a drag sets those two and leaves
- * the rest alone; the other two are reached by switching the pair, which is
- * what the axis buttons and the arrow keys already do. That is not a
- * compromise for want of a 4-D input device — it is how the instrument is
- * played, one Givens plane at a time, and placing a node the same way puts it
+ * A square of the space draws two axes of four, so a drag sets those two and
+ * leaves the rest alone; the other two are reached either by switching the
+ * pair or, in the build view, by dragging in the inset that draws them. That
+ * is not a compromise for want of a 4-D input device — the instrument is
+ * played one Givens plane at a time, and placing a node the same way puts it
  * somewhere you can describe.
+ *
+ * Everything that hit-tests or draws a node takes a *box*: which two axes it
+ * shows, where it sits on which canvas, how big. The play view's read-only
+ * square, the build view's main square and its inset are three boxes and one
+ * piece of code, so they cannot drift apart — the bug where the pointer and
+ * the projection disagree can only be written once.
  *
  * Positions are clamped to the cube. The format does not require it (the
  * parser checks only that coefficients are finite) and a node outside is
@@ -603,15 +671,38 @@ function placeOnCell() {
  * would be one you could never arrive at, which is not a thing to let a drag
  * do by accident.
  */
-const spaceX = (x) => clamp01((x - view.ox) / view.S);
-const spaceY = (y) => clamp01(1 - (y - view.oy) / view.S);
+const planeBoxes = [];         /* the build view's squares, rebuilt each frame */
+const boxX = (b, u) => b.ox + clamp01(u) * b.S;
+const boxY = (b, v) => b.oy + (1 - clamp01(v)) * b.S;
 
-/* How far a node sits from the slice on screen, in the axes that are not on
-   it. Chebyshev rather than Euclidean because it answers the question being
-   asked — is any one of the axes I cannot see far away — and because the
-   24-cell's own neighbours differ on exactly two axes at a time. */
-function offPlane(w) {
-  const ref = tel ? tel.posL : null;
+/* The two axes that are not on screen. For four dimensions this is the unique
+   complementary plane, which is why the inset can be exactly one square and
+   why placing a node is finished in one view. Beyond four there is no unique
+   complement, so it shows the lowest two that are missing and says which. */
+function otherAxes(n) {
+  const out = [];
+  for (let a = 0; a < n && out.length < 2; a++) if (a !== axes[0] && a !== axes[1]) out.push(a);
+  return out.length === 2 ? out : null;
+}
+
+/* Which slice the fade is measured against.
+ *
+ * In the build view it is the node in your hand: the useful question while
+ * placing is "what else is near this one in the axes I cannot see". With
+ * nothing picked, and in the play view, it is where the module is standing,
+ * which is the slice the terrain was drawn for. */
+function sliceRef() {
+  const sel = imported[place.sel];
+  if (viewMode === 'build' && sel) return sel.pos;
+  return tel ? tel.posL : null;
+}
+
+/* How far a node sits from that slice, in the axes this box does not show.
+   Chebyshev rather than Euclidean because it answers the question being asked
+   — is any one of the axes I cannot see far away — and because the 24-cell's
+   own neighbours differ on exactly two axes at a time. */
+function offPlane(w, b) {
+  const ref = sliceRef();
   if (!ref) return 0;
   let d = 0;
   /* Bounded by the node's own dimension, not the module's. A four-dimensional
@@ -619,38 +710,47 @@ function offPlane(w) {
      page draws whatever is live — and reading past the end of pos would make
      every distance NaN and every node fully bright, which is the opposite of
      what the fade is for. */
-  for (let a = 0; a < Math.min(w.pos.length, tel ? tel.n : 4); a++)
-    if (a !== axes[0] && a !== axes[1]) d = Math.max(d, Math.abs(w.pos[a] - ref[a]));
+  for (let a = 0; a < Math.min(w.pos.length, ref.length); a++)
+    if (a !== b.ax && a !== b.ay) d = Math.max(d, Math.abs(w.pos[a] - ref[a]));
   return d;
 }
 
-/* The node under the pointer, or -1.
+/* The node under the pointer in this box, or -1.
  *
  * Ties are broken towards the node nearest the slice being drawn — the one
  * that is not faded — because that is the one under the pointer as far as the
  * eye is concerned. A node from another plane projecting onto the same spot is
  * drawn dim, and grabbing the dim one when a bright one is there would feel
  * like the page picked at random. */
-function pickNode(x, y) {
+function pickNode(b, x, y) {
   let best = -1, score = 1e9;
   for (let i = 0; i < imported.length; i++) {
     const w = imported[i];
-    if (axes[0] >= w.pos.length || axes[1] >= w.pos.length) continue;
-    const dx = (view.ox + w.pos[axes[0]] * view.S) - x;
-    const dy = (view.oy + (1 - w.pos[axes[1]]) * view.S) - y;
-    const d = Math.hypot(dx, dy);
+    if (b.ax >= w.pos.length || b.ay >= w.pos.length) continue;
+    const d = Math.hypot(boxX(b, w.pos[b.ax]) - x, boxY(b, w.pos[b.ay]) - y);
     if (d > 11) continue;
-    const sc = d + 40 * offPlane(w);
+    const sc = d + 40 * offPlane(w, b);
     if (sc < score) { score = sc; best = i; }
   }
   return best;
 }
 
-function moveNodeTo(i, x, y) {
+function moveNodeTo(i, b, x, y) {
   const w = imported[i];
-  if (!w || axes[0] >= w.pos.length || axes[1] >= w.pos.length) return;
-  w.pos[axes[0]] = spaceX(x);
-  w.pos[axes[1]] = spaceY(y);
+  if (!w || b.ax >= w.pos.length || b.ay >= w.pos.length) return;
+  w.pos[b.ax] = clamp01((x - b.ox) / b.S);
+  w.pos[b.ay] = clamp01(1 - (y - b.oy) / b.S);
+}
+
+/* Which square a press landed in. The inset is tested first because it is
+   drawn on top of the main one, and both are given a few pixels of slack so a
+   node can be pushed right into a corner rather than stopping short of it. */
+function boxAt(x, y) {
+  for (let i = planeBoxes.length - 1; i >= 0; i--) {
+    const b = planeBoxes[i];
+    if (x >= b.ox - 8 && x <= b.ox + b.S + 8 && y >= b.oy - 8 && y <= b.oy + b.S + 8) return b;
+  }
+  return null;
 }
 
 /* Keep the module holding what is on screen, without piling up transfers.
@@ -672,6 +772,15 @@ async function syncPlacement() {
     place.sent = false;
     say('the module stopped taking the moved world: ' + e.message, true);
   } finally { placeSending = false; renderImport(); }
+}
+
+/* Picking one is picking it everywhere: the card, the rings in both squares
+   and the inspector are one selection seen from four places. */
+function selectNode(i) {
+  if (place.sel === i) return;
+  place.sel = i;
+  renderStrip();
+  renderImport();
 }
 
 function renderImport() {
@@ -712,10 +821,17 @@ async function addWavs(files) {
       /* A vertex to start on, which is where placement used to end. The
          arrangement is the same one it always was; the difference is that the
          node owns it now and can be moved off it. */
+      /* The original cycle is kept, turned to line up with what came out of
+         the projection. It is the only way to show what import cost: the fit
+         is a number, and a number does not tell you whether the 6% that went
+         missing was the edge of a saw or the whole character of a vowel. */
       imported.push({ name: f.name.replace(/\.wav$/i, ''), mags: nd.mags, fit: nd.fit,
-                      pos: cell[imported.length].slice() });
+                      mode: importMode, pos: cell[imported.length].slice(),
+                      render: renderFromMags(nd.mags),
+                      thumb: rotatedCycle(cyc, nd.rotation || 0) });
     } catch (e) { say(f.name + ': ' + e.message, true); }
   }
+  renderStrip();
   renderImport();
 }
 
@@ -901,12 +1017,17 @@ $('wavMode').onclick = () => {
   importMode = importMode === 'shape' ? 'spectrum' : 'shape';
   /* re-project what is already loaded, or the two modes would be mixed */
   if (imported.length) say('re-import to change mode for waves already added');
+  renderStrip();
   renderImport();
 };
 $('wavSend').onclick = sendImported;
 $('wavSave').onclick = exportImported;
-$('wavPlace').onclick = () => { placeOnCell(); renderImport(); syncPlacement(); };
-$('wavClear').onclick = () => { imported.length = 0; place.sel = -1; place.sent = false; renderImport(); };
+$('wavPlace').onclick = () => { placeOnCell(); renderStrip(); renderImport(); syncPlacement(); };
+$('wavClear').onclick = () => {
+  imported.length = 0; place.sel = -1; place.sent = false;
+  renderStrip(); renderImport();
+};
+renderStrip();
 renderImport();
 /* Direct or aimed, as a pair of chips rather than a button that fires and
    leaves no trace.
@@ -1066,13 +1187,20 @@ function trailStep(t, n) {
 }
 
 /* ── axis selector ──────────────────────────────────────────────────── */
+/* One projection, chosen once, drawn in both views. Which plane you are
+   looking at is a fact about where you are in the space, not about which tab
+   is open, and two independent pairs would mean the rings you just dragged sat
+   somewhere else when you went back to play. */
 function buildAxisButtons() {
-  const n = tel ? tel.n : (space ? space.n : 4), box = $('axes'); box.innerHTML = '';
-  for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
-    const btn = document.createElement('button'); btn.textContent = a + '×' + b;
-    btn.classList.toggle('on', axes[0] === a && axes[1] === b);
-    btn.onclick = () => { axes = [a, b]; trail.n = 0; trail.head = 0; trail.at = -1; buildAxisButtons(); };
-    box.appendChild(btn);
+  const n = tel ? tel.n : (space ? space.n : 4);
+  for (const id of ['axes', 'planeAxes']) {
+    const box = $(id); box.innerHTML = '';
+    for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
+      const btn = document.createElement('button'); btn.textContent = a + '×' + b;
+      btn.classList.toggle('on', axes[0] === a && axes[1] === b);
+      btn.onclick = () => { axes = [a, b]; trail.n = 0; trail.head = 0; trail.at = -1; buildAxisButtons(); };
+      box.appendChild(btn);
+    }
   }
 }
 buildAxisButtons();
@@ -1086,41 +1214,8 @@ document.addEventListener('keydown', e => {
 
 /* ── drawing ────────────────────────────────────────────────────────── */
 const cs = $('space'), cx = cs.getContext('2d'), cn = $('sound'), cnx = cn.getContext('2d');
-/* ── dragging a node in the space view ────────────────────────────────────
- *
- * Pointer events rather than mouse events: the same handlers then work for a
- * finger, and capture means a drag that leaves the canvas keeps going instead
- * of stopping against the edge of the pane — which matters here, because the
- * edge of the pane is where you push a node to put it in a corner.
- *
- * A press that lands on nothing clears the selection. That is what makes the
- * import row's readout trustworthy: it names a node only while one is actually
- * picked, so it can never be describing something you stopped touching.
- */
-cs.addEventListener('pointerdown', e => {
-  if (!imported.length) return;
-  const r = cs.getBoundingClientRect();
-  const i = pickNode(e.clientX - r.left, e.clientY - r.top);
-  place.sel = i;
-  place.drag = i;
-  if (i >= 0) { cs.setPointerCapture(e.pointerId); e.preventDefault(); }
-  renderImport();
-});
-cs.addEventListener('pointermove', e => {
-  if (place.drag < 0) return;
-  const r = cs.getBoundingClientRect();
-  moveNodeTo(place.drag, e.clientX - r.left, e.clientY - r.top);
-  renderImport();
-});
-/* The send is on the drop, not on the move: a world is 6.5 KB and a drag is
-   sixty positions a second, and the one that matters is where you let go. */
-for (const ev of ['pointerup', 'pointercancel']) cs.addEventListener(ev, () => {
-  if (place.drag < 0) return;
-  place.drag = -1;
-  renderImport();
-  syncPlacement();
-});
-
+const cp = $('plane'), cpx = cp.getContext('2d'), ci = $('inspect'), cix = ci.getContext('2d');
+const CANVASES = [cs, cn, cp, ci];
 /* The CSS box of each canvas, measured when it changes rather than every frame.
  *
  * drawSpace and drawSound each read clientWidth and clientHeight and then call
@@ -1139,7 +1234,7 @@ function boxOf(c) {
   return b;
 }
 function resize() {
-  for (const c of [cs, cn]) {
+  for (const c of CANVASES) {
     const r = c.parentElement.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
     c.width = Math.max(1, Math.round(r.width * dpr)); c.height = Math.max(1, Math.round(r.height * dpr));
     c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1150,8 +1245,11 @@ window.addEventListener('resize', resize); resize();
    which is what primes the cache. */
 if (typeof ResizeObserver !== 'undefined') {
   const ro = new ResizeObserver(es => { for (const e of es) measure(e.target); });
-  ro.observe(cs); ro.observe(cn);
-} else { measure(cs); measure(cn); window.addEventListener('resize', () => { measure(cs); measure(cn); }); }
+  for (const c of CANVASES) ro.observe(c);
+} else {
+  const all = () => { for (const c of CANVASES) measure(c); };
+  all(); window.addEventListener('resize', all);
+}
 
 /* ── one spectral measure, on an absolute domain ────────────────────────
  * The terrain and the dot both read this, so the same colour means the same
@@ -1474,7 +1572,9 @@ function drawSpace() {
     else { cx.moveTo(px(0), py(0)); cx.lineTo(px(1), py(0)); cx.moveTo(px(0), py(1)); cx.lineTo(px(1), py(1)); }
     cx.stroke(); cx.setLineDash([]);
   }
-  drawNodes(ox, oy, S, px, py);
+  /* Visible here, movable only in the build view: this is a readout of the
+     module, and a readout you can edit by brushing against it is neither. */
+  drawNodes(cx, { ax, ay, ox, oy, S }, { dim: 0.8 });
   if (!tel) { cx.fillStyle = '#3b4756'; cx.fillText('waiting for the module', ox + S / 2 - 70, oy + S / 2); drawArcs(n, planes, null, ox, oy + S + 18, S); return; }
   /* active cell around L — only a tabulated world has cells */
   if (space && side > 1) {
@@ -1581,51 +1681,335 @@ function drawSpace() {
 }
 /* Imported nodes, where they are and which one the hand is on.
  *
- * Drawn before the trail and the dot, and deliberately so: this layer is
- * setup, and the one mark that must never be lost is where the instrument
- * actually is. Rings rather than discs, in the panel's own amber, so they read
- * as "things you placed" against a dot that takes its colour from the timbre.
+ * In the play view this layer is drawn before the trail and the dot, and
+ * deliberately so: it is setup, and the one mark that must never be lost is
+ * where the instrument actually is. Rings rather than discs, in the panel's
+ * own amber, so they read as "things you placed" against a dot that takes its
+ * colour from the timbre.
  *
  * A node fades with its distance from the slice on screen. Two of its four
- * axes are not on this plane, and without the fade a node sitting a long way
+ * axes are not on this square, and without the fade a node sitting a long way
  * off in the axes you cannot see looks exactly like one under your hand —
  * which is the projection lying about a space whose whole point is that it has
  * more directions than a screen. Faded is the honest way to say "this is over
- * there"; the number in the import row says how far.
+ * there"; the inspector says how far.
  *
- * Names only when there are few enough for them to be readable, plus always
- * the selected one. Twenty-four labels on a square is not a placement view, it
- * is a wall of text. */
-function drawNodes(ox, oy, S, px, py) {
+ * Names only when there are few enough to be readable, plus always the
+ * selected one. Twenty-four labels on a square is not a placement view, it is
+ * a wall of text. */
+function drawNodes(g, b, { dim = 1, labels = true } = {}) {
   if (!imported.length) return;
-  const [ax, ay] = axes;
-  const labels = imported.length <= 8;
-  cx.font = '10px ui-monospace, monospace';
+  const named = labels && imported.length <= 8;
+  g.font = '10px ui-monospace, monospace';
   for (let i = 0; i < imported.length; i++) {
     const w = imported[i], sel = i === place.sel;
     /* A node has no coordinate on an axis it does not have, so it is not
-       anywhere on this plane and drawing it at the origin would be a lie. */
-    if (ax >= w.pos.length || ay >= w.pos.length) continue;
-    const x = px(clamp01(w.pos[ax])), y = py(clamp01(w.pos[ay]));
-    const near = Math.max(0.18, 1 - Math.min(1, offPlane(w) / 0.5));
-    cx.globalAlpha = sel ? 1 : near;
-    cx.beginPath(); cx.arc(x, y, sel ? 7 : 5, 0, 7);
-    cx.lineWidth = 2.5; cx.strokeStyle = 'rgba(7,9,12,0.85)'; cx.stroke();
-    cx.lineWidth = sel ? 1.8 : 1.2; cx.strokeStyle = sel ? '#ffe9a8' : '#ffcc55'; cx.stroke();
-    cx.lineWidth = 1;
+       anywhere on this square and drawing it at the origin would be a lie. */
+    if (b.ax >= w.pos.length || b.ay >= w.pos.length) continue;
+    const x = boxX(b, w.pos[b.ax]), y = boxY(b, w.pos[b.ay]);
+    const near = Math.max(0.18, 1 - Math.min(1, offPlane(w, b) / 0.5));
+    const r = b.S < 140 ? 3.5 : 5;
+    g.globalAlpha = dim * (sel ? 1 : near);
+    g.beginPath(); g.arc(x, y, sel ? r + 2 : r, 0, 7);
+    g.lineWidth = 2.5; g.strokeStyle = 'rgba(7,9,12,0.85)'; g.stroke();
+    g.lineWidth = sel ? 1.8 : 1.2; g.strokeStyle = sel ? '#ffe9a8' : '#ffcc55'; g.stroke();
+    g.lineWidth = 1;
     /* A dot in the middle of the selected one, so it is still findable when it
        is sitting on top of the position dot. */
-    if (sel) { cx.beginPath(); cx.arc(x, y, 1.6, 0, 7); cx.fillStyle = '#ffe9a8'; cx.fill(); }
-    if (labels || sel) {
+    if (sel) { g.beginPath(); g.arc(x, y, 1.6, 0, 7); g.fillStyle = '#ffe9a8'; g.fill(); }
+    if ((named || sel) && b.S >= 140) {
       const t = w.name.length > 12 ? w.name.slice(0, 11) + '…' : w.name;
-      cx.lineWidth = 3; cx.strokeStyle = 'rgba(7,9,12,0.75)'; cx.strokeText(t, x + 9, y + 3);
-      cx.fillStyle = sel ? '#ffe9a8' : '#c8a24a'; cx.fillText(t, x + 9, y + 3);
-      cx.lineWidth = 1;
+      g.lineWidth = 3; g.strokeStyle = 'rgba(7,9,12,0.75)'; g.strokeText(t, x + 9, y + 3);
+      g.fillStyle = sel ? '#ffe9a8' : '#c8a24a'; g.fillText(t, x + 9, y + 3);
+      g.lineWidth = 1;
     }
   }
-  cx.globalAlpha = 1;
-  cx.font = '11px ui-monospace, monospace';
+  g.globalAlpha = 1;
+  g.font = '11px ui-monospace, monospace';
 }
+
+/* ── the build view ──────────────────────────────────────────────────────
+ *
+ * Playing and building are different jobs and were sharing one picture. The
+ * space pane is a readout: everything in it comes from the module and moves
+ * because the module moved. Placement is the opposite — nothing in it is true
+ * yet, the whole point is to change it, and it wants room to say what a
+ * waveform *is* rather than a ring on somebody else's terrain.
+ *
+ * So: two tabs. Play is the instrument. Build is a set of waveforms, where
+ * each one sits in the space, and what the module will actually make of it.
+ * The axis pair is shared between them, because which plane you are looking at
+ * is a fact about the space rather than about which tab is open.
+ */
+const CYC = 512;                 /* points per drawn cycle: plenty at 64 harmonics */
+
+/* What the module will render for this node.
+ *
+ * Sine phase and signed coefficients, which is exactly what a user world
+ * declares (`sinePhase: true` in the blob), so this is not an impression of
+ * the sound — it is the waveform the engine builds when Morph locks onto that
+ * vertex. Worth drawing precisely because it is the part import throws away:
+ * a node is a projection onto the sine basis, and what did not survive is only
+ * visible by putting the two side by side. */
+function renderFromMags(mags, out = CYC) {
+  const y = new Float32Array(out);
+  for (let h = 0; h < mags.length; h++) {
+    const a = mags[h];
+    if (!a) continue;
+    const w = 2 * Math.PI * (h + 1) / out;
+    for (let i = 0; i < out; i++) y[i] += a * Math.sin(w * i);
+  }
+  return y;
+}
+
+/* The cycle as imported, turned to line up with what came out.
+ *
+ * cycleToNode searches for the rotation of the cycle that keeps the most
+ * energy on the sine basis, so the node describes the *shifted* wave. Drawing
+ * the unshifted original against it would show two waveforms out of step and
+ * blame the projection for it — the comparison is only honest once they start
+ * at the same place. */
+function rotatedCycle(cyc, rot, out = CYC) {
+  const N = cyc.length, y = new Float32Array(out);
+  for (let i = 0; i < out; i++) y[i] = cyc[(Math.round(i * N / out) + rot) % N];
+  return y;
+}
+
+const peakOf = (a) => { let m = 0; for (const v of a) { const x = Math.abs(v); if (x > m) m = x; } return m; };
+
+/* One waveform, as a line. `norm` is passed in rather than measured per trace
+   so the imported and rendered cycles are drawn to the same scale: the
+   rendered one is genuinely smaller when the projection dropped something, and
+   normalising each to its own peak would hide exactly that. */
+function tracePath(g, y, x0, y0, w, h, norm, colour, width) {
+  const mid = y0 + h / 2, amp = (h / 2 - 1) / (norm || 1);
+  g.beginPath();
+  for (let i = 0; i < y.length; i++) {
+    const px = x0 + (i / (y.length - 1)) * w, py = mid - y[i] * amp;
+    if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+  }
+  g.strokeStyle = colour; g.lineWidth = width; g.stroke(); g.lineWidth = 1;
+}
+
+/* ── the strip: what you imported, drawn ───────────────────────────────── */
+function renderStrip() {
+  const el = $('strip');
+  el.innerHTML = '';
+  if (!imported.length) {
+    const d = document.createElement('div');
+    d.className = 'empty';
+    d.textContent = 'no waveforms yet — add single-cycle wavs and they become the nodes of a world';
+    el.appendChild(d);
+    return;
+  }
+  imported.forEach((w, i) => {
+    const card = document.createElement('div');
+    card.className = 'card' + (i === place.sel ? ' on' : '');
+    const cv = document.createElement('canvas');
+    cv.width = 196; cv.height = 64;          /* 2x for the usual screens */
+    const g = cv.getContext('2d');
+    g.clearRect(0, 0, 196, 64);
+    if (w.render) tracePath(g, w.render, 3, 2, 190, 60, peakOf(w.render), i === place.sel ? '#ffe9a8' : '#8b98a6', 2);
+    const nm = document.createElement('div');
+    nm.className = 'cn'; nm.textContent = w.name; nm.title = w.name;
+    const ft = document.createElement('div');
+    /* The fit is the fraction of the wave that survived projection onto the
+       sine basis. Naming it per card rather than reporting the worst of the
+       set is the difference between "something did not fit" and knowing which
+       one to reconsider. */
+    ft.className = 'cf' + (w.fit < 0.8 ? ' poor' : '');
+    ft.textContent = w.mode === 'spectrum' ? 'spectrum' : `keeps ${(100 * w.fit).toFixed(0)}%`;
+    card.appendChild(cv); card.appendChild(nm); card.appendChild(ft);
+    card.onclick = () => selectNode(i);
+    el.appendChild(card);
+  });
+}
+
+/* ── the placement squares ─────────────────────────────────────────────── */
+function drawPlaneBox(b, inset) {
+  cpx.fillStyle = inset ? '#0a0e13' : '#080b0f';
+  cpx.fillRect(b.ox, b.oy, b.S, b.S);
+  cpx.strokeStyle = inset ? '#22303d' : '#1b232c';
+  cpx.strokeRect(b.ox + .5, b.oy + .5, b.S, b.S);
+  /* the centre lines, which are where an unplaced axis sits */
+  cpx.strokeStyle = '#141b23';
+  cpx.beginPath();
+  cpx.moveTo(b.ox, boxY(b, 0.5)); cpx.lineTo(b.ox + b.S, boxY(b, 0.5));
+  cpx.moveTo(boxX(b, 0.5), b.oy); cpx.lineTo(boxX(b, 0.5), b.oy + b.S);
+  cpx.stroke();
+  cpx.font = '10px ui-monospace, monospace';
+  cpx.fillStyle = inset ? '#5c6b7a' : '#8b98a6';
+  cpx.fillText(`${b.ax}×${b.ay}`, b.ox + 5, b.oy + 12);
+}
+
+function drawPlane() {
+  const { w: W, h: H } = boxOf(cp);
+  fit(cp);
+  planeBoxes.length = 0;
+  const n = tel ? tel.n : 4, m = 26;
+  const S = Math.max(60, Math.min(W - 2 * m, H - 2 * m));
+  const ox = (W - S) / 2, oy = m + (H - 2 * m - S) / 2;
+  const main = { ax: axes[0], ay: axes[1], ox, oy, S };
+  planeBoxes.push(main);
+  drawPlaneBox(main, false);
+
+  /* Where the module is standing, faint. Not the subject here — this view is
+     about a world that may not even be loaded — but knowing whether the
+     position is anywhere near the node you are moving is the difference
+     between placing blind and placing while listening. */
+  if (tel && tel.posL && main.ax < tel.posL.length && main.ay < tel.posL.length) {
+    const x = boxX(main, tel.posL[main.ax]), y = boxY(main, tel.posL[main.ay]);
+    cpx.strokeStyle = 'rgba(98,213,255,0.45)';
+    cpx.beginPath();
+    cpx.moveTo(x - 5, y); cpx.lineTo(x + 5, y); cpx.moveTo(x, y - 5); cpx.lineTo(x, y + 5);
+    cpx.stroke();
+  }
+  drawNodes(cpx, main);
+
+  /* The complementary plane, in the corner and live. Placement is one plane at
+     a time by design, but until this existed the two axes you were not on were
+     pure guesswork: you had to switch the pair, look, and switch back. With
+     four dimensions the complement is unique, so these two squares between
+     them show every axis there is, and a node is finished in one view. */
+  const other = otherAxes(n);
+  if (other) {
+    const iS = Math.max(56, Math.min(132, S * 0.32));
+    const b = { ax: other[0], ay: other[1], ox: ox + S - iS - 10, oy: oy + S - iS - 10, S: iS };
+    planeBoxes.push(b);
+    drawPlaneBox(b, true);
+    drawNodes(cpx, b, { labels: false });
+  }
+
+  cpx.font = '11px ui-monospace, monospace';
+  cpx.fillStyle = '#3b4756';
+  if (!imported.length)
+    cpx.fillText('nothing to place yet', ox + 10, oy + S - 10);
+  else if (place.sel < 0)
+    cpx.fillText('drag a ring to move it · click one to inspect it', ox + 10, oy + S - 10);
+}
+
+/* ── the inspector: what you gave it against what it will play ─────────── */
+function drawInspect() {
+  const { w: W, h: H } = boxOf(ci);
+  fit(ci);
+  cix.font = '11px ui-monospace, monospace';
+  const m = 12, w = imported[place.sel];
+  if (!w) {
+    cix.fillStyle = '#3b4756';
+    const lines = imported.length
+      ? ['pick a waveform', '', `${imported.length} node${imported.length > 1 ? 's' : ''} in "${worldName()}"`,
+         place.sent ? 'the module is holding this set' : 'not sent to the module']
+      : ['a world is up to 24 single cycles', 'placed in a 4-dimensional space', '',
+         'add wavs to begin'];
+    lines.forEach((t, i) => cix.fillText(t, m, 28 + i * 16));
+    return;
+  }
+  cix.fillStyle = '#ffe9a8';
+  cix.fillText(w.name.length > 26 ? w.name.slice(0, 25) + '…' : w.name, m, 20);
+
+  const bw = W - 2 * m;
+  const waveY = 32, waveH = Math.max(50, Math.min(110, H * 0.26));
+  cix.strokeStyle = '#1b232c'; cix.strokeRect(m + .5, waveY + .5, bw, waveH);
+  cix.strokeStyle = '#141b23';
+  cix.beginPath(); cix.moveTo(m, waveY + waveH / 2); cix.lineTo(m + bw, waveY + waveH / 2); cix.stroke();
+  const norm = Math.max(w.thumb ? peakOf(w.thumb) : 0, w.render ? peakOf(w.render) : 0) || 1;
+  if (w.thumb) tracePath(cix, w.thumb, m, waveY, bw, waveH, norm, '#4d5866', 1);
+  if (w.render) tracePath(cix, w.render, m, waveY, bw, waveH, norm, '#ffcc55', 1.6);
+  cix.fillStyle = '#4d5866'; cix.fillText('imported', m + 4, waveY + waveH - 6);
+  cix.fillStyle = '#ffcc55'; cix.fillText('rendered', m + 70, waveY + waveH - 6);
+
+  /* The spectrum the node actually is: 64 signed coefficients on the sine
+     basis. Signed, so the sign is drawn rather than dropped — it is half of
+     what makes a saw a saw rather than a spectrum that merely measures like
+     one, and the whole reason the format stores f32 and not magnitudes. */
+  const specY = waveY + waveH + 24, specH = Math.max(40, Math.min(110, H * 0.24));
+  cix.fillStyle = '#5c6b7a'; cix.fillText('spectrum', m, specY - 8);
+  cix.strokeStyle = '#1b232c'; cix.strokeRect(m + .5, specY + .5, bw, specH);
+  const mid = specY + specH / 2;
+  cix.strokeStyle = '#141b23';
+  cix.beginPath(); cix.moveTo(m, mid); cix.lineTo(m + bw, mid); cix.stroke();
+  const mags = w.mags, peak = peakOf(mags) || 1, bwid = bw / mags.length;
+  for (let h = 0; h < mags.length; h++) {
+    const v = mags[h] / peak, x = m + h * bwid, hh = Math.abs(v) * (specH / 2 - 2);
+    cix.fillStyle = v >= 0 ? '#ffcc55' : '#62d5ff';
+    cix.fillRect(x + 0.5, v >= 0 ? mid - hh : mid, Math.max(1, bwid - 1), Math.max(0.8, hh));
+  }
+
+  let ty = specY + specH + 20;
+  const line = (t, c) => { cix.fillStyle = c || '#8b98a6'; cix.fillText(t, m, ty); ty += 15; };
+  /* What the two traces above mean, which depends on how it was imported. In
+     spectrum mode the magnitudes are kept and the phase is thrown away on
+     purpose, so the waveform differing is the mode working rather than a loss
+     worth reporting as one. */
+  if (w.mode === 'spectrum')
+    line('spectrum kept exactly · the waveform is redrawn at sine phase', '#5c6b7a');
+  else
+    line(`keeps ${(100 * w.fit).toFixed(1)}% of the wave`, w.fit < 0.8 ? '#ff9a5c' : '#8b98a6');
+  line(`at ${[...w.pos].map(v => v.toFixed(2)).join('  ')}`);
+  const b = planeBoxes[0];
+  if (b) {
+    const off = offPlane(w, b);
+    if (off > 0.02) line(`${off.toFixed(2)} off the ${b.ax}×${b.ay} slice`, '#5c6b7a');
+  }
+  if (w.fit < 0.8 && w.mode !== 'spectrum')
+    line('a node is a projection onto the sine basis;', '#5c6b7a'), line('what sat in the cosine half is gone', '#5c6b7a');
+}
+
+/* ── switching views ───────────────────────────────────────────────────── */
+let viewMode = 'play';
+function setView(m) {
+  viewMode = m;
+  $('tabPlay').classList.toggle('on', m === 'play');
+  $('tabBuild').classList.toggle('on', m === 'build');
+  $('playMain').hidden = m !== 'play';
+  $('buildMain').hidden = m !== 'build';
+  /* The world bar is all play-side — which world, how it is shaded, what is
+     muted — and none of it applies to a world that is not loaded yet. */
+  $('worldbar').hidden = m !== 'play';
+  /* A canvas that was display:none has no box, so it comes back sized zero
+     until something measures it again. */
+  resize();
+  for (const c of CANVASES) measure(c);
+  if (m === 'build') { buildAxisButtons(); renderStrip(); }
+}
+
+/* ── dragging a node, in the build view only ──────────────────────────────
+ *
+ * Pointer events rather than mouse events: the same handlers then work for a
+ * finger, and capture means a drag that leaves the canvas keeps going instead
+ * of stopping against the edge of the pane — which matters here, because the
+ * edge of the pane is where you push a node to put it in a corner.
+ *
+ * A press that lands on nothing clears the selection, so the inspector is
+ * never describing something you stopped touching.
+ */
+cp.addEventListener('pointerdown', e => {
+  const r = cp.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const b = boxAt(x, y);
+  const i = b ? pickNode(b, x, y) : -1;
+  selectNode(i);
+  place.drag = i;
+  place.box = b;
+  if (i >= 0) { cp.setPointerCapture(e.pointerId); e.preventDefault(); }
+});
+cp.addEventListener('pointermove', e => {
+  if (place.drag < 0 || !place.box) return;
+  const r = cp.getBoundingClientRect();
+  moveNodeTo(place.drag, place.box, e.clientX - r.left, e.clientY - r.top);
+  renderImport();
+});
+/* The send is on the drop, not on the move: a world is 6.5 KB and a drag is
+   sixty positions a second, and the one that matters is where you let go. */
+for (const ev of ['pointerup', 'pointercancel']) cp.addEventListener(ev, () => {
+  if (place.drag < 0) return;
+  place.drag = -1;
+  place.box = null;
+  renderImport();
+  syncPlacement();
+});
+$('tabPlay').onclick = () => setView('play');
+$('tabBuild').onclick = () => setView('build');
 
 /* How far past the edge the hand is pushing.
  *
@@ -2080,7 +2464,11 @@ function drawStatus() {
  * sixty times a second does not bury everything else in the status line. */
 let lastDrawError = '';
 function frame() {
-  try { drawSpace(); drawSound(); drawStatus(); }
+  try {
+    if (viewMode === 'build') { drawPlane(); drawInspect(); }
+    else { drawSpace(); drawSound(); }
+    drawStatus();
+  }
   catch (e) {
     const m = (e && e.message) || String(e);
     if (m !== lastDrawError) { lastDrawError = m; say('draw: ' + m, true); console.error(e); }
