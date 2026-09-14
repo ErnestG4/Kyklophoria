@@ -693,3 +693,21 @@ K 64, cube-map sphere chart (spec §9). The morph is provably click-free and
 that property is tested. Aliasing is −88 dBFS over five octaves. A soft clip
 is not available without oversampling. Random phases beat Schroeder for our
 tilted spectra. Whitening is required after PCA, not optional.
+
+**Resonance stays external.** Asked whether Rings' resonator could be a
+parameter, an effect axis, or a stage in the signal path. Settled: none of them.
+It cannot be an axis — a world is a spectrum rendered as one cycle read
+cyclically, and the existing effect axes work because fold, phase modulation and
+ring modulation are *memoryless*; a resonator has state and its output is not
+periodic at f0. It could technically be a post-oscillator block, and being
+linear it would not wreck the aliasing figure the way the rejected soft clip did
+— but Combust's answer is the right one and it is a scope decision, not a
+technical one: **this is an oscillator, and in a rack every sound it makes can go
+through an ADSR into a real Rings.** Building a worse resonator inside a module
+that sits two cables away from a better one is work spent to lose.
+
+What the struck bodies are actually missing is not resonance. It is true
+inharmonicity — a membrane sits 25.5% off the harmonic grid and a frame periodic
+at f0 holds harmonics of f0 and nothing else — and time evolution, since the
+"how long ago" axis is a frozen instant of a decay rather than a decay. Both are
+open items above, and both are engine work rather than a parameter.
