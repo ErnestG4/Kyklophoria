@@ -141,6 +141,15 @@
   .card.on .cn { color: var(--hot); }
   .card .cf { font-size: 9px; color: var(--dim2); }
   .card .cf.poor { color: #ff9a5c; }
+  .card { position: relative; }
+  /* On hover only: a row of two dozen cards each wearing a delete button is a
+     row that looks like it is asking to be dismantled. */
+  .card .cx { position: absolute; top: 1px; right: 1px; padding: 0 3px; line-height: 1.1;
+              background: #0f141a; border: 1px solid #263039; border-radius: 2px;
+              color: var(--dim); font: inherit; font-size: 10px; cursor: pointer;
+              opacity: 0; transition: opacity .1s; }
+  .card:hover .cx, .card.on .cx { opacity: 1; }
+  .card .cx:hover { color: var(--bad); border-color: var(--bad); }
   .pane { position: relative; min-width: 0; min-height: 0; border-right: 1px solid var(--line); }
   .pane:last-child { border-right: 0; }
   canvas { display: block; width: 100%; height: 100%; }
@@ -814,6 +823,32 @@ function cellPositions(count) {
   return out;
 }
 
+/* Take one wave out and leave the rest where they are.
+ *
+ * Deliberately not followed by a re-place: the other nodes keep the positions
+ * you put them in, because removing a wave is not a reason to rearrange the
+ * ones you kept. The selection follows the contents — the node after the gap
+ * keeps its identity even though its index moved — and anything auditioning
+ * stops, since the sound belonged to a node that no longer exists.
+ */
+function removeNode(i) {
+  if (i < 0 || i >= imported.length) return;
+  if (audition.node === i) auditionStop();
+  else if (audition.node > i) audition.node -= 1;
+  imported.splice(i, 1);
+  if (place.sel === i) place.sel = -1;
+  else if (place.sel > i) place.sel -= 1;
+  place.drag = -1; place.box = null;
+  renderStrip(); renderImport(); renderAudition();
+  /* Keep the module in step if it is holding this set — unless there is nothing
+     left, since a world of no nodes is not a world the format can express. */
+  /* Guarded here as well as inside syncPlacement. Redundant on purpose: either
+     one alone prevents sending an empty set, and this is the path where it is
+     obvious *why* it must not happen. */
+  if (imported.length) syncPlacement();
+  else { place.sent = false; renderImport(); }
+}
+
 /* Back to the arrangement you were given. Placement is the part of curating
    that is easy to make a mess of, and there was no way back from a mess. */
 function placeOnCell() {
@@ -935,7 +970,7 @@ function boxAt(x, y) {
  * link that has gone away. */
 let placeSending = false, placeAgain = false;
 async function syncPlacement() {
-  if (!link || !place.sent) return;
+  if (!link || !place.sent || !imported.length) return;
   if (placeSending) { placeAgain = true; return; }
   placeSending = true;
   try {
@@ -2122,6 +2157,16 @@ function renderStrip() {
     if (w.render) tracePath(g, w.render, 3, 2, 190, 60, peakOf(w.render), i === place.sel ? '#ffe9a8' : '#8b98a6', 2);
     const nm = document.createElement('div');
     nm.className = 'cn'; nm.textContent = w.name; nm.title = w.name;
+    /* Taking one out, without clearing the lot.
+     *
+     * The only way to drop a single wave was to clear everything and re-import,
+     * which for a twenty-four node set is a punishment for changing your mind
+     * about one of them. */
+    const x = document.createElement('button');
+    x.className = 'cx'; x.textContent = '×';
+    x.title = 'take this one out';
+    x.onclick = (e) => { e.stopPropagation(); removeNode(i); };
+    card.appendChild(x);
     const ft = document.createElement('div');
     /* The fit is the fraction of the wave that survived projection onto the
        sine basis. Naming it per card rather than reporting the worst of the
@@ -3120,7 +3165,25 @@ function drawPanel(x0, y0, W, H) {
    *
    * The descriptor's `disp` hint says what sort of control it is — `snap` is a
    * selector, so it gets detent ticks and its pointer lands on one. */
-  const cols = Math.min(3, panel.pots), rows = Math.ceil(panel.pots / cols);
+  /* Two columns of three, because that is what the panel is.
+   *
+   * From ../alchemy-sdk/hardware/alchemy-lab/v2/include/alchemy/hw/
+   * alchemy_lab_v2_layout.h, which is the source of truth for the panel:
+   *
+   *      [P1] B1 [P2]
+   *      [P3] B2 [P4]
+   *      [P5] B3 [P6]
+   *
+   * odd-numbered pots down the left, even down the right. This mirror laid them
+   * out three across and two down, so it put P1 P2 P3 in a row when P3 is
+   * physically *below* P1 — every knob after the second was in the wrong place,
+   * which is the whole point of a mirror getting wrong. Reported from the bench
+   * as "the pot numbers are out of line in the diagram".
+   *
+   * Hardcoded rather than read from the descriptor, because the descriptor
+   * carries what each knob *does* and not where it is. If a board ever has a
+   * different arrangement this is the line that has to learn about it. */
+  const cols = panel.pots <= 3 ? 1 : 2, rows = Math.ceil(panel.pots / cols);
   const cw = W / cols, ch = Math.max(34, (H - 18) / rows);
   const A0 = Math.PI * 0.75, A1 = Math.PI * 2.25;
   for (let i = 0; i < panel.pots; i++) {
@@ -3190,7 +3253,10 @@ function drawPanel(x0, y0, W, H) {
     }
     cnx.lineWidth = 1;
     cnx.fillStyle = '#6b819d'; cnx.font = '9px ui-monospace, monospace';
-    cnx.fillText('P' + (i + 1), cx0, cy0 + 8);
+    /* Over the knob it belongs to. It used to sit at the cell's left edge,
+       which with the name drawn to the knob's right put each number nearer the
+       previous knob's label than its own. */
+    cnx.fillText('P' + (i + 1), kx - r, cy0 + 8);
     cnx.fillStyle = k ? '#9aa7b3' : '#607a97'; cnx.font = '10px ui-monospace, monospace';
     const label = k ? k.name : '—';
     let txt = label; const avail = cw - (2 * r + 10);

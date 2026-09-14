@@ -126,7 +126,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -794,6 +794,73 @@ console.log('');
 }
 console.log('');
 
+/* Taking one wave out without clearing the lot.
+ *
+ * The only way to drop a single wave was to clear everything and re-import,
+ * which for a twenty-four node set punishes you for changing your mind about
+ * one of them. The things that have to follow the removal are the selection,
+ * the audition, and the positions of everyone else — that last one by *not*
+ * moving, because removing a wave is not a reason to rearrange the ones kept.
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  const sends = [];
+  const realPut = globalThis.KYK.putSlot, realPutW = globalThis.KYK.putWorld;
+  globalThis.KYK.putWorld = async () => { sends.push(1); return true; };
+
+  P.imported.length = 0;
+  for (let i = 0; i < 4; i++)
+    P.imported.push({ name: 'r' + i, mags: new Float32Array(64), fit: 1, mode: 'shape',
+                      pos: [0.1 * (i + 1), 0.5, 0.5, 0.5], render: new Float32Array(64) });
+  const posOf = () => P.imported.map(w => +w.pos[0].toFixed(3));
+
+  /* a card carries the button, and it is not the card's own click */
+  P.setView('build');
+  P.renderStrip();
+  const card = els.strip.children[1];
+  const xs = card.children.filter ? card.children.filter(c => c.className === 'cx')
+                                  : [...card.children].filter(c => c.className === 'cx');
+  T(xs.length === 1, 'each card carries a way to take it out');
+
+  /* Through the button, not by calling removeNode: the handler has to stop the
+     click reaching the card underneath, or taking a wave out would also select
+     whatever slid into its place. The stub does not bubble, so the stopping is
+     what can be checked here — which is the mechanism rather than the effect,
+     and is the honest limit of a harness with no event propagation. */
+  P.selectNode(2);
+  let stopped = false;
+  xs[0].onclick({ stopPropagation: () => { stopped = true; } });
+  T(stopped, 'the button stops the click reaching the card under it');
+  T(P.imported.length === 3, `one goes and the rest stay (${P.imported.length})`);
+  T(JSON.stringify(posOf()) === JSON.stringify([0.1, 0.3, 0.4]),
+    `the others keep the positions you put them in (${posOf().join(' ')})`);
+  T(P.place.sel === 1, 'the selection follows the node, not the index it used to have');
+  T(els.strip.children.length === 3, 'and the strip redraws without it');
+
+  /* removing the selected one leaves nothing selected rather than a stale index */
+  P.selectNode(1);
+  P.removeNode(1);
+  T(P.place.sel === -1, 'removing the selected one clears the selection');
+
+  /* while the module is following, a removal is sent; emptied, it is not */
+  P.setLink({ request: async () => Uint8Array.of(0) });
+  P.place.sent = true;
+  sends.length = 0;
+  P.removeNode(0);
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  T(sends.length === 1, `a removal reaches the module while it is following (${sends.length})`);
+  sends.length = 0;
+  P.removeNode(0);
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  T(P.imported.length === 0 && sends.length === 0,
+    'and the last one sends nothing, because a world of no nodes is not a world');
+  T(!P.place.sent, 'which also stops the following, since there is nothing to follow with');
+
+  globalThis.KYK.putWorld = realPutW; globalThis.KYK.putSlot = realPut;
+  P.setLink(null); P.setView('play');
+}
+console.log('');
+
 /* Following: once the module holds the set, moving a node re-sends it — but a
  * drag ends many times a second and a world is about 6.5 KB, so the sends must
  * collapse rather than queue. Driven through a stubbed transfer that can be
@@ -808,6 +875,14 @@ console.log('');
     sends.push(blob.length); pending.push({ res, rej });
   });
   P.setLink({});                 /* only needs to be non-null; the send is stubbed */
+  /* Its own nodes. syncPlacement will not send an empty set — a world of no
+     nodes is not a world the format can express — so a block about *sending*
+     has to have something to send rather than inheriting whatever the block
+     above it left behind. */
+  P.imported.length = 0;
+  for (let i = 0; i < 2; i++)
+    P.imported.push({ name: 'f' + i, mags: new Float32Array(64), fit: 1, mode: 'shape',
+                      pos: [0.5, 0.5, 0.5, 0.5], render: new Float32Array(64) });
 
   /* Not awaited: if this ever *does* send, the stub never resolves and awaiting
      it would hang the run instead of failing it. */
@@ -1026,6 +1101,40 @@ console.log('');
   T(d < 1e-4, `a band limit above every partial changes nothing (worst ${d.toExponential(1)})`);
   T(Math.abs(rms(cut) - rms(y) * Math.sqrt(1 / 1.25)) < 0.02,
     'and one below the second partial removes exactly that partial');
+}
+console.log('');
+
+/* The mirror's geometry must be the panel's geometry.
+ *
+ * The panel is two columns of three — [P1] [P2] / [P3] [P4] / [P5] [P6], per the
+ * SDK's layout header. The mirror drew three across and two down, so P3 appeared
+ * beside P2 when it is physically below P1. A mirror that rearranges the thing it
+ * mirrors is worse than no mirror, and it was reported from the bench as the pot
+ * numbers being out of line.
+ *
+ * Checked through the knob arcs, whose centres are where the knobs actually are.
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  const A0 = Math.PI * 0.75;
+  arcLog.length = 0;
+  P.setPanel(parsed);
+  P.setTel(tel({ pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+  P.drawSound();
+  /* the background ring of each knob: a full sweep from A0, radius > 4 */
+  const rings = arcLog.filter(a => a.length >= 5 && Math.abs(a[3] - A0) < 1e-9 && a[2] > 4);
+  const centres = [];
+  for (const [x, y] of rings) if (!centres.some(c => Math.abs(c[0] - x) < 1 && Math.abs(c[1] - y) < 1)) centres.push([x, y]);
+  T(centres.length === 6, `six knobs are drawn (${centres.length})`);
+  const xs = [...new Set(centres.map(c => Math.round(c[0])))].sort((a, b) => a - b);
+  const ys = [...new Set(centres.map(c => Math.round(c[1])))].sort((a, b) => a - b);
+  T(xs.length === 2, `in two columns, as the panel is (${xs.length})`);
+  T(ys.length === 3, `and three rows (${ys.length})`);
+  /* and in the panel's own order: P1 top-left, P2 top-right, P3 middle-left */
+  const at = (i) => centres[i];
+  T(at(0)[0] === at(2)[0] && at(2)[1] > at(0)[1], 'P3 is below P1, not beside P2');
+  T(at(1)[0] > at(0)[0] && Math.round(at(1)[1]) === Math.round(at(0)[1]), 'P2 is beside P1');
+  P.setTel(null); P.setPanel(null);
 }
 console.log('');
 
