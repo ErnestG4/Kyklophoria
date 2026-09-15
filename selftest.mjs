@@ -395,12 +395,12 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
    *
    * The notes used to be six words; they now say what each of the four axes
    * does and give the formula where there is one, which took the list from
-   * about 900 bytes to about 2.9 KB against a 1024-byte body. That is what
+   * about 900 bytes to about 3.2 KB against a 1024-byte body. That is what
    * the paging was built for, and it had never carried more than one page in
    * anger — so this walks it and checks every world arrives exactly once. */
   {
     const all = await KYK.fetchWorlds(link);
-    check(all.count === 21 && all.list.length === 21,
+    check(all.count === 22 && all.list.length === 22,
           `all ${all.count} worlds arrive across the pages (${all.list.length} listed)`);
     const seen = new Set(all.list.map(w => w.index));
     check(seen.size === all.count && [...seen].every(i => i >= 0 && i < all.count),

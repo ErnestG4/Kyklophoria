@@ -70,7 +70,7 @@
   .chip.on { border-color: var(--hot); color: var(--hot); }
   .chip.analytic::after { content: " ƒ"; opacity: .75; }   /* has a formula */
   .chip:disabled { opacity: .45; cursor: default; }
-  /* A select rather than a chip row: twenty-one worlds and an open-ended list
+  /* A select rather than a chip row: twenty-two worlds and an open-ended list
      of files are both too many to lay out flat, and a dropdown is the honest
      control for a long list. */
   #worldbar select { background: #0f141a; color: var(--ink); border: 1px solid #263039;
@@ -2458,7 +2458,7 @@ $('audC').onclick = () => auditionPick(2);
  * page put there itself. A slot filled in an earlier session is playable and
  * its rings are not drawn, which is the honest answer rather than a guess.
  */
-/* The library is every world there is: the twenty-one that ship, then yours.
+/* The library is every world there is: the twenty-two that ship, then yours.
  *
  * It used to be thirty-two empty slots, which on a fresh module is a grid of
  * nothing and reads as broken. The built-ins were in a chip row on the play tab
