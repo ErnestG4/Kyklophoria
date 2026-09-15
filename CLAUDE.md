@@ -197,9 +197,13 @@ worlds, import and the SD card are well tested by the suite and barely played.
 `README.md` says which is which and where each feature stops.
 
 Export is done: name a set on the page and **save** writes the module's own
-`.kykw`, byte-for-byte what **send** puts on the wire. Keeping a world is now
-"save, copy to `/kyklophoria` on the card", which is a manual step but a real
-loop, and a file you can hand to somebody.
+`.kykw`, byte-for-byte what **send** puts on the wire. The module writes the card
+itself, so keeping a world is a button and not a copy step.
+
+The whole of the 2026-09-14 bench list is built: Grit (a world that aliases on
+purpose), effects on an axis of a world you wrote, the pot numbers in the
+diagram, and a loop of worlds on a clock. None of the last three have been
+played yet — they are measured, and measurement is not ears.
 
 Building a world is its own view now — the **build** tab — because placement
 had been bolted onto the space pane, which is a readout of the module and not
@@ -208,11 +212,18 @@ drawn cards, two placement squares (the pair on screen and its complement, so
 four dimensions are reachable without switching), and an inspector showing what
 you imported against what the engine will actually render from it.
 
-**Next job:** writing to the card from the module, which removes the copy step
-and is the last thing between the page and a library. It is the first thing
-here that *writes* to the SD card, so re-read `docs/sdk-quirks.md` on SDMMC
-before starting: the IDMA cannot reach DTCM, and in the wrong section it does
-not error, it corrupts.
+**Next job:** hands on it. Four features have landed since the last bench
+session and each of them is a guess about what playing it is like — in
+particular the world tour, where the interesting question is not whether it
+works but which *loops* are worth walking, and that is not a thing measurement
+can answer.
+
+The largest open item in the code is written up in `docs/checklist.md`: a step of
+a tour, and a morph in general, takes the phase spectrum and the frame shapers
+from the live world rather than from the blend. 128 of the 462 world pairs are
+seamless and the rest are not. The honest fix is a second inverse FFT per render
+and the CPU does not have one at 33% average and 97% peak, so if that number
+ever comes down this is what to spend it on.
 
 One thing the placement work turned up that is worth keeping: `web/pagecheck.mjs`
 now records any draw call given a coordinate that is not a number. A stub
