@@ -158,7 +158,7 @@ and lets the waveform be redrawn.
 
 ## A library of your own worlds
 
-The **worlds** tab is every world there is: the twenty-one that ship, then the
+The **worlds** tab is every world there is: the twenty-two that ship, then the
 ones you made. One grid, one selection, and three verbs that work on either kind
 — **play** it, **morph towards** it, **open to edit** it. Only the ones that are
 yours can also be forgotten or written to the card, because the others are in the
@@ -183,7 +183,7 @@ host does not have the blob for a slot it did not put there, only the name.
 
 That last one is the point. Until slots existed a world you imported could be
 played and never *returned to*: a transfer replaced whatever was live, and the
-morph target could only ever be one of the twenty-one built-ins, so nothing you
+morph target could only ever be one of the built-ins, so nothing you
 made could be one end of a blend. Now it can be both ends.
 
 The slots are blobs in SDRAM, expanded only when one is played — a world is 7 KB
@@ -227,7 +227,7 @@ it is needed to keep what you make.
 
 ## Worlds
 
-Twenty-one ship. A world is either a **formula**, evaluated wherever you happen
+Twenty-two ship. A world is either a **formula**, evaluated wherever you happen
 to be standing, or a **lattice** of sampled spectra, interpolated between.
 Which one a world is is a property of the world, not a storage decision: if a
 formula is 1.3 KB and exact everywhere, baking it out to a grid
@@ -256,13 +256,15 @@ would cost 1.18 MB for no gain.
 | **Saw** | nothing but a saw: tilt, parity, comb, fold point | 1.44 | **2.03x** |
 | **Pulse** | nothing but a pulse: duty, tilt, comb, fold point | 2.79 | 3.36x |
 | **Edge** | saw against pulse, only those two, bent four ways | 1.86 | 2.57x |
+| **Grit** | the same grid as Shapes, bit- and rate-reduced; aliases on purpose | 0.99 | 8.47x † |
 
 `build/host/kykworlds` prints this table, and with `--braids <resources.cc>` adds
 a column for how much of the Braids bank each world can reach.
 
-† The two Shapes worlds are measured on their first two axes only. The other
-two drive shapers that act on the rendered cycle rather than the spectrum, so
-the tool cannot see them and scores them dead, which is most of that 8.47x.
+† The three grid worlds — Shapes, Shapes R and Grit — are measured on their
+first two axes only. The other two drive shapers that act on the rendered cycle
+rather than the spectrum, so the tool cannot see them and scores them dead,
+which is most of that 8.47x.
 
 **Spread** is the number that decides whether rotating the control frame was
 worth building: the most varied direction through the space over the least. At
@@ -316,13 +318,15 @@ why the first wavefolder passed every other test.
 
 Band-limiting is spectral truncation, verified at −88 dBFS worst non-harmonic
 content over a five-octave sweep (`tests/alias_check`). That figure is the
-*spectral path*, which is what nineteen of the twenty-one worlds use. The two
-Shapes worlds run their shapers on the rendered cycle instead, where there is
-no closed form in the harmonics to truncate, and they alias at −32.2 dB at full
+*spectral path*, which is what nineteen of the twenty-two worlds use. The three
+grid worlds run their shapers on the rendered cycle instead, where there is
+no closed form in the harmonics to truncate, and they alias: −32.2 dB at full
 fold, −62.1 at full phase modulation and −59.3 at full ring modulation against
-−67.5 dry. Both numbers are ours and both are published, which is the point:
-as far as the survey in `docs/lit/` found, nobody else in the field publishes
-either.
+−67.5 dry, and Grit as loudly as it can, which is what it is for. Measuring that
+one properly is the next job — the sweep takes no world argument yet, so every
+figure here is one world at one cell. Both numbers are ours and both are
+published, which is the point: as far as the survey in `docs/lit/` found, nobody
+else in the field publishes either.
 
 ## Building and flashing
 
@@ -409,8 +413,9 @@ inputs. The filter, drive and FM-index payload lanes — only CV out A is routed
 Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 (non-lattice) spaces.
 
-**What has been played and what has not.** The twenty-one built-in worlds are
-what has had real time on the bench. Morphing, user worlds, import and the card
+**What has been played and what has not.** Twenty-one of the twenty-two
+built-in worlds are what has had real time on the bench; Grit has not been
+played at all yet. Morphing, user worlds, import and the card
 are tested by the suite — 420 world-pair switches, 102 link checks, 165
 link-level and 140 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
 them as the new half of a beta.

@@ -189,6 +189,33 @@ meaningful axis and stacking four banks makes rotation meaningless.
       because a folder has no closed form in the harmonics. Aliasing at full
       depth: fold -32.2 dB, phase modulation -62.1, ring mod -59.3, against
       -67.5 dry.
+- [x] **A world that is genuinely harsh** — `Grit`, world 21. From the bench:
+      "there's no really glitchy harsh worlds (shapes are close)". Shapes was
+      the right base and the shapers were the problem — a wavefolder and a
+      phase modulator are both *polite*, they add harmonics that belong to the
+      series. So Grit is the same 4x4 grid of real waveforms with two shapers
+      that do not: bit reduction, 8 bits down to 1, and rate reduction, a
+      1024-point cycle held down to 32 values.
+      Both crossfade between adjacent integer settings, which is the whole
+      trick — a staircase parameter is a cliff, and `cont_check` measures
+      cliffs. With the crossfade the two shaper axes score 4.00, textbook
+      continuous. What `cont_check` *did* flag was axes 0 and 1, at 1.99 and
+      1.37, and that is inherent: a quantiser is a staircase in its input, so
+      moving the grid underneath it steps. Measured before exempting it: Grit's
+      worst step is 0.00838 at step/500 and 0.00421 at step/2000, against
+      0.01530 and 0.00390 for Shapes, which passes. Grit's cliff is *smaller in
+      absolute terms* than Shapes' continuous step, and at step/2000 — about the
+      engine's own 5e-4 render deadband — the two are within 8%. So Grit is
+      judged on bounded steps rather than the vanishing-step ratio, with the
+      numbers in the test.
+      No band-limit pull-in, on purpose: quantisation error is broadband
+      whatever you feed it and a hold's images sit at multiples of the hold
+      rate, so pulling the band in would cost brightness and clean up nothing.
+      How much it aliases is the next thing to measure and publish, which needs
+      `alias_check` to take a world and a position. Both shapers are div-free in
+      the loop (80 and 60 M7 instructions by `make armcost`); hoisting two
+      reciprocals that are exact powers of two is bit-identical, which
+      `m3_grit.wav` verifies.
 - [x] **Real waveforms.** The instrument could not produce a recognisable saw
       or square, and it was the representation, not a missing world: random
       phase renders a saw's spectrum at 0.79 correlation to a saw. Sine phase

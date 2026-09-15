@@ -139,7 +139,7 @@ host sent before the list was paged. Reply: `u8 count` (worlds in all),
 `u8 start`, `u8 sent`, then `sent` entries of `u8 kind`, `str name`, `str note`.
 
 **The list is paged and a host must walk it.** Names and notes came to about
-2.9 KB at twenty-one worlds against a 1024-byte body, so the module sends as
+3.2 KB at twenty-two worlds against a 1024-byte body, so the module sends as
 many whole entries as fit and the host asks again from `start + sent` until it
 has `count` of them. A host that assumes one page gets the first seven worlds
 and no error.

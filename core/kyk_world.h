@@ -584,6 +584,8 @@ private:
             case Shaper::Fold: FoldFrame(dst, src, n, d); break;
             case Shaper::Ring: RingFrame(dst, src, n, d); break;
             case Shaper::Warp: WarpFrame(dst, src, n, d); break;
+            case Shaper::Crush: CrushFrame(dst, src, n, d); break;
+            case Shaper::Drop: DropFrame(dst, src, n, d); break;
             default: CopyFrame(dst, src, n); break;
         }
     }

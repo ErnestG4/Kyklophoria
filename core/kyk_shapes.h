@@ -52,7 +52,11 @@
 namespace kyk {
 
 /* Which shaper each of the upper two axes drives. */
-enum class Shaper : uint8_t { None = 0, Fold = 1, Ring = 2, Warp = 3 };
+enum class Shaper : uint8_t { None = 0, Fold = 1, Ring = 2, Warp = 3,
+                             /* the harsh pair: bit reduction and sample-rate
+                                reduction, which are the two ugliest things you
+                                can do to a cycle without giving it memory */
+                             Crush = 4, Drop = 5 };
 
 /* The grid is at most this, and each node's coefficients are held rather than
  * recomputed. A node depends only on which node it is, so recomputing one per
@@ -309,6 +313,72 @@ inline void RingFrame(float* dst, const float* src, int n, float d)
  * Reads both directions, so src and dst must be different buffers. The engine
  * arranges that for free by rendering into the scratch and letting the last
  * shaper write the oscillator's frame, which is why nothing here copies. */
+/* Bit reduction, and it has to be continuous in its own axis.
+ *
+ * A quantiser with an integer number of levels steps as that integer changes,
+ * and tests/cont_check would reject it — rightly, because a cliff in an axis is
+ * a click when you sweep it. The fix is the one SharpenWeights uses for its
+ * exponent: quantise at the level count below and the one above and crossfade,
+ * so the axis is smooth while the *sound* is as stepped as the levels are.
+ *
+ * Levels run 2^8 down to 2 as the axis opens, which is eight bits down to one.
+ * Crossfading two quantisers costs a second rounding and no transcendentals. */
+inline void CrushFrame(float* dst, const float* src, int n, float d)
+{
+    /* CopyFrame is declared further down this header, so the identity case is
+       spelled out rather than reordering code that works. */
+    if(d <= 1e-4f) { for(int i = 0; i < n; i++) dst[i] = src[i]; return; }
+    /* bits: 8 at the bottom of the travel, 1 at the top */
+    const float bits = 8.f - 7.f * (d > 1.f ? 1.f : d);
+    const int   blo  = (int)bits;
+    const float f    = bits - (float)blo;
+    const float lo   = (float)(1 << (blo < 1 ? 1 : blo));
+    const float hi   = (float)(1 << (blo + 1 > 8 ? 8 : blo + 1));
+    /* Both step counts are powers of two, so the reciprocals are exact and
+       multiplying by them is bit-for-bit the division it replaces. That is the
+       only reason to hoist them: the M7 has one non-pipelined divider and two
+       divides a sample over a 1024-point frame is 28k cycles of it. */
+    const float ilo = 1.f / lo, ihi = 1.f / hi;
+    /* lo is the coarser of the two, so it gets the weight as the axis opens */
+    for(int i = 0; i < n; i++)
+    {
+        const float x = src[i];
+        const float a = (float)(int)(x * lo + (x >= 0.f ? 0.5f : -0.5f)) * ilo;
+        const float b = (float)(int)(x * hi + (x >= 0.f ? 0.5f : -0.5f)) * ihi;
+        dst[i] = a * (1.f - f) + b * f;
+    }
+}
+
+/* Sample-rate reduction: hold every Nth sample of the cycle.
+ *
+ * Continuous in the axis for the same reason and by the same means — N is
+ * fractional and the two whole hold-lengths either side are crossfaded. The
+ * hold is taken modulo n so the cycle still joins onto itself, which a
+ * streaming decimator would not have to care about and a single cycle read
+ * cyclically absolutely does: a seam here is a click at f0, every cycle.
+ *
+ * N runs 1 to 32, so at the top of the travel a 1024-point cycle is carrying
+ * thirty-two distinct values. */
+inline void DropFrame(float* dst, const float* src, int n, float d)
+{
+    if(d <= 1e-4f) { for(int i = 0; i < n; i++) dst[i] = src[i]; return; }
+    const float hold = 1.f + 31.f * (d > 1.f ? 1.f : d);
+    const int   lo   = (int)hold;
+    const float f    = hold - (float)lo;
+    const int   hi   = lo + 1;
+    /* Each sample is held from the start of the run it falls in. Two counters
+       rather than two integer divisions a sample: a run start is only ever the
+       previous one plus the hold, and it is never past i, so it is always
+       inside the cycle and needs no wrap. Same indices, 1024 fewer divides. */
+    int ga = 0, gb = 0;   /* run starts for the two hold lengths */
+    for(int i = 0; i < n; i++)
+    {
+        if(i - ga >= lo) ga += lo;
+        if(i - gb >= hi) gb += hi;
+        dst[i] = src[ga] * (1.f - f) + src[gb] * f;
+    }
+}
+
 inline void WarpFrame(float* dst, const float* src, int n, float d)
 {
     const float A = 2.2f * d;
@@ -356,6 +426,14 @@ inline float ShapeBandScale(const ShapeField& f, float a2, float a3)
         s += 2.2f * (f.axis2 == Shaper::Warp ? a2 : a3);   /* PM index */
     if(f.axis2 == Shaper::Ring || f.axis3 == Shaper::Ring)
         s += 1.0f * (f.axis2 == Shaper::Ring ? a2 : a3);
+    /* Crush and Drop contribute nothing here, and that is a decision rather
+     * than an omission. Quantisation error is broadband whatever you feed it
+     * and a sample-and-hold's images sit at multiples of the hold rate, so
+     * pulling the band limit in does not move either one out of the way: it
+     * only renders a duller waveform for the same reduction to chew on. The
+     * measured figures for both are in the README beside the folder's. Grit is
+     * the world that exists to alias; mitigating it here would be building a
+     * thing and then taking it back. */
     return s;
 }
 

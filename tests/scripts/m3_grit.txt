@@ -1,0 +1,18 @@
+# M3 golden: Grit, the world that aliases on purpose.
+#
+# Same diagonal as m3_shapes so the base grid is comparable by ear, then the
+# bit reduction alone, the rate reduction alone, and both together at the cell
+# the aliasing measurement found loudest (0.75, 1.0).
+#
+# A golden matters more here than for a polite world. Both shapers crossfade
+# between adjacent integer settings — 8 bits to 1, a hold of 1 sample to 32 —
+# and that crossfade is the only thing keeping two staircase axes continuous
+# enough to knob through. A refactor that rounded instead of crossfading would
+# still sound like grit and would step; this render is what would catch it.
+0.0 f0 110
+0.0 pos 0.0 0.0 0.0 0.0
+0.0 glide pos 1.0 1.0 0.0 0.0 5.0
+5.0 glide pos 0.75 1.0 1.0 0.0 3.0
+8.0 glide pos 0.75 1.0 0.0 1.0 3.0
+11.0 glide pos 0.75 1.0 1.0 1.0 2.0
+13.5 dur

@@ -16,7 +16,7 @@ namespace kyk {
 namespace worlds {
 
 enum : uint8_t { kCrop = 0, kCell24 = 1, kCell16 = 2, kTesseract = 3, kStack = 4,
-                 kFieldCalm = 5, kFieldWild = 6, kFieldTorus = 7, kHarmonic = 8, kFm = 9, kVowel = 10, kShapes = 11, kShapesRing = 12, kLock = 13, kUnison = 14, kPlate = 15, kBar = 16, kDrum = 17, kSaw = 18, kPulse = 19, kEdge = 20, kCount = 21 };
+                 kFieldCalm = 5, kFieldWild = 6, kFieldTorus = 7, kHarmonic = 8, kFm = 9, kVowel = 10, kShapes = 11, kShapesRing = 12, kLock = 13, kUnison = 14, kPlate = 15, kBar = 16, kDrum = 17, kSaw = 18, kPulse = 19, kEdge = 20, kGrit = 21, kCount = 22 };
 
 struct Entry
 {
@@ -80,6 +80,8 @@ inline const Entry& Get(uint8_t i)
         {"Pulse",     "nothing but a pulse: duty, tilt, comb, fold point. "
                       "One shape, four ways to bend it, and no axis fighting another", World::Kind::Bend},
         {"Edge",      "saw against pulse and nothing else: the blend between them, duty, comb, fold point", World::Kind::Bend},
+        {"Grit",      "the Shapes grid put through bit reduction (8 bits to 1) and sample-rate reduction "
+                      "(a 1024-point cycle down to 32 values). Aliases on purpose; the figure is in the README", World::Kind::Table},
     };
     return kEntries[i < kCount ? i : 0];
 }
@@ -115,6 +117,15 @@ inline bool Point(uint8_t i, World& w, int p, const uint8_t* topo, solids::Verte
         w.UseShapes(4, kShapeK, Shaper::Fold,
                     (i == kShapesRing) ? Shaper::Ring : Shaper::Warp,
                     0.08f, p, topo);
+        return true;
+    }
+    /* The same grid of real waveforms as Shapes, with the two harsh shapers on
+       its manipulation axes instead of the polite ones. Reported from the bench
+       as the gap: "there's no really glitchy harsh worlds (shapes are close)" —
+       the base was right and fold and phase modulation are simply too clean. */
+    if(i == kGrit)
+    {
+        w.UseShapes(4, kShapeK, Shaper::Crush, Shaper::Drop, 0.08f, p, topo);
         return true;
     }
     if(i == kLock) { w.UseLock(4, kShapeK, 0.17f, p, topo); return true; }

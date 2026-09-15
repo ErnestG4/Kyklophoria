@@ -57,11 +57,13 @@ armcost:
 'extern "C" void c_fold(float* d, const float* s, int n, float k){ FoldFrame(d,s,n,k); }\n'\
 'extern "C" void c_warp(float* d, const float* s, int n, float k){ WarpFrame(d,s,n,k); }\n'\
 'extern "C" void c_ring(float* d, const float* s, int n, float k){ RingFrame(d,s,n,k); }\n'\
+'extern "C" void c_crush(float* d, const float* s, int n, float k){ CrushFrame(d,s,n,k); }\n'\
+'extern "C" void c_drop(float* d, const float* s, int n, float k){ DropFrame(d,s,n,k); }\n'\
 	  > build/arm/probe.cpp
 	@arm-none-eabi-g++ -std=gnu++17 -O3 -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard \
 	  -mthumb -ffp-contract=off -Icore -c build/arm/probe.cpp -o build/arm/probe.o
 	@echo "  Cortex-M7 instructions per shaper (whole function):"
-	@for f in c_fold c_warp c_ring; do \
+	@for f in c_fold c_warp c_ring c_crush c_drop; do \
 	  n=$$(arm-none-eabi-objdump -d build/arm/probe.o | awk -v fn=$$f '$$0 ~ "<"fn">:" {p=1;next} p && /^$$/ {exit} p' | grep -cE "^[[:space:]]+[0-9a-f]+:"); \
 	  printf "    %-8s %3d\n" $$f $$n; done
 
