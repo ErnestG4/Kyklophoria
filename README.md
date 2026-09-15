@@ -324,6 +324,13 @@ build/host/kykeigen space.kyk --braids ../../Mutable/Streams/eurorack/braids/res
 
 ## A loop of worlds, on a clock
 
+The loop is built on the **worlds** tab, under the library: pick a world, **add
+stop**, repeat. The row shows the stops in the order the clock walks them, marks
+the one that is live and the one the sound is travelling towards, and says how
+far along it is. It is a readout of the module and not a memory of what the page
+sent — the clock moves the loop on, and choosing a world by hand stops it, so the
+row is re-read whenever telemetry disagrees with it.
+
 Up to eight stops, each a built-in or one of yours, advanced by **J2** through a
 division, with the blend travelling between them: the sound is always somewhere
 between two worlds and always moving. The list comes from the page; how fast,

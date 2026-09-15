@@ -91,7 +91,16 @@
   main, #buildMain, #libMain { grid-row: 3; }
   #drawer { grid-row: 4; }
   footer { grid-row: 5; }
-  #libMain { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  #libMain { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; }
+  /* The loop's stops, in the order the clock walks them. A chip rather than a
+     tile: this is a sequence and reads left to right, where the grid below is a
+     library and reads as a field. */
+  #tourStops { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  #tourStops .ts { border: 1px solid #263039; border-radius: 3px; background: #0f141a;
+                   padding: 1px 5px; font-size: 10px; color: var(--dim); white-space: nowrap; }
+  #tourStops .ts.live { border-color: var(--ok); color: var(--ok); }
+  #tourStops .ts.next { border-color: var(--l); color: var(--ink); }
+  #tourStops .ar { color: #3a4855; font-size: 10px; }
   /* The slots. A grid rather than a list because thirty-two of them is a shape
      you scan, not a thing you read top to bottom. */
   #slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
@@ -289,6 +298,18 @@
     <button class="chip" id="libLoad">into the slot</button>
     <button class="chip" id="libRescan">rescan</button>
     <span id="libState" style="color: var(--dim)"></span>
+  </div>
+  <div class="brow">
+    <span class="cap">LOOP</span>
+    <button class="chip" id="tourAdd">add stop</button>
+    <button class="chip" id="tourDrop">drop last</button>
+    <button class="chip" id="tourClear">clear</button>
+    <span class="cap">EVERY</span>
+    <select id="tourDiv"></select>
+    <span class="cap">CLOCKS ON J2</span>
+    <div id="tourStops"></div>
+    <span class="sp"></span>
+    <span id="tourState" style="color: var(--dim)"></span>
   </div>
   <div id="slots"></div>
 </section>
@@ -499,6 +520,9 @@ async function connect(transport) {
   await refreshWorlds();
   renderMorphSel();
   await refreshCard();
+  /* The loop the module is already walking, which it may well be when the page
+     arrives — the clock does not stop for a browser. */
+  await readTour();
   $('btnClose').hidden = false; $('btnSerial').hidden = true; $('btnBridge').hidden = true;
   const dev = transport.kind === 'bridge';
   $('btnDrawer').hidden = !dev;
@@ -1470,6 +1494,16 @@ function noticeWorld(t) {
 
 function onTelemetry(t) {
   noticeWorld(t);
+  /* Where the loop has got to. A length that disagrees with the row means the
+     module changed the loop without being asked through this page — it stops one
+     when a world is chosen by hand — so the row is re-read rather than redrawn
+     from memory. */
+  if (t.tour) {
+    const was = tourLive.len;
+    tourLive = t.tour;
+    if (t.tour.len !== tourStops.length) readTour();
+    else if (t.tour.len || was) renderTour();
+  }
   if (lastBlock < 0) describeSpace();   /* an analytic world gets its dims from here */
   if (t.block !== lastBlock) {
     lastBlock = t.block; framesSeen++;
@@ -2568,7 +2602,7 @@ function libTile(kind, i, name, note) {
     const b = document.createElement('span'); b.className = 'tgt'; b.textContent = 'target'; badge.appendChild(b);
   }
   el.appendChild(num); el.appendChild(nm); el.appendChild(badge);
-  el.onclick = () => { libSel = { kind, i }; renderLibrary(); renderLib(); };
+  el.onclick = () => { libSel = { kind, i }; renderLibrary(); renderLib(); renderTour(); };
   if (kind === 'slot') {
     if (name) {
       el.draggable = true;
@@ -2729,6 +2763,104 @@ function renderLib() {
   }
 }
 
+/* ── the loop ──────────────────────────────────────────────────────────────
+ *
+ * A row of stops the clock walks, built out of the library below it. The list is
+ * the module's, not the page's: every change is sent and then read back, and the
+ * live position comes from telemetry — because the clock moves the loop on and a
+ * row drawn from what the page last programmed would be the one thing on screen
+ * that the module has already left behind. The module also stops the loop when a
+ * world is chosen by hand, so "what I sent" and "what it is doing" part company
+ * for real reasons rather than hypothetical ones.
+ *
+ * Stops are named the way the wire names them: a built-in index, or 0x80 | slot
+ * for one of yours.
+ */
+const TOUR_DIVS = [1, 2, 3, 4, 6, 8, 12, 16];
+let tourStops = [];      /* what the module says it is walking */
+let tourDiv = 1;
+let tourLive = { len: 0, at: 0, blend: 0 };
+
+function tourName(code) {
+  if (code & 0x80) {
+    const s = code & 0x7f;
+    return (slots && slots.names[s]) || ('slot ' + s);
+  }
+  const w = worlds && worlds.list.find(x => x.index === code);
+  return w ? w.name : ('world ' + code);
+}
+function buildTourDiv() {
+  const sel = $('tourDiv');
+  sel.innerHTML = '';
+  for (const d of TOUR_DIVS) {
+    const o = document.createElement('option');
+    o.value = String(d); o.textContent = String(d);
+    sel.appendChild(o);
+  }
+  sel.value = String(tourDiv);
+  sel.onchange = () => { tourDiv = Number(sel.value) || 1; if (tourStops.length >= 2) sendTour(tourStops); };
+}
+function renderTour() {
+  const box = $('tourStops');
+  box.innerHTML = '';
+  tourStops.forEach((code, i) => {
+    if (i) { const a = document.createElement('span'); a.className = 'ar'; a.textContent = '→'; box.appendChild(a); }
+    const el = document.createElement('span');
+    el.className = 'ts' + (tourLive.len && i === tourLive.at ? ' live'
+                           : tourLive.len && i === (tourLive.at + 1) % tourStops.length ? ' next' : '');
+    el.textContent = tourName(code);
+    box.appendChild(el);
+  });
+  const sel = libSel;
+  const can = !!link && !!sel && (sel.kind === 'builtin' || (sel.kind === 'slot' && slotFilled(sel.i)));
+  $('tourAdd').disabled = !can || tourStops.length >= MVL.TOUR.max;
+  $('tourDrop').disabled = !link || !tourStops.length;
+  $('tourClear').disabled = !link || !tourStops.length;
+  $('tourDiv').disabled = !link;
+  if (!link) { $('tourState').textContent = ''; return; }
+  if (tourStops.length < 2) {
+    $('tourState').textContent = tourStops.length
+      ? 'one stop is not a loop — add another'
+      : 'pick a world below and add it: the clock on J2 walks the loop and the sound morphs between the stops';
+    return;
+  }
+  /* The one thing worth saying unprompted, because it is audible and not
+     obvious: a step between worlds that render the cycle differently is a
+     switch rather than a morph. Shapes, Shapes R and Grit shape the rendered
+     cycle, and the phase convention splits the rest in two. */
+  const shaped = tourStops.filter(c => !(c & 0x80) && [11, 12, 21].includes(c)).length;
+  const pct = Math.round(tourLive.blend * 100);
+  $('tourState').textContent = tourLive.len
+    ? `stop ${tourLive.at + 1} of ${tourLive.len}, ${pct}% towards the next`
+      + (shaped ? ' · a stop that shapes the cycle steps rather than morphs' : '')
+    : 'programmed — the loop moves when J2 clocks it, or wind up the World page\'s free-run knob';
+}
+async function readTour() {
+  if (!link) { tourStops = []; renderTour(); return; }
+  try {
+    const t = MVL.parseTour(await link.request(MVL.CMD.tour, MVL.tourReq(MVL.TOUR.get)));
+    if (t) { tourStops = t.entries; tourDiv = t.div || tourDiv; $('tourDiv').value = String(tourDiv); }
+  } catch { /* an older module has no tour; leave the row empty */ }
+  renderTour();
+}
+async function sendTour(stops) {
+  if (!link) return;
+  try {
+    const t = MVL.parseTour(await link.request(MVL.CMD.tour, MVL.tourReq(MVL.TOUR.set, tourDiv, stops),
+                                              { urgent: true }));
+    if (t) tourStops = t.entries;
+    /* The loop replaces what is playing, so the page's record of the world it
+       sent is no longer what the module is holding. */
+    if (stops.length >= 2) heldLost();
+    renderTour();
+  } catch (e) { say('loop: ' + e.message, true); }
+}
+function tourAdd() {
+  if (!libSel) return;
+  const code = libSel.kind === 'builtin' ? libSel.i : (0x80 | libSel.i);
+  sendTour(tourStops.concat([code]));
+}
+
 function renderLibCardSel() {
   const sel = $('libCardSel');
   const keep = sel.selectedIndex;
@@ -2814,8 +2946,13 @@ $('libRescan').onclick = async () => {
   renderCardSel();
   renderLib();
 };
+$('tourAdd').onclick = tourAdd;
+$('tourDrop').onclick = () => sendTour(tourStops.slice(0, -1));
+$('tourClear').onclick = () => sendTour([]);
 renderLibrary();
 renderLib();
+buildTourDiv();
+renderTour();
 
 /* ── switching views ───────────────────────────────────────────────────── */
 let viewMode = 'play';
@@ -2837,7 +2974,7 @@ function setView(m) {
   if (m === 'build') { buildAxisButtons(); renderStrip(); }
   /* Ask the module what it is holding when the tab opens, rather than polling
      a list that only changes when somebody changes it. */
-  if (m === 'worlds') { refreshSlots(); refreshCard().then(renderLib); renderLib(); }
+  if (m === 'worlds') { refreshSlots(); refreshCard().then(renderLib); renderLib(); readTour(); }
 }
 
 /* ── dragging a node, in the build view only ──────────────────────────────
