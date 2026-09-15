@@ -60,6 +60,10 @@ public:
      * it takes a held, unmodulated note from rendering forever down to
      * rendering once. */
     float move_eps = 5e-4f;
+    /* The same size of nothing, for the blend amount. A morph is linear in the
+       coefficients, so 5e-4 of the way between two worlds is 5e-4 of the
+       spectral difference — below anything audible by the same argument. */
+    float morph_eps = 5e-4f;
 
     /* Control-frame position, n ≤ kMaxN (axes beyond the space's N ignored). */
     void SetPosition(const float* c, int n)
@@ -107,6 +111,7 @@ public:
             /* On the audio thread, so the tables cannot tear under a render. */
             if(phase_dirty_) { DerivePhases(); phase_dirty_ = false; }
             for(int a = 0; a < kMaxN; a++) rendered_[a] = c_[a];
+            morph_r_ = morph_;
             world_->Fold(c_, p_);
             world_->Evaluate(p_, sharp, mags_, payload_, wt_);
             /* Blend a second world in, if one is set.
@@ -199,9 +204,31 @@ public:
          * every block from the Morph knob and clearing on every call would
          * undo an aim the instant it was made. */
         if(w != morph_world_) for(int a = 0; a < kMaxN; a++) moff_[a] = 0.f;
+        /* Dirty only when something actually moved, which is the same deadband
+         * SetPosition has and for the same reason — except that here the cost
+         * was not a jittering ADC, it was a caller.
+         *
+         * This is called every block from the Morph knob, and it used to mark
+         * dirty unconditionally, which defeated the render deadband completely:
+         * measured on a still patch over 20,000 blocks, 10,000 renders at
+         * divider 2 against 2 with the deadband alone, and identically with no
+         * morph target set at all. The module rendered at the maximum rate the
+         * divider allowed, permanently, on any held or unmodulated note — and
+         * the 33% average / 97% max CPU reading that the whole render-divider
+         * question was blocked on was measured with this in place.
+         *
+         * Compared against what the current frame was *rendered* with, not
+         * against the last call, for the reason SetPosition spells out: a slow
+         * sweep moves less than the threshold per block and would never
+         * re-render at all. And crossing zero always counts, because that is
+         * the difference between blending and not blending rather than a
+         * difference of degree. */
+        const bool world_moved = w != morph_world_;
+        const bool on_changed  = (amount > 0.f) != (morph_r_ > 0.f);
+        const float d          = amount - morph_r_;
         morph_world_ = w;
         morph_ = amount;
-        dirty_ = true;
+        if(world_moved || on_changed || d > morph_eps || d < -morph_eps) dirty_ = true;
     }
     /* Where in the other world to read. Zero means "the same coordinates",
        which is the honest default when nobody has aimed it. */
@@ -272,6 +299,7 @@ public:
         kcut_want_ = 1 << 20;
         hold_      = 0;
         for(int a = 0; a < kMaxN; a++) rendered_[a] = 1e9f;   /* force a re-render */
+        morph_r_ = 1e9f;                                     /* and the blend with it */
     }
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
@@ -475,6 +503,10 @@ private:
      * is not the place to put four kilobytes. */
     float        shape_[kFrame];
     float        shape_fc_ = 0.f;   /* fractional cutoff a frame shaper asked for */
+    /* What the current frame was rendered with, so a blend that has not moved
+       since does not ask for another one. 1e9 until the first render, like
+       rendered_, so the first call always counts. */
+    float        morph_r_ = 1e9f;
     uint32_t     renders_ = 0;
     float        payload_[kMaxP];
     float        c_[kMaxN], p_[kMaxN], rendered_[kMaxN];

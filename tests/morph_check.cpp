@@ -50,6 +50,7 @@
 #include "kyk_stereo.h"
 #include "kyk_world.h"
 #include "kyk_gen.h"
+#include "kyk_worlds.h"
 
 using namespace kyk;
 
@@ -398,8 +399,78 @@ static void TestAnalytic()
            (double)blob.size() / (double)(sizeof(float) * (size_t)(w.K() * (w.N() + 1))));
 }
 
+/* The Morph knob must not cost a render every block.
+ *
+ * SetMorph is called once per block from the panel, and it used to mark the
+ * frame dirty unconditionally — which defeated the render deadband completely
+ * and, worse, did so invisibly: the sound was correct throughout, and the only
+ * symptom was the module rendering at the maximum rate the divider allowed on
+ * any held note. The CPU reading the whole render-divider question was blocked
+ * on had been measured with it in place.
+ *
+ * Measured here rather than described: a still hand with a couple of ADC counts
+ * of jitter, twenty thousand blocks, and the count of frames actually built.
+ * A moving knob must still re-render, or the deadband would be a mute button. */
+static void TestMorphDeadband()
+{
+    static World w, target;
+    static solids::VertexTable vt, vt2;
+    worlds::Point(worlds::kLock, w, 8, nullptr, &vt);
+    worlds::Point(worlds::kFm, target, 8, nullptr, &vt2);
+
+    struct Run { const char* what; bool call; bool armed; bool sweep; uint32_t renders; };
+    Run runs[] = {
+        {"deadband alone", false, false, false, 0},
+        {"SetMorph every block, no target", true, false, false, 0},
+        {"SetMorph every block, target armed", true, true, false, 0},
+        {"SetMorph every block, knob sweeping", true, true, true, 0},
+    };
+    for(Run& r : runs)
+    {
+        Engine eng;
+        eng.Init(&w, 48000.f);
+        eng.render_div = 2;
+        eng.gain = 1.f;
+        eng.SetF0(110.f);
+        uint32_t seed = 3u;
+        float    out[24];
+        for(int b = 0; b < 20000; b++)
+        {
+            seed = seed * 1664525u + 1013904223u;
+            const float jit = (float)((int)((seed >> 16) % 5u) - 2) / 65535.f;
+            float c[kMaxN];
+            for(int a = 0; a < kMaxN; a++) c[a] = 0.5f + jit;
+            eng.SetPosition(c, 4);
+            if(r.call)
+            {
+                /* a sweep over the whole travel across the twenty thousand
+                   blocks, which is about four seconds of a hand moving */
+                const float amt = r.sweep ? (float)b / 20000.f : 0.4f;
+                eng.SetMorph(r.armed ? &target : nullptr, r.armed ? amt : 0.f);
+            }
+            eng.Process(out, 24);
+        }
+        r.renders = eng.Renders();
+        printf("  %-38s %6u renders in 20000 blocks\n", r.what, r.renders);
+    }
+    /* A still patch renders once whatever the caller does with the knob. */
+    CHECK(runs[0].renders <= 2, "a still patch with no morph renders once (%u)", runs[0].renders);
+    CHECK(runs[1].renders <= 2,
+          "calling SetMorph every block with no target must not re-render (%u)", runs[1].renders);
+    CHECK(runs[2].renders <= 2,
+          "nor with a target armed and the knob still (%u)", runs[2].renders);
+    /* But a moving knob has to be heard, or the deadband is a mute. The sweep
+       crosses the 5e-4 threshold about every ten blocks, and the divider then
+       allows half of those. */
+    CHECK(runs[3].renders > 500,
+          "a sweeping knob must still re-render (%u)", runs[3].renders);
+    CHECK(runs[3].renders < 10001,
+          "but not more often than the divider allows (%u)", runs[3].renders);
+}
+
 int main()
 {
+    TestMorphDeadband();
     TestLinearity();
     TestLevel();
     TestBandlimit();

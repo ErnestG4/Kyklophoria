@@ -439,7 +439,20 @@ surface and the documented claims. What was fixed the same night:
 
 Still open, ranked, from the same reviews:
 
-- [ ] **`SetMorph` is called every block and sets `dirty_` unconditionally**,
+- [x] **`SetMorph` marked the frame dirty every block, defeating the render
+      deadband entirely.** Fixed in the engine rather than at the call site, so
+      it holds for both shells, with the same deadband `SetPosition` has and
+      compared against what the current frame was *rendered* with — comparing
+      against the previous call would lose a slow sweep, which is the mistake
+      that comment already warns about. Crossing zero always counts, since that
+      is the difference between blending and not blending rather than one of
+      degree. Measured over 20,000 blocks on a still patch at divider 2:
+      **10,000 renders before, 1 after**, and identically with no target armed.
+      A sweeping knob still renders 1,786 times, so the deadband is not a mute.
+      `tests/morph_check` now measures all four cases and fails on the old
+      engine. **The 33% average / 97% max CPU reading was taken with this in
+      place, so it should be taken again.**
+- [ ] ~~`SetMorph` is called every block and sets `dirty_` unconditionally~~,
       which defeats the render deadband entirely: 10,000 renders per 20,000
       blocks against 2 with the deadband alone, on a still patch, whether or
       not a morph target is armed. The module renders at the maximum rate the
