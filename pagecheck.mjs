@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes planeAxes plane inspect strip tabPlay tabBuild tabLib playMain buildMain libMain slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState'.split(' ');
+const IDS = 'axes planeAxes plane inspect strip tabPlay tabBuild tabLib playMain buildMain libMain slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -126,7 +126,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; } };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -181,18 +181,23 @@ const CASES = [
    (framework/src/host_link/descriptor.cpp): a pager component carrying
    pages/pots/pageNames and a flat fields array keyed by page and pot. */
 const DESC = { components: [
-  { id: 'pager', type: 'pager', pages: 6, pots: 6,
-    pageNames: ['Play', 'Rotate', 'Stereo', 'Orbit', 'Kepler', 'Couple'],
-    pageColors: ['#67e8f9', '#fca5a5', '#a5b4fc', '#fde068', '#9ae6b4', '#f0a0d8'],
+  /* Seven pages, the last of them three pots short: the World page is axes 4 and
+     5 plus the world tour's division, glide and free-run, and nothing is padded
+     out to six. Two pages with gaps in them, which is the shape the parser has
+     to survive — it used to assume a full grid. */
+  { id: 'pager', type: 'pager', pages: 7, pots: 6,
+    pageNames: ['Play', 'Rotate', 'Stereo', 'Orbit', 'Kepler', 'Couple', 'World'],
+    pageColors: ['#67e8f9', '#fca5a5', '#a5b4fc', '#fde068', '#9ae6b4', '#f0a0d8', '#f7c08a'],
     fields: (() => {
       const names = [['Coarse','Fine','Position 0','Position 1','Position 2','Position 3'],
                      ['Angle 0,1','Angle 0,2','Angle 0,3','Angle 1,2','Angle 1,3','Angle 2,3'],
                      ['Spread','Stereo plane','Morph','Render divider','Level','CV out A depth'],
                      ['Orbit 0,1','Orbit 0,2','Orbit 0,3','Orbit 1,2','Orbit 1,3','Orbit 2,3'],
                      ['Gravity','Eccentricity','Orbit plane','Softening','Damping','Radius'],
-                     ['Coupling','Reach','Rate','Bodies','Company', null]];
+                     ['Coupling','Reach','Rate','Bodies','Company', null],
+                     ['Position 4','Position 5','Tour division','Tour glide','Tour free-run', null]];
       const out = [];
-      for (let p = 0; p < 6; p++) for (let q = 0; q < 6; q++)
+      for (let p = 0; p < 7; p++) for (let q = 0; q < 6; q++)
         if (names[p][q]) out.push({ id: `f${p}.${q}`, name: names[p][q], page: p, pot: q,
                                     off: (p*6+q)*4, type: 'f32', def: 0.5, disp: { kind: 'norm' } });
       return out;
@@ -1067,15 +1072,85 @@ console.log('');
   els.wavName.value = '';
 }
 console.log('');
+/* ── the loop row is a readout, not a memory ──────────────────────────────
+ *
+ * The clock moves the loop on and the module stops one when a world is chosen by
+ * hand, so a row drawn from what the page last programmed would be the one thing
+ * on screen the module has already left behind. Every change is therefore sent
+ * and read back, and the live position comes off telemetry. That is exactly the
+ * discipline the play view needed two bugs ago, asked of a second readout.
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  /* A module that answers with a loop of its own, so "the row is what came back"
+     can be told apart from "the row is what I clicked". */
+  let sent = [];
+  const reply = (entries, div = 2) =>
+    Uint8Array.from([0, entries.length, div, 1, 128, ...entries]);
+  let answer = [13, 14, 15];
+  P.setLink({
+    request: async (cmd, body) => {
+      if (body && body[0] === 1) { sent = Array.from(body.subarray(3)); return reply(answer, body[1]); }
+      return reply(answer);
+    },
+    close: async () => {},
+  });
+  P.setWorlds({ count: 22, current: 13, list: Array.from({ length: 22 }, (_, i) => ({ index: i, name: 'w' + i, note: 'x', kind: 1 })) });
+
+  await P.readTour();
+  T(JSON.stringify(P.getTour()) === JSON.stringify([13, 14, 15]),
+    'the row comes from the module rather than from the page');
+  T(els.tourStops.children.length === 5, `three stops draw as three chips and two arrows (${els.tourStops.children.length})`);
+
+  /* Adding a stop sends the whole sequence — half a loop is a different loop —
+     and the row then shows what came back, which here is deliberately not what
+     was asked for. */
+  answer = [13, 14, 15, 16];
+  P.setLibSel({ kind: 'builtin', i: 16 });
+  await P.tourAdd();
+  T(JSON.stringify(sent) === JSON.stringify([13, 14, 15, 16]), `the whole sequence goes in one request (${sent})`);
+  answer = [13, 14];
+  await P.sendTour([13, 14, 15, 16]);
+  T(JSON.stringify(P.getTour()) === JSON.stringify([13, 14]),
+    'and a module that answers with something else is believed');
+
+  /* Where it has got to comes off telemetry, and a length that disagrees means
+     the loop changed without this page asking — so the row is re-read. */
+  answer = [13, 14, 15];
+  P.onTelemetry(tel({ tour: { len: 3, at: 2, blend: 0.5 } }));
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  T(JSON.stringify(P.getTour()) === JSON.stringify([13, 14, 15]),
+    'a telemetry frame that disagrees with the row makes the page ask again');
+  P.setTourLive({ len: 3, at: 1, blend: 0.25 });
+  P.renderTour();
+  const cls = Array.from(els.tourStops.children).filter(c => c.className.startsWith('ts')).map(c => c.className);
+  T(cls[1].includes('live') && cls[2].includes('next'),
+    `the live stop and the one being travelled to are marked (${cls.join(' ')})`);
+
+  /* One of yours is a stop by its slot number with the high bit set, and it is
+     named from the library rather than by index. */
+  P.setSlots({ count: 32, names: Array.from({ length: 32 }, (_, i) => (i === 5 ? 'mine' : null)) });
+  T(P.tourName(0x85) === 'mine' && P.tourName(13) === 'w13',
+    'a stop knows whether it is one that ships or one of yours');
+
+  P.setLink(null);
+  P.setTourLive({ len: 0, at: 0, blend: 0 });
+  await P.readTour();
+  T(P.getTour().length === 0, 'and with no module there is no loop to draw');
+}
+console.log('');
+
 if (unknownIds.size) { bad++; console.log(`  FAIL page asked for undeclared ids: ${[...unknownIds].join(', ')}`); }
 console.log('');
 
 /* the descriptor parse, then every case again with a panel present */
 const parsed = P.parsePanel(DESC);
 {
-  const ok = parsed && parsed.pages === 6 && parsed.pots === 6
+  const ok = parsed && parsed.pages === 7 && parsed.pots === 6
              && parsed.grid[4][0] && parsed.grid[4][0].name === 'Gravity'
-             && parsed.grid[5][5] === null;
+             && parsed.grid[5][5] === null
+             && parsed.grid[6][2] && parsed.grid[6][2].name === 'Tour division'
+             && parsed.grid[6][5] === null;
   if (!ok) bad++;
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} descriptor pager block parses (found ${
     parsed ? parsed.pages + ' pages x ' + parsed.pots + ' pots' : 'nothing'}, gap at Couple P6 kept null)`);
