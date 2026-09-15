@@ -7,7 +7,9 @@
 #   4. cont_check   — every axis of every world must be continuous. Measures
 #                    the same sweep at two step sizes: a smooth axis halves
 #                    its largest step when the step halves, a cliff does not.
-#   5. alias_check  — spec §7 aliasing sweep, fails above -80 dBFS
+#   5. alias_check  — spec §7 aliasing sweep, fails above -80 dBFS on the
+#                     bright lattice cell and -60 on the worst cell there is.
+#                     KYK_SLOW=1 adds the whole 22-world scan (95 s)
 #   6. link_check   — python3 tests/link_check.py: the HostLink extension over stdio
 #                     and through tools/bridge/bridge.py (stdlib only; KYK_NODE=1 adds
 #                     the node selftest, which needs node but never npm)
@@ -66,6 +68,12 @@ tail -1 "$OUT/cont.txt"
 echo "== alias_check =="
 $CXX $CORE_FLAGS -O2 tests/alias_check.cpp -o "$OUT/alias_check" || fail=1
 "$OUT/alias_check" --csv "$OUT/alias.csv" || fail=1
+# The default cell is a regression guard on one world at one position, and it
+# reads as a stronger claim than it is: a scan of every world at every corner
+# and midpoint puts the honest worst at -64.6 dBFS, on Field. That takes 95 s,
+# so the suite checks the cell the scan found worst and KYK_SLOW=1 runs the lot.
+"$OUT/alias_check" --world 5 --pos 1 1 0.5 0 --limit -60 || fail=1
+if [ "${KYK_SLOW:-0}" = 1 ]; then "$OUT/alias_check" --scan || fail=1; fi
 
 echo "== golden =="
 make -s host || fail=1

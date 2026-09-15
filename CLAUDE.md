@@ -192,7 +192,7 @@ question needs hands.
 ## Where things stand
 
 Beta. Twenty-one of the twenty-two built-in worlds have real bench time — Grit
-is brand new and unplayed; morphing, user
+is measured and not yet played; morphing, user
 worlds, import and the SD card are well tested by the suite and barely played.
 `README.md` says which is which and where each feature stops.
 

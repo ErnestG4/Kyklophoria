@@ -62,9 +62,10 @@ inline const Entry& Get(uint8_t i)
         {"Vowel",    "three resonances, chained - the second a multiple of the first, the third of the "
                      "second - over a falling source. Peaks ride the pitch: a world is told nothing about f0", World::Kind::Formant},
         {"Shapes",   "saw, square, triangle and pulse on a grid at sine phase, then wavefolding and "
-                     "phase distortion. Aliasing at full fold -32 dB, at full PM -62", World::Kind::Table},
-        {"Shapes R", "the same grid, with wavefolding and ring modulation instead: "
-                     "ring mod aliases at -59 dB against -67 dry", World::Kind::Table},
+                     "phase distortion. Both pull the band limit to 21 harmonics to make room; the "
+                     "fold still aliases to -9 dBFS at its worst cell, the phase modulation to -53", World::Kind::Table},
+        {"Shapes R", "the same grid, with wavefolding and ring modulation instead: ring mod lands on "
+                     "harmonics by construction, so it is nearly free at -96 dBFS against -90 dry", World::Kind::Table},
         {"Lock",     "the 24-cell at sine phase, one family per Givens plane: (0,1) pulses, (0,2) saws, "
                      "(0,3) triangles, (1,2) and (1,3) stacks of partials, (2,3) combs", World::Kind::Lock},
         {"Unison",   "voices 1 to 7, roots at 1 + j.s for s from 1 (dense buzz) to 2.6 (wide and hollow), "
@@ -81,7 +82,8 @@ inline const Entry& Get(uint8_t i)
                       "One shape, four ways to bend it, and no axis fighting another", World::Kind::Bend},
         {"Edge",      "saw against pulse and nothing else: the blend between them, duty, comb, fold point", World::Kind::Bend},
         {"Grit",      "the Shapes grid put through bit reduction (8 bits to 1) and sample-rate reduction "
-                      "(a 1024-point cycle down to 32 values). Aliases on purpose; the figure is in the README", World::Kind::Table},
+                      "(a 1024-point cycle down to 32 values). Aliases on purpose, to -15 dBFS at full "
+                      "depth against -98 dry, and keeps all 64 harmonics while doing it", World::Kind::Table},
     };
     return kEntries[i < kCount ? i : 0];
 }

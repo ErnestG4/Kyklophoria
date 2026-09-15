@@ -187,8 +187,14 @@ meaningful axis and stacking four banks makes rotation meaningless.
 - [x] **A waveshaping axis** — `core/kyk_shapes.h`, worlds 11 and 12. Fold,
       phase modulation and ring modulation, running on the rendered cycle
       because a folder has no closed form in the harmonics. Aliasing at full
-      depth: fold -32.2 dB, phase modulation -62.1, ring mod -59.3, against
-      -67.5 dry.
+      depth was measured here as fold -32.2 dB, phase modulation -62.1, ring
+      mod -59.3, against -67.5 dry, and then the smooth band-limit window took
+      fold to -38.4 the same week. Neither set survives re-measurement with
+      `alias_check --world N --pos a b c d`, which scans the grid: fold is
+      -9.0 dBFS at its loudest cell, phase modulation -52.9, ring mod -96.1,
+      against -90.0 dry. Nothing regressed — the old figures were one cell
+      quoted as a world, which is the same mistake the -88 headline made. The
+      README carries the scanned table.
 - [x] **A world that is genuinely harsh** — `Grit`, world 21. From the bench:
       "there's no really glitchy harsh worlds (shapes are close)". Shapes was
       the right base and the shapers were the problem — a wavefolder and a
@@ -211,11 +217,11 @@ meaningful axis and stacking four banks makes rotation meaningless.
       No band-limit pull-in, on purpose: quantisation error is broadband
       whatever you feed it and a hold's images sit at multiples of the hold
       rate, so pulling the band in would cost brightness and clean up nothing.
-      How much it aliases is the next thing to measure and publish, which needs
-      `alias_check` to take a world and a position. Both shapers are div-free in
-      the loop (80 and 60 M7 instructions by `make armcost`); hoisting two
-      reciprocals that are exact powers of two is bit-identical, which
-      `m3_grit.wav` verifies.
+      It aliases at -15.3 dBFS at full depth against -98.2 dry, and keeps all
+      64 harmonics doing it, where the wavefolder throws 43 of them away first
+      and still manages -9.0. Both shapers are div-free in the loop (80 and 60
+      M7 instructions by `make armcost`); hoisting two reciprocals that are
+      exact powers of two is bit-identical, which `m3_grit.wav` verifies.
 - [x] **Real waveforms.** The instrument could not produce a recognisable saw
       or square, and it was the representation, not a missing world: random
       phase renders a saw's spectrum at 0.79 correlation to a saw. Sine phase
@@ -515,9 +521,19 @@ Still open, ranked, from the same reviews:
 - [ ] **32-bit overflow in `Space::Attach`'s size check**, demonstrated on the
       target compiler: `point_count · stride · 4` wraps, so a 64-byte file can
       claim 4 GB and pass. Not reachable until the card reads `.kyk`.
-- [ ] **`alias_check` proves −88 dBFS for one world at one position.** Over all
+- [x] **`alias_check` proves −88 dBFS for one world at one position.** Over all
       21 at three positions, Field II measures −76.3 dBFS, and a wider scan
-      finds −67.5 — past the suite's own −80 limit.
+      finds −67.5 — past the suite's own −80 limit. Confirmed and closed: the
+      sweep now takes `--world` and `--pos`, and `--scan` walks every world at
+      every corner and midpoint (81 cells each, 95 s). The honest worst is
+      **−64.6 dBFS**, Field at (1, 1, 0.5, 0), with Field II −68.0, Bar −71.0
+      and Stack −73.4 behind it; the review's −76.3 for Field II reproduces
+      exactly at (0, 0, 1, 0). Cells where a frame shaper is engaged are
+      excluded and published separately — those are −9.0 for a full wavefold
+      and −15.3 for Grit, which is the point of Grit. `make test` keeps the
+      −80 guard on the bright cell and adds a −60 guard on the cell the scan
+      found worst; `KYK_SLOW=1` runs the whole scan. The number in the README
+      was corrected rather than defended.
 - [ ] **`putWorld` reads `link.maxBody`, which is never assigned**, so it
       always chunks at 1024 regardless of what the module negotiated.
 - [ ] Audition loose ends: re-place clears the selection while the sound keeps
@@ -730,7 +746,8 @@ Still open, ranked, from the same reviews:
 
 Name, I/O map, stereo as an angular spread, derived phases, frame 1024 and
 K 64, cube-map sphere chart (spec §9). The morph is provably click-free and
-that property is tested. Aliasing is −88 dBFS over five octaves. A soft clip
+that property is tested. Aliasing is −88 dBFS over five octaves on the cell the
+suite sweeps and −64.6 anywhere in any world (`alias_check --scan`). A soft clip
 is not available without oversampling. Random phases beat Schroeder for our
 tilted spectra. Whitening is required after PCA, not optional.
 

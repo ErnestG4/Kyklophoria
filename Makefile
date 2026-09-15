@@ -3,7 +3,8 @@
 #
 #   make host    — build/host/kykdesk (desktop shell), kykspace (generate and
 #                  grade spaces), kykeigen (bake a corpus into one) and
-#                  kykworlds (grade every built-in world on one table)
+#                  kykworlds (grade every built-in world on one table) and
+#                  alias_check (sweep any world at any cell for aliasing)
 #   make test    — tests/run.sh (unit, aliasing, golden)
 #   make tables  — regenerate core/kyk_tables.h
 CXX      ?= g++
@@ -14,7 +15,8 @@ LINK_FLAGS = -Ishell/common -I$(SDK_DIR)/framework/include -DALCHEMY_HOSTLINK_MA
 CORE_HDRS  = $(wildcard core/*.h) $(wildcard shell/common/*.h)
 
 .PHONY: host test tables clean
-host: build/host/kykdesk build/host/kykspace build/host/kykeigen build/host/kykworlds
+host: build/host/kykdesk build/host/kykspace build/host/kykeigen build/host/kykworlds \
+      build/host/alias_check
 
 build/host/kykdesk: shell/desktop/main.cpp shell/desktop/wavio.h shell/desktop/script.h shell/desktop/serve.h $(CORE_HDRS)
 	@mkdir -p build/host
@@ -35,6 +37,14 @@ build/host/kykworlds: tools/kykworlds/main.cpp tools/corpus.h $(CORE_HDRS)
 build/host/kykeigen: tools/kykeigen/main.cpp shell/desktop/wavio.h $(CORE_HDRS)
 	@mkdir -p build/host
 	$(CXX) -std=gnu++17 -O2 -Wall -Wextra -Icore tools/kykeigen/main.cpp -o $@
+
+# alias_check is a test, and also the instrument's measuring tool: `--world N
+# --pos a b c d` sweeps any world at any cell, which is where the published
+# aliasing figures come from. `make test` runs it with its defaults; this target
+# is so the README's command is a command somebody can actually run.
+build/host/alias_check: tests/alias_check.cpp $(CORE_HDRS)
+	@mkdir -p build/host
+	$(CXX) $(CORE_FLAGS) tests/alias_check.cpp -o $@
 
 test: host
 	tests/run.sh

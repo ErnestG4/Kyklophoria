@@ -317,16 +317,47 @@ discontinuity does not, so the ratio is about 4 for something smooth and about
 why the first wavefolder passed every other test.
 
 Band-limiting is spectral truncation, verified at −88 dBFS worst non-harmonic
-content over a five-octave sweep (`tests/alias_check`). That figure is the
-*spectral path*, which is what nineteen of the twenty-two worlds use. The three
-grid worlds run their shapers on the rendered cycle instead, where there is
-no closed form in the harmonics to truncate, and they alias: −32.2 dB at full
-fold, −62.1 at full phase modulation and −59.3 at full ring modulation against
-−67.5 dry, and Grit as loudly as it can, which is what it is for. Measuring that
-one properly is the next job — the sweep takes no world argument yet, so every
-figure here is one world at one cell. Both numbers are ours and both are
-published, which is the point: as far as the survey in `docs/lit/` found, nobody
-else in the field publishes either.
+content over a five-octave sweep (`tests/alias_check`) — on one bright lattice
+cell, which is a narrower claim than it reads as. Scanning every world at every
+corner and midpoint of its space, 81 cells each, the honest worst is **−64.6
+dBFS**, on Field at (1, 1, 0.5, 0); the field worlds are the loudest because
+their spectra are the least tilted, so the frame reader's images have the most
+to work with. `build/host/alias_check --scan` prints the table and takes 95 s.
+Both numbers are the *spectral path*, which is what nineteen of the twenty-two
+worlds use. The three
+grid worlds run their shapers on the rendered cycle instead, where there is no
+closed form in the harmonics to truncate, so they alias — two of them as a cost
+and one of them as the point. Measured the same way, worst non-harmonic bin over
+the same sweep, each shaper at full depth and scanned over 25 cells of its grid:
+
+| shaper at full depth | quietest cell | loudest cell | band limit |
+|---|---|---|---|
+| none (dry grid) | −98.2 | −90.0 | 64 |
+| Shapes, wavefold | −16.0 | **−9.0** | 21 |
+| Shapes, phase modulation | −92.8 | −52.9 | 21 |
+| Shapes R, ring modulation | −101.6 | −96.1 | 33 |
+| Grit, bit reduction | −29.4 | −19.8 | 64 |
+| Grit, rate reduction | −28.0 | −17.1 | 64 |
+| Grit, both | −27.3 | **−15.3** | 64 |
+
+```sh
+build/host/alias_check --world 21 --pos 0.75 1 1 1   # the loudest cell of Grit
+```
+
+It prints `FAIL` against the suite's −80 dBFS limit, and that limit is about the
+spectral path: `make test` runs the sweep on a lattice world, where anything
+above −80 is a bug. On Grit the number is the specification.
+
+The **band limit** column is the point of the comparison. The folder and the
+phase modulator buy their way down by throwing two thirds of the harmonics away
+before they start — 21 of 64, so what you hear at full fold is a dull waveform
+made bright again by a nonlinearity, and it is *still* the dirtiest thing here at
+−9 dBFS. Grit does not buy anything: it keeps all 64 and reduces them, because
+quantisation error is broadband whatever you feed it and a hold's images sit at
+multiples of the hold rate, so pulling the band in would cost brightness and
+clean up nothing. Every figure here is ours and every one is published, which is
+the point: as far as the survey in `docs/lit/` found, nobody else in the field
+publishes any of them.
 
 ## Building and flashing
 
@@ -414,8 +445,8 @@ Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 (non-lattice) spaces.
 
 **What has been played and what has not.** Twenty-one of the twenty-two
-built-in worlds are what has had real time on the bench; Grit has not been
-played at all yet. Morphing, user worlds, import and the card
+built-in worlds are what has had real time on the bench; Grit is measured and
+not yet played. Morphing, user worlds, import and the card
 are tested by the suite — 420 world-pair switches, 102 link checks, 165
 link-level and 140 page-level web checks, and the continuity and aliasing sweeps — but not by ear at length. Treat
 them as the new half of a beta.
