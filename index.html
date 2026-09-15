@@ -246,6 +246,14 @@
     <span id="wavState" style="color: var(--dim)"></span>
   </div>
   <div class="brow">
+    <span class="cap">EFFECTS</span>
+    <span style="color: var(--dim)">axis 4</span>
+    <select id="fxA"></select>
+    <span style="color: var(--dim)">axis 5</span>
+    <select id="fxB"></select>
+    <span id="fxState" style="color: var(--dim)"></span>
+  </div>
+  <div class="brow">
     <span class="cap">HEAR</span>
     <button class="chip" id="audPlay">audition</button>
     <button class="chip" id="audA">as imported</button>
@@ -1063,10 +1071,59 @@ function worldName() {
    what you kept cannot drift apart. That is not hypothetical tidiness: the two
    paths differing by a placement rule or a sigma is exactly the sort of thing
    nobody would notice until a saved file sounded wrong months later. */
-function importedBlob() {
-  return MVL.buildUserWorld(imported.map(w => ({ pos: w.pos, mags: w.mags })),
-                            { n: 4, k: 64, sigma: 0.26, name: worldName() });
+/* Effects go on axes 4 and 5 and never on a placement axis.
+ *
+ * The format allows any axis, and putting one on axis 2 would also have worked
+ * — but then the depth is wherever the blend has got to, so "open the folder"
+ * and "cross the space" become one gesture and neither is available alone. Axes
+ * 4 and 5 exist precisely because there are six axes and four position CVs;
+ * they have been reachable from the web page and from nowhere a hand could get
+ * at since the beginning. The module's World page gives them the two pots.
+ *
+ * Every node sits at 0.5 on them, which is exactly neutral: the distance term
+ * is then the same constant for every node, and a constant cancels out of the
+ * softmax. So the axis moves the effect and nothing else. */
+function fxSel() {
+  const k = (id) => Number($(id).value) || 0;
+  return [{ axis: 4, kind: k('fxA') }, { axis: 5, kind: k('fxB') }].filter(f => f.kind);
 }
+function importedBlob() {
+  const fx = fxSel();
+  return MVL.buildUserWorld(imported.map(w => ({ pos: w.pos, mags: w.mags })),
+                            { n: fx.length ? 6 : 4, k: 64, sigma: 0.26, name: worldName(), fx });
+}
+
+/* The effect selectors. Changing one changes the world, so it re-sends exactly
+   the way moving a node does — through syncPlacement, which is the one path
+   that knows whether the module is holding this set. */
+function buildFxSelects() {
+  for (const id of ['fxA', 'fxB']) {
+    const sel = $(id);
+    sel.innerHTML = '';
+    MVL.SHAPER_NAME.forEach((nm, i) => {
+      const o = document.createElement('option');
+      o.value = String(i); o.textContent = nm;
+      sel.appendChild(o);
+    });
+    sel.onchange = () => { renderFx(); syncPlacement(); };
+  }
+}
+const FX_SAYS = {
+  fold: 'wavefolds the cycle — the dirtiest of these, and it pulls the band limit in to make room',
+  ring: 'ring-modulates against a whole-numbered carrier, so it stays on the harmonic series and stays clean',
+  warp: 'phase-distorts the cycle, Casio-style, without leaving the series',
+  crush: 'reduces the cycle to fewer bits, 8 down to 1. Aliases on purpose',
+  drop: 'holds the cycle at fewer values, 1024 down to 32. Aliases on purpose',
+};
+function renderFx() {
+  const fx = fxSel();
+  const bits = fx.map(f => `axis ${f.axis} ${MVL.SHAPER_NAME[f.kind]}s: ${FX_SAYS[MVL.SHAPER_NAME[f.kind]]}`);
+  $('fxState').textContent = fx.length
+    ? bits.join(' · ') + ' — the module reaches them on the World page'
+    : 'an effect on axis 4 or 5 runs on the rendered cycle, after the blend';
+}
+buildFxSelects();
+renderFx();
 
 /* Export, which is the point of import.
  *
@@ -1162,6 +1219,10 @@ async function openForEdit(spec) {
     }));
     place.sel = -1; place.sent = false;
     $('wavName').value = (w.name || 'world').slice(0, 16);
+    /* The effects come back with it, or the edit would quietly drop them. */
+    $('fxA').value = String((w.fx.find(f => f.axis === 4) || {}).kind || 0);
+    $('fxB').value = String((w.fx.find(f => f.axis === 5) || {}).kind || 0);
+    renderFx();
     renderStrip(); renderImport(); renderAudition();
     setView('build');
     say(borrowed >= 0

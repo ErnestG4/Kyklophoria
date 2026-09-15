@@ -861,5 +861,123 @@ console.log('\n== the card: write, list, read back, and refuse to clobber');
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+console.log('\n== an effect on an axis, end to end');
+await withChild(['--serve', '--gen', '--seed', '1'], async link => {
+  /* The build tab can put a frame shaper on axis 4 or 5 of a world you wrote.
+   * Everything about that is checked in core (tests/user_check.cpp) and on the
+   * page (web/pagecheck.mjs); what is left, and what neither of those can ask,
+   * is whether the bytes the page writes make the module's own engine shape the
+   * cycle — and whether the two decisions that are *not* symmetrical between
+   * the shapers survive the trip: a wavefolder pulls the band limit in to make
+   * room for itself, and bit reduction deliberately does not.
+   *
+   * The observable is the rendered frame, which telemetry carries *after* the
+   * shaper stage, and `kcut`, which is the band limit the render actually
+   * used. */
+  const nodes = [];
+  for (let i = 0; i < 24; i++) {
+    const mags = new Float32Array(64);
+    for (let h = 0; h < 12; h++) mags[h] = (h % (i % 5 + 2) === 0 ? 1 : -1) / (h + 1);
+    const pos = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
+    pos[i % 4] = i < 12 ? 0.2 : 0.8;
+    nodes.push({ pos, mags });
+  }
+  const fxBlob = KYK.buildUserWorld(nodes, {
+    n: 6, k: 64, sigma: 0.26, name: 'fx world',
+    fx: [{ axis: 4, kind: KYK.SHAPER.fold }, { axis: 5, kind: KYK.SHAPER.crush }],
+  });
+  const plainBlob = KYK.buildUserWorld(nodes, { n: 6, k: 64, sigma: 0.26, name: 'no fx' });
+  check(fxBlob[4] === 2 && plainBlob[4] === 1,
+        'the world with effects says version 2 and the one without says 1');
+
+  const read  = async () => KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(3)));
+  const same  = (a, b) => !!a && !!b && a.length === b.length && [...a].every((v, i) => v === b[i]);
+  const settle = async (pick, tries = 60) => {
+    for (let i = 0; i < 6; i++) await read();
+    let prev = pick(await read()), agree = 0;
+    for (let i = 0; i < tries; i++) {
+      const m = pick(await read());
+      if (same(prev, m)) { if (++agree >= 3) return m; } else { agree = 0; prev = m; }
+    }
+    return prev;
+  };
+  /* Park at a position, and wait for the thing actually being waited for.
+     The control frame is *slewed*, and a slew asymptotes — so the frame stops
+     changing while the position is still short of its target, which looks
+     exactly like arrival from outside. The first version of this scene waited
+     for the frame to settle and read kcut 53 where it wanted 64: the fold axis
+     was sitting at about 0.09 and the band limit had been pulled in by that
+     much. Telemetry reports the position, so wait for that, then let the
+     render catch up. */
+  const at = async (a4, a5) => {
+    await link.request(KYK.CMD.setControl,
+                       KYK.setControlReq(110, [0.37, 0.62, 0.28, 0.71, a4, a5], [0, 0, 0, 0, 0, 0], 0));
+    let arrived = false;
+    for (let i = 0; i < 400 && !arrived; i++) {
+      const t = await read();
+      arrived = !!t && Math.abs(t.posL[4] - a4) < 1e-3 && Math.abs(t.posL[5] - a5) < 1e-3;
+    }
+    check(arrived, `the module arrives at axis 4 = ${a4}, axis 5 = ${a5}`);
+    const f = await settle(t => t.frame);
+    const t = await read();
+    return { frame: f, kcut: t.kcut, n: t.n };
+  };
+  const worst = (a, b) => { let w = 0; for (let i = 0; i < a.length; i++) w = Math.max(w, Math.abs(a[i] - b[i])); return w; };
+
+  await KYK.putWorld(link, fxBlob);
+  const dry = await at(0, 0);
+  check(dry.n === 6, `the module is playing a six-axis world (n=${dry.n})`);
+  check(dry.kcut === 64, `with nothing shaping it, every harmonic is there (kcut ${dry.kcut})`);
+
+  const fold = await at(1, 0);
+  check(worst(fold.frame, dry.frame) > 16,
+        `full fold on axis 4 changes the rendered cycle (worst sample ${worst(fold.frame, dry.frame)} of 255)`);
+  check(fold.kcut < 24,
+        `and pulls the band limit in to make room for itself (kcut ${fold.kcut}, was 64)`);
+
+  const crush = await at(0, 1);
+  check(worst(crush.frame, dry.frame) > 4,
+        `full bit reduction on axis 5 changes it too (worst sample ${worst(crush.frame, dry.frame)} of 255)`);
+  check(crush.kcut === 64,
+        `and keeps all 64 harmonics, which is the decision Grit is built on (kcut ${crush.kcut})`);
+
+  const back = await at(0, 0);
+  check(same(back.frame, dry.frame), 'both back at zero and the cycle is the one we started with');
+  console.log(`  effects: fold moves the cycle ${worst(fold.frame, dry.frame)}/255 and takes kcut 64 -> ${fold.kcut}; `
+              + `crush moves it ${worst(crush.frame, dry.frame)}/255 and leaves kcut at ${crush.kcut}`);
+
+  /* The same nodes with no effects declared: the two axes are then nothing but
+     two more dimensions with every node at 0.5 on them, so the whole of their
+     travel must be inaudible. This is the claim that lets the editor put an
+     effect on an axis without taking a placement axis away. */
+  await KYK.putWorld(link, plainBlob);
+  const p0 = await at(0, 0);
+  const p1 = await at(1, 1);
+  check(worst(p0.frame, p1.frame) <= 1,
+        `without effects those axes are inert across their whole travel (worst sample ${worst(p0.frame, p1.frame)} of 255)`);
+
+  /* And the module refuses what the page would refuse. Hand-corrupted rather
+     than page-built, because buildUserWorld will not write these at all — the
+     point is that the module does not depend on it not to. */
+  for (const [what, mut] of [
+    ['an effect on an axis the world does not have', b => { b[14] = (6 << 4) | 1; }],
+    ['a shaper number nobody has implemented',      b => { b[14] = (4 << 4) | 9; }],
+    ['two effects on one axis',                     b => { b[14] = (4 << 4) | 1; b[15] = (4 << 4) | 4; }],
+    ['version 2 with no effect declared',           b => { b[14] = 0; b[15] = 0; }],
+    ['version 1 with the effect bytes set',         b => { b[4] = 1; }],
+  ]) {
+    const bad = Uint8Array.from(fxBlob);
+    mut(bad);
+    let refused = false;
+    try { await KYK.putWorld(link, bad); } catch { refused = true; }
+    check(refused, `the module refuses ${what}`);
+  }
+  /* Refusing must not have cost the world that was playing. */
+  const still = await at(0, 0);
+  check(worst(still.frame, p0.frame) <= 1, 'and a refused world leaves the playing one alone');
+
+  await link.close();
+});
+
 console.log(failures ? `selftest: ${failures} of ${checks} checks FAILED` : `selftest: all ${checks} checks passed`);
 process.exit(failures ? 1 : 0);
