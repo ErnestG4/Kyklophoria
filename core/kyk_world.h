@@ -97,11 +97,23 @@ public:
     {
         kind_  = s && s->Attached() ? Kind::Lattice : Kind::None;
         space_ = s;
+    /* Random phase is what a world gets unless it says otherwise, and saying so
+     * here rather than relying on the member's initialiser is the whole point:
+     * these objects are *reused*. The module has two world buffers and a morph
+     * target and builds whatever you switch to into whichever one is free, so a
+     * Use* that leaves a shared field alone inherits it from the world that
+     * buffer held before. Measured before this line existed: switching from
+     * Lock to FM left FM rendering at sine phase, 4.57 different on a frame
+     * that spans about +-2 — the same defect the sine-phase work was done to
+     * remove, reached from the other side. tests/switch_check.cpp now arrives at
+     * every world through one reused buffer as well as through a fresh one. */
+        phase_ = Phase::Random;
     }
     void UseAnalytic(const EigenBasis& b, int p, const uint8_t* topo)
     {
         kind_  = (b.n >= 1 && b.n <= kMaxN && b.k >= 1 && b.k <= kMaxK) ? Kind::Analytic : Kind::None;
         basis_ = b;
+        phase_ = Phase::Random;   /* see UseLattice: these buffers are reused */
         p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }
@@ -111,6 +123,7 @@ public:
         kind_ = (v.count > 0 && v.count <= kMaxVerts && v.n >= 1 && v.n <= kMaxN
                  && v.k >= 1 && v.k <= kMaxK) ? Kind::Vertices : Kind::None;
         verts_ = v;
+        phase_ = Phase::Random;   /* see UseLattice: these buffers are reused */
         p_     = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }
@@ -119,6 +132,7 @@ public:
     {
         kind_ = (f.n >= 1 && f.n <= kMaxN && f.k >= 1 && f.k <= kMaxK) ? Kind::Fm : Kind::None;
         fm_   = f;
+        phase_ = Phase::Random;   /* see UseLattice: these buffers are reused */
         p_    = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }
@@ -127,6 +141,7 @@ public:
     {
         kind_ = (f.n >= 1 && f.n <= kMaxN && f.k >= 1 && f.k <= kMaxK) ? Kind::Formant : Kind::None;
         form_ = f;
+        phase_ = Phase::Random;   /* see UseLattice: these buffers are reused */
         p_    = p < 0 ? 0 : (p > kMaxP ? kMaxP : p);
         for(int a = 0; a < kMaxN; a++) topo_[a] = topo ? topo[a] : 0u;
     }

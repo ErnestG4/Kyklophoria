@@ -119,7 +119,59 @@ int main()
             (void)worstBin;
         }
     }
-    printf("\n  %d ordered pairs checked\n", pairs);
+    /* The same sweep again, through *one* reused buffer.
+     *
+     * Everything above builds each world into a World of its own, which is not
+     * what the instrument does: the module has two world buffers and a morph
+     * target, and a switch builds whatever you asked for into whichever one is
+     * free. So a Use* that leaves a shared field alone inherits it from the
+     * world that buffer held a moment ago — which is the same bug shape as the
+     * four this file was written for, one level further out, and this pass is
+     * the one that catches it. It found the phase convention doing exactly
+     * that: after Lock, every random-phase world rendered at sine phase, up to
+     * 4.57 different on a frame that spans about +-2. */
+    int reuse_pairs = 0, reuse_fails = 0;
+    {
+        World               one;
+        Space               sp;
+        solids::VertexTable tb;
+        std::vector<uint8_t> blob;
+        for(uint8_t a = 0; a < worlds::kCount; a++)
+        {
+            if(!ok[a]) continue;
+            for(uint8_t b = 0; b < worlds::kCount; b++)
+            {
+                if(!ok[b] || a == b) continue;
+                /* a into the buffer, then b into the same buffer */
+                if(!Build(a, one, sp, tb, blob)) continue;
+                StereoEngine e;
+                e.Init(&one, 48000.f);
+                e.spread = 0.05f; e.slew_ms = 0.f;
+                Settle(e, c, 4);
+                if(!Build(b, one, sp, tb, blob)) continue;
+                e.SetWorld(&one);
+                Settle(e, c, 4);
+                Shot got;
+                Grab(e, got);
+                reuse_pairs++;
+                const Shot& want = fresh[b];
+                double df = 0, dm = 0, dp = 0;
+                for(int i = 0; i < kFrame; i++) df = std::fmax(df, std::fabs(got.frame[i] - want.frame[i]));
+                for(int i = 0; i < want.k && i < kMaxK; i++) dm = std::fmax(dm, std::fabs((double)got.mags[i] - want.mags[i]));
+                for(int j = 0; j < kMaxP; j++) dp = std::fmax(dp, std::fabs((double)got.pay[j] - want.pay[j]));
+                if(df > 1e-6 || dm > 1e-6 || dp > 1e-6 || got.kcut != want.kcut
+                   || got.n != want.n || got.k != want.k)
+                {
+                    if(reuse_fails < 12)
+                        printf("  reused: %-10s -> %-10s frame %.5f  mags %.5f  payload %.5f  kcut %d/%d\n",
+                               worlds::Get(a).name, worlds::Get(b).name, df, dm, dp, got.kcut, want.kcut);
+                    reuse_fails++;
+                }
+            }
+        }
+    }
+    fails += reuse_fails;
+    printf("\n  %d ordered pairs checked, and %d again through one reused buffer\n", pairs, reuse_pairs);
     if(fails) printf("switch_check: %d pairs do not arrive where they should\n", fails);
     else      printf("switch_check: every world is the same arrived at as started in\n");
     return fails ? 1 : 0;
