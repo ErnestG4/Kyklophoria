@@ -22,8 +22,10 @@ const CMD = {
   hello: 0x01, getDescriptor: 0x02,
   telemetry: 0x60, spaceInfo: 0x61, cell: 0x62, stats: 0x63, action: 0x64,
   worlds: 0x65, basis: 0x66, putWorld: 0x67, cardWorlds: 0x68,
-  putSlot: 0x69, slots: 0x6a, saveCard: 0x6b, getSlot: 0x6c, setControl: 0x6e,
+  putSlot: 0x69, slots: 0x6a, saveCard: 0x6b, getSlot: 0x6c, tour: 0x6d, setControl: 0x6e,
 };
+/* 0x6D TOUR ops (shell/common/kyk_ext.h) */
+const TOUR = { get: 0, set: 1, tick: 2, max: 8 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4,
               morphWorld: 5, scanCard: 6, loadCardWorld: 7, phase: 8, motionMute: 9,
               aimMorph: 10, slotLive: 11, slotTarget: 12, slotFree: 13, slotSwap: 14,
@@ -667,6 +669,13 @@ function parseTelemetry(b) {
     } else t.knobs = null;
     t.world = b.length > at ? b[at] : null;
     at += b.length > at ? 1 : 0;
+    /* Where the world tour has got to: stops, which one is live, how far towards
+       the next. Null from firmware that predates it, and zero stops means there
+       is no tour — a page that drew the loop from its own memory of what it
+       programmed would be drawing the one thing on screen the clock has since
+       moved on from. */
+    t.tour = b.length >= at + 3 ? { len: b[at], at: b[at + 1], blend: b[at + 2] / 255 } : null;
+    at += b.length >= at + 3 ? 3 : 0;
   }
   t.bytes = b.length;
   return t;
@@ -1189,6 +1198,29 @@ function setControlReq(f0, ctl, angles, spread) {
   dv.setFloat32(at, spread, true);
   return r;
 }
+/* 0x6D TOUR — the loop of worlds on a clock.
+ *
+ * `set` sends the whole sequence in one frame, because half a tour is a
+ * different tour; a length below two turns it off. Entries name worlds the way
+ * the rest of this wire does: an index below the world count is a built-in and
+ * 0x80 | slot is one of yours. Every op replies with the state, so the page
+ * never has to ask twice. */
+function tourReq(op, div = 1, entries = []) {
+  if (op !== TOUR.set) return Uint8Array.of(op);
+  const n = Math.min(entries.length, TOUR.max);
+  const r = new Uint8Array(3 + n);
+  r[0] = TOUR.set; r[1] = Math.max(1, Math.min(64, div | 0)); r[2] = n;
+  for (let i = 0; i < n; i++) r[3 + i] = entries[i] & 0xff;
+  return r;
+}
+function parseTour(b) {
+  if (!b || b.length < 5) return null;
+  const len = b[1];
+  if (b.length < 5 + len) return null;
+  return { len, div: b[2], at: b[3], blend: b[4] / 255,
+           entries: Array.from(b.subarray(5, 5 + len)) };
+}
+
 /* Lattice geometry shared with the page: plane index → axes, lexicographic */
 function planeAxes(n, plane) { let p = 0; for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) { if (p === plane) return [a, b]; p++; } return [0, 1]; }
 const planeCount = n => n * (n - 1) / 2;
@@ -1196,6 +1228,7 @@ const planeCount = n => n * (n - 1) / 2;
 const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
+  TOUR, tourReq, parseTour,
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, putSlot, fetchSlots,
   MORPH_USER, SLOT_COUNT, STAT_CARD_EXISTS, SHAPER, SHAPER_NAME, buildUserWorld, parseUserWorld,
