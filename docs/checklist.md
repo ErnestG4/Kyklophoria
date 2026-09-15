@@ -222,6 +222,45 @@ meaningful axis and stacking four banks makes rotation meaningless.
       and still manages -9.0. Both shapers are div-free in the loop (80 and 60
       M7 instructions by `make armcost`); hoisting two reciprocals that are
       exact powers of two is bit-identical, which `m3_grit.wav` verifies.
+- [x] **An effect on an axis of a world you wrote** — `.kykw` version 2, and the
+      module's **World** page. The second thing on the bench list: "you can't add
+      an effect to an axis in the world editor (wavefolding, distortion, reverb,
+      etc.)". Five of them are available — fold, ring, warp, crush, drop — being
+      exactly the frame shapers the Shapes and Grit worlds already run, in the
+      same stage, so a world that declares one costs nothing new and inherits the
+      band-limit headroom rule for free. Reverb and resonance are not on the list
+      and cannot be; that argument is settled below and stays settled.
+      The design decision worth keeping is *which axes*. Effects go on 4 and 5
+      and never on a placement axis: put one on axis 2 and its depth is wherever
+      the blend has got to, so opening the folder and crossing the space become
+      one gesture and neither is available alone. Axes 4 and 5 have existed since
+      the beginning — six axes, four position CVs — and were reachable only from
+      the web page, which is what the I/O map has always said about them. They
+      have pots now.
+      Every node sits at 0.5 on an effect axis, which makes it exactly neutral in
+      the blend: a term equal for every node cancels out of the softmax. Exactly
+      in arithmetic, to 3.6e-7 in floats (-128 dBFS, smooth, measured), because
+      the constant is added to each distance before the subtraction that removes
+      it. Both effect axes measure continuous on cont_check's own test — fold
+      ratio 3.75, crush 4.00 — and an effect at zero depth is the four-axis world
+      to the same rounding.
+      Two things are asymmetric on purpose and both are checked end to end
+      against the module's engine: a full fold moves the rendered cycle by
+      100/255 and pulls the band limit from 64 harmonics to 21 to make room,
+      while full bit reduction moves it 10/255 and keeps all 64. The version
+      moves to 2 only when an effect is declared, so a module that predates them
+      loads every file it can render truthfully and refuses precisely the ones it
+      would get wrong.
+      Snapshots carry effects too, which is what makes "open Grit to edit" hand
+      back something that can still grit.
+- [ ] **A morph between two shaped worlds only runs the live world's shapers.**
+      `Engine` blends the two spectra and then asks `world_` to shape the result,
+      so morphing Shapes towards Grit never crushes anything. It has been true
+      since the shapers existed and nobody has hit it, because a morph between
+      two *user* worlds with different effects is newly possible. The honest fix
+      is two shaped frames and a crossfade, which is a second frame render; the
+      cheap one — switch shapers at t > 0.5 — is a step, and this instrument does
+      not do steps.
 - [x] **Real waveforms.** The instrument could not produce a recognisable saw
       or square, and it was the representation, not a missing world: random
       phase renders a saw's spectrum at 0.79 correlation to a saw. Sine phase

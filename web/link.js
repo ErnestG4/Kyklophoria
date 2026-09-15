@@ -401,17 +401,38 @@ function cycleToNode(x, k = 64, mode = 'shape') {
    { pos: [..n], mags: Float32Array(k) }; coefficients are written exactly as
    given, because per-node level is how much a node weighs in the blend and
    overriding it would override the author. */
-function buildUserWorld(nodes, { n = 4, k = 64, sigma = 0.26, name = '', sinePhase = true } = {}) {
+/* The frame shapers a world may put on an axis, numbered as core/kyk_shapes.h
+   numbers them. Ring modulation and phase distortion are in the list because
+   the shape worlds use them and the stage is the same; a resonator is not,
+   and cannot be — it has state, and a world is one cycle read cyclically. */
+const SHAPER = { none: 0, fold: 1, ring: 2, warp: 3, crush: 4, drop: 5 };
+const SHAPER_NAME = ['none', 'fold', 'ring', 'warp', 'crush', 'drop'];
+
+function buildUserWorld(nodes, { n = 4, k = 64, sigma = 0.26, name = '', sinePhase = true, fx = [] } = {}) {
   const count = nodes.length;
   if (count < 1 || count > 24) throw new Error('1..24 nodes');
   if (n < 2 || n > 6) throw new Error('n must be 2..6');
   if (k < 1 || k > 64) throw new Error('k must be 1..64');
+  /* Effects: (axis << 4) | shaper in the two bytes v1 reserved, and the version
+     moves to 2 only when one is declared — see core/kyk_userworld.h for why
+     that asymmetry is the point rather than a shortcut. */
+  const eff = [0, 0];
+  let live = 0;
+  fx.slice(0, 2).forEach((f, q) => {
+    if (!f || !f.kind) return;
+    if (!(f.kind >= 1 && f.kind <= 5)) throw new Error('unknown effect');
+    if (!(f.axis >= 0 && f.axis < n)) throw new Error('effect axis ' + f.axis + ' is not an axis of this world');
+    eff[q] = (f.axis << 4) | f.kind;
+    live++;
+  });
+  if (live === 2 && (eff[0] >> 4) === (eff[1] >> 4)) throw new Error('two effects on one axis');
   const size = 32 + count * 4 * (n + k);
   const b = new Uint8Array(size), dv = new DataView(b.buffer);
   dv.setUint32(0, 0x574B594B, true);      /* 'KYKW' */
-  dv.setUint16(4, 1, true);
+  dv.setUint16(4, live ? 2 : 1, true);
   b[6] = n; b[7] = k; b[8] = count; b[9] = sinePhase ? 1 : 0;
   dv.setFloat32(10, sigma, true);
+  b[14] = eff[0]; b[15] = eff[1];
   for (let i = 0; i < 16 && i < name.length; i++) b[16 + i] = name.charCodeAt(i) & 0x7f;
   let at = 32;
   for (const nd of nodes) {
@@ -491,9 +512,24 @@ async function fetchCardWorlds(link) {
 function parseUserWorld(b) {
   if (!b || b.length < 32) return null;
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  if (dv.getUint32(0, true) !== 0x574B594B || dv.getUint16(4, true) !== 1) return null;
+  const ver = dv.getUint16(4, true);
+  if (dv.getUint32(0, true) !== 0x574B594B || (ver !== 1 && ver !== 2)) return null;
   const n = b[6], k = b[7], count = b[8];
   if (n < 2 || n > 6 || k < 1 || k > 64 || count < 1 || count > 24) return null;
+  /* The same checks the module makes, so the page refuses a file for the same
+     reasons rather than sending one the module will turn away. */
+  const fx = [];
+  if (ver === 1) { if (b[14] || b[15]) return null; }
+  else {
+    for (let q = 0; q < 2; q++) {
+      const kind = b[14 + q] & 0x0f, axis = b[14 + q] >> 4;
+      if (!kind) { if (axis) return null; continue; }
+      if (kind > 5 || axis >= n) return null;
+      fx.push({ axis, kind });
+    }
+    if (!fx.length) return null;
+    if (fx.length === 2 && fx[0].axis === fx[1].axis) return null;
+  }
   /* exactly, not at least: a blob whose length disagrees with its own header is
      not a blob we understand, whichever way the disagreement runs */
   if (b.length !== 32 + count * 4 * (n + k)) return null;
@@ -509,7 +545,7 @@ function parseUserWorld(b) {
     if (pos.some(v => !Number.isFinite(v)) || mags.some(v => !Number.isFinite(v))) return null;
     nodes.push({ pos, mags });
   }
-  return { n, k, count, sigma, name, sinePhase: (b[9] & 1) === 1, nodes };
+  return { n, k, count, sigma, name, sinePhase: (b[9] & 1) === 1, fx, nodes };
 }
 
 /* Store a world in one of the module's slots — the same chunking as putWorld,
@@ -1162,7 +1198,7 @@ const api = {
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, putSlot, fetchSlots,
-  MORPH_USER, SLOT_COUNT, STAT_CARD_EXISTS, buildUserWorld, parseUserWorld,
+  MORPH_USER, SLOT_COUNT, STAT_CARD_EXISTS, SHAPER, SHAPER_NAME, buildUserWorld, parseUserWorld,
   saveCardWorld, fetchSlot, fetchCardWorlds, wavToCycle, cycleToNode,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };

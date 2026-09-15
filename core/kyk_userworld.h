@@ -22,13 +22,14 @@
  * ── the format ──────────────────────────────────────────────────────────
  *
  *   0   u32  magic 'KYKW'
- *   4   u16  version (1)
+ *   4   u16  version (1, or 2 when it declares an effect)
  *   6   u8   n       dimensions, 2..kMaxN
  *   7   u8   k       harmonics, 1..kShapeK
  *   8   u8   count   nodes, 1..kWorldNodes
  *   9   u8   flags   bit0: sine phase (clear = random phase)
  *  10   f32  sigma   basin width before Morph narrows it
- *  14   u16  reserved (zero)
+ *  14   u8   effect A: (axis << 4) | Shaper, zero for none   [v2]
+ *  15   u8   effect B: the same                              [v2]
  *  16   char name[16]  nul-padded, not required to be nul-terminated
  *  32   per node: f32 pos[n], then f32 mags[k]
  *
@@ -40,6 +41,28 @@
  * bitmap for; and there is no quantisation to get subtly wrong at the quiet
  * end. QSPI flash on this board is 7936 KB and currently holds nothing, which
  * is room for over a thousand of these.
+ *
+ * ── effects, and why the version moves only when they are used ──────────
+ *
+ * Two of the frame shapers (core/kyk_shapes.h) can be put on axes of a world
+ * you wrote: wavefolding, ring modulation, phase distortion, bit reduction,
+ * rate reduction. They are the same shapers the Shapes and Grit worlds use and
+ * they run in the same stage, so they cost a world nothing it was not already
+ * paying and inherit the band-limit headroom rule for free.
+ *
+ * The two bytes they live in were the v1 "reserved (zero)", so the layout does
+ * not move and no existing file changes meaning. The version still has to,
+ * because a reader that ignored these bytes would play the world *differently*
+ * rather than refuse it, and silently-different is the worse failure. So the
+ * writer emits version 1 when there is no effect and 2 when there is: a file
+ * an older module can render truthfully still loads there, and precisely the
+ * files it would get wrong are the ones it turns away.
+ *
+ * An effect axis is not a special axis. The depth is that axis's folded
+ * position and the nodes keep their coordinates on it; a page that wants an
+ * axis to be nothing but an effect puts every node at 0.5 there, which drops
+ * out of the softmax exactly. Nothing here enforces that, because "this axis
+ * both moves the blend and opens the folder" is a legitimate world.
  *
  * ── parsing ─────────────────────────────────────────────────────────────
  *
@@ -56,7 +79,8 @@
 namespace kyk {
 
 constexpr uint32_t kUserMagic   = 0x574B594Bu;   /* 'KYKW' */
-constexpr uint16_t kUserVersion = 1u;
+constexpr uint16_t kUserVersion    = 1u;   /* without effects */
+constexpr uint16_t kUserVersionFx  = 2u;   /* with them */
 constexpr int      kUserHeader  = 32;
 constexpr int      kUserNameLen = 16;
 /* The largest a world can be: every dimension, every harmonic, every node.
@@ -66,16 +90,17 @@ constexpr size_t   kUserBlobMax = (size_t)kUserHeader
 
 enum class UserError : uint8_t
 {
-    Ok = 0, TooShort, BadMagic, BadVersion, BadN, BadK, BadCount, BadSigma, BadLength, NotFinite
+    Ok = 0, TooShort, BadMagic, BadVersion, BadN, BadK, BadCount, BadSigma, BadLength, NotFinite,
+    BadFx
 };
 
 inline const char* UserErrorName(UserError e)
 {
     static const char* names[] = {"ok", "too short", "bad magic", "bad version", "bad N",
                                   "bad K", "bad count", "bad sigma", "length mismatch",
-                                  "non-finite coefficient"};
+                                  "non-finite coefficient", "bad effect"};
     const int i = (int)e;
-    return names[i >= 0 && i < 10 ? i : 0];
+    return names[i >= 0 && i < 11 ? i : 0];
 }
 
 /* Exact size of a blob with this geometry. */
@@ -103,7 +128,8 @@ inline UserError ParseUserWorld(const uint8_t* blob, size_t len,
 {
     if(!blob || len < (size_t)kUserHeader) return UserError::TooShort;
     if(detail::UserU32(blob) != kUserMagic) return UserError::BadMagic;
-    if(detail::UserU16(blob + 4) != kUserVersion) return UserError::BadVersion;
+    const uint16_t ver = detail::UserU16(blob + 4);
+    if(ver != kUserVersion && ver != kUserVersionFx) return UserError::BadVersion;
 
     const int n = blob[6], k = blob[7], count = blob[8];
     const uint8_t flags = blob[9];
@@ -113,6 +139,38 @@ inline UserError ParseUserWorld(const uint8_t* blob, size_t len,
 
     const float sigma = detail::UserF32(blob + 10);
     if(!detail::UserFinite(sigma) || sigma < 0.01f || sigma > 4.f) return UserError::BadSigma;
+
+    /* Effects. A v1 file has nothing here and must say so: those two bytes were
+     * documented as reserved and zero, so junk in them is either a v2 file with
+     * the wrong version or a writer nobody should trust with the rest of the
+     * header. Each byte is (axis << 4) | shaper; the axis must be one this
+     * world has, and the two effects must not name the same axis — one knob
+     * driving two shapers is representable and ambiguous, and refusing it here
+     * is cheaper than every reader guessing which order they chain in. */
+    Shaper  fx[2]      = {Shaper::None, Shaper::None};
+    uint8_t fx_axis[2] = {0, 0};
+    if(ver == kUserVersion)
+    {
+        if(blob[14] || blob[15]) return UserError::BadFx;
+    }
+    else
+    {
+        for(int q = 0; q < 2; q++)
+        {
+            const uint8_t byte = blob[14 + q];
+            const uint8_t kind = byte & 0x0Fu, axis = byte >> 4;
+            if(kind == 0u) { if(axis) return UserError::BadFx; continue; }
+            if(kind > (uint8_t)Shaper::Drop) return UserError::BadFx;
+            if(axis >= (uint8_t)n) return UserError::BadFx;
+            fx[q]      = (Shaper)kind;
+            fx_axis[q] = axis;
+        }
+        if(fx[0] != Shaper::None && fx[1] != Shaper::None && fx_axis[0] == fx_axis[1])
+            return UserError::BadFx;
+        /* A version that claims effects and declares none is a writer bug, and
+         * accepting it would make "version 2" mean nothing. */
+        if(fx[0] == Shaper::None && fx[1] == Shaper::None) return UserError::BadFx;
+    }
 
     /* Exactly, not at least: a blob whose length disagrees with its own header
      * is not a blob we understand, whichever way the disagreement runs. */
@@ -128,6 +186,7 @@ inline UserError ParseUserWorld(const uint8_t* blob, size_t len,
 
     f = LockField();
     f.n = n; f.k = k; f.count = count; f.sigma = sigma;
+    for(int q = 0; q < 2; q++) { f.fx[q] = fx[q]; f.fx_axis[q] = fx_axis[q]; }
     for(int v = 0; v < count; v++)
     {
         const uint8_t* q = p + 4 * (size_t)v * (size_t)(n + k);
@@ -168,10 +227,18 @@ inline size_t WriteUserWorld(const LockField& f, const float (*node)[kShapeK],
     if(!out || cap < need) return 0;
     std::memset(out, 0, need);
     const uint32_t magic = kUserMagic; std::memcpy(out, &magic, 4);
-    const uint16_t ver = kUserVersion; std::memcpy(out + 4, &ver, 2);
+    /* Version 2 only when there is an effect to declare, so a world without one
+     * still loads on a module that predates them. */
+    const bool     fx  = f.fx[0] != Shaper::None || f.fx[1] != Shaper::None;
+    const uint16_t ver = fx ? kUserVersionFx : kUserVersion;
+    std::memcpy(out + 4, &ver, 2);
     out[6] = (uint8_t)f.n; out[7] = (uint8_t)f.k; out[8] = (uint8_t)f.count;
     out[9] = sine_phase ? 1u : 0u;
     std::memcpy(out + 10, &f.sigma, 4);
+    for(int q = 0; q < 2; q++)
+        out[14 + q] = f.fx[q] == Shaper::None
+                          ? 0u
+                          : (uint8_t)((uint8_t)(f.fx_axis[q] << 4) | (uint8_t)f.fx[q]);
     for(int i = 0; i < kUserNameLen && name && name[i]; i++) out[16 + i] = (uint8_t)name[i];
     uint8_t* p = out + kUserHeader;
     for(int v = 0; v < f.count; v++)

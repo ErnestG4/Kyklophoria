@@ -65,6 +65,21 @@ enum class Shaper : uint8_t { None = 0, Fold = 1, Ring = 2, Warp = 3,
  * every Evaluate. Sixteen nodes of 64 coefficients is 4 KB, which lives in
  * DTCM with the World and is built once when the world is selected. */
 constexpr int kShapeMaxNodes = 16;
+
+/* For the page, the tests and anything that prints a world's axes. Short
+ * because it labels a knob on a 128x64 screen as often as a table in a doc. */
+inline const char* ShaperName(Shaper s)
+{
+    switch(s)
+    {
+        case Shaper::Fold:  return "fold";
+        case Shaper::Ring:  return "ring";
+        case Shaper::Warp:  return "warp";
+        case Shaper::Crush: return "crush";
+        case Shaper::Drop:  return "drop";
+        default:            return "none";
+    }
+}
 constexpr int kWorldNodes    = 24;   /* the 24-cell needs the most */
 constexpr int kShapeK        = 64;
 
@@ -417,24 +432,31 @@ inline void CopyFrame(float* dst, const float* src, int n)
  * soft-clip experiment fell into (docs/m2-notes.md). Shrinking the band limit
  * by this factor before rendering leaves the fold room to work in. It is a
  * mitigation and not a cure; the honest figure is in docs/m3-notes.md. */
+/* Per shaper, because a shaper is now a thing a *world* can name — a shape
+ * table puts two of them on axes 2 and 3, and a user world names its own axes
+ * in the file — so the headroom rule has to be about the shaper rather than
+ * about the table. */
+inline float ShaperBandScale(Shaper s, float d)
+{
+    switch(s)
+    {
+        case Shaper::Fold: return 2.2f * d;
+        case Shaper::Warp: return 2.2f * d;   /* PM index */
+        case Shaper::Ring: return 1.0f * d;
+        /* Crush and Drop contribute nothing, and that is a decision rather
+         * than an omission. Quantisation error is broadband whatever you feed
+         * it and a sample-and-hold's images sit at multiples of the hold rate,
+         * so pulling the band limit in does not move either one out of the
+         * way: it only renders a duller waveform for the same reduction to
+         * chew on. The measured figures for both are in the README beside the
+         * folder's. Grit is the world that exists to alias; mitigating it here
+         * would be building a thing and then taking it back. */
+        default: return 0.f;
+    }
+}
 inline float ShapeBandScale(const ShapeField& f, float a2, float a3)
 {
-    float s = 1.f;
-    if(f.axis2 == Shaper::Fold || f.axis3 == Shaper::Fold)
-        s += 2.2f * (f.axis2 == Shaper::Fold ? a2 : a3);
-    if(f.axis2 == Shaper::Warp || f.axis3 == Shaper::Warp)
-        s += 2.2f * (f.axis2 == Shaper::Warp ? a2 : a3);   /* PM index */
-    if(f.axis2 == Shaper::Ring || f.axis3 == Shaper::Ring)
-        s += 1.0f * (f.axis2 == Shaper::Ring ? a2 : a3);
-    /* Crush and Drop contribute nothing here, and that is a decision rather
-     * than an omission. Quantisation error is broadband whatever you feed it
-     * and a sample-and-hold's images sit at multiples of the hold rate, so
-     * pulling the band limit in does not move either one out of the way: it
-     * only renders a duller waveform for the same reduction to chew on. The
-     * measured figures for both are in the README beside the folder's. Grit is
-     * the world that exists to alias; mitigating it here would be building a
-     * thing and then taking it back. */
-    return s;
+    return 1.f + ShaperBandScale(f.axis2, a2) + ShaperBandScale(f.axis3, a3);
 }
 
 /* The whole world as 32 bytes, behind the same 0xFF marker the FM and vowel

@@ -42,6 +42,20 @@ struct LockField
      * further. */
     float sigma = 0.26f;
     float pos[kWorldNodes][kMaxN];
+    /* Effects on chosen axes, for a world somebody wrote (core/kyk_userworld.h
+     * carries them; the built-in Lock leaves them off). Two of them, because
+     * that is what the shape worlds have and what the frame-shaper stage can
+     * chain without a third buffer.
+     *
+     * An effect axis is an ordinary axis of the space: the shaper's depth is
+     * that axis's folded position, and the nodes' own coordinates on it still
+     * count towards the blend. A page that wants an axis to be *only* an
+     * effect puts every node at 0.5 on it, which is exactly neutral — the
+     * distance term becomes the same constant for every node and a constant
+     * cancels out of the softmax. That is a choice for whoever writes the
+     * world rather than a rule here. */
+    Shaper  fx[2]      = {Shaper::None, Shaper::None};
+    uint8_t fx_axis[2] = {0, 0};
 };
 
 namespace detail {

@@ -57,7 +57,7 @@ using namespace kyk;
 
 static AlchemyLab  hw;
 static ControlLoop loop(hw);
-static Pager       pager(hw.buttons[kButtonB1], 6, kNumPots);
+static Pager       pager(hw.buttons[kButtonB1], 7, kNumPots);
 static Presets     presets(hw.seed.qspi);
 static Settings    settings(hw, &pager);
 
@@ -68,6 +68,7 @@ static constexpr LedPanel::Rgb kStereo = {0xC4, 0xB5, 0xFD};
 static constexpr LedPanel::Rgb kOrbit  = {0xFD, 0xE0, 0x68};
 static constexpr LedPanel::Rgb kCouple = {0xF0, 0xA0, 0xD8};
 static constexpr LedPanel::Rgb kKepler = {0x9A, 0xE6, 0xB4};
+static constexpr LedPanel::Rgb kWorld  = {0xF7, 0xC0, 0x8A};
 
 static VirtualKnob k_coarse = VirtualKnob(0, "Coarse").Linear(-3.f, 3.f).Unit("oct").Ident("pitch.coarse").Ring(Level(kPlay));
 static VirtualKnob k_fine   = VirtualKnob(1, "Fine").Linear(-1.f, 1.f).Unit("st").Ident("pitch.fine").Ring(Level(kPlay));
@@ -141,6 +142,22 @@ static VirtualKnob k_sharp  = VirtualKnob(2, "Morph").Unit("sharp").Ident("morph
 static VirtualKnob k_rdiv   = VirtualKnob(3, "Render div").Selector(4).Labels(kDivNames, 4).Ident("eng.rdiv").Ring(Level(kStereo));
 static VirtualKnob k_level  = VirtualKnob(4, "Level").Ident("out.level").Ring(Level(kStereo));
 static VirtualKnob k_cvdep  = VirtualKnob(5, "CV out A depth").Ident("lane.cva").Ring(Level(kStereo));
+
+/* ── World page ───────────────────────────────────────────────────────
+ * Axes 4 and 5, which the I/O map has always said are pot-only: there are
+ * four position CVs and six axes, so these two were reachable from the web
+ * page and from nowhere a hand could get at.
+ *
+ * They have a job now. A world somebody wrote can put a frame effect on an
+ * axis (core/kyk_userworld.h), and the editor puts them here rather than on a
+ * placement axis, so an effect is a knob of its own instead of something that
+ * happens as you cross the space. For the twenty-two built-ins and for any
+ * world with n=4 these two do nothing at all, which is why they are on a page
+ * of their own rather than taking a Play knob from something that always
+ * works: Engine::SetControl only slews the axes the live world actually has. */
+static VirtualKnob k_pos4   = VirtualKnob(0, "Position 4").Ident("pos.4").Ring(Level(kWorld));
+static VirtualKnob k_pos5   = VirtualKnob(1, "Position 5").Ident("pos.5").Ring(Level(kWorld));
+static Page page_world  = Page(6).Name("World").Color("#f7c08a").Knobs(k_pos4, k_pos5);
 
 static Page page_play   = Page(0).Name("Play").Color("#67e8f9").Knobs(k_coarse, k_fine, k_pos0, k_pos1, k_pos2, k_pos3);
 static Page page_rotate = Page(1).Name("Rotate").Color("#fca5a5").Knobs(k_ang[0], k_ang[1], k_ang[2], k_ang[3], k_ang[4], k_ang[5]);
@@ -473,11 +490,18 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     const float f0   = 261.6256f * exp2f(voct + k_coarse.Value() + k_fine.Value() * (1.f / 12.f));
 
     /* position: pot offset (0..1) + CV (±5 V → ±1) per axis */
-    float c[4];
+    /* Six, not four. The four CV jacks are axes 0-3; 4 and 5 are the World
+     * page's two pots and have no jack, which is what the I/O map says they
+     * are. A world with fewer axes than this never reads the extra ones —
+     * Engine::SetControl writes the whole frame and the slew only follows
+     * World::N() of it — so this costs the built-ins nothing. */
+    float c[kMaxN];
     c[0] = k_pos0.Norm() + hw.cv[1].Volts() * 0.2f;
     c[1] = k_pos1.Norm() + hw.cv[2].Volts() * 0.2f;
     c[2] = k_pos2.Norm() + hw.cv[3].Volts() * 0.2f;
     c[3] = k_pos3.Norm() + hw.cv[4].Volts() * 0.2f;
+    c[4] = k_pos4.Norm();
+    c[5] = k_pos5.Norm();
 
     /* One multiplier over all six rate knobs, three octaves either side of
      * unity, with a detent at the centre so 1.0 is reachable by hand. */
@@ -553,7 +577,7 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     if(gResetPhase) { gEng.L.ResetPhase(); gEng.R.ResetPhase(); gResetPhase = 0; }
 
     gEng.SetF0(f0);
-    gEng.SetControl(c, 4);
+    gEng.SetControl(c, kMaxN);
     gEng.Process(out[0], out[1], (int)size);
     gPayloadA = gEng.Payload()[4];
 
@@ -1061,11 +1085,26 @@ static void ServeWorldRequest()
                 std::memset(p, 0, need);
                 const uint32_t magic = kUserMagic;
                 std::memcpy(p, &magic, 4);
-                const uint16_t ver = kUserVersion;
+                /* A snapshot of a world with effects keeps the effects. The
+                   nodes hold the *unshaped* spectra, which is exactly how the
+                   worlds that have them work — blend the grid, then shape the
+                   rendered cycle — so carrying them over is the faithful thing
+                   and dropping them would make "open Grit to edit" hand back
+                   something that cannot grit. The axes they name go on doing
+                   their placement job as well, which is the honest cost of
+                   snapshotting a grid onto a polytope. */
+                bool any = false;
+                for(int q = 0; q < 2; q++)
+                    if(live.FxShaper(q) != Shaper::None) any = true;
+                const uint16_t ver = any ? kUserVersionFx : kUserVersion;
                 std::memcpy(p + 4, &ver, 2);
                 p[6] = (uint8_t)n; p[7] = (uint8_t)k; p[8] = (uint8_t)kWorldNodes; p[9] = 1u;
                 const float sigma = 0.26f;
                 std::memcpy(p + 10, &sigma, 4);
+                for(int q = 0; q < 2; q++)
+                    p[14 + q] = live.FxShaper(q) == Shaper::None
+                                    ? 0u
+                                    : (uint8_t)((uint8_t)(live.FxAxis(q) << 4) | (uint8_t)live.FxShaper(q));
                 const uint8_t named = which != 0xFFu ? which : gWorldIdx;
                 const char*   nm    = named == 0xFFu ? "snapshot" : worlds::Get(named).name;
                 std::snprintf((char*)(p + 16), kUserNameLen + 1, "%s", nm);
@@ -1260,9 +1299,9 @@ int main()
      * panel, so the web page cannot say what any knob does — the names, idents
      * and units are all declared above and were simply never published. Six
      * pages against the SDK's limit of eight. */
-    host.Pages(page_play, page_rotate, page_stereo, page_orbit, page_kepler, page_couple);
+    host.Pages(page_play, page_rotate, page_stereo, page_orbit, page_kepler, page_couple, page_world);
 
-    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(page_couple).Use(host).OnFrame(OnFrame);
+    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(page_couple).Use(page_world).Use(host).OnFrame(OnFrame);
 
     /* The Rate multiplier is centred on 1x, so a stored zero would silently
      * run every orbit at an eighth speed on a fresh boot — which reads as
@@ -1296,6 +1335,11 @@ int main()
      * from the bottom before it takes hold, which is the behaviour you want
      * from a blend you have just armed. */
     pager.SetStored(5, 5, 0.f, phys);
+    /* Axes 4 and 5 at nothing, for the reason above and one more: in the
+     * worlds that use them they are effect depths, and a stored half turn
+     * would boot a world you wrote into half a wavefolder. */
+    pager.SetStored(6, 0, 0.f, phys);
+    pager.SetStored(6, 1, 0.f, phys);
 
     gSd.Init();
     ScanCard();          /* so the folder is already listed when a page connects */

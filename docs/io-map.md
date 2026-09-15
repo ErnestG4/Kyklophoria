@@ -10,7 +10,7 @@ panel has:
 | stereo out | J9/J10 are the codec's two channels | **stereo audio on J9/J10** — the two channels read the space at positions split by a small angle in a chosen rotation plane (see *Stereo* below) |
 | 1–2 CV outs | any of J3–J8 can switch to a 12-bit DAC (J7/J8 on the fast STM DAC) | CV out A on J8 (default). Rotate CV is the alternative use of J8, an option. A second CV out would trade position 3 on J7, also an option |
 | an encoder for menus / space browsing | none — six pots with rings and three buttons | pages by button (SDK `Pager`); the space browser is a pot on a page; deep options go to Settings (B2+B3 held) and the web page |
-| N up to 6 positions | 4 CVs free | axes 4–5 are pot-only (offset pots on a page) and web-visible |
+| N up to 6 positions | 4 CVs free | axes 4–5 are pot-only: P1/P2 of the **World** page (added when user worlds could put an effect on one), and web-visible |
 
 ## Jacks
 
@@ -42,8 +42,14 @@ and the stereo plane are P1/P2 of the Stereo page.
 
 ## Pots and pages (B1 taps through the pages)
 
-Six pages ship: Play, Rotate, Stereo, Orbit, Kepler and Couple. Lanes arrives
-with M3.
+Seven pages ship: Play, Rotate, Stereo, Orbit, Kepler, Couple and World. Lanes
+arrives with M3.
+
+**Page World** is two knobs: P1 and P2 are the offsets for axes 4 and 5. Those
+axes have no jack and had no knob, so until a world could put a frame effect on
+one (`core/kyk_userworld.h`) they were reachable only from the web page. A world
+with n=4 — which is every built-in — does not read them at all: the engine
+writes the whole control frame but only slews `World::N()` of it.
 
 | | Page Play | Page Rotate | Page Stereo | Page Orbit | Page Kepler | Page Couple | Page Lanes (M3) |
 |---|---|---|---|---|---|---|---|

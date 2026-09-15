@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes planeAxes plane inspect strip tabPlay tabBuild tabLib playMain buildMain libMain slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect'.split(' ');
+const IDS = 'axes planeAxes plane inspect strip tabPlay tabBuild tabLib playMain buildMain libMain slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -126,7 +126,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -971,8 +971,11 @@ console.log('');
       for (let h = 0; h < k; h++) { mags[h] = dv.getFloat32(at, true); at += 4; }
       nodes.push({ pos, mags });
     }
+    const fx = [];
+    for (let q = 0; q < 2; q++)
+      if (b[14 + q] & 0x0f) fx.push({ axis: b[14 + q] >> 4, kind: b[14 + q] & 0x0f });
     return { magic: dv.getUint32(0, true), ver: dv.getUint16(4, true), n, k, count,
-             sine: (b[9] & 1) === 1, sigma: dv.getFloat32(10, true), name, nodes, end: at };
+             sine: (b[9] & 1) === 1, sigma: dv.getFloat32(10, true), name, fx, nodes, end: at };
   }
   const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
 
@@ -996,6 +999,44 @@ console.log('');
     /* placement is the 24-cell's first two vertices, not the cube centre */
     const off = w.nodes.map(nd => nd.pos.filter(v => Math.abs(v - 0.5) > 1e-6).length);
     T(off.every(c => c === 2), `each node sits on a 24-cell vertex (${off.join(',')} axes off centre)`);
+  }
+
+  /* ── effects on an axis ───────────────────────────────────────────────
+     The editor's whole claim is that an effect is a knob of its own rather
+     than something that happens as you cross the space, and that claim is
+     three properties of the bytes: the effect is declared on axis 4 or 5, the
+     world grows to six axes so the module has those axes at all, and every
+     node sits at 0.5 on them, which is the value that cancels out of the
+     softmax. A file that got any one of those wrong would still load and would
+     not do what the row of selectors says. */
+  {
+    els.fxA.value = '1';        /* fold */
+    els.fxB.value = '4';        /* crush */
+    P.renderFx();
+    const f = await save('fxworld');
+    const w = f && parseKykw(f.bytes);
+    T(w && w.ver === 2, 'a world with an effect says version 2, so a module that cannot render it refuses it');
+    T(w && w.n === 6, `it carries six axes, because the effect axes have to exist (n=${w && w.n})`);
+    T(w && w.fx.length === 2 && w.fx[0].axis === 4 && w.fx[0].kind === 1
+        && w.fx[1].axis === 5 && w.fx[1].kind === 4,
+      'fold on axis 4, bit reduction on axis 5, in that order');
+    T(w && w.nodes.every(nd => nd.pos[4] === 0.5 && nd.pos[5] === 0.5),
+      'every node sits at 0.5 on both effect axes, which is exactly neutral in the blend');
+    T(w && w.nodes.every(nd => nd.pos.slice(0, 4).filter(v => Math.abs(v - 0.5) > 1e-6).length === 2),
+      'and placement on the first four axes is untouched');
+    T(w && w.end === f.bytes.length, 'the six-axis geometry still accounts for every byte');
+    /* One selector back to none: the world drops to four axes again rather than
+       carrying a dead fifth and sixth, and the version follows. */
+    els.fxB.value = '0';
+    P.renderFx();
+    const one = parseKykw((await save('fxone')).bytes);
+    T(one.ver === 2 && one.n === 6 && one.fx.length === 1 && one.fx[0].axis === 4,
+      'one effect is still a six-axis world — axis 4 has to be an axis');
+    els.fxA.value = '0';
+    P.renderFx();
+    const none = parseKykw((await save('fxnone')).bytes);
+    T(none.ver === 1 && none.n === 4 && none.fx.length === 0,
+      'no effects and it is a version 1 four-axis world again, which any module can play');
   }
 
   const plain = await save('');

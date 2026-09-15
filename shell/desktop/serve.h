@@ -323,11 +323,20 @@ public:
         std::memset(p, 0, out.size());
         const uint32_t magic = kyk::kUserMagic;
         std::memcpy(p, &magic, 4);
-        const uint16_t ver = kyk::kUserVersion;
+        /* A snapshot of a world with effects keeps the effects — see the same
+           block in shell/alchemy/main.cpp for why. */
+        bool any = false;
+        for(int q = 0; q < 2; q++)
+            if(src->FxShaper(q) != kyk::Shaper::None) any = true;
+        const uint16_t ver = any ? kyk::kUserVersionFx : kyk::kUserVersion;
         std::memcpy(p + 4, &ver, 2);
         p[6] = (uint8_t)n; p[7] = (uint8_t)k; p[8] = (uint8_t)kyk::kWorldNodes; p[9] = 1u;
         const float sigma = 0.26f;
         std::memcpy(p + 10, &sigma, 4);
+        for(int q = 0; q < 2; q++)
+            p[14 + q] = src->FxShaper(q) == kyk::Shaper::None
+                            ? 0u
+                            : (uint8_t)((uint8_t)(src->FxAxis(q) << 4) | (uint8_t)src->FxShaper(q));
         const uint8_t named = which != 0xFFu ? which : world_idx;
         std::snprintf((char*)(p + 16), 17, "%s",
                       named == kNoWorld ? "snapshot" : kyk::worlds::Get(named).name);

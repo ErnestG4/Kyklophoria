@@ -6,27 +6,30 @@ The wavetable is not a line or a grid but a 4-dimensional space of spectra
 so one cable sweeps a diagonal slice no axis reaches, and slow rotation turns
 a still hand into an orbit through the space.
 
-**Status: beta.** It runs in the rack and makes sound. Twenty-one
+**Status: beta.** It runs in the rack and makes sound. Twenty-two
 worlds ship, the rotation and its orbit LFOs are real, ratio coupling works,
 and presets persist. There is design work left: FM and sync are not read, most
 payload lanes are not routed, and the panel layout is still a first draft.
 
 ## Controls
 
-**B1** taps through six pages. **B2 + B3** held opens Settings. The page has
+**B1** taps through seven pages. **B2 + B3** held opens Settings. The page has
 three tabs: **play** is a readout of the instrument, **build** makes a world out
 of imported waveforms, **worlds** is the library of the ones you have made.
 
-| | Play | Rotate | Stereo |
-|---|---|---|---|
-| P1 | Coarse pitch, ±3 oct | plane (0,1) angle | Spread |
-| P2 | Fine, ±1 semitone | plane (0,2) | Stereo plane |
-| P3 | Position 0 offset | plane (0,3) | **Morph**: smooth blend to hard steps |
-| P4 | Position 1 offset | plane (1,2) | Render divider |
-| P5 | Position 2 offset | plane (1,3) | Level |
-| P6 | Position 3 offset | plane (2,3) | CV out A depth |
+| | Play | Rotate | Stereo | World |
+|---|---|---|---|---|
+| P1 | Coarse pitch, ±3 oct | plane (0,1) angle | Spread | Position 4 offset |
+| P2 | Fine, ±1 semitone | plane (0,2) | Stereo plane | Position 5 offset |
+| P3 | Position 0 offset | plane (0,3) | **Morph**: smooth blend to hard steps | |
+| P4 | Position 1 offset | plane (1,2) | Render divider | |
+| P5 | Position 2 offset | plane (1,3) | Level | |
+| P6 | Position 3 offset | plane (2,3) | CV out A depth | |
 
-Four dimensions give six rotation planes, and the panel has six pots. 
+Four dimensions give six rotation planes, and the panel has six pots. There are
+four position CVs and up to six axes, so axes 4 and 5 are pot-only — the World
+page is where they are, and a world you wrote can put an **effect** on either of
+them. 
 
 Three more pages move the position without you.
 
@@ -127,6 +130,26 @@ it bright would be lying about the extra directions the whole design exists
 for. Once the set has been sent, every drop re-sends it, so you hear where you
 just put something; **re-place** is the way back to the arrangement you were
 given.
+
+**Effects** put a frame shaper on axis 4 or 5 — wavefold, ring modulate, phase
+distort, bit reduce, rate reduce. They are the same five the Shapes and Grit
+worlds use, running in the same stage on the rendered cycle, so they cost the
+world nothing it was not already paying and inherit the band-limit headroom rule
+for free. A resonator is not on the list and cannot be: a world is one cycle read
+cyclically, and a resonator has state and is not periodic at f0. Clip the output
+into Rings through an ADSR instead — that is settled, with the argument in
+`docs/checklist.md`.
+
+They go on axes 4 and 5 rather than on a placement axis, and that is the whole
+design of the feature. Put an effect on axis 2 and its depth is wherever the
+blend has got to, so "open the folder" and "cross the space" become one gesture
+and neither is available alone. Axes 4 and 5 exist because there are six axes
+and four position CVs; the module reaches them on the World page, every node
+sits at 0.5 on them so they are exactly neutral in the blend — a term equal for
+every node cancels out of the softmax — and placement keeps all four of its
+dimensions. A world that declares one is written as `.kykw` **version 2**, and
+version 1 otherwise, so a module that predates effects still loads every file it
+can render truthfully and refuses precisely the ones it would get wrong.
 
 **Add to worlds** keeps what you have built, in the first free slot, and says
 which. It is on the build tab because that is where you made the thing: having to

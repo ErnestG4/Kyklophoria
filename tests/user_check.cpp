@@ -128,6 +128,178 @@ int main()
     std::snprintf(m, sizeof m, "single-bit corruption: %d accepted, all render finite; %d faults", accepted, faults);
     ck(m, faults == 0);
 
+    /* ── effects on an axis ─────────────────────────────────────────
+     *
+     * The build tab puts a frame effect on axis 4 or 5 and writes the world as
+     * six axes with every node at 0.5 on the new ones. That is three claims —
+     * the effect runs, the axis is neutral in the blend, and an effect at zero
+     * costs nothing — and each is a property of the bytes rather than of the
+     * page, so each is checked here against the module's own reader.
+     *
+     * This does the page's job in twenty lines rather than borrowing its
+     * output, so a change to either side has to keep agreeing with the format
+     * and not merely with the other side. */
+    auto with_fx = [&](Shaper s0, uint8_t ax0, Shaper s1, uint8_t ax1, int nn = 6) {
+        const int k = src.K(), cnt = 24;
+        std::vector<uint8_t> v(UserBlobSize(nn, k, cnt));
+        std::memcpy(v.data(), blob.data(), kUserHeader);
+        v[4] = (s0 != Shaper::None || s1 != Shaper::None) ? 2u : 1u; v[5] = 0u;
+        v[6] = (uint8_t)nn;
+        v[14] = s0 == Shaper::None ? 0u : (uint8_t)((ax0 << 4) | (uint8_t)s0);
+        v[15] = s1 == Shaper::None ? 0u : (uint8_t)((ax1 << 4) | (uint8_t)s1);
+        const uint8_t* rp = blob.data() + kUserHeader;
+        uint8_t*       wp = v.data() + kUserHeader;
+        for(int node = 0; node < cnt; node++)
+        {
+            std::memcpy(wp, rp, 4 * 4);                    /* the four placed axes */
+            const float half = 0.5f;
+            for(int a = 4; a < nn; a++) std::memcpy(wp + 4 * a, &half, 4);
+            std::memcpy(wp + 4 * nn, rp + 4 * 4, 4 * (size_t)k);
+            rp += 4 * (size_t)(4 + k);
+            wp += 4 * (size_t)(nn + k);
+        }
+        return v;
+    };
+
+    {
+        const std::vector<uint8_t> v = with_fx(Shaper::Fold, 4, Shaper::Crush, 5);
+        World w;
+        const UserError r = w.UseUserWorld(v.data(), v.size(), 8, nullptr);
+        ck("a world with two effects loads", r == UserError::Ok && w.Ready() && w.N() == 6);
+        ck("and says it shapes the rendered cycle", w.HasShaper()
+               && w.FxShaper(0) == Shaper::Fold && w.FxAxis(0) == 4
+               && w.FxShaper(1) == Shaper::Crush && w.FxAxis(1) == 5);
+        /* Written back out, the bytes are the bytes: an effect survives an
+           export of an import, which is what makes a world shareable. */
+        std::vector<uint8_t> out(v.size() + 64);
+        const size_t wn = w.SaveUserWorld("round trip", out.data(), out.size());
+        ck("and exports byte-identically", wn == v.size()
+               && std::memcmp(out.data() + 6, v.data() + 6, wn - 6) == 0 && out[4] == 2u);
+
+        float p[kMaxN] = {0.3f, 0.7f, 0.5f, 0.5f, 0.f, 0.f};
+        double fx0[kFrame], plain[kFrame];
+        FrameAt(w, p, fx0);
+        FrameAt(src, p, plain);
+        double d0 = 0;
+        for(int i = 0; i < kFrame; i++) d0 = std::fmax(d0, std::fabs(fx0[i] - plain[i]));
+        /* Not exactly zero, and the reason is worth writing down rather than
+           loosening quietly. The two extra axes add the same constant to every
+           node's squared distance — 0.5 with the position at zero — and the
+           softmax cancels a constant exactly in arithmetic but not in floats:
+           adding 0.5 to each d2 before the subtraction costs the low bits of
+           d2. Measured at 4.8e-7 on a frame that spans about +-2, which is
+           -132 dBFS, and it is rounding rather than a different sound. */
+        std::snprintf(m, sizeof m, "at zero depth it is the four-axis world to float rounding (worst %.2e)", d0);
+        ck(m, d0 < 1e-5);
+
+        /* The neutrality claim, and the honest form of it: travelling an axis
+           that carries no effect, on a world where every node sits at 0.5
+           there, must not move the sound by one bit. Compared along the axis
+           rather than against the four-axis world, because the constant above
+           is the same at every position and would mask exactly what this asks. */
+        const std::vector<uint8_t> only5 = with_fx(Shaper::None, 0, Shaper::Crush, 5);
+        World w5;
+        w5.UseUserWorld(only5.data(), only5.size(), 8, nullptr);
+        double dn = 0, ref[kFrame];
+        for(int t = 0; t <= 8; t++)
+        {
+            float q[kMaxN] = {0.3f, 0.7f, 0.5f, 0.5f, (float)t / 8.f, 0.f};
+            double f1[kFrame];
+            FrameAt(w5, q, f1);
+            if(!t) std::memcpy(ref, f1, sizeof ref);
+            else for(int i = 0; i < kFrame; i++) dn = std::fmax(dn, std::fabs(f1[i] - ref[i]));
+        }
+        std::snprintf(m, sizeof m, "an axis with no effect on it moves nothing audible across its whole travel (worst %.2e)", dn);
+        /* Same rounding as above and the same size: the constant the axis adds
+           to every distance is only constant *across nodes*, so it changes with
+           position and its low bits change with it. -128 dBFS, smooth, and not
+           a step. The mathematical claim — a term equal for every node cancels
+           out of the softmax — is exact; the arithmetic is float. */
+        ck(m, dn < 1e-5);
+
+        /* And the effect does something, on its own axis and only there. */
+        float pf[kMaxN] = {0.3f, 0.7f, 0.5f, 0.5f, 1.f, 0.f};
+        float pc[kMaxN] = {0.3f, 0.7f, 0.5f, 0.5f, 0.f, 1.f};
+        double fold[kFrame], crush[kFrame];
+        FrameAt(w, pf, fold);
+        FrameAt(w, pc, crush);
+        double df = 0, dc = 0;
+        for(int i = 0; i < kFrame; i++)
+        {
+            df = std::fmax(df, std::fabs(fold[i] - plain[i]));
+            dc = std::fmax(dc, std::fabs(crush[i] - plain[i]));
+        }
+        std::snprintf(m, sizeof m, "full fold on axis 4 changes the cycle (%.3f) and full crush on axis 5 does too (%.3f)", df, dc);
+        ck(m, df > 0.05 && dc > 0.02);
+
+        /* Continuity, measured the way cont_check measures it so the numbers
+           are comparable: the L2 norm of the frame difference, swept 0.02 to
+           0.98, at two step sizes. Halve the step and a continuous axis halves
+           its largest change; a cliff does not move. */
+        for(int q = 0; q < 2; q++)
+        {
+            double at[2] = {0, 0};
+            for(int pass = 0; pass < 2; pass++)
+            {
+                const int steps = pass ? 2000 : 500;
+                double    prevf[kFrame], worstd = 0;
+                for(int t = 0; t <= steps; t++)
+                {
+                    float q2[kMaxN] = {0.3f, 0.7f, 0.35f, 0.35f, 0.f, 0.f};
+                    q2[4 + q] = 0.02f + 0.96f * (float)t / (float)steps;
+                    double cur[kFrame];
+                    FrameAt(w, q2, cur);
+                    if(t)
+                    {
+                        double dd = 0;
+                        for(int i = 0; i < kFrame; i++)
+                        {
+                            const double x = cur[i] - prevf[i];
+                            dd += x * x;
+                        }
+                        dd = std::sqrt(dd);
+                        if(dd > worstd) worstd = dd;
+                    }
+                    std::memcpy(prevf, cur, sizeof cur);
+                }
+                at[pass] = worstd;
+            }
+            const double ratio = at[1] > 0 ? at[0] / at[1] : 0;
+            std::snprintf(m, sizeof m, "axis %d %-5s continuous: %.5f at step/500, %.5f at step/2000, ratio %.2f",
+                          4 + q, ShaperName(q ? Shaper::Crush : Shaper::Fold), at[0], at[1], ratio);
+            /* The ratio is the claim, not the absolute size. Both of these
+               move the frame much further than the same shapers do on the
+               Shapes grid — Lock's nodes are unit-RMS spectra with sixty-four
+               harmonics in some of them, so a folder has far more to work with
+               than a saw does — and a big smooth axis is not a rough one. What
+               would matter is a step that stops shrinking, which is what a
+               crusher reached by rounding rather than by crossfading gives. */
+            ck(m, ratio >= 2.0);
+        }
+    }
+
+    /* Effects nobody should have sent. */
+    {
+        struct FxCase { const char* what; uint8_t b14, b15; uint8_t ver; };
+        const FxCase fxc[] = {
+            {"unknown shaper",     (uint8_t)((4 << 4) | 9), 0u, 2u},
+            {"axis past N",        (uint8_t)((6 << 4) | 1), 0u, 2u},
+            {"two on one axis",    (uint8_t)((4 << 4) | 1), (uint8_t)((4 << 4) | 4), 2u},
+            {"version 2, none",    0u, 0u, 2u},
+            {"axis without shaper",(uint8_t)(4 << 4), 0u, 2u},
+            {"v1 with effect bits",(uint8_t)((4 << 4) | 1), 0u, 1u},
+        };
+        for(const FxCase& c : fxc)
+        {
+            std::vector<uint8_t> v = with_fx(Shaper::Fold, 4, Shaper::None, 0);
+            v[4] = c.ver; v[14] = c.b14; v[15] = c.b15;
+            World w;
+            const UserError r = w.UseUserWorld(v.data(), v.size(), 8, nullptr);
+            std::snprintf(m, sizeof m, "%-20s refused (%s) and leaves no world", c.what, UserErrorName(r));
+            ck(m, r != UserError::Ok && !w.Ready());
+        }
+    }
+
     if(bad) printf("user_check: %d FAILURES\n", bad);
     else    printf("user_check: all passed\n");
     return bad ? 1 : 0;

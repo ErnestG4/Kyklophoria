@@ -302,13 +302,71 @@ public:
      * transform; BandScale() tells it how much to pull the band limit in
      * first, because a memoryless nonlinearity multiplies bandwidth and the
      * frame arrives band-limited to exactly Nyquist. */
-    bool HasShaper() const { return kind_ == Kind::Table; }
+    bool HasShaper() const
+    {
+        return kind_ == Kind::Table
+               || (kind_ == Kind::Lock && (lock_.fx[0] != Shaper::None || lock_.fx[1] != Shaper::None));
+    }
+    /* Which shapers this world wants on the rendered cycle, and how deep at
+     * this position. A shape table puts them on axes 2 and 3 by construction;
+     * a world somebody wrote names its own axes in the file
+     * (core/kyk_userworld.h). One list, so the stage below and the headroom
+     * rule cannot disagree about what is running.
+     *
+     * Returns every *declared* shaper including ones at zero depth, because the
+     * band limit has to move continuously through zero — filtering here is the
+     * caller's job and only Shape() wants it. */
+    int Fx(const float* p01, Shaper* s, float* d) const
+    {
+        int m = 0;
+        if(kind_ == Kind::Table)
+        {
+            const Shaper ax[2] = {shapes_.axis2, shapes_.axis3};
+            for(int q = 0; q < 2; q++)
+            {
+                if(ax[q] == Shaper::None) continue;
+                s[m] = ax[q];
+                d[m] = shapes_.n > 2 + q ? p01[2 + q] : 0.f;
+                m++;
+            }
+        }
+        else if(kind_ == Kind::Lock)
+        {
+            for(int q = 0; q < 2; q++)
+            {
+                if(lock_.fx[q] == Shaper::None) continue;
+                const int a = lock_.fx_axis[q];
+                s[m] = lock_.fx[q];
+                d[m] = a < lock_.n ? p01[a] : 0.f;
+                m++;
+            }
+        }
+        return m;
+    }
+    /* The declaration without a position, for whoever writes the world down:
+     * effect q is this shaper on this axis. A shape table's two live on axes 2
+     * and 3 by construction, which is why it has no axis field to read. */
+    Shaper FxShaper(int q) const
+    {
+        if(q < 0 || q > 1) return Shaper::None;
+        if(kind_ == Kind::Table) return q ? shapes_.axis3 : shapes_.axis2;
+        if(kind_ == Kind::Lock) return lock_.fx[q];
+        return Shaper::None;
+    }
+    uint8_t FxAxis(int q) const
+    {
+        if(q < 0 || q > 1) return 0u;
+        if(kind_ == Kind::Table) return (uint8_t)(2 + q);
+        if(kind_ == Kind::Lock) return lock_.fx_axis[q];
+        return 0u;
+    }
     float BandScale(const float* p01) const
     {
-        if(kind_ != Kind::Table) return 1.f;
-        const float a2 = shapes_.n > 2 ? p01[2] : 0.f;
-        const float a3 = shapes_.n > 3 ? p01[3] : 0.f;
-        return ShapeBandScale(shapes_, a2, a3);
+        Shaper s[2]; float d[2];
+        const int m  = Fx(p01, s, d);
+        float     sc = 1.f;
+        for(int q = 0; q < m; q++) sc += ShaperBandScale(s[q], d[q]);
+        return sc;
     }
     /* The frame is rendered into `scratch`; this writes the finished cycle
      * into `dst`. Staging it that way rather than shaping in place means the
@@ -317,12 +375,11 @@ public:
      * memory around. */
     void Shape(float* dst, float* scratch, int n, const float* p01) const
     {
-        if(kind_ != Kind::Table) { CopyFrame(dst, scratch, n); return; }
+        Shaper sd[2]; float dd[2];
+        const int  decl = Fx(p01, sd, dd);
         Shaper s[2]; float d[2]; int m = 0;
-        const float a[2] = {shapes_.n > 2 ? p01[2] : 0.f, shapes_.n > 3 ? p01[3] : 0.f};
-        const Shaper ax[2] = {shapes_.axis2, shapes_.axis3};
-        for(int q = 0; q < 2; q++)
-            if(ax[q] != Shaper::None && a[q] > 1e-4f) { s[m] = ax[q]; d[m] = a[q]; m++; }
+        for(int q = 0; q < decl; q++)
+            if(dd[q] > 1e-4f) { s[m] = sd[q]; d[m] = dd[q]; m++; }
         if(m == 0) { CopyFrame(dst, scratch, n); return; }
         if(m == 1) { Apply(s[0], dst, scratch, n, d[0]); return; }
         if(s[0] != Shaper::Warp)
