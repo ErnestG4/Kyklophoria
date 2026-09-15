@@ -104,7 +104,8 @@ struct Put
 inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, int cap,
                            uint8_t page = 0, uint8_t morph_world = 0xFFu,
                            uint16_t mute = 0u, const uint8_t* pots = nullptr,
-                           uint8_t world = 0xFFu, const uint8_t* vals = nullptr)
+                           uint8_t world = 0xFFu, const uint8_t* vals = nullptr,
+                           uint8_t tour_len = 0u, uint8_t tour_at = 0u, uint8_t tour_blend = 0u)
 {
     const World* s = e.WorldPtr();
     if(!s || !s->Ready()) return 0;
@@ -205,6 +206,18 @@ inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, i
          * wrong about its subject is worse than no readout, and the fix is a
          * byte a frame. */
         w.U8(world);
+        /* And where the world tour has got to: how many stops it has, which one
+         * is live, and how far towards the next. Three bytes, at the end of the
+         * tail for the same reason everything else here is — a host that
+         * predates them reads what it knows and stops.
+         *
+         * A tour moves the live world on a clock, so a page drawing the loop
+         * from its own memory of what it programmed would be drawing the one
+         * thing on screen that the module has since moved on from. Zero stops
+         * means no tour. */
+        w.U8(tour_len);
+        w.U8(tour_at);
+        w.U8(tour_blend);
     }
     return w.ok ? w.n : 0;
 }
@@ -216,7 +229,7 @@ inline int TelemetrySize(int n, int k, int p, uint8_t flags)
     int       sz     = 4 + 4 + 6 + 2 + 4 + 4 * (4 * n + planes + p);
     if(flags & kTelSpectrum) sz += k;
     if(flags & kTelFrame) sz += kTelFramePts;
-    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1;
+    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1 + 3;
     return sz;
 }
 

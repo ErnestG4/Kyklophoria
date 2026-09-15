@@ -157,7 +157,21 @@ static VirtualKnob k_cvdep  = VirtualKnob(5, "CV out A depth").Ident("lane.cva")
  * works: Engine::SetControl only slews the axes the live world actually has. */
 static VirtualKnob k_pos4   = VirtualKnob(0, "Position 4").Ident("pos.4").Ring(Level(kWorld));
 static VirtualKnob k_pos5   = VirtualKnob(1, "Position 5").Ident("pos.5").Ring(Level(kWorld));
-static Page page_world  = Page(6).Name("World").Color("#f7c08a").Knobs(k_pos4, k_pos5);
+/* The world tour's three setup knobs. Which worlds are in the loop is a list
+ * and comes from the page; how fast, how far and how smoothly it travels are
+ * performance and belong under a finger.
+ *
+ * Division counts edges of J2. Glide is how much of each interval the blend
+ * spends travelling: at the top it never stops moving, at the bottom it arrives
+ * in the first few milliseconds and waits, which is a sequencer with a
+ * crossfade rather than a morph. Free-run is for a rack with no clock in it —
+ * at the bottom it is off and J2 is the only thing that moves the loop. */
+static const char* kDivNamesTour[8] = {"1", "2", "3", "4", "6", "8", "12", "16"};
+static const uint8_t kDivValuesTour[8] = {1, 2, 3, 4, 6, 8, 12, 16};
+static VirtualKnob k_tdiv   = VirtualKnob(2, "Tour division").Selector(8).Labels(kDivNamesTour, 8).Ident("tour.div").Ring(Level(kWorld));
+static VirtualKnob k_tglide = VirtualKnob(3, "Tour glide").Ident("tour.glide").Ring(Level(kWorld));
+static VirtualKnob k_trate  = VirtualKnob(4, "Tour free-run").Unit("s").Ident("tour.rate").Ring(Level(kWorld));
+static Page page_world  = Page(6).Name("World").Color("#f7c08a").Knobs(k_pos4, k_pos5, k_tdiv, k_tglide, k_trate);
 
 static Page page_play   = Page(0).Name("Play").Color("#67e8f9").Knobs(k_coarse, k_fine, k_pos0, k_pos1, k_pos2, k_pos3);
 static Page page_rotate = Page(1).Name("Rotate").Color("#fca5a5").Knobs(k_ang[0], k_ang[1], k_ang[2], k_ang[3], k_ang[4], k_ang[5]);
@@ -310,6 +324,25 @@ static volatile uint8_t gMorphIdx = 0xFFu;   /* what is loaded there now */
  * values so unmuting restores what was set, which is the difference between a
  * switch and turning something down. Chosen from the page — deciding which
  * planes are live is setup, not performance. */
+/* ── the world tour ──────────────────────────────────────────────────────
+ * A loop of worlds on a clock (core/kyk_tour.h). Three buffers in a ring, and
+ * this module already has exactly three: the two the live double buffer swaps
+ * between and the morph target. So a step is a pointer rotation and the world
+ * the step after next will need is expanded into the one nobody is listening
+ * to, which is what gives a lattice expansion a whole clock interval to finish
+ * instead of landing in the middle of something audible.
+ *
+ * J2 has said Sync on the panel since the I/O map was agreed and has been read
+ * by nothing. It is the clock. */
+static Tour              gTour;
+static World* const      kTourWorld[kTourSlots] = {&gWorlds[0], &gWorlds[1], &gMorphWorld};
+static volatile uint8_t  gClockEdges   = 0u;    /* raised by the audio callback */
+static volatile uint8_t  gTourSetReq   = 0u;
+static volatile uint8_t  gTourOn       = 0u;    /* the audio thread reads only this */
+static volatile int8_t   gTourLoadSlot = -1;
+static volatile uint8_t  gTourLoadWorld = 0xFFu;
+static uint8_t           gTourWant[kTourMax] = {0};
+static uint8_t           gTourWantLen = 0u, gTourWantDiv = 1u;
 static volatile uint16_t gMute = 0u;
 static volatile uint8_t  gAimReq = 0u;   /* aim the morph at the nearest match */
 
@@ -480,10 +513,32 @@ static constexpr uint32_t kCycBudget = kCpuHz / 48000u * kEngineBlockSamples;   
 
 static inline uint32_t Cycles() { return DWT->CYCCNT; }
 
+/* J2's rising edges, counted here because this is the only place the samples
+ * exist. Schmitt, not a threshold: the jack is an AC-coupled audio input, so a
+ * gate arrives as a step that decays and a release dips below zero, and one
+ * comparison would count both ends of it. The refractory count is in samples
+ * and is there for the same reason a hardware trigger input has one — 5 ms,
+ * which is 200 Hz of clock and far past any musical division.
+ *
+ * Counting rather than acting: a step rotates world pointers and asks for an
+ * expansion, and neither belongs under the audio ISR. */
+static void ReadClock(const float* in, size_t n)
+{
+    static bool     armed = false;
+    static uint32_t since = 0u;
+    for(size_t i = 0; i < n; i++)
+    {
+        const float x = in[i];
+        if(since < 0xFFFFu) since++;
+        if(!armed && x > 0.25f && since > 240u) { armed = true; since = 0u; gClockEdges++; }
+        else if(armed && x < 0.05f) armed = false;
+    }
+}
+
 static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::OutputBuffer out, size_t size)
 {
-    (void)in;
     const uint32_t t0 = Cycles();
+    if(gTour.Running()) ReadClock(in[1], size);
 
     /* pitch: v/oct on J3 (calibrated volts), coarse octaves, fine semitones */
     const float voct = hw.cv[0].Volts();
@@ -568,9 +623,18 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
         gKepOn = on;
     }
     gEng.sharp = k_sharp.Norm();
-    /* Nothing to blend towards means no blend, whatever the knob says. */
-    gEng.SetMorph(gMorphIdx == 0xFFu ? nullptr : &gMorphWorld,
-                  gMorphIdx == 0xFFu ? 0.f : k_morph.Norm());
+    /* Nothing to blend towards means no blend, whatever the knob says.
+     *
+     * While a tour is running the clock owns this, and it is set from the
+     * control loop with the rest of the tour's state rather than from here —
+     * the Tour object is the control thread's and reading it under the ISR to
+     * find the target pointer would be a race for no gain. The Morph knob is
+     * inert for as long as the loop is running, which is the honest reading of
+     * "the clock is driving": what it controls is exactly what the clock has
+     * taken over. */
+    if(!gTourOn)
+        gEng.SetMorph(gMorphIdx == 0xFFu ? nullptr : &gMorphWorld,
+                      gMorphIdx == 0xFFu ? 0.f : k_morph.Norm());
     /* 0.23 is the headroom the measured crest factor needs; the knob scales
      * from silence to that, so a cell can no longer peak past full scale. */
     gEng.SetGain(0.23f * k_level.Norm());
@@ -616,8 +680,39 @@ struct ModuleSource : ExtSource
              * the first one. */
             vals[i] = q8(pager.Value((uint8_t)i));
         }
+        const float tb = gTour.Blend(gEng.L.Block(), k_tglide.Norm());
         return EncodeTelemetry(gEng, flags, out, cap, pager.Page(), gMorphIdx, gMute, pots,
-                               gWorldIdx, vals);
+                               gWorldIdx, vals, (uint8_t)gTour.Len(), (uint8_t)gTour.At(),
+                               (uint8_t)((tb < 0.f ? 0.f : (tb > 1.f ? 1.f : tb)) * 255.f + 0.5f));
+    }
+    /* The tour. Programming it is deferred like every other world change,
+       because it is up to three lattice expansions; ticking it is not, because a
+       step is a pointer rotation. */
+    uint8_t TourSet(const uint8_t* entry, int n, uint8_t div) override
+    {
+        if(gTourSetReq || gTourLoadSlot >= 0 || gWorldBusy) return 9u;   /* BUSY */
+        if(n > kTourMax) return 2u;
+        for(int i = 0; i < n; i++) gTourWant[i] = entry[i];
+        gTourWantLen = (uint8_t)n;
+        gTourWantDiv = div;
+        gTourSetReq  = 1u;
+        return 0u;
+    }
+    uint8_t TourTick() override
+    {
+        if(!gTour.Running()) return 1u;
+        gClockEdges++;
+        return 0u;
+    }
+    bool TourState(uint8_t& len, uint8_t& div, uint8_t& at, uint8_t& blend, uint8_t* entry) override
+    {
+        len = (uint8_t)gTour.Len();
+        div = gTour.Div();
+        at  = (uint8_t)gTour.At();
+        const float b = gTour.Blend(gEng.L.Block(), k_tglide.Norm());
+        blend = (uint8_t)((b < 0.f ? 0.f : (b > 1.f ? 1.f : b)) * 255.f + 0.5f);
+        for(int i = 0; i < (int)len && i < kTourMax; i++) entry[i] = gTour.Entry(i);
+        return true;
     }
     bool SpaceInfo(SpaceHeader& h, uint32_t& crc, uint16_t& stride) override
     {
@@ -958,8 +1053,90 @@ static hostlink::Host host(presets, "kyk", "Kyklophoria", KYK_FW_VERSION, KYK_GI
 /* Switch worlds on the control thread. Analytic is a pointer write; a
  * tabulated world is expanded into the spare buffer first, which takes long
  * enough that it must not happen anywhere near the audio callback. */
+/* Build the world a tour entry names into one of the ring's three buffers. Slow
+ * (a lattice world is an expansion), which is why it only ever runs from the
+ * control loop and only ever into the buffer the ring says nobody is hearing. */
+static bool TourLoad(int slot, uint8_t w)
+{
+    if(slot < 0 || slot >= kTourSlots) return false;
+    World& dst = *kTourWorld[slot];
+    if(w & 0x80u)
+    {
+        const uint8_t sl = (uint8_t)(w & 0x7Fu);
+        if(sl >= kSlotCount || !gSlotLen[sl]) return false;
+        return dst.UseUserWorld(gSlotBlob[sl], gSlotLen[sl], kBootP, nullptr) == UserError::Ok;
+    }
+    if(w >= worlds::kCount) return false;
+    if(worlds::IsAnalytic(w)) return worlds::Point(w, dst, kBootP, nullptr, &gVertTable[slot]);
+    const size_t n = worlds::Expand(w, kBootN, kBootSide, kBootK, kBootP, gBlob[slot], sizeof(gBlob[slot]));
+    if(!n || gSpace[slot].Attach(gBlob[slot], n) != SpaceError::Ok) return false;
+    dst.UseLattice(&gSpace[slot]);
+    return true;
+}
+
+/* Point the engine at the ring. Cheap — both worlds are already built — so it
+ * can happen the moment the clock says so. */
+static void TourPoint()
+{
+    if(!gTour.Running()) return;
+    const int lv = gTour.LiveSlot(), tg = gTour.TargetSlot();
+    if(!kTourWorld[lv]->Ready() || !kTourWorld[tg]->Ready()) return;
+    gWorldBusy = 1;
+    __asm__ volatile("dmb" ::: "memory");
+    gEng.SetWorld(kTourWorld[lv]);
+    gBufIdx = (uint8_t)(lv < 2 ? lv : gBufIdx);   /* keep the double buffer honest */
+    const uint8_t lw = gTour.WorldForSlot(lv), tw = gTour.WorldForSlot(tg);
+    gWorldIdx   = (lw & 0x80u) ? 0xFFu : lw;
+    gSlotLive   = (lw & 0x80u) ? (uint8_t)(lw & 0x7Fu) : 0xFFu;
+    gMorphIdx   = (tw & 0x80u) ? kMorphUser : tw;
+    gSlotTarget = (tw & 0x80u) ? (uint8_t)(tw & 0x7Fu) : 0xFFu;
+    gWorldBusy = 0;
+}
+
 static void ServeWorldRequest()
 {
+    /* A tour, programmed from the page: build every buffer it needs, then play
+     * the first world. Deferred to here because that is up to three lattice
+     * expansions and the request that asked for it should return. */
+    if(gTourSetReq)
+    {
+        gTourSetReq = 0u;
+        if(gTourWantLen < 2u) { gTour.Clear(); gEng.SetMorph(nullptr, 0.f); gMorphIdx = 0xFFu; return; }
+        if(gTour.Set(gTourWant, gTourWantLen, gTourWantDiv))
+        {
+            bool ok = true;
+            for(int s = 0; s < gTour.Slots(); s++)
+                if(!TourLoad(s, gTour.WorldForSlot(s))) ok = false;
+            if(ok) TourPoint();
+            else gTour.Clear();
+        }
+        return;
+    }
+    /* A world chosen by hand stops the loop.
+     *
+     * Everything below builds into the same three buffers the ring is using, so
+     * the two cannot both be right — and of the two possible rules, "the hand
+     * wins and the clock stops" is the one somebody can predict from the outside.
+     * The alternative, letting the next step quietly undo what you just chose,
+     * is the kind of state nobody can see and nobody can explain. */
+    if(gTour.Running()
+       && (gWorldReq != 0xFFu || gMorphReq != 0xFFu || gSlotLiveReq >= 0 || gSlotTargetReq >= 0
+           || gCardLoadReq >= 0 || gUserReq))
+    {
+        gTour.Clear();
+        gTourOn       = 0u;
+        gTourLoadSlot = -1;
+    }
+    /* The load a step asked for. One per pass, like every other world change,
+     * and it has until the next step to arrive. */
+    if(gTourLoadSlot >= 0)
+    {
+        const int sl = gTourLoadSlot;
+        const uint8_t w = gTourLoadWorld;
+        gTourLoadSlot = -1;
+        TourLoad(sl, w);
+        return;
+    }
     if(gAimReq) { gAimReq = 0u; AimMorph(); return; }
     if(gCardLoadReq >= 0)
     {
@@ -1256,6 +1433,50 @@ static void ServeWorldRequest()
 }
 
 /* one-second stats window and the CV out, from the control loop (~40 Hz) */
+/* The clock, the free-run, and the blend — all on the control thread, because
+ * a step rotates world pointers and asks for an expansion. */
+static void TourService()
+{
+    static uint32_t free_at = 0u;
+    gTourOn = gTour.Running() ? 1u : 0u;
+    if(!gTour.Running()) return;
+    const uint32_t blk = gEng.L.Block();
+    uint8_t        n   = gClockEdges;
+    if(n)
+    {
+        gClockEdges = (uint8_t)(gClockEdges - n);
+        for(uint8_t i = 0; i < n; i++)
+        {
+            const TourStep s = gTour.Edge(blk);
+            if(!s.step) continue;
+            TourPoint();
+            if(s.world != 0xFFu && s.slot >= 0) { gTourLoadWorld = s.world; gTourLoadSlot = (int8_t)s.slot; }
+        }
+        free_at = blk;
+    }
+    else if(k_trate.Norm() > 0.02f)
+    {
+        /* No cable, or nothing on it. Exponential, 4 s a step down to about 30
+         * ms, because the slow end is where a loop of worlds is a piece of music
+         * and the fast end is where it is a texture. Skips the division, since
+         * dividing a rate you set by hand is one knob fighting another. */
+        const float    secs   = 4.f * exp2f(-k_trate.Norm() * 7.f);
+        const uint32_t period = (uint32_t)(secs * 48000.f / (float)kEngineBlockSamples);
+        if(blk - free_at >= (period < 2u ? 2u : period))
+        {
+            free_at = blk;
+            const TourStep s = gTour.Fire(blk);
+            if(s.step)
+            {
+                TourPoint();
+                if(s.world != 0xFFu && s.slot >= 0) { gTourLoadWorld = s.world; gTourLoadSlot = (int8_t)s.slot; }
+            }
+        }
+    }
+    const int tg = gTour.TargetSlot();
+    if(kTourWorld[tg]->Ready()) gEng.SetMorph(kTourWorld[tg], gTour.Blend(blk, k_tglide.Norm()));
+}
+
 static void OnFrame()
 {
     static uint32_t win_t  = 0;
@@ -1269,6 +1490,7 @@ static void OnFrame()
         win_t = now_ms;
     }
     hw.j8.SetVolts(gPayloadA * 5.f * k_cvdep.Norm());
+    TourService();
     ServeWorldRequest();
 }
 

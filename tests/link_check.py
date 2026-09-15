@@ -136,6 +136,12 @@ def telemetry(link, flags):
         # from firmware that predates it, which is not the same as 0xFF.
         t['world'] = b[at] if len(b) > at else None
         at += 1 if len(b) > at else 0
+        # where the world tour has got to: stops, which one is live, how far
+        # towards the next. Zero stops means there is no tour.
+        if len(b) >= at + 3:
+            t['tour'] = (b[at], b[at + 1], b[at + 2] / 255.0); at += 3
+        else:
+            t['tour'] = None
     t['size'] = len(b)
     check(at == len(b), f'telemetry body consumed exactly ({at} of {len(b)})')
     return t
@@ -167,8 +173,8 @@ def stdio_tests():
     t7 = telemetry(link, 7)
     # 23 for the original block, 1 for the body count, 8 per perturber, then
     # page, morph+target, mute, aimed, six pots, the knob values behind a
-    # validity byte, and the live world index
-    want = 460 + 23 + 1 + 8 * (t7['bodies'] - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1
+    # validity byte, the live world index, and three for the world tour
+    want = 460 + 23 + 1 + 8 * (t7['bodies'] - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1 + 3
     check(t7['size'] == want, f"motion block appends {want - 460} bytes (size {t7['size']}, {t7['bodies']} bodies)")
     # Which world is playing, in every frame. Without it a host only learns
     # this by asking for the list, and nothing asks unprompted — so a world
@@ -322,6 +328,29 @@ def stdio_tests():
     t = telemetry(link, 7)
     check(t['n'] == 4 and t['k'] == 64, 'the module is sane after aiming')
     ty, seq, r, ok = link.request(0x64, bytes([5, 0xFF]))
+
+    # ── the world tour, over the link ────────────────────────────────────
+    # The stdlib half of the suite covers the wire shape; the sound and the
+    # walking of the sequence are in web/selftest.mjs, which has a spectrum to
+    # look at. What matters here is that the sequence arrives whole and that a
+    # malformed one is refused rather than half-applied.
+    ty, seq, r, ok = link.request(0x6D, bytes([0]))
+    check(r[0] == 0 and r[1] == 0, 'no tour to begin with')
+    ty, seq, r, ok = link.request(0x6D, bytes([1, 2, 3, 13, 14, 15]))
+    check(r[0] == 0 and r[1] == 3 and r[2] == 2 and list(r[5:8]) == [13, 14, 15],
+          'a three-world tour at a division of two comes back as it went')
+    ty, seq, r, ok = link.request(0x6D, bytes([2]))
+    check(r[0] == 0, 'a tick is accepted')
+    ty, seq, r, ok = link.request(0x6D, bytes([1, 1]))
+    check(r[0] == 2, 'a set with no length is refused')
+    ty, seq, r, ok = link.request(0x6D, bytes([1, 1, 99]))
+    check(r[0] == 2, 'a length past the maximum is refused')
+    ty, seq, r, ok = link.request(0x6D, bytes([7]))
+    check(r[0] == 2, 'an unknown op is refused')
+    ty, seq, r, ok = link.request(0x6D, bytes([0]))
+    check(r[1] == 3 and list(r[5:8]) == [13, 14, 15], 'and none of that disturbed the tour')
+    ty, seq, r, ok = link.request(0x6D, bytes([1, 1, 0]))
+    check(r[0] == 0 and r[1] == 0, 'a length below two turns it off')
 
     ty, seq, r, ok = link.request(0x63, corrupt=True)
     check(ty == 0xFF and r[0] == 10, f'bad CRC → ERR FRAME_ERROR (type {ty:#x})')

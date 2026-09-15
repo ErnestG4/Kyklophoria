@@ -17,7 +17,7 @@ panel has:
 | Jack | Direction | Function | Notes |
 |---|---|---|---|
 | J1 | audio in | **FM in** | AC-coupled codec input; linear TZ FM into the phase accumulator (M3). Index from the payload lane × FM depth |
-| J2 | audio in | **Sync** | rising edge resets phase (`RisingEdge()`, AC-coupling passes edges) |
+| J2 | audio in | **Sync / clock** | rising edges advance the **world tour** through its division (`core/kyk_tour.h`). Schmitt-triggered with a 5 ms refractory count, because the jack is AC-coupled: a gate arrives as a step that decays and its release dips below zero, so one comparison would count both ends. Resetting the oscillator phase was the original plan for this jack and is still unimplemented — if both ever land they have to be selectable, since resetting the cycle on every clock edge is hard sync and nobody asked for that *and* a world loop |
 | J3 | CV in | **v/oct** | 16-bit at audio rate, calibrated `Volts()`; read once per block |
 | J4 | CV in | **Position 0** | ±5 V → −1..+1, summed with the offset pot, then rotation and fold |
 | J5 | CV in | **Position 1** | |
@@ -45,7 +45,10 @@ and the stereo plane are P1/P2 of the Stereo page.
 Seven pages ship: Play, Rotate, Stereo, Orbit, Kepler, Couple and World. Lanes
 arrives with M3.
 
-**Page World** is two knobs: P1 and P2 are the offsets for axes 4 and 5. Those
+**Page World** is five knobs. P1 and P2 are the offsets for axes 4 and 5; P3 to
+P5 are the world tour's division, glide and free-run rate (`core/kyk_tour.h`),
+which are the three things about a loop of worlds that belong under a finger
+rather than in a list on the page. Those
 axes have no jack and had no knob, so until a world could put a frame effect on
 one (`core/kyk_userworld.h`) they were reachable only from the web page. A world
 with n=4 — which is every built-in — does not read them at all: the engine

@@ -8,8 +8,9 @@ a still hand into an orbit through the space.
 
 **Status: beta.** It runs in the rack and makes sound. Twenty-two
 worlds ship, the rotation and its orbit LFOs are real, ratio coupling works,
-and presets persist. There is design work left: FM and sync are not read, most
+and presets persist. There is design work left: FM in is not read, most
 payload lanes are not routed, and the panel layout is still a first draft.
+J2 now clocks a loop of worlds.
 
 ## Controls
 
@@ -21,9 +22,9 @@ of imported waveforms, **worlds** is the library of the ones you have made.
 |---|---|---|---|---|
 | P1 | Coarse pitch, ±3 oct | plane (0,1) angle | Spread | Position 4 offset |
 | P2 | Fine, ±1 semitone | plane (0,2) | Stereo plane | Position 5 offset |
-| P3 | Position 0 offset | plane (0,3) | **Morph**: smooth blend to hard steps | |
-| P4 | Position 1 offset | plane (1,2) | Render divider | |
-| P5 | Position 2 offset | plane (1,3) | Level | |
+| P3 | Position 0 offset | plane (0,3) | **Morph**: smooth blend to hard steps | Tour division |
+| P4 | Position 1 offset | plane (1,2) | Render divider | Tour glide |
+| P5 | Position 2 offset | plane (1,3) | Level | Tour free-run |
 | P6 | Position 3 offset | plane (2,3) | CV out A depth | |
 
 Four dimensions give six rotation planes, and the panel has six pots. There are
@@ -320,6 +321,51 @@ tools/renderpack.sh                       # a wav per world plus the motion rend
 build/host/kykspace info space.kyk        # grade a baked lattice file
 build/host/kykeigen space.kyk --braids ../../Mutable/Streams/eurorack/braids/resources.cc
 ```
+
+## A loop of worlds, on a clock
+
+Up to eight stops, each a built-in or one of yours, advanced by **J2** through a
+division, with the blend travelling between them: the sound is always somewhere
+between two worlds and always moving. The list comes from the page; how fast,
+how far and how smoothly it travels are knobs — **division** counts edges of J2,
+**glide** is how much of each interval the blend spends moving (at the top it
+never stops, at the bottom it arrives in a few milliseconds and waits, which is
+a sequencer with a crossfade), and **free-run** is for a rack with no clock in
+it. J2 has said Sync on the panel since the I/O map was agreed and was read by
+nothing until now.
+
+While a tour runs the clock owns the blend, so the Morph knob is inert — what
+the clock has taken over is exactly what that knob does — and choosing a world
+by hand stops the tour.
+
+**Three buffers, and that is the design.** The arithmetic of a step is free: at
+full blend the sound *is* the target's spectrum, so making that the live world
+and resetting the blend renders the same thing. Loading is not free — expanding
+a lattice world is about 9 ms on a laptop and the M7 is an order of magnitude
+slower on that kind of loop. With two buffers, whichever one a step overwrites
+is either audible now or becomes audible as the blend travels, and a load
+landing halfway through the interval moves the rendered cycle by 1.85 where the
+frame spans about ±2. With three in a ring the world a step needs next goes into
+the one nobody is listening to and has a whole interval to arrive in: measured
+at 0.0475, which is the blend's own per-block travel. The module already had
+three — the live pair and the morph target — so the ring cost no memory. Two
+stops is the one case that needs no loading at all, and uses two.
+
+It takes **two clock edges to start**: the first says when, the second says how
+long. Only then can the blend be paced, and a step taken before the blend has
+travelled is a switch rather than an arrival.
+
+**A step is a morph inside a family and a switch across families.** Magnitudes
+are exact across a step; the phase spectrum and the frame shapers are not,
+because the engine takes both from the live world. Measured over all 462 ordered
+pairs, 128 step with no seam at all, and they are exactly two groups: the
+random-phase worlds that share a seed (Crop, the vertex three, Stack, Field,
+Harmonic, FM, Vowel) and the sine-phase worlds with no shaper (Lock, Unison,
+Plate, Bar, Drum, Saw, Pulse, Edge). Field II and Torus have seeds of their own,
+and Shapes, Shapes R and Grit shape the cycle, so those five seam against
+everything — 0.4 to 5.4. A tour across families is a sequencer, which is worth
+having on purpose; the table is in `docs/checklist.md` along with what the
+honest fix would cost.
 
 ## The morph does not click
 

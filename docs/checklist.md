@@ -253,6 +253,59 @@ meaningful axis and stacking four banks makes rotation meaningless.
       would get wrong.
       Snapshots carry effects too, which is what makes "open Grit to edit" hand
       back something that can still grit.
+- [x] **A loop of worlds on a clock** — `core/kyk_tour.h`, the **World** page,
+      and J2. The last thing on the bench list: "you can't set a loop of N worlds
+      and constantly morph between them based on a clock and clock divisions."
+      Up to eight stops, each a built-in or one of your slots, advanced by J2's
+      rising edges through a division, with the blend travelling between them.
+      **Three buffers, not two, and that is the whole design.** The arithmetic of
+      a step is free — at full blend the sound *is* the target's spectrum, so
+      making that the live world and resetting the blend renders the same thing.
+      What is not free is loading: a lattice world is 9 ms of expansion on x86
+      and the M7 is an order of magnitude slower on that kind of loop. With two
+      buffers, whichever one a step overwrites is either audible now or becomes
+      audible as the blend travels — measured, a load landing halfway through the
+      interval moves the rendered cycle by 1.85 on a frame that spans about ±2.
+      With three in a ring, the world a step needs next goes into the one nobody
+      is listening to and has a whole interval to arrive in: measured at 0.0475,
+      which is exactly the blend's own per-block travel. This module already had
+      three — the live pair and the morph target — so it cost no memory.
+      Two stops is the one case that needs no loading at all, so it uses two
+      buffers and turns the blend around instead.
+      **Two edges to catch the clock.** The first says when, the second says how
+      long, and only then can the blend be paced — a step taken before the blend
+      has travelled is a switch, so stepping on the first edge would make every
+      tour click the moment it was switched on. Without the rule the first step
+      measures 1.9 and every step after it 0.0475.
+      The Morph knob is inert while a tour runs, which is the honest reading of
+      "the clock is driving": what the clock has taken over is exactly what that
+      knob does. A world chosen by hand stops the tour, because the requests that
+      do it build into the same three buffers.
+- [ ] **A step between two worlds that render the frame differently is a switch,
+      not a morph.** Magnitudes are exact across a step; the phase spectrum and
+      the frame shapers are not, because the engine takes both from the live
+      world. Measured over all 462 ordered pairs at one position — the worst
+      sample difference on the rendered cycle when the live world is replaced at
+      full blend:
+
+      | family | worlds | within the family |
+      |---|---|---|
+      | random phase, seed 1 | Crop, the three vertex worlds, Stack, Field, Harmonic, FM, Vowel | seamless (0.0) |
+      | sine phase, no shaper | Lock, Unison, Plate, Bar, Drum, Saw, Pulse, Edge | seamless (0.0) |
+      | its own phase seed | Field II (7), Torus (3) | seams with everything, 0.4 to 5.4 |
+      | shapes the cycle | Shapes, Shapes R, Grit | seams with everything, 0.7 to 4.3 |
+
+      128 of the 462 pairs step with no seam at all, and they are exactly the two
+      families above. So a tour inside one family is a morph and a tour across
+      them is a sequencer, which is a musically useful thing to be — but it is
+      not what the feature claims, so it is written down here and in the header.
+      The honest fix is to shape and phase the blend rather than the live world,
+      which means rendering both ends: a second inverse FFT per render, and the
+      CPU does not have one at 33% average and 97% peak.
+      What *could* be done cheaply: the page could mark which steps of a loop are
+      seams, so nobody builds one by accident. It needs each world's phase seed
+      and shaper state, and neither is on the wire — the world list carries the
+      kind, and the kind cannot tell Field from Field II.
 - [ ] **A morph between two shaped worlds only runs the live world's shapers.**
       `Engine` blends the two spectra and then asks `world_` to shape the result,
       so morphing Shapes towards Grit never crushes anything. It has been true

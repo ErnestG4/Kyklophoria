@@ -80,11 +80,11 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   check(t && t.bytes === 461, 'telemetry body 460 B + status (got ' + (t && t.bytes) + ')');
   const tk = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
   /* Spelled out rather than as a magic number, because this has now gone
-     stale four times as the block grew. 1 status + 460 fixed + 23 motion +
+     stale five times as the block grew. 1 status + 460 fixed + 23 motion +
      1 body count + 8 per extra body + 1 pager page + 2 morph + 2 mute +
-     1 aimed + 6 pots + 1 flag and 6 knob values + 1 live world. */
+     1 aimed + 6 pots + 1 flag and 6 knob values + 1 live world + 3 tour. */
   {
-    const want = 1 + 460 + 23 + 1 + 8 * ((tk ? tk.bodies : 1) - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1;
+    const want = 1 + 460 + 23 + 1 + 8 * ((tk ? tk.bodies : 1) - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1 + 3;
     check(tk && tk.bytes === want,
           `motion block totals ${want} B (got ${tk && tk.bytes}, ${tk && tk.bodies} bodies)`);
   }
@@ -975,6 +975,109 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   /* Refusing must not have cost the world that was playing. */
   const still = await at(0, 0);
   check(worst(still.frame, p0.frame) <= 1, 'and a refused world leaves the playing one alone');
+
+  await link.close();
+});
+
+console.log('\n== a loop of worlds on a clock');
+await withChild(['--serve', '--gen', '--seed', '1'], async link => {
+  /* The tour is arithmetic in core (tests/tour_check.cpp) and a ring of three
+   * buffers in the shell. What only this can ask is whether the wire carries a
+   * sequence whole, whether the shell actually loads the worlds it names, and
+   * whether the sound is where the blend says it is. On the module the clock
+   * edges come from J2; here they come from the host, and both go through the
+   * same function — division included, because a division is part of what an
+   * edge means. */
+  const read = async () => KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
+  const tour = async (op, div, entries) =>
+    KYK.parseTour(await link.request(KYK.CMD.tour, KYK.tourReq(op, div, entries)));
+  const tick = () => tour(KYK.TOUR.tick);
+  const same = (a, b) => !!a && !!b && a.length === b.length && [...a].every((v, i) => v === b[i]);
+
+  let t = await tour(KYK.TOUR.get);
+  check(t && t.len === 0, 'no tour to begin with');
+
+  /* Four worlds that render the frame the same way: sine phase, no frame
+     shapers. A tour that mixes conventions steps rather than morphs, which is
+     measured in core and documented rather than something the wire can fix. */
+  const seq = [13, 14, 15, 16];   /* Lock, Unison, Plate, Bar */
+  t = await tour(KYK.TOUR.set, 1, seq);
+  check(t && t.len === 4 && t.div === 1 && same(t.entries, seq),
+        `the sequence arrives whole and comes back (${t && t.entries})`);
+  check((await read()).world === seq[0], 'and the first world is live immediately');
+
+  /* Two edges to catch the clock before anything moves — the first says when,
+     the second says how long — and then a step per edge. Blocks are driven
+     between them, because the gap between two edges is the tempo: edges landing
+     in the same block are not a clock and the tour says so by not moving. */
+  const beats = async (n) => { for (let i = 0; i < n; i++) await read(); };
+  await tick();
+  check((await tour(KYK.TOUR.get)).at === 0, 'the first edge only says when');
+  await beats(20);
+  await tick();
+  check((await tour(KYK.TOUR.get)).at === 0, 'and the second only says how long');
+  await beats(20);
+  await tick();
+  t = await tour(KYK.TOUR.get);
+  check(t.at === 1, `the third steps (at ${t.at})`);
+  check((await read()).world === seq[1], 'and the module is playing the second world');
+
+  /* Between edges the blend travels, towards the world after the live one. */
+  const before = (await tour(KYK.TOUR.get)).blend;
+  for (let i = 0; i < 40; i++) await read();     /* each read advances a block */
+  const after = (await tour(KYK.TOUR.get)).blend;
+  check(after > before, `the blend travels between edges (${before.toFixed(3)} -> ${after.toFixed(3)})`);
+  check((await read()).morphWorld === seq[2], 'and it is travelling towards the third world');
+
+  /* A lap and a bit, in order, wrapping. */
+  const seen = [];
+  for (let i = 0; i < 5; i++) { await tick(); seen.push((await read()).world); }
+  check(same(seen, [seq[2], seq[3], seq[0], seq[1], seq[2]]),
+        `five more steps walk the sequence and wrap (${seen})`);
+
+  /* The division counts edges, so at four it takes four of them to move. */
+  t = await tour(KYK.TOUR.set, 4, seq);
+  await tick(); await tick(); await tick(); await tick();   /* one divided edge: says when */
+  await tick(); await tick(); await tick(); await tick();   /* another: says how long */
+  check((await tour(KYK.TOUR.get)).at === 0, 'at a division of four, eight edges are still the two priming ones');
+  for (let i = 0; i < 3; i++) await tick();
+  check((await tour(KYK.TOUR.get)).at === 0, 'and three more do not move it');
+  await tick();
+  check((await tour(KYK.TOUR.get)).at === 1, 'the fourth does');
+
+  /* One of your own worlds in the loop, which could not be expressed at all
+     before slots existed — the morph target index space was the built-ins. */
+  const nodes = [];
+  for (let i = 0; i < 24; i++) {
+    const mags = new Float32Array(64);
+    for (let h = 0; h < 8; h++) mags[h] = (h % (i % 3 + 2) === 0 ? 1 : -1) / (h + 1);
+    const pos = [0.5, 0.5, 0.5, 0.5];
+    pos[i % 4] = i < 12 ? 0.25 : 0.75;
+    nodes.push({ pos, mags });
+  }
+  await KYK.putSlot(link, 5, KYK.buildUserWorld(nodes, { n: 4, k: 64, sigma: 0.26, name: 'in the loop' }));
+  t = await tour(KYK.TOUR.set, 1, [13, 0x80 | 5, 14]);
+  check(t && t.len === 3 && t.entries[1] === 0x85, 'a slot can be one of the stops');
+  await tick(); await tick(); await tick();
+  check((await read()).world === 0xFF, 'and when the loop reaches it, a user world is live');
+
+  /* A stop that names a slot with nothing in it is refused, whole: a tour that
+     half-loaded would play worlds nobody asked for. */
+  let badslot = false;
+  try { await link.request(KYK.CMD.tour, KYK.tourReq(KYK.TOUR.set, 1, [13, 0x80 | 31, 14])); }
+  catch { badslot = true; }
+  check(badslot, 'a stop naming an empty slot is refused');
+  check((await tour(KYK.TOUR.get)).len === 0, 'and leaves no half-programmed tour behind');
+
+  /* What the wire must refuse. */
+  let refused = 0;
+  for (const body of [Uint8Array.of(9), Uint8Array.of(KYK.TOUR.set), Uint8Array.of(KYK.TOUR.set, 1, 99)]) {
+    try { await link.request(KYK.CMD.tour, body); } catch { refused++; }
+  }
+  check(refused === 3, `an unknown op, a truncated set and a length past the maximum are all refused (${refused}/3)`);
+  let offtick = false;
+  try { await tick(); } catch { offtick = true; }
+  check(offtick, 'and a tick with no tour says so rather than pretending');
 
   await link.close();
 });

@@ -7,13 +7,16 @@
 #   4. cont_check   — every axis of every world must be continuous. Measures
 #                    the same sweep at two step sizes: a smooth axis halves
 #                    its largest step when the step halves, a cliff does not.
-#   5. alias_check  — spec §7 aliasing sweep, fails above -80 dBFS on the
+#   5. tour_check   — a loop of worlds on a clock: who is in which buffer, what
+#                     a step is allowed to overwrite, and the measurement that
+#                     says why the ring has three buffers and not two.
+#   6. alias_check  — spec §7 aliasing sweep, fails above -80 dBFS on the
 #                     bright lattice cell and -60 on the worst cell there is.
 #                     KYK_SLOW=1 adds the whole 22-world scan (95 s)
-#   6. link_check   — python3 tests/link_check.py: the HostLink extension over stdio
+#   7. link_check   — python3 tests/link_check.py: the HostLink extension over stdio
 #                     and through tools/bridge/bridge.py (stdlib only; KYK_NODE=1 adds
 #                     the node selftest, which needs node but never npm)
-#   5. golden       — kykdesk renders tests/scripts/*.txt and diffs against
+#   8. golden       — kykdesk renders tests/scripts/*.txt and diffs against
 #                     tests/golden/*.wav (tolerance 1e-6; --update rewrites)
 # Same params + same seed must give the same CRC on every machine of the same
 # arch; the CRC is printed so it can be compared against the module (M1).
@@ -64,6 +67,11 @@ echo "== cont_check =="
 $CXX $CORE_FLAGS $SAN tests/cont_check.cpp -o "$OUT/cont_check" || fail=1
 "$OUT/cont_check" > "$OUT/cont.txt" || { cat "$OUT/cont.txt"; fail=1; }
 tail -1 "$OUT/cont.txt"
+
+echo "== tour_check =="
+$CXX $CORE_FLAGS $SAN tests/tour_check.cpp -o "$OUT/tour_check" || fail=1
+"$OUT/tour_check" > "$OUT/tour.txt" || { cat "$OUT/tour.txt"; fail=1; }
+tail -2 "$OUT/tour.txt"
 
 echo "== alias_check =="
 $CXX $CORE_FLAGS -O2 tests/alias_check.cpp -o "$OUT/alias_check" || fail=1

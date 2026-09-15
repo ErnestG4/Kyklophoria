@@ -14,6 +14,7 @@
 #include "alchemy/host_link/extension.h"
 #include "alchemy/host_link/frame.h"
 #include "kyk_types.h"
+#include "kyk_tour.h"   /* kTourMax, and the op names the wire uses */
 
 namespace kyk {
 
@@ -56,7 +57,24 @@ constexpr uint8_t kCmdGetSlot    = 0x6C;   /* a slot's blob back to the host */
 /* "that file is already there". Not BAD_ARGS, because the request was perfectly
    well formed and the answer is a question for the player. */
 constexpr uint8_t kStatCardExists = 20u;
+/* 0x6D TOUR — a loop of worlds on a clock.
+ *
+ * Request: `u8 op`, and for `set` a `u8 div, u8 len, u8 entry[len]`. The entries
+ * name worlds the way everything else on this wire does: an index below
+ * worlds::kCount is a built-in and 0x80 | slot is one of yours.
+ *
+ *   0 get    just read the state back
+ *   1 set    program it; a length below two turns it off
+ *   2 tick   one clock edge, exactly as J2's own edge does it. For a host that
+ *            wants to drive the loop itself, and for the test suite, which has
+ *            no clock cable
+ *
+ * Reply: `u8 status, u8 len, u8 div, u8 at, u8 blend, u8 entry[len]`, where
+ * `at` is which entry is live and `blend` is 0..255 of the way towards the
+ * next. The state comes back on every op, so a host never has to ask twice. */
+constexpr uint8_t kCmdTour       = 0x6D;
 constexpr uint8_t kCmdSetControl = 0x6E;   /* desktop bridge only */
+enum TourOp : uint8_t { kTourGet = 0, kTourSet = 1, kTourTick = 2 };
 
 enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace = 2, kActRenderDiv = 3,
                           kActSelectWorld = 4,
@@ -222,6 +240,19 @@ struct ExtSource
         (void)f0; (void)c; (void)n; (void)angles; (void)planes; (void)spread;
         return 1u;
     }
+
+    /* The world tour (core/kyk_tour.h). Programming it is one call because the
+       sequence has to arrive whole — half a tour is a different tour — and the
+       shell decides what that costs it: on the module the loads are deferred to
+       the control loop like every other world change. */
+    virtual uint8_t TourSet(const uint8_t* entry, int n, uint8_t div)
+    { (void)entry; (void)n; (void)div; return 1u; }
+    /* One clock edge from the host rather than from J2. */
+    virtual uint8_t TourTick() { return 1u; }
+    /* len, div, which entry is live, how far towards the next (0..255), and the
+       sequence itself. False when the shell has no tour at all. */
+    virtual bool TourState(uint8_t& len, uint8_t& div, uint8_t& at, uint8_t& blend, uint8_t* entry)
+    { (void)len; (void)div; (void)at; (void)blend; (void)entry; return false; }
 };
 
 class KykExt : public alchemy::hostlink::IHostlinkExtension
@@ -234,7 +265,7 @@ public:
     const char* DescriptorRootJson() const override
     {
         return "\"kyk\":{\"ext\":6,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,"
-               "\"worlds\":101,\"basis\":102,\"putslot\":105,\"slots\":106,\"savecard\":107,\"getslot\":108,\"control\":110}";
+               "\"worlds\":101,\"basis\":102,\"putslot\":105,\"slots\":106,\"savecard\":107,\"getslot\":108,\"tour\":109,\"control\":110}";
     }
 
     void Handle(const alchemy::hostlink::ParsedFrame& f, alchemy::hostlink::FrameWriter& w, uint32_t) override
@@ -496,6 +527,27 @@ public:
             {
                 if(f.len < 1) { w.U8(2u); return; }
                 w.U8(src_.Action(f.body[0], f.body + 1, (int)f.len - 1));
+                return;
+            }
+            case kCmdTour:
+            {
+                /* u8 op [, u8 div, u8 len, u8 entry[len]] */
+                const uint8_t op = f.len >= 1 ? f.body[0] : (uint8_t)kTourGet;
+                uint8_t st = 0u;
+                if(op == kTourSet)
+                {
+                    if(f.len < 3) { w.U8(2u); return; }
+                    const uint8_t div = f.body[1], n = f.body[2];
+                    if(n > kTourMax || f.len < 3 + n) { w.U8(2u); return; }
+                    st = src_.TourSet(f.body + 3, (int)n, div);
+                }
+                else if(op == kTourTick) st = src_.TourTick();
+                else if(op != kTourGet) { w.U8(2u); return; }
+                uint8_t len = 0u, div = 0u, at = 0u, blend = 0u, entry[kTourMax] = {0};
+                if(!src_.TourState(len, div, at, blend, entry)) { w.U8(st ? st : 1u); return; }
+                w.U8(st);
+                w.U8(len); w.U8(div); w.U8(at); w.U8(blend);
+                for(int i = 0; i < (int)len && i < kTourMax; i++) w.U8(entry[i]);
                 return;
             }
             case kCmdSetControl:

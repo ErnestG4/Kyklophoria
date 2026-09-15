@@ -64,10 +64,94 @@ public:
     bool                host_owns = false;
     float               host_f0 = 110.f, host_c[kyk::kMaxN] = {0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f};
 
+    /* Build the world an entry names into one of the ring's buffers. Built-ins
+       by index, one of yours by 0x80 | slot, exactly as the wire names them. */
+    bool TourLoad(int slot, uint8_t w)
+    {
+        if(slot < 0 || slot >= kyk::kTourSlots) return false;
+        if(w & 0x80u)
+        {
+            const uint8_t sl = (uint8_t)(w & 0x7Fu);
+            if(sl >= kyk::kSlotCount || slotBlob[sl].empty()) return false;
+            return tourBuf[slot].UseUserWorld(slotBlob[sl].data(), slotBlob[sl].size(), 8, nullptr)
+                   == kyk::UserError::Ok;
+        }
+        if(w >= kyk::worlds::kCount) return false;
+        if(kyk::worlds::IsAnalytic(w)) return kyk::worlds::Point(w, tourBuf[slot], 8, nullptr, &tourVt[slot]);
+        const size_t need = kyk::Space::BlobSize(4, 64, 8, 8, false);
+        if(tourBlob[slot].size() < need) tourBlob[slot].resize(need);
+        const size_t n = kyk::worlds::Expand(w, 4, 8, 64, 8, tourBlob[slot].data(), tourBlob[slot].size());
+        if(!n || tourSpace[slot].Attach(tourBlob[slot].data(), n) != kyk::SpaceError::Ok) return false;
+        tourBuf[slot].UseLattice(&tourSpace[slot]);
+        return true;
+    }
+    /* Point the engine at the ring: live world, and the far end of the blend. */
+    void TourPoint()
+    {
+        if(!eng || !tour.Running()) return;
+        const int lv = tour.LiveSlot(), tg = tour.TargetSlot();
+        if(!tourBuf[lv].Ready() || !tourBuf[tg].Ready()) return;
+        eng->SetWorld(&tourBuf[lv]);
+        eng->SetMorph(&tourBuf[tg], tour.Blend(tourBlock, tourGlide));
+        const uint8_t w = tour.WorldForSlot(lv);
+        world_idx = (w & 0x80u) ? kNoWorld : w;
+        morphIdx  = tour.WorldForSlot(tg);
+        if(morphIdx & 0x80u) morphIdx = kyk::kMorphUser;
+    }
+    /* Once per block, so the blend keeps travelling between edges. */
+    void TourFrame(uint32_t block)
+    {
+        tourBlock = block;
+        if(!eng || !tour.Running()) return;
+        eng->SetMorph(&tourBuf[tour.TargetSlot()], tour.Blend(block, tourGlide));
+    }
+    uint8_t TourSet(const uint8_t* entry, int n, uint8_t div) override
+    {
+        if(!eng) return 3u;
+        if(n < 2)
+        {
+            tour.Clear();
+            eng->SetMorph(nullptr, 0.f);
+            morphIdx = 0xFFu;
+            return 0u;
+        }
+        if(!tour.Set(entry, n, div)) return 2u;
+        for(int s = 0; s < tour.Slots(); s++)
+            if(!TourLoad(s, tour.WorldForSlot(s))) { tour.Clear(); return 2u; }
+        TourPoint();
+        return 0u;
+    }
+    uint8_t TourTick() override
+    {
+        if(!tour.Running()) return 1u;
+        /* An edge, not a step: the division is part of what a clock edge means,
+           so a host driving the loop by hand drives it exactly as J2 does. */
+        const kyk::TourStep s = tour.Edge(tourBlock);
+        if(s.step)
+        {
+            TourPoint();
+            if(s.world != 0xFFu && s.slot >= 0) TourLoad(s.slot, s.world);
+        }
+        return 0u;
+    }
+    bool TourState(uint8_t& len, uint8_t& div, uint8_t& at, uint8_t& blend, uint8_t* entry) override
+    {
+        len = (uint8_t)tour.Len();
+        div = tour.Div();
+        at  = (uint8_t)tour.At();
+        const float b = tour.Blend(tourBlock, tourGlide);
+        blend = (uint8_t)((b < 0.f ? 0.f : (b > 1.f ? 1.f : b)) * 255.f + 0.5f);
+        for(int i = 0; i < (int)len && i < kyk::kTourMax; i++) entry[i] = tour.Entry(i);
+        return true;
+    }
+
     int Telemetry(uint8_t flags, uint8_t* out, int cap) override
     {
+        const float tb = tour.Blend(tourBlock, tourGlide);
         return eng ? kyk::EncodeTelemetry(*eng, flags, out, cap, 0u, morphIdx, mute,
-                                          nullptr, world_idx) : 0;
+                                          nullptr, world_idx, nullptr, (uint8_t)tour.Len(),
+                                          (uint8_t)tour.At(),
+                                          (uint8_t)((tb < 0.f ? 0.f : (tb > 1.f ? 1.f : tb)) * 255.f + 0.5f)) : 0;
     }
     bool SpaceInfo(kyk::SpaceHeader& h, uint32_t& crc, uint16_t& stride) override
     {
@@ -112,6 +196,19 @@ public:
      * fixed half-turn is what makes the blend reachable from a test — with a
      * zero here the morph path could not be exercised without hardware. */
     float                     morphAmt = 0.5f;
+    /* ── the world tour ────────────────────────────────────────────────
+     * Three buffers in a ring, so the world a step needs next is loaded into
+     * one nobody is listening to and has a whole clock interval to arrive in
+     * (core/kyk_tour.h). This shell has no clock input, so its edges come from
+     * the host — which is also how the suite drives the feature. */
+    kyk::Tour                tour;
+    kyk::World               tourBuf[kyk::kTourSlots];
+    kyk::Space               tourSpace[kyk::kTourSlots];
+    kyk::solids::VertexTable tourVt[kyk::kTourSlots];
+    std::vector<uint8_t>     tourBlob[kyk::kTourSlots];
+    float                    tourGlide = 1.f;
+    uint32_t                 tourBlock = 0u;
+
     kyk::WorldReceiver rx;
     /* The same library the module keeps, so the suite can drive it. Blobs, not
        expanded Worlds, for the reason in kyk_ext.h. */
@@ -725,6 +822,10 @@ inline int Serve(kyk::StereoEngine& eng, kyk::World& world, std::vector<uint8_t>
             }
             if(src.host_owns) { eng.SetF0(src.host_f0); eng.SetControl(src.host_c, kyk::kMaxN); }
             else player.At(st, eng);
+            /* The tour's blend travels between clock edges, so it is a per-block
+               job like the control frame rather than something a request does.
+               After the script, which would otherwise set the morph itself. */
+            src.TourFrame((uint32_t)eng.L.Block());
             const double b0 = Now();
             eng.Process(outL, outR, block);
             const double ns = (Now() - b0) * 1e9;
