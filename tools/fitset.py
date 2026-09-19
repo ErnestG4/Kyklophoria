@@ -125,7 +125,7 @@ def main():
     print('  %s: %d single-note files, articulation %s' % (a.family, len(rows), a.articulation))
     device = 'cuda' if modalfit.torch.cuda.is_available() else 'cpu'
     with open(os.path.join(a.outdir, 'fits.tsv'), 'w') as man:
-        man.write('id\tfamily\tparam\tvalue\tdynamic\tsource\tmodes\tloss\texcess_db\n')
+        man.write('id\tfamily\tparam\tvalue\tdynamic\tsource\tmodes\tloss\texcess_db\tdecay_ratio\n')
         for n, (path, midi, dyn, f) in enumerate(rows):
             mid = os.path.splitext(os.path.basename(path))[0] if a.keep_ids else '%s%03d' % (a.family, n + a.first_id)
             raw, sr = sf.read(path, always_2d=True)
@@ -155,17 +155,18 @@ def main():
             order = np.argsort(fr)
             y = modalfit.resynth(fr, r, amp, len(x), sr)
             ex = modalfit.excess_db(y, x, sr)
+            dr = modalfit.decay_ratio(fr, r, amp, x, sr)
             with open(os.path.join(a.outdir, mid + '.mmr'), 'w') as o:
-                o.write('# modalfit record via fitset: %s, %.2f s analysed, loss %.4f, excess %.2f dB\n' % (f, secs, loss, ex))
-                o.write('source %s\nfitted 1\nloss %.5f\nexcess_db %.3f\npositions 12\nmodes %d\n' % (path, loss, ex, len(order)))
+                o.write('# modalfit record via fitset: %s, %.2f s analysed, loss %.4f, excess %.2f dB, decay ratio %.2f\n' % (f, secs, loss, ex, dr))
+                o.write('source %s\nfitted 1\nloss %.5f\nexcess_db %.3f\ndecay_ratio %.3f\npositions 12\nmodes %d\n' % (path, loss, ex, dr, len(order)))
                 for k, i in enumerate(order):
                     w = 2 * math.pi * fr[i]
                     o.write('mode %d hz %.6f zeta %.9g gains %s\n' % (k, fr[i], r[i] / w, ' '.join('%.9g' % amp[i] for _ in range(12))))
             sf.write(os.path.join(a.outdir, mid + '-resynth.wav'), np.clip(y / (np.max(np.abs(y)) or 1) * 0.5, -1, 1), sr)
             sf.write(os.path.join(a.outdir, mid + '-target.wav'), np.clip(x * 0.5, -1, 1), sr)
-            man.write('%s\t%s\tmidi\t%d\t%s\t%s\t%d\t%.4f\t%.3f\n' % (mid, a.family, midi + 12 * a.octave, dyn, f, len(order), loss, ex))
+            man.write('%s\t%s\tmidi\t%d\t%s\t%s\t%d\t%.4f\t%.3f\t%.3f\n' % (mid, a.family, midi + 12 * a.octave, dyn, f, len(order), loss, ex, dr))
             man.flush()
-            print('  %-10s %-40s midi %3d %-6s %.2fs  %2d modes  loss %.3f  excess %.2f dB' % (mid, f, midi, dyn, secs, len(order), loss, ex))
+            print('  %-10s %-40s midi %3d %-6s %.2fs  %2d modes  loss %.3f  excess %.2f dB  decay x%.2f' % (mid, f, midi, dyn, secs, len(order), loss, ex, dr))
     print('  done: %s' % a.outdir)
 
 
