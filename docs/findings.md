@@ -409,12 +409,97 @@ two velocities of one tine are two curves, and a spread over a curve is not a
 number that means anything. What the EP world needs is a second parameter,
 which is the tonebar, which is the roadmap.
 
+## The pickup is the sound: metal into a field, fitted across velocities
+
+Two things were heard in the overnight's worlds: the mandolin and the like
+sounded damped, and the electric pianos had one timbre at every velocity —
+what a Rhodes does when you dig in was missing, and a linear modal world can
+never have it. Both were measured before they were fixed.
+
+**Damped.** A mandolin course is two strings a few Hz apart, and on the
+initialiser's 5 Hz grid they were one peak: the C4's second harmonic is
+520.2 and 523.5 Hz, the D♯5's third is three peaks. One sine can only make a
+beating envelope by dying fast, and the fits did — D♯5's second-harmonic
+cluster at T60 0.10 / 0.49 / 0.07 s against 1.8 s measured off the track. A
+course's fundamental also *swells* for a quarter second after the pluck (the
+two strings start near antiphase at the pickup), and the STFT loss finds a
+loud, short compromise through a swell every time. The fitter now splits
+pairs on a 65536-point spectrum, reads unresolvable pairs off the beat
+period of the bin's envelope, detects a double decay by the knee in the
+falling track, and — the thing that moved the number — holds log decay to
+the track's own measured slope within a ×1.5 band. `decay_ratio`, fitted T60
+over measured for the ten loudest modes, sits beside `excess_db` in every
+manifest. Mandolin, 39 notes: ×0.56 → ×0.72, notes more than twice too dead
+14 → 3, loss unchanged. What remains is the body's dense low-Q resonances and
+the sympathetic courses — on a D♯5 the records now show doublets at G3, D4
+and E5, the other strings ringing — which is a residual layer, not more
+partials.
+
+**The pickup.** Epi's sources (Muenster & Pfeifle, ISMA 2014, a tine tracked
+at 38 kfps) settle the architecture: after its first ten milliseconds the
+tine moves as a *pure sine*. Every harmonic at the jack is manufactured by
+the pickup, because the tine samples a strongly non-uniform field and the
+coil reads the rate of flux change. So one velocity of recording cannot
+separate the metal from the transducer — the harmonics look like modes and
+were fitted as modes — but several velocities of the same note can: the
+metal's partials are shared, only the strike amplitude differs, and what
+grows with it is the field's. `modalfit.fit_shaped` fits exactly that:
+
+    u_k(t) = g_k · Σ a_i e^{-r_i t} sin(2π f_i t + φ_i)     the metal, shared
+    Φ(u)   = 1 / (1 + ((u − h) / w)²)                        the field
+    y_k(t) = K · coil( d/dt Φ(u_k(t)) )                      Faraday, then the coil's LR resonance
+
+Five numbers — h/w the voicing, K, the coil's f and Q, and one swing g_k per
+take — with the same multi-scale STFT loss summed over the takes. Two lessons
+from making it converge: started deep in the field the model is noise and
+the loss's answer to noise is silence (the field opens wide against the
+softest swing); and without the coil's low-pass the derivative tilts
+everything +6 dB/octave and nothing matches.
+
+*On the bench.* Epi (`tools/epigen`, ../epi) renders any note at any
+velocity with the pickup physics in the loop, so the truth is known. E2 at
+six velocities, initialised from the softest take with sixteen partials: the
+fit came back with the metal as **one sine** — 82 Hz, T60 28 s, the next
+component at 4%, the rest at zero — and the bark reproduced across the range:
+
+| take | target h2 / h3 / h4, dB re h1 | model |
+|---|---|---|
+| v0.15 | −9 / −37 / −58 | −12 / −27 / −51 |
+| v0.50 | +7 / −6 / −13 | +7 / −3 / −13 |
+| v1.00 | +22 / +14 / +21 | +25 / +14 / +23 |
+
+*On the recording.* The EP set has two velocities, MED and MAX, and the
+library levelled each sample (MAX's fundamental is 4 dB *quieter* than
+MED's), so the takes carry no level and the fit has a linear escape route:
+harmonics in the metal, field flat — which is what it took on G3, the two
+swings coming out equal. Two priors close it, both physics. A tine is a
+clamped bar whose own partials sit at 1 : 6.27 : 17.5, so anything at an
+integer multiple of the fundamental is the pickup's (`bar_metal`); and a
+levelled take gets its own output gain after the coil, so that the swing
+into the field is decided by the harmonics alone (`normalised`). With those:
+
+| note | MAX target h2 / h3 / h4 | model | swing MED → MAX |
+|---|---|---|---|
+| C3 | +13 / +2 / +1 | +12 / +2 / 0 | 1.43 → 3.54 |
+| G3 | +5 / −2 / −14 | +3 / −4 / −11 | 1.35 → 3.37 |
+| C4 | −3 / −11 / −39 | −3 / −12 / −32 | 0.91 → 3.36 |
+
+The metal on every note: one sine and a thump. The swing ratio between the
+layers 2.5× on every note, as two fixed velocity layers should give. This is
+a `Shaper` stage after the modal bank, per world, off for the acoustic
+worlds; the record carries it as `shaper bell h w K fc Q`, which the packer
+ignores and the runtime will read. What the world then needs at runtime is
+not 48 harmonics a note but a handful of metal modes and five numbers, and
+velocity comes out of the physics instead of out of a layer.
+
 ## Reproducing it
 
     make -j8 all-stages                 # ~10 minutes: 36 FEMs in parallel, then seconds
     make -B grade GRADEFLAGS="--strike 6 --listen 6"
     make -B align REF=bell05 && make bake grade    # a different reference
     tools/overnight.sh                  # every recorded set through the fitter, then the fitted worlds (GPU, ~3 h)
+    make build/epigen && build/epigen out/gen/tine --instrument 0      # Epi's tine piano, 37 notes x 6 velocities
+    tools/fitvel.py tine out/gen/tine out/fit/tine-vel --bar             # metal + pickup per note
 
 Dependencies beside the repo, unmodified: `../faust` (mesh2faust's Vega and
 Spectra), `../eigen`. Host C++ and Python stdlib.

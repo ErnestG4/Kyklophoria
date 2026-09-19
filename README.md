@@ -50,6 +50,13 @@ artifact changed.
     tools/bake/          the PCA, from kykeigen; log/exp maps in common/space.h
     tools/grade/         Spread from kykworlds, continuity from cont_check
     tools/render/        WAVs of morph paths
+    tools/modalfit.py    a recording -> a modal record, by gradient on the GPU (torch);
+                         and the pickup stage, fitted across velocities
+    tools/fitset.py      a sample set through the fitter; fits.tsv with excess_db,
+                         decay_ratio per note
+    tools/fitvel.py      a note at several velocities -> metal + pickup (fit_shaped)
+    tools/epigen/        Epi's physical pianos (../epi, GPL-3.0) as a generator of
+                         labelled notes: any velocity, voicing, metal
     lineage/             the three Kyklophoria files these started from, verbatim
     docs/                findings
 
@@ -58,3 +65,8 @@ artifact changed.
 Beside this repo, not inside it: `../faust` (GRAME's, for mesh2faust's Vega and
 Spectra; `git submodule update --init tools/physicalModeling/mesh2faust/spectra`)
 and `../eigen` (header-only). Host C++ and Python stdlib; no npm, no numpy.
+
+The fitters are the exception: `tools/modalfit.py`, `fitset.py` and
+`fitvel.py` want torch, numpy, scipy and soundfile, and a GPU; they run in the
+`~/fmexplorer` venv on the desktop and never on the module. `tools/epigen`
+links `../epi` (DatanoiseTV's Epi, GPL-3.0), engine only, no JUCE.

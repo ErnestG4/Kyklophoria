@@ -38,7 +38,13 @@ separate instrument with the same tools behind it.
    no information — which is the point: it is there for the records that come
    from recordings. The pickup's nonlinearity is still to come.
 
-3. **The Rhodes as the first world.** Four real parameters, not one: tine
+3. **The Rhodes as the first world.** Half done, from the other end: the
+   pickup is fitted (`fit_shaped`, findings), and it turned out to be most of
+   the instrument — the tine is one sine, the harmonics and the velocity
+   behaviour are the field's. What is left of this step is the tone bar as
+   a second body and the strike point; the pickup is a `Shaper` with a
+   voicing knob. Epi (`../epi`) is the bench for all of it: any note, any
+   velocity, any voicing, eight metals, with the answer known. Four real parameters, not one: tine
    length, tuning-spring position, tonebar coupling, strike point. The tonebar
    is a second FEM body coupled through the clamp; the pickup is a memoryless
    nonlinearity at a position — a `Shaper` stage, which exists. Where a
@@ -74,8 +80,12 @@ separate instrument with the same tools behind it.
 
 6. **The runtime.** A `World::Kind::Modal` that evaluates to a modal set
    instead of a spectrum, and a resonator bank in the engine behind the same
-   `dirty_`/render logic. Header-only, no heap, no exceptions; measured with
-   `make armcost` before it is believed.
+   `dirty_`/render logic, then the world's `Shaper` — the bell field,
+   differentiated, the coil — where the world carries one. Header-only, no
+   heap, no exceptions; measured with `make armcost` before it is believed.
+   The bank is small for an electric world (a few modes) and the stage is a
+   table lookup, a difference and a biquad: cheaper than the 48 harmonics it
+   replaces.
 
 ## What is not a modal body
 
