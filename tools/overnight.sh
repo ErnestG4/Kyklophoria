@@ -15,7 +15,7 @@ lane() { # name, then fitset args
     name=$1; shift
     [ -f $L/$name.done ] && return
     echo "== $name $(date +%H:%M:%S)" >> $L/$name.log
-    $PY tools/fitset.py "$@" --steps $STEPS >> $L/$name.log 2>&1 && touch $L/$name.done
+    $PY -u tools/fitset.py "$@" --steps $STEPS >> $L/$name.log 2>&1 && touch $L/$name.done
 }
 
 ( lane wurli    wurli    "$W"        out/fit/wurli    --layout manifest --keep-ids
