@@ -210,6 +210,26 @@ def stft_mag(y, n, hop):
     return torch.stft(y, n, hop, window=win, return_complex=True).abs()
 
 
+ATTACK_MS = 3.0
+
+
+def attack_ramp(n, sr, ms=ATTACK_MS):
+    """A raised cosine over the first `ms`, then one."""
+    k = int(ms * sr / 1000)
+    ramp = np.ones(n)
+    ramp[:k] = 0.5 - 0.5 * np.cos(np.pi * np.arange(k) / k)
+    return ramp
+
+
+def resynth(f, r, amp, n, sr):
+    """The record as sound: decaying sines from zero phase, the model's own attack."""
+    t = np.arange(n) / sr
+    y = np.zeros(n)
+    for i in range(len(f)):
+        y += amp[i] * np.exp(-r[i] * t) * np.sin(2 * math.pi * f[i] * t)
+    return y * attack_ramp(n, sr)
+
+
 def fit(x, sr, init, steps, device, verbose=True):
     t = torch.arange(len(x), device=device, dtype=torch.float32) / sr
     target = torch.tensor(x, device=device, dtype=torch.float32)
@@ -230,9 +250,15 @@ def fit(x, sr, init, steps, device, verbose=True):
     # magnitude. Below it there is nothing to match, only noise to imitate.
     tfloor = [torch.quantile(tl.flatten(), 0.2) for tl in tlog]
 
+    # a sine that starts as a step is a click: after the partials were right,
+    # nine tenths of what the whistle metric still measured on the Wurlitzer
+    # sat above 12 kHz in the first frame. A hammer takes about 2 ms to arrive
+    # (the recording's own rise to half its peak), and the model does too
+    ramp = torch.tensor(attack_ramp(len(x), sr), device=device, dtype=torch.float32)
+
     def render():
         f, r, a = torch.exp(logf), torch.exp(logr), torch.exp(loga)
-        env = torch.exp(-r[:, None] * t[None, :])
+        env = torch.exp(-r[:, None] * t[None, :]) * ramp[None, :]
         return (a[:, None] * env * torch.sin(2 * math.pi * f[:, None] * t[None, :] + phase[:, None])).sum(0)
 
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps, eta_min=0.0)
@@ -301,10 +327,7 @@ def main():
     f, r, amp = f[keep], r[keep], amp[keep]
     order = np.argsort(f)
     # resynthesise what survived, for the file and for the whistle detector
-    t = np.arange(len(x)) / sr
-    y = np.zeros_like(x)
-    for i in range(len(f)):
-        y += amp[i] * np.exp(-r[i] * t) * np.sin(2 * math.pi * f[i] * t)
+    y = resynth(f, r, amp, len(x), sr)
     ex = excess_db(y, x, sr)
     with open(a.out, 'w') as o:
         o.write('# modalfit record: a strike fitted as decaying sines on %s. zeta is measured,\n' % a.device)

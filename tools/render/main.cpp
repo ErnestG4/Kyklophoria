@@ -1,7 +1,7 @@
 /* render — the listening set: a path through the space, struck as it goes.
  *
  *   render space.msp corpus.mdb align.bin out.wav --from bar00 --to bar11
- *          [--via plate01] [--strikes 20] [--interval 0.25] [--strike 0]
+ *          [--via plate01] [--strikes 20] [--interval 0.25] [--strike 0] [--attack 3]
  *          [--listen 0] [--rayleigh 5 3e-8] [--gain 0.5] [--pitch-normalise]
  *          [--mode strikes|glide] [--walk seed --seconds 12]
  *
@@ -106,6 +106,7 @@ int main(int argc, char** argv)
     if(argc < 5) { fprintf(stderr, "render space.msp corpus.mdb align.bin out.wav --from id --to id [options]\n"); return 2; }
     std::string from, to, via, family;
     int    strikes = 20, pos_s = 0, pos_l = 0;
+    double attack_ms = 3.0;   /* a hammer takes about 2 ms to arrive; a step is a click */
     double interval = 0.25, alpha = 5.0, beta = 3e-8, gain = 0.5;
     bool   pitchnorm = false, glide = false;
     int    walk = -1;
@@ -119,6 +120,7 @@ int main(int argc, char** argv)
         else if(a == "--via") via = next();
         else if(a == "--family") family = next();   /* lowest to highest parameter of that family */
         else if(a == "--strikes") strikes = atoi(next());
+        else if(a == "--attack") attack_ms = atof(next());
         else if(a == "--interval") interval = atof(next());
         else if(a == "--strike") pos_s = atoi(next());
         else if(a == "--listen") pos_l = atoi(next());
@@ -187,6 +189,8 @@ int main(int argc, char** argv)
         /* one oscillator bank, parameters refreshed every block */
         const int N = sp.chart.N, block = 96;
         std::vector<double> phase(N, 0.0), env(N, 0.0), w(N, 0.0), amp(N, 0.0), rate(N, 0.0);
+        const int ramp_len = (int)(attack_ms * 1e-3 * sr);
+        int ramp_n = ramp_len; double inject = 0.0;
         const double dt = 1.0 / sr;
         for(size_t at = 0; at + block <= out.size(); at += block)
         {
@@ -217,14 +221,23 @@ int main(int argc, char** argv)
             /* a strike on every interval, adding to whatever is still ringing,
                at unit energy */
             const long this_strike = (long)std::floor(tt / interval), prev_strike = (long)std::floor((tt - block * dt) / interval);
-            if(tt < total && this_strike != prev_strike && e2 > 0)
-                for(int i = 0; i < N; i++) env[i] += 1.0 / std::sqrt(e2);
+            if(tt < total && this_strike != prev_strike && e2 > 0) { inject = 1.0 / std::sqrt(e2); ramp_n = 0; }
             for(int n = 0; n < block; n++)
             {
                 double y = 0;
+                /* the strike arrives over the attack, as a raised cosine, not
+                   as a step: a step is a click above 12 kHz */
+                double g = 0.0;
+                if(ramp_n < ramp_len)
+                {
+                    const double a0 = 0.5 - 0.5 * std::cos(M_PI * ramp_n / ramp_len), a1 = 0.5 - 0.5 * std::cos(M_PI * (ramp_n + 1) / ramp_len);
+                    g = inject * (a1 - a0);
+                    ramp_n++;
+                }
                 for(int i = 0; i < N; i++)
                 {
                     if(amp[i] == 0.0) continue;
+                    env[i] += g;
                     phase[i] += w[i] * dt;
                     if(phase[i] > 2 * M_PI) phase[i] -= 2 * M_PI;
                     env[i] *= std::exp(-rate[i] * dt);
@@ -273,7 +286,8 @@ int main(int argc, char** argv)
             for(size_t n = 0; n < len; n++)
             {
                 const double tt = (double)n / sr;
-                out[at + n] += (float)(amp * std::sin(w * tt) * std::exp(-rate * tt));
+                const double ramp = tt < attack_ms * 1e-3 ? 0.5 - 0.5 * std::cos(M_PI * tt / (attack_ms * 1e-3)) : 1.0;
+                out[at + n] += (float)(ramp * amp * std::sin(w * tt) * std::exp(-rate * tt));
             }
         }
     }

@@ -152,10 +152,7 @@ def main():
                 keep = (amp > amp.max() * 10 ** (-60 / 20)) & modalfit.validate(fr, r, amp, x, sr)
                 fr, r, amp = fr[keep], r[keep], amp[keep]
             order = np.argsort(fr)
-            tt = np.arange(len(x)) / sr
-            y = np.zeros_like(x)
-            for i in range(len(fr)):
-                y += amp[i] * np.exp(-r[i] * tt) * np.sin(2 * math.pi * fr[i] * tt)
+            y = modalfit.resynth(fr, r, amp, len(x), sr)
             ex = modalfit.excess_db(y, x, sr)
             with open(os.path.join(a.outdir, mid + '.mmr'), 'w') as o:
                 o.write('# modalfit record via fitset: %s, %.2f s analysed, loss %.4f, excess %.2f dB\n' % (f, secs, loss, ex))

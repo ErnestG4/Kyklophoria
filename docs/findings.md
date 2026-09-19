@@ -353,7 +353,7 @@ the number of notes over 1 dB:
 
 | set | notes | excess, dB | notes over 1 dB | modes per note |
 |---|---|---|---|---|
-| Wurlitzer | 11 | 1.61 → 0.45 | 9 → 0 | 29.7 → 28.2 |
+| Wurlitzer | 11 | 1.61 → 0.06 | 9 → 0 | 29.7 → 27.1 |
 | guitar | 71 | 2.97 → 0.21 | 70 → 0 | 27.8 → 20.2 |
 | banjo | 74 | 2.06 → 0.25 | 68 → 0 | 30.7 → 33.5 |
 | EP | 169 | 1.38 → 0.05 | 91 → 0 | 16.8 → 15.8 |
@@ -374,6 +374,20 @@ and fits five modes at a loss of 2.7 whatever the fitter does — that is the
 take; and the EP's high notes fit three to nine modes because a tine at 1.7 kHz
 has three to nine partials under 20 kHz — pass 1 had five of them, four of
 which were one beating partial split by the phase vocoder.
+
+**What the metric was still measuring, and more steps.** With the partials
+right, the Wurlitzer's remaining excess (0.45 dB mean, C7 0.84) was looked at
+cell by cell: 89% of it above 12 kHz, 94% of it in the first 200 ms. Not a
+partial — the click of a sine that starts as a step. The recording's hammer
+takes 2 ms to reach half its peak; the model now takes 3, a raised cosine, in
+the fit, the resynthesis and the renderer (`render --attack`). Wurlitzer
+excess 0.45 → 0.06 dB at the same loss, and the fast, broad pseudo-modes
+(ζ ≈ 0.4) that the fit had been using to make the click are gone from the
+top notes' records (C7 27 → 19 modes). Every set was refitted with it.
+Separately, 6000 steps against 2000 on the Wurlitzer and twelve guitar notes
+moved the loss +6% and −6%: noise, and one note (B6) doubled its loss on the
+longer run, so the schedule is 2000 and the polish 1000, and steps are not
+the lever.
 
 The fitted worlds' spreads (pitch-normalised, ring-weighted, four components)
 are what a keyboard is: one long axis. Wurlitzer 2.17× (was 55× with the
