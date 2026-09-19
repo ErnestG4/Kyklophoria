@@ -81,9 +81,10 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None):
                    the partial is above its floor — noise wanders, a sinusoid
                    does not
       decay        its log magnitude over time is a line going down: the fit's
-                   r^2 is at least 0.5 and the slope negative, or the partial
-                   is the fundamental's own region and merely flat — a partial
-                   dies, hum and a room mode do not
+                   r^2 is at least 0.5 and the slope negative — or, for a
+                   partial that beats and so is no line, its first quarter
+                   stands 3 dB above its last — a partial dies, hum and a
+                   room mode do not
 
     A candidate that fails any test is reported, not fitted."""
     win = np.hanning(nfft)
@@ -129,7 +130,12 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None):
             pred = np.polyval(p, t[ok])
             ss = np.sum((track[ok] - track[ok].mean()) ** 2)
             r2 = 1.0 - np.sum((track[ok] - pred) ** 2) / ss if ss > 0 else 0.0
-            if p[0] > 0 or (r2 < 0.5 and ok.sum() > 6):
+            # a partial that beats — a string's two polarisations — is not
+            # a line, but it still falls: the first quarter of its track
+            # against the last, 3 dB, is a drop that hum and a room never make
+            q = max(1, ok.sum() // 4)
+            drop = track[ok][:q].mean() - track[ok][-q:].mean()
+            if p[0] > 0 or (r2 < 0.5 and ok.sum() > 6 and drop < 3.0 / 8.686):
                 rejected['decay'] += 1
                 continue
             rate = max(0.5, -p[0])

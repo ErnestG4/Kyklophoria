@@ -1,2 +1,5 @@
 id	family	param	value	dynamic	source	modes	loss	excess_db
 wurlz002	wurli	midi	36	-	wurlz002	39	1.6256	0.236
+wurlz003	wurli	midi	43	-	wurlz003	45	2.1845	0.316
+wurlz001	wurli	midi	48	-	wurlz001	45	2.4721	0.390
+wurlz007	wurli	midi	55	-	wurlz007	19	0.7789	0.179
