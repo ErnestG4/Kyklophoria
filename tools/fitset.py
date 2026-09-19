@@ -114,6 +114,7 @@ def main():
     ap.add_argument('--polish', type=int, default=-1,
                     help='steps of a second fit from the surviving modes after validation (default steps/2, 0 for none)')
     ap.add_argument('--keep-ids', action='store_true', help='name records after their files rather than family+index')
+    ap.add_argument('--first-id', type=int, default=0, help='number records from here, for a set fitted in parts')
     a = ap.parse_args()
     if a.polish < 0:
         a.polish = a.steps // 2
@@ -126,7 +127,7 @@ def main():
     with open(os.path.join(a.outdir, 'fits.tsv'), 'w') as man:
         man.write('id\tfamily\tparam\tvalue\tdynamic\tsource\tmodes\tloss\texcess_db\n')
         for n, (path, midi, dyn, f) in enumerate(rows):
-            mid = os.path.splitext(os.path.basename(path))[0] if a.keep_ids else '%s%03d' % (a.family, n)
+            mid = os.path.splitext(os.path.basename(path))[0] if a.keep_ids else '%s%03d' % (a.family, n + a.first_id)
             raw, sr = sf.read(path, always_2d=True)
             raw = raw.mean(axis=1)
             secs = ring_seconds(raw, sr, a.max_seconds)
@@ -142,14 +143,14 @@ def main():
             fr, r, amp, y, loss = modalfit.fit(x, sr, init, a.steps, device, verbose=False)
             cap = 3.0 * secs
             r = np.maximum(r, 6.91 / cap)
-            keep = (amp > amp.max() * 10 ** (-60 / 20)) & modalfit.validate(fr, r, amp, x, sr)
+            keep = modalfit.audible(amp, r) & modalfit.validate(fr, r, amp, x, sr)
             fr, r, amp = fr[keep], r[keep], amp[keep]
             if a.polish and len(fr) and (~keep).any():
                 # the survivors, fitted again without the modes that were
                 # taking energy they had no claim to
                 fr, r, amp, y, loss = modalfit.fit(x, sr, list(zip(fr, r, amp)), a.polish, device, verbose=False)
                 r = np.maximum(r, 6.91 / cap)
-                keep = (amp > amp.max() * 10 ** (-60 / 20)) & modalfit.validate(fr, r, amp, x, sr)
+                keep = modalfit.audible(amp, r) & modalfit.validate(fr, r, amp, x, sr)
                 fr, r, amp = fr[keep], r[keep], amp[keep]
             order = np.argsort(fr)
             y = modalfit.resynth(fr, r, amp, len(x), sr)

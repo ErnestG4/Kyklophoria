@@ -211,6 +211,14 @@ def stft_mag(y, n, hop):
 
 
 ATTACK_MS = 3.0
+MIN_T60 = 0.005      # s; faster is exciter, not mode
+
+
+def audible(amp, r, floor_db=-60.0, at=0.01):
+    """Which modes stand within floor_db of the loudest, judged 10 ms in rather
+    than at t=0, where a fast mode's amplitude says nothing about what is heard."""
+    a = amp * np.exp(-r * at)
+    return a > a.max() * 10 ** (floor_db / 20)
 
 
 def attack_ramp(n, sr, ms=ATTACK_MS):
@@ -286,6 +294,12 @@ def fit(x, sr, init, steps, device, verbose=True):
         loss.backward()
         opt.step()
         sched.step()
+        # nothing that dies inside 5 ms is a mode: it is the exciter, and left
+        # free the optimiser builds the hammer's click out of one overdamped
+        # sine at a million times the loudest partial (the EP's e5 did: one
+        # mode at 14.5 kHz, zeta 1.9, and every real partial gone under it)
+        with torch.no_grad():
+            logr.clamp_(max=math.log(6.91 / MIN_T60))
         if verbose and (step % 100 == 0 or step == steps - 1):
             print('  step %4d  loss %.4f' % (step, loss.item()))
     with torch.no_grad():
@@ -322,7 +336,7 @@ def main():
     # nobody measured
     cap = a.max_t60 if a.max_t60 > 0 else 3.0 * a.seconds
     r = np.maximum(r, 6.91 / cap)
-    keep = (amp > amp.max() * 10 ** (a.floor / 20)) & validate(f, r, amp, x, sr)
+    keep = audible(amp, r, a.floor) & validate(f, r, amp, x, sr)
     dropped = int((~keep).sum())
     f, r, amp = f[keep], r[keep], amp[keep]
     order = np.argsort(f)
