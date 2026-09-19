@@ -66,7 +66,7 @@ separate instrument with the same tools behind it.
      of shells, tubes with baffles, coupled cavities, and keep what sounds like
      something.
    Neither needs torch on the module; both need it on the desktop, and the
-   machine has a 4090 and no torch. Installing it user-side is a `pip --user`.
+   `fmexplorer` venv has torch 2.11 with CUDA on the 4090.
 
 5. **Condense.** kykeigen's recipe on the per-family corpus — log, PCA,
    whiten, bake to a lattice — which is what `tools/bake` already does with a
@@ -86,6 +86,15 @@ separate instrument with the same tools behind it.
   a stream is a stochastic shower of them. Cheap, and an exciter question.
 - **Fire.** Crackle: a stochastic impulse train into small bodies. Exciter
   again.
+- **The water drum.** A glass jar half full of water, a metal lid, a thumb.
+  The lid is a modal plate (FEM); the air above the water is a Helmholtz
+  cavity whose volume — and so whose pitch — is the water level, which is the
+  playing parameter; the "hyper-cavitation" of the thwok is the exciter, a
+  short broadband burst, and the cavity's coupling to the lid is a mass-spring
+  on the lid's centre. Two bodies coupled, one continuous parameter that is
+  literally turned, and a family the FEM can sweep on water level. The first
+  thing to fit from a recording, because it is the one instrument in this
+  list that is in the room.
 
 These are all "an exciter into the bank", which is the same runtime with a
 different mallet — the wavetable, noise, a bubble train — and no new
