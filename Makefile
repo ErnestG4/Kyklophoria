@@ -63,11 +63,14 @@ clean:
 # Each model is an independent FEM, so they run in parallel; the pack step is
 # the checkpoint. `make corpus` again does nothing unless a mesh or the
 # extractor changed.
-MESHES   = $(wildcard meshes/*.tet)
+MESHES   = $(if $(wildcard meshes/*.tet),$(wildcard meshes/*.tet),$(foreach f,bar plate bell,$(foreach i,00 01 02 03 04 05 06 07 08 09 10 11,meshes/$(f)$(i).tet)))
 RECORDS  = $(patsubst meshes/%.tet,out/mmr/%.mmr,$(MESHES))
 NMODES  ?= 48
 
-meshes/meshes.tsv: tools/meshgen.py
+# Grouped targets (&:), so that one run of the generator satisfies every mesh
+# and a later make does not regenerate them — and then, because they would be
+# newer, rerun all thirty-six FEMs. It did that once.
+meshes/meshes.tsv $(MESHES) $(patsubst %.tet,%.expos,$(MESHES)) &: tools/meshgen.py
 	python3 tools/meshgen.py meshes
 
 out/mmr/%.mmr: meshes/%.tet meshes/%.expos build/modalfem
@@ -156,3 +159,35 @@ out/wav/bar-to-bell-lambda-only.wav: build/render out/space-lambda.msp
 	build/render out/space-lambda.msp out/corpus.mdb out/align.bin $@ --from bar05 --to bell05
 out/wav/plate-to-bar-lambda-only.wav: build/render out/space-lambda.msp
 	build/render out/space-lambda.msp out/corpus.mdb out/align.bin $@ --from plate05 --to bar05
+
+# ── one family at a time ─────────────────────────────────────────────────────
+FAMILIES = bar plate bell
+out/space-fam-%.msp out/bake-fam-%.txt: build/bake out/corpus.mdb out/align.bin
+	build/bake out/corpus.mdb out/align.bin out/space-fam-$*.msp out/bake-fam-$*.txt --variant full --family $* --extent $(EXTENT)
+out/space-famlambda-%.msp out/bake-famlambda-%.txt: build/bake out/corpus.mdb out/align.bin
+	build/bake out/corpus.mdb out/align.bin out/space-famlambda-$*.msp out/bake-famlambda-$*.txt --variant lambda --family $* --extent $(EXTENT)
+out/space-famgonly-%.msp out/bake-famgonly-%.txt: build/bake out/corpus.mdb out/align.bin
+	build/bake out/corpus.mdb out/align.bin out/space-famgonly-$*.msp out/bake-famgonly-$*.txt --variant gonly --family $* --extent $(EXTENT)
+FAMSPACES = $(foreach f,$(FAMILIES),out/space-fam-$(f).msp out/space-famlambda-$(f).msp out/space-famgonly-$(f).msp)
+families: $(FAMSPACES) build/grade
+	@for s in $(FAMSPACES); do n=$$(basename $$s .msp | sed 's/^space-//'); \
+	  build/grade $$s out/corpus.mdb out/align.bin out/grade-$$n.txt --normalise-pitch $(GRADEFLAGS) | sed "s/^grade [a-z]*/$$n/"; done
+
+# ── the second listening set: glides and walks ──────────────────────────────
+GLIDES = out/wav/glide-bar-to-bell.wav out/wav/glide-plate-veering.wav out/wav/walk-full-1.wav \
+         out/wav/walk-full-2.wav out/wav/walk-plate.wav out/wav/walk-bell.wav out/wav/walk-bar.wav
+glides: $(GLIDES)
+out/wav/glide-bar-to-bell.wav: build/render out/space-full.msp
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from bar05 --to bell05 --mode glide --strikes 24 --interval 0.5
+out/wav/glide-plate-veering.wav: build/render out/space-full.msp
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from plate00 --to plate03 --mode glide --strikes 16 --interval 0.5
+out/wav/walk-full-1.wav: build/render out/space-full.msp
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --walk 1 --seconds 16 --mode glide --interval 0.4
+out/wav/walk-full-2.wav: build/render out/space-full.msp
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --walk 2 --seconds 16 --mode glide --interval 0.25 --strike 5 --listen 5
+out/wav/walk-plate.wav: build/render out/space-fam-plate.msp
+	build/render out/space-fam-plate.msp out/corpus.mdb out/align.bin $@ --walk 3 --seconds 16 --mode glide --interval 0.3
+out/wav/walk-bell.wav: build/render out/space-fam-bell.msp
+	build/render out/space-fam-bell.msp out/corpus.mdb out/align.bin $@ --walk 4 --seconds 16 --mode glide --interval 0.5
+out/wav/walk-bar.wav: build/render out/space-fam-bar.msp
+	build/render out/space-fam-bar.msp out/corpus.mdb out/align.bin $@ --walk 5 --seconds 12 --mode glide --interval 0.2

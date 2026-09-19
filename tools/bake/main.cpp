@@ -2,7 +2,12 @@
  *
  *   bake out/corpus.mdb out/align.bin out/space-full.msp out/bake-full.txt
  *        [--variant full|lambda|linear] [--K 4] [--extent 2.2] [--holdout 3,8]
- *        [--block-weight total|entry]
+ *        [--block-weight total|entry] [--family bar|plate|bell]
+ *
+ * --family bakes one family's twelve models alone. Every within-family number
+ * in the alignment stage is better than every cross-family one, and the
+ * listening set sounded like something where the grade said crossfade, so the
+ * next question is what a space of one family measures.
  *
  * kykeigen's recipe — analyse, take logs, PCA, whiten, reconstruct
  * everywhere — with the analysis replaced by the alignment stage and the logs
@@ -180,6 +185,7 @@ int main(int argc, char** argv)
     int     K = 4;
     double  extent = 2.2;
     std::vector<int> hold = {3, 8};
+    int              family = -1;
     for(int i = 5; i < argc; i++)
     {
         const std::string a = argv[i];
@@ -191,6 +197,11 @@ int main(int argc, char** argv)
         }
         else if(a == "--K") K = atoi(next());
         else if(a == "--block-weight") gBlockTotal = std::string(next()) != "entry";
+        else if(a == "--family")
+        {
+            const std::string f = next();
+            family = f == "bar" ? 0 : f == "plate" ? 1 : f == "bell" ? 2 : -1;
+        }
         else if(a == "--extent") extent = atof(next());
         else if(a == "--holdout")
         {
@@ -206,6 +217,15 @@ int main(int argc, char** argv)
     Aligned al;
     if(!LoadAligned(argv[2], c, al)) { fprintf(stderr, "cannot read %s\n", argv[2]); return 1; }
     const int M = (int)c.m.size();
+    std::vector<int> keep;
+    for(int k = 0; k < M; k++) if(family < 0 || c.m[k].family == family) keep.push_back(k);
+    if(family >= 0 && (c.m[al.ref].family != family))
+    {
+        /* the reference has to be one of the family's own; take its middle */
+        std::vector<int> ids = keep;
+        std::sort(ids.begin(), ids.end(), [&](int x, int y) { return c.m[x].param < c.m[y].param; });
+        al.ref = ids[ids.size() / 2];
+    }
 
     Chart chart;
     chart.variant = variant;
@@ -218,7 +238,7 @@ int main(int argc, char** argv)
        log and exp must come back as itself. If it does not, nothing below
        means anything. */
     double worst_rt = 0;
-    for(int k = 0; k < M; k++)
+    for(int k : keep)
     {
         Rep back;
         chart.FromVector(vecs[k], back);
@@ -228,15 +248,17 @@ int main(int argc, char** argv)
 
     FILE* rep = fopen(argv[4], "w");
     if(!rep) { fprintf(stderr, "cannot write %s\n", argv[4]); return 1; }
-    fprintf(rep, "bake — variant %s, K=%d, extent %.2f, reference %s, D=%d over %d models, blocks weighted by %s\n\n",
-            VariantName(variant), K, extent, c.m[al.ref].id.c_str(), chart.D(), M, gBlockTotal ? "total variance" : "entry");
+    fprintf(rep, "bake — variant %s, K=%d, extent %.2f, reference %s, D=%d over %zu models%s, blocks weighted by %s\n\n",
+            VariantName(variant), K, extent, c.m[al.ref].id.c_str(), chart.D(), keep.size(),
+            family >= 0 ? (std::string(" (") + Corpus::FamilyName(family) + " only)").c_str() : "",
+            gBlockTotal ? "total variance" : "entry");
     fprintf(rep, "map round trip (log then exp, no PCA): worst %.2e over cents and relative gain\n\n", worst_rt);
 
     /* holdouts: the given sweep positions of every family */
     std::vector<int> train, test;
     {
         std::vector<std::vector<int>> fam(3);
-        for(int k = 0; k < M; k++) fam[c.m[k].family].push_back(k);
+        for(int k : keep) fam[c.m[k].family].push_back(k);
         for(auto& ids : fam)
         {
             std::sort(ids.begin(), ids.end(), [&](int x, int y) { return c.m[x].param < c.m[y].param; });
@@ -292,11 +314,10 @@ int main(int argc, char** argv)
     {
         Space sp;
         std::vector<double> expl;
-        std::vector<int> all(M);
-        for(int k = 0; k < M; k++) all[k] = k;
+        std::vector<int> all = keep;
         Fit(chart, vecs, all, K, sp, expl);
         sp.extent = extent;
-        fprintf(rep, "fitted on all %d. variance explained:", M);
+        fprintf(rep, "fitted on all %zu. variance explained:", all.size());
         double cum = 0;
         for(int k = 0; k < K; k++) { cum += expl[k]; fprintf(rep, " %.1f%%", 100 * expl[k]); }
         fprintf(rep, "  (cumulative %.1f%%)\n", 100 * cum);
@@ -306,7 +327,7 @@ int main(int argc, char** argv)
         for(double s : sp.sdev) fprintf(rep, " %.4g", s);
         fprintf(rep, "\n\nwhere every model sits in the cube (whitened coordinate / extent, so inside is |x| < 1):\n");
         int outside = 0;
-        for(int k = 0; k < M; k++)
+        for(int k : keep)
         {
             std::vector<double> coord;
             Rep got;
@@ -317,7 +338,7 @@ int main(int argc, char** argv)
             fprintf(rep, "%s\n", in ? "" : "   outside");
             if(!in) outside++;
         }
-        fprintf(rep, "  %d of %d outside the cube at extent %.2f\n", outside, M, extent);
+        fprintf(rep, "  %d of %zu outside the cube at extent %.2f\n", outside, keep.size(), extent);
         if(!sp.Write(argv[3])) { fprintf(stderr, "cannot write %s\n", argv[3]); return 1; }
     }
     fclose(rep);

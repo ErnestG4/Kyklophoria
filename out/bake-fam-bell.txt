@@ -1,0 +1,42 @@
+bake — variant full, K=4, extent 2.20, reference bell06, D=768 over 12 models (bell only), blocks weighted by total variance
+
+map round trip (log then exp, no PCA): worst 9.97e-13 over cents and relative gain
+
+held out 2 models, fitted on 10. variance explained by the 4 components: 74.4% 11.4% 4.9% 3.7%  (cumulative 94.3%)
+
+reconstruction from each model's own coordinates:
+  model    family   param       cents  gain err    min hz     frame   neg   coords (whitened)
+  bell03   bell     0.327        81.9     0.147    3034.7  3.21e-13     0    -0.51  -1.23  -0.31  -0.31  held out
+  bell08   bell     0.873        34.9     0.259    2206.2  5.20e-15     0     0.83   0.02   0.82   1.14  held out
+  bell00   bell     0.000        15.7     0.041    4177.5  5.87e-15     0    -1.59   1.40   1.66  -0.75  
+  bell01   bell     0.109        37.8     0.139    3821.6  2.31e-13     0    -1.20   0.68  -1.29   0.76  
+  bell02   bell     0.218        16.7     0.149    3464.1  4.45e-15     0    -0.91  -0.35  -1.46   0.47  
+  bell04   bell     0.436        94.5     0.125    2891.1  6.23e-15     0    -0.34  -1.37  -0.09  -0.30  
+  bell05   bell     0.545        63.0     0.180    2695.6  8.63e-15     0    -0.10  -1.35   0.39  -0.70  
+  bell06   bell     0.655        89.2     0.178    2510.5  5.45e-15     0     0.20  -1.03   0.65  -0.32  
+  bell07   bell     0.764        50.2     0.140    2329.3  5.82e-15     0     0.64  -0.18   0.94   1.47  
+  bell09   bell     0.982        17.5     0.098    2114.9  1.37e-12     0     1.00   0.58   0.36   1.08  
+  bell10   bell     1.091        40.7     0.159    2022.1  7.63e-15     0     1.11   0.84  -0.27   0.19  
+  bell11   bell     1.200        39.5     0.111    1908.5  6.40e-15     0     1.17   0.80  -0.88  -1.89  
+
+  held out, worst: 81.9 cents, gain error 0.259, frame 3.21e-13, 0 non-positive frequencies
+  in sample, worst: 94.5 cents, gain error 0.180, frame 1.37e-12, 0 non-positive frequencies
+
+fitted on all 12. variance explained: 73.3% 11.7% 4.9% 3.6%  (cumulative 93.4%)
+block scales: 1.054 1.632 5.535
+component sdevs: 1.548 0.6184 0.3994 0.3444
+
+where every model sits in the cube (whitened coordinate / extent, so inside is |x| < 1):
+  bell00    -0.76  -0.77   0.60   0.68
+  bell01    -0.58  -0.42  -0.45  -0.60
+  bell02    -0.45   0.08  -0.48  -0.57
+  bell03    -0.27   0.56  -0.17   0.07
+  bell04    -0.18   0.61  -0.06   0.11
+  bell05    -0.07   0.55   0.07   0.41
+  bell06     0.08   0.40   0.23   0.30
+  bell07     0.30   0.03   0.58  -0.40
+  bell08     0.39  -0.05   0.57  -0.36
+  bell09     0.47  -0.28   0.19  -0.31
+  bell10     0.52  -0.38  -0.28  -0.02
+  bell11     0.54  -0.34  -0.79   0.68
+  0 of 12 outside the cube at extent 2.20

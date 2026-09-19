@@ -1,0 +1,42 @@
+bake — variant gonly, K=4, extent 2.20, reference plate06, D=720 over 12 models (plate only), blocks weighted by total variance
+
+map round trip (log then exp, no PCA): worst 1.52e+03 over cents and relative gain
+
+held out 2 models, fitted on 10. variance explained by the 4 components: 46.6% 16.1% 13.6% 8.2%  (cumulative 84.5%)
+
+reconstruction from each model's own coordinates:
+  model    family   param       cents  gain err    min hz     frame   neg   coords (whitened)
+  plate03  plate    1.546       633.8     0.529    1315.7  1.26e-13     0    -0.52  -0.78   0.49  -0.97  held out
+  plate08  plate    2.454       419.3     0.287    1315.7  5.88e-15     0     0.82   0.24  -0.07   0.65  held out
+  plate00  plate    1.000      1520.8     0.034    1315.7  5.83e-15     0    -1.56   2.37   0.11   0.04  
+  plate01  plate    1.182      1124.7     0.228    1315.7  6.61e-15     0    -1.38  -1.37  -0.86   1.38  
+  plate02  plate    1.364       832.3     0.411    1315.7  1.38e-12     0    -1.12  -0.93  -0.25  -0.82  
+  plate04  plate    1.727       517.8     0.322    1315.7  8.08e-15     0    -0.13  -0.52   0.76  -1.09  
+  plate05  plate    1.909       469.3     0.283    1315.7  5.74e-15     0     0.32  -0.22   0.89  -0.24  
+  plate06  plate    2.091         0.0     0.249    1315.7  7.25e-15     0     0.43  -0.21   1.02  -0.39  
+  plate07  plate    2.273       174.4     0.245    1315.7  7.71e-15     0     0.58  -0.04   0.73  -0.18  
+  plate09  plate    2.636       493.9     0.225    1315.7  7.59e-15     0     0.89   0.24   0.09   0.96  
+  plate10  plate    2.818       545.7     0.240    1315.7  7.15e-15     0     1.02   0.33  -0.22   1.59  
+  plate11  plate    3.000       597.7     0.076    1315.7  7.64e-15     0     0.96   0.35  -2.27  -1.24  
+
+  held out, worst: 633.8 cents, gain error 0.529, frame 1.26e-13, 0 non-positive frequencies
+  in sample, worst: 1520.8 cents, gain error 0.411, frame 1.38e-12, 0 non-positive frequencies
+
+fitted on all 12. variance explained: 45.8% 15.6% 12.2% 8.4%  (cumulative 82.0%)
+block scales: 2.068 10.89
+component sdevs: 0.9994 0.5832 0.5165 0.4269
+
+where every model sits in the cube (whitened coordinate / extent, so inside is |x| < 1):
+  plate00   -0.71   1.19   0.36   0.15   outside
+  plate01   -0.66  -0.26  -0.71  -0.89
+  plate02   -0.56  -0.34  -0.25   0.25
+  plate03   -0.32  -0.57   0.20   0.57
+  plate04   -0.11  -0.35   0.30   0.32
+  plate05    0.13  -0.15   0.36  -0.13
+  plate06    0.18  -0.19   0.44  -0.03
+  plate07    0.26  -0.09   0.33  -0.03
+  plate08    0.40   0.14  -0.02  -0.22
+  plate09    0.43   0.12   0.06  -0.33
+  plate10    0.49   0.19  -0.08  -0.43
+  plate11    0.45   0.31  -1.00   0.77   outside
+  2 of 12 outside the cube at extent 2.20

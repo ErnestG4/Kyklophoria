@@ -239,6 +239,51 @@ the frequencies pitch-normalised, was not measured.
 It does not say anything about e-piano calibration, real instruments or
 real-time cost, none of which were goals.
 
+## After the listening set: one family at a time, and glides
+
+The strikes sounded like something, where the grade said crossfade. Two things
+followed from that, both in the repo.
+
+**One family alone.** `bake --family` fits four components to twelve models of
+one family, with the family's middle model as the reference:
+
+| family | variance in 4 | held-out worst | spread, pitch-norm. | variety (full / Λ only / G only) |
+|---|---|---|---|---|
+| bar | 95.2% | 102 cents | 6.6x | 0.81 / 1.01 / 0.39 |
+| plate | 87.7% | 262 cents | 5.4x | 4.79 / 4.52 / 1.22 |
+| bell | 94.3% | 82 cents | 21.1x | 4.06 / 4.15 / 0.51 |
+
+Reconstruction is four to six times better than across families and the plate
+and bell varieties land where Kyklophoria's mid-table worlds sit. The spread is
+worse, and for a structural reason: each family was swept on *one* geometric
+parameter, so its twelve models are a curve, and four components of a curve
+are one real axis and three of its curvature. That is the corpus's limit, not
+the space's — a four-dimensional family needs four independent parameters
+(for the bar: taper, length, width, and a thickness profile), and this bake
+swept one. The shape half is still a quarter of the frequency half within a
+family, so the go/no-go does not change; what changes is that a family is
+reconstructible and a corpus of families is not.
+
+**Glides.** `render --mode glide` is one oscillator bank that keeps ringing
+while the point moves: each mode's phase accumulates at whatever its frequency
+is now, its envelope decays at whatever its damping is now, its weight is
+whatever the gain pattern says now, and a strike adds to the envelope rather
+than resetting it. That is the sound Kyklophoria makes of a space — motion
+while sounding — and it is what the first listening set did not have. `--walk`
+wanders the cube on three slow sines an axis. Seven more files in `out/wav/`:
+`glide-bar-to-bell`, `glide-plate-veering`, two walks of the full space (one
+struck at position 5), and a walk of each family's own space.
+
+Levelling: every strike is injected at equal ring energy, decay included,
+because mass-normalised gains make a light object tens of times louder than a
+heavy one and Rayleigh damping makes a 4 kHz bell die five times faster than a
+1 kHz bar, and the first renders were one loud bell and fifteen seconds of
+whisper. The file is then levelled to -20 dBFS RMS with a soft knee. None of
+this touches the grade.
+
+Nothing physical happens to an object whose shape changes while it rings. The
+glides are the instrument the space would be, not a claim about metal.
+
 ## Reproducing it
 
     make -j8 all-stages                 # ~10 minutes: 36 FEMs in parallel, then seconds
