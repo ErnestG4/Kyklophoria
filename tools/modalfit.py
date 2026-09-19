@@ -51,7 +51,7 @@ import soundfile as sf
 import torch
 
 
-def load(path, seconds, onset_db):
+def load(path, seconds, onset_db, normalise=True):
     x, sr = sf.read(path, always_2d=True)
     x = x.mean(axis=1).astype(np.float64)
     # the onset is found from the strike, not from the start: the envelope's
@@ -75,7 +75,8 @@ def load(path, seconds, onset_db):
     # and could never explain. Eighth-order Butterworth, run both ways
     sos = signal.butter(8, 40.0, 'highpass', fs=sr, output='sos')
     x = signal.sosfiltfilt(sos, x)
-    x = x / (np.max(np.abs(x)) or 1.0)
+    if normalise:
+        x = x / (np.max(np.abs(x)) or 1.0)
     return x, sr
 
 
