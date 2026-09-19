@@ -53,10 +53,20 @@ import torch
 def load(path, seconds, onset_db):
     x, sr = sf.read(path, always_2d=True)
     x = x.mean(axis=1).astype(np.float64)
-    thr = 10 ** (onset_db / 20)
-    idx = np.argmax(np.abs(x) > thr)
-    if not (np.abs(x) > thr).any():
+    # the onset is found from the strike, not from the start: the envelope's
+    # peak, then back to the last 5 ms that sat 20 dB below it, less 10 ms for
+    # the ramp. A struck or plucked thing goes from nothing to its peak inside
+    # that; a file that opens with a hand on the strings at 22 dB below the
+    # note (the Philharmonia guitar's A3, for a second and a half) would
+    # trigger any threshold taken from the front, and did — the fit started
+    # in the noise and starved. onset_db is the floor a file must reach at all
+    hop = max(1, int(0.005 * sr))
+    env = np.sqrt(np.array([np.mean(x[i:i + hop] ** 2) for i in range(0, len(x) - hop + 1, hop)]))
+    if not len(env) or env.max() < 10 ** (onset_db / 20):
         raise ValueError('no onset above %g dBFS' % onset_db)
+    pk = int(env.argmax())
+    quiet = np.where(env[:pk] < env[pk] * 10 ** (-20 / 20))[0]
+    idx = max(0, (int(quiet[-1]) - 1) * hop) if len(quiet) else 0
     x = x[idx: idx + int(seconds * sr)]
     x = x / (np.max(np.abs(x)) or 1.0)
     return x, sr
