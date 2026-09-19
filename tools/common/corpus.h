@@ -29,7 +29,12 @@ struct Corpus
 {
     int N = 0, P = 0;
     std::vector<Model> m;
-    static const char* FamilyName(int f) { return f == 0 ? "bar" : f == 1 ? "plate" : f == 2 ? "bell" : "?"; }
+    static constexpr int kFamilies = 4;
+    static const char* FamilyName(int f)
+    {
+        static const char* names[kFamilies] = {"bar", "plate", "bell", "tine"};
+        return f >= 0 && f < kFamilies ? names[f] : "?";
+    }
 };
 
 inline uint32_t U32(const uint8_t* b) { uint32_t v; std::memcpy(&v, b, 4); return v; }

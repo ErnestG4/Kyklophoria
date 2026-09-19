@@ -158,35 +158,38 @@ int main(int argc, char** argv)
                  "matches itself across models by construction and would flatter every number.\n\n");
 
     /* within / cross family summary */
-    double fam[3][3] = {{0}}, famn[3][3] = {{0}};
+    const int F = Corpus::kFamilies;
+    std::vector<double> fam((size_t)F * F, 0.0), famn((size_t)F * F, 0.0);
     for(int a = 0; a < M; a++)
         for(int b = 0; b < M; b++)
         {
             if(a == b) continue;
             const Match& m = pair[(size_t)a * M + b];
-            fam[c.m[a].family][c.m[b].family] += m.real_mean;
-            famn[c.m[a].family][c.m[b].family] += 1;
+            fam[(size_t)c.m[a].family * F + c.m[b].family] += m.real_mean;
+            famn[(size_t)c.m[a].family * F + c.m[b].family] += 1;
         }
     fprintf(rep, "family x family, mean over ordered pairs:\n           ");
-    for(int f = 0; f < 3; f++) fprintf(rep, "%8s", Corpus::FamilyName(f));
+    for(int f = 0; f < F; f++) fprintf(rep, "%8s", Corpus::FamilyName(f));
     fprintf(rep, "\n");
-    for(int f = 0; f < 3; f++)
+    for(int f = 0; f < F; f++)
     {
         fprintf(rep, "  %-8s ", Corpus::FamilyName(f));
-        for(int g = 0; g < 3; g++) fprintf(rep, "%8.3f", famn[f][g] ? fam[f][g] / famn[f][g] : 0.0);
+        for(int g = 0; g < F; g++) fprintf(rep, "%8.3f", famn[(size_t)f * F + g] ? fam[(size_t)f * F + g] / famn[(size_t)f * F + g] : 0.0);
         fprintf(rep, "\n");
     }
     double within = 0, wn = 0, cross = 0, cn = 0;
-    for(int f = 0; f < 3; f++) for(int g = 0; g < 3; g++)
-        if(f == g) { within += fam[f][g]; wn += famn[f][g]; } else { cross += fam[f][g]; cn += famn[f][g]; }
+    for(int f = 0; f < F; f++) for(int g = 0; g < F; g++)
+        if(f == g) { within += fam[(size_t)f * F + g]; wn += famn[(size_t)f * F + g]; }
+        else { cross += fam[(size_t)f * F + g]; cn += famn[(size_t)f * F + g]; }
     fprintf(rep, "\n  within-family mean %.3f, cross-family mean %.3f\n\n", within / wn, cross / cn);
 
     /* along each sweep, neighbour to neighbour — what interpolation asks */
     fprintf(rep, "along each sweep, neighbour to neighbour (real modes, both directions averaged):\n");
-    for(int f = 0; f < 3; f++)
+    for(int f = 0; f < F; f++)
     {
         std::vector<int> ids;
         for(int k = 0; k < M; k++) if(c.m[k].family == f) ids.push_back(k);
+        if(ids.empty()) continue;
         std::sort(ids.begin(), ids.end(), [&](int x, int y) { return c.m[x].param < c.m[y].param; });
         fprintf(rep, "  %-6s", Corpus::FamilyName(f));
         double lo = 1, s = 0; int n = 0;
@@ -241,7 +244,7 @@ int main(int argc, char** argv)
        neighbour -> ... -> model, or one direct hop */
     std::vector<std::vector<int>> toref_perm(M, std::vector<int>(N)), toref_sign(M, std::vector<int>(N));
     {
-        std::vector<std::vector<int>> fam(3);
+        std::vector<std::vector<int>> fam(F);
         for(int k = 0; k < M; k++) fam[c.m[k].family].push_back(k);
         for(auto& ids : fam) std::sort(ids.begin(), ids.end(), [&](int x, int y) { return c.m[x].param < c.m[y].param; });
         for(int k = 0; k < M; k++)

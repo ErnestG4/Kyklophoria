@@ -63,19 +63,19 @@ clean:
 # Each model is an independent FEM, so they run in parallel; the pack step is
 # the checkpoint. `make corpus` again does nothing unless a mesh or the
 # extractor changed.
-MESHES   = $(if $(wildcard meshes/*.tet),$(wildcard meshes/*.tet),$(foreach f,bar plate bell,$(foreach i,00 01 02 03 04 05 06 07 08 09 10 11,meshes/$(f)$(i).tet)))
+MESHES   = $(if $(wildcard meshes/*.tet),$(wildcard meshes/*.tet),$(foreach f,bar plate bell tine,$(foreach i,00 01 02 03 04 05 06 07 08 09 10 11,meshes/$(f)$(i).tet)))
 RECORDS  = $(patsubst meshes/%.tet,out/mmr/%.mmr,$(MESHES))
 NMODES  ?= 48
 
 # Grouped targets (&:), so that one run of the generator satisfies every mesh
 # and a later make does not regenerate them — and then, because they would be
 # newer, rerun all thirty-six FEMs. It did that once.
-meshes/meshes.tsv $(MESHES) $(patsubst %.tet,%.expos,$(MESHES)) &: tools/meshgen.py
+meshes/meshes.tsv $(MESHES) $(patsubst %.tet,%.expos,$(MESHES)) $(patsubst %.tet,%.opts,$(MESHES)) &: tools/meshgen.py
 	python3 tools/meshgen.py meshes
 
 out/mmr/%.mmr: meshes/%.tet meshes/%.expos build/modalfem
 	@mkdir -p out/mmr
-	build/modalfem --tet $< --expos meshes/$*.expos --out $@ --nmodes $(NMODES) --quiet
+	build/modalfem --tet $< --expos meshes/$*.expos --out $@ --nmodes $(NMODES) --quiet $$(cat meshes/$*.opts 2>/dev/null)
 
 out/corpus.mdb: $(RECORDS) tools/pack.py meshes/meshes.tsv
 	python3 tools/pack.py meshes/meshes.tsv out/mmr out/corpus.mdb out/manifest.tsv --N $(NMODES)
@@ -101,9 +101,13 @@ build/bake: tools/bake/main.cpp $(COMMON) tools/common/linalg.h tools/common/spa
 	$(CXX) $(FLAGS) tools/bake/main.cpp -o $@
 
 # ── Stage 3: the bake, three ways ────────────────────────────────────────────
+# On the brief's corpus — the three families — so the findings stay the
+# findings as the corpus grows; families added since get their own spaces
+# below.
 EXTENT ?= 2.2
+BRIEF  ?= bar,plate,bell
 out/space-%.msp out/bake-%.txt: build/bake out/corpus.mdb out/align.bin
-	build/bake out/corpus.mdb out/align.bin out/space-$*.msp out/bake-$*.txt --variant $* --extent $(EXTENT)
+	build/bake out/corpus.mdb out/align.bin out/space-$*.msp out/bake-$*.txt --variant $* --extent $(EXTENT) --family $(BRIEF)
 
 bake: out/space-full.msp out/space-lambda.msp out/space-linear.msp out/space-gonly.msp
 
@@ -161,7 +165,7 @@ out/wav/plate-to-bar-lambda-only.wav: build/render out/space-lambda.msp
 	build/render out/space-lambda.msp out/corpus.mdb out/align.bin $@ --from plate05 --to bar05
 
 # ── one family at a time ─────────────────────────────────────────────────────
-FAMILIES = bar plate bell
+FAMILIES = bar plate bell tine
 out/space-fam-%.msp out/bake-fam-%.txt: build/bake out/corpus.mdb out/align.bin
 	build/bake out/corpus.mdb out/align.bin out/space-fam-$*.msp out/bake-fam-$*.txt --variant full --family $* --extent $(EXTENT)
 out/space-famlambda-%.msp out/bake-famlambda-%.txt: build/bake out/corpus.mdb out/align.bin
@@ -191,3 +195,8 @@ out/wav/walk-bell.wav: build/render out/space-fam-bell.msp
 	build/render out/space-fam-bell.msp out/corpus.mdb out/align.bin $@ --walk 4 --seconds 16 --mode glide --interval 0.5
 out/wav/walk-bar.wav: build/render out/space-fam-bar.msp
 	build/render out/space-fam-bar.msp out/corpus.mdb out/align.bin $@ --walk 5 --seconds 12 --mode glide --interval 0.2
+out/wav/walk-tine.wav: build/render out/space-fam-tine.msp
+	build/render out/space-fam-tine.msp out/corpus.mdb out/align.bin $@ --walk 6 --seconds 16 --mode glide --interval 0.35 --strike 11 --listen 11
+out/wav/tine-sweep.wav: build/render out/space-fam-tine.msp
+	build/render out/space-fam-tine.msp out/corpus.mdb out/align.bin $@ --from tine00 --to tine11 --strikes 24 --interval 0.3 --strike 11 --listen 11
+GLIDES += out/wav/walk-tine.wav out/wav/tine-sweep.wav

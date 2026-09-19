@@ -1,0 +1,42 @@
+bake — variant full, K=4, extent 2.20, reference tine06, D=768 over 12 models (tine only), blocks weighted by total variance
+
+map round trip (log then exp, no PCA): worst 4.15e-10 over cents and relative gain
+
+held out 2 models, fitted on 10. variance explained by the 4 components: 52.5% 12.6% 10.3% 7.1%  (cumulative 82.5%)
+
+reconstruction from each model's own coordinates:
+  model    family   param       cents  gain err    min hz     frame   neg   coords (whitened)
+  tine03   tine     0.077       149.9     0.337     211.3  5.20e-12     0    -0.60  -0.63   0.19   0.10  held out
+  tine08   tine     0.123        92.8     0.393      82.4  4.33e-12     0     0.70  -0.45  -0.33   0.19  held out
+  tine00   tine     0.050        77.6     0.238    3911.0  4.94e-12     0    -1.63   1.36  -0.40   1.43  
+  tine01   tine     0.059        13.0     0.088    2796.1  5.29e-12     0    -1.31   0.56  -0.17  -2.36  
+  tine02   tine     0.068       147.1     0.355     253.0  5.43e-12     0    -0.82  -0.58   0.24   1.04  
+  tine04   tine     0.086        40.5     0.187     158.4  5.67e-12     0    -0.24  -1.26   0.32  -0.42  
+  tine05   tine     0.095        49.0     0.179     136.0  5.25e-12     0    -0.01  -1.07   0.22   0.10  
+  tine06   tine     0.105        61.1     0.228     113.9  4.76e-12     0     0.24  -0.77   0.09   0.13  
+  tine07   tine     0.114        85.1     0.364      94.1  4.67e-12     0     0.51  -0.82  -0.21   0.25  
+  tine09   tine     0.132        94.9     0.264      68.3  3.83e-12     0     0.99   0.87   0.65  -0.16  
+  tine10   tine     0.141        77.0     0.243      65.5  3.73e-12     0     1.06   1.21   1.61   0.04  
+  tine11   tine     0.150        53.4     0.165      56.8  3.44e-12     0     1.22   0.51  -2.35  -0.04  
+
+  held out, worst: 149.9 cents, gain error 0.393, frame 5.20e-12, 0 non-positive frequencies
+  in sample, worst: 147.1 cents, gain error 0.364, frame 5.67e-12, 0 non-positive frequencies
+
+fitted on all 12. variance explained: 51.9% 11.8% 9.3% 7.4%  (cumulative 80.4%)
+block scales: 2.345 2.383 84.72
+component sdevs: 1.303 0.6223 0.551 0.4926
+
+where every model sits in the cube (whitened coordinate / extent, so inside is |x| < 1):
+  tine00    -0.77   0.74  -0.36  -0.41
+  tine01    -0.63   0.35  -0.13  -0.01
+  tine02    -0.41  -0.27   0.26   0.51
+  tine03    -0.32  -0.35   0.27   0.51
+  tine04    -0.13  -0.53   0.19   0.05
+  tine05    -0.01  -0.43   0.11  -0.05
+  tine06     0.11  -0.30   0.02  -0.15
+  tine07     0.26  -0.36  -0.32  -0.67
+  tine08     0.36  -0.20  -0.37  -0.59
+  tine09     0.46   0.47   0.42   0.13
+  tine10     0.50   0.61   0.83  -0.16
+  tine11     0.58   0.29  -0.91   0.85
+  0 of 12 outside the cube at extent 2.20

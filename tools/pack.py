@@ -29,7 +29,7 @@ thing the bake's round-trip check caught.
    16    u32       P, gain positions per mode
    20    per model, M times:
            char[16]  id, NUL padded
-           u8        family: 0 bar, 1 plate, 2 bell
+           u8        family: 0 bar, 1 plate, 2 bell, 3 tine
            u8[3]     zero
            f32       parameter value (taper, aspect, flare)
            u32       modes that were real, the rest padding
@@ -44,7 +44,7 @@ import os
 import struct
 import sys
 
-FAMILY = {'bar': 0, 'plate': 1, 'bell': 2}
+FAMILY = {'bar': 0, 'plate': 1, 'bell': 2, 'tine': 3}
 JUNK_HZ0, JUNK_HZ_STEP, JUNK_ZETA, JUNK_GAIN = 22000.0, 250.0, 0.5, 1e-3
 
 

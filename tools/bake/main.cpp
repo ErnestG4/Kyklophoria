@@ -4,7 +4,9 @@
  *        [--variant full|lambda|linear] [--K 4] [--extent 2.2] [--holdout 3,8]
  *        [--block-weight total|entry] [--family bar|plate|bell]
  *
- * --family bakes one family's twelve models alone. Every within-family number
+ * --family bakes one family's twelve models alone, or a comma-separated list
+ * of families. The brief's three are `bar,plate,bell`; the corpus has grown a
+ * tine since and the headline numbers are still the brief's corpus. Every within-family number
  * in the alignment stage is better than every cross-family one, and the
  * listening set sounded like something where the grade said crossfade, so the
  * next question is what a space of one family measures.
@@ -185,7 +187,7 @@ int main(int argc, char** argv)
     int     K = 4;
     double  extent = 2.2;
     std::vector<int> hold = {3, 8};
-    int              family = -1;
+    std::vector<int> families;   /* empty: every family in the corpus */
     for(int i = 5; i < argc; i++)
     {
         const std::string a = argv[i];
@@ -199,8 +201,17 @@ int main(int argc, char** argv)
         else if(a == "--block-weight") gBlockTotal = std::string(next()) != "entry";
         else if(a == "--family")
         {
+            /* one name or a comma-separated list */
             const std::string f = next();
-            family = f == "bar" ? 0 : f == "plate" ? 1 : f == "bell" ? 2 : -1;
+            size_t at = 0;
+            while(at <= f.size())
+            {
+                const size_t c = f.find(',', at);
+                const std::string one = f.substr(at, c == std::string::npos ? std::string::npos : c - at);
+                for(int q = 0; q < Corpus::kFamilies; q++) if(one == Corpus::FamilyName(q)) families.push_back(q);
+                if(c == std::string::npos) break;
+                at = c + 1;
+            }
         }
         else if(a == "--extent") extent = atof(next());
         else if(a == "--holdout")
@@ -218,14 +229,19 @@ int main(int argc, char** argv)
     if(!LoadAligned(argv[2], c, al)) { fprintf(stderr, "cannot read %s\n", argv[2]); return 1; }
     const int M = (int)c.m.size();
     std::vector<int> keep;
-    for(int k = 0; k < M; k++) if(family < 0 || c.m[k].family == family) keep.push_back(k);
-    if(family >= 0 && (c.m[al.ref].family != family))
+    auto wanted = [&](int fam) { return families.empty() || std::find(families.begin(), families.end(), fam) != families.end(); };
+    for(int k = 0; k < M; k++) if(wanted(c.m[k].family)) keep.push_back(k);
+    if(keep.empty()) { fprintf(stderr, "no models in those families\n"); return 1; }
+    if(!wanted(c.m[al.ref].family))
     {
-        /* the reference has to be one of the family's own; take its middle */
-        std::vector<int> ids = keep;
+        /* the reference has to be one of the models kept; take the middle of
+           the first family asked for */
+        std::vector<int> ids;
+        for(int k : keep) if(c.m[k].family == families[0]) ids.push_back(k);
         std::sort(ids.begin(), ids.end(), [&](int x, int y) { return c.m[x].param < c.m[y].param; });
         al.ref = ids[ids.size() / 2];
     }
+    const int family = families.size() == 1 ? families[0] : -1;
 
     Chart chart;
     chart.variant = variant;
@@ -257,7 +273,7 @@ int main(int argc, char** argv)
     /* holdouts: the given sweep positions of every family */
     std::vector<int> train, test;
     {
-        std::vector<std::vector<int>> fam(3);
+        std::vector<std::vector<int>> fam(Corpus::kFamilies);
         for(int k : keep) fam[c.m[k].family].push_back(k);
         for(auto& ids : fam)
         {

@@ -20,6 +20,15 @@ frequencies, no cliffs — and does not make it varied.
     Kyklophoria FM                  1.83x      12.76
     Kyklophoria Saw                 2.03x       1.44
 
+    one family alone (pitch-normalised)
+    Rhodes tine, length swept        2.89x       3.0     shapes 2.0, frequencies 1.05
+    bell, flare swept               21.06x       4.1
+    plate, aspect swept              5.36x       4.8
+    bar, taper swept                 6.60x       0.8
+
+The tine is the first family where the shapes carry more than the frequencies,
+and the roadmap (`docs/roadmap.md`) starts there.
+
 ## Stages
 
     make corpus     Stage 1  meshes -> FEM -> out/corpus.mdb, out/manifest.tsv
@@ -34,7 +43,8 @@ artifact changed.
 ## What is here
 
     tools/meshgen.py     the three families as structured tet volumes (stdlib)
-    tools/modalfem/      mesh2faust's FEM path with signed gains at 12 positions
+    tools/modalfem/      mesh2faust's FEM path with signed gains at 12 positions,
+                         and a clamped boundary for tines and reeds
     tools/pack.py        records -> one corpus file, padded to N=48 (stdlib)
     tools/align/         MAC, Hungarian, signs; the alignment tables
     tools/bake/          the PCA, from kykeigen; log/exp maps in common/space.h

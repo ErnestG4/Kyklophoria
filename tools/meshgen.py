@@ -36,6 +36,12 @@ to the next — which is the whole basis of the alignment stage.
                   Twelve positions along the top face's centreline, struck down.
     plate         4 mm thick, 0.15 m along x, 0.15/aspect along y; aspect swept
                   1.0..3.0. A 4x3 grid of positions on the top face, struck down.
+    tine          a Rhodes tine: a 2 mm steel rod clamped at one end, with the
+                  tuning spring as a thicker section 18 mm from the tip; length
+                  swept 5 to 15 cm. Twelve positions along the top, struck down.
+                  Checked against the clamped-free Euler–Bernoulli rod without
+                  the lump: +8% at every length with four layers of linear tets
+                  across the section, the same bias everywhere in the sweep.
     bell          a shell of revolution, 0.15 m tall, 30 mm radius at the top,
                   4 mm wall; the radius flares as r0 (1 + f (z/L)^2) with f
                   swept 0.0..1.2, so 0 is a tube and 1.2 is a bell. Four heights
@@ -172,10 +178,41 @@ def bell(flare, seg):
     return vol, expos
 
 
+# ── tine ─────────────────────────────────────────────────────────────────────
+
+def tine(length, seg, lump=True):
+    """A Rhodes tine: a steel rod clamped at x = 0, with the tuning spring — a
+    small mass that slides along the tine to set its pitch — as a short thicker
+    section near the free end. The rod is square in section, with the side
+    chosen so that the bending stiffness per unit mass matches a round rod of
+    diameter D (I/A is D^2/16 for the disc and w^2/12 for the square, so
+    w = D sqrt(12/16)). The clamp is `--clamp 0 -1e-9 1e-9` in modalfem: every
+    vertex at x = 0. Twelve strike positions along the top, struck down, like
+    the bar. The lump is a stiffer section as well as a heavier one, which a
+    real spring is not; it is labelled as what it is."""
+    D = 0.002
+    W = D * math.sqrt(12.0 / 16.0)
+    ny, nz = 4, 4
+    # elements about as long as they are wide: a slender rod meshed with
+    # elongated linear tets locks, and the lock grew with length (+10% at 5 cm,
+    # +43% at 15 cm with a fixed count along the length)
+    nx = max(seg * 2, int(round(length / (W / ny))))
+    lump_from, lump_len, lump_scale = length - 0.018, 0.006, 2.2
+    def side(x):
+        return W * (lump_scale if (lump and lump_from <= x <= lump_from + lump_len) else 1.0)
+    vol = Vol()
+    grid(vol, nx, ny, nz,
+         lambda i, j, k: (length * i / nx, side(length * i / nx) * (j / ny - 0.5), side(length * i / nx) * (k / nz - 0.5)))
+    expos = [((length * (i + 0.5) / 12.0, 0.0, 0.5 * side(length * (i + 0.5) / 12.0)), (0.0, 0.0, -1.0)) for i in range(12)]
+    return vol, expos
+
+
+# family: (generator, parameter name, low, high, extra modalfem arguments)
 FAMILIES = {
-    'bar':   (bar,   'taper',  0.2, 1.0),
-    'plate': (plate, 'aspect', 1.0, 3.0),
-    'bell':  (bell,  'flare',  0.0, 1.2),
+    'bar':   (bar,   'taper',  0.2, 1.0, ''),
+    'plate': (plate, 'aspect', 1.0, 3.0, ''),
+    'bell':  (bell,  'flare',  0.0, 1.2, ''),
+    'tine':  (tine,  'length', 0.05, 0.15, '--clamp 0 -1e-9 1e-9'),
 }
 
 
@@ -197,13 +234,17 @@ def main():
     os.makedirs(outdir, exist_ok=True)
     manifest = open(os.path.join(outdir, 'meshes.tsv'), 'w')
     manifest.write('id\tfamily\tparam\tvalue\tvertices\ttets\n')
-    for fam, (fn, pname, lo, hi) in FAMILIES.items():
+    for fam, (fn, pname, lo, hi, opts) in FAMILIES.items():
         for k in range(per):
             value = lo + (hi - lo) * k / (per - 1)
             vol, expos = fn(value, seg)
             mid = '%s%02d' % (fam, k)
             write_tet(os.path.join(outdir, mid + '.tet'), vol)
             write_expos(os.path.join(outdir, mid + '.expos'), expos)
+            # the extractor's extra arguments for this model: the clamp, for a
+            # family that has one. Read by the Makefile rule.
+            with open(os.path.join(outdir, mid + '.opts'), 'w') as f:
+                f.write(opts + '\n')
             manifest.write('%s\t%s\t%s\t%.4f\t%d\t%d\n' % (mid, fam, pname, value, len(vol.v), len(vol.t)))
             print('  %-8s %s=%.3f  %5d vertices %6d tets' % (mid, pname, value, len(vol.v), len(vol.t)))
     manifest.close()

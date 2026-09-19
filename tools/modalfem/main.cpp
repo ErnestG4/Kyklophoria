@@ -2,7 +2,14 @@
  *
  *   modalfem --tet m.tet --expos m.expos --out m.mmr
  *            [--nmodes 48] [--fem 140] [--minfreq 20] [--maxfreq 20000]
- *            [--material E nu rho alpha beta] [--quiet]
+ *            [--material E nu rho alpha beta] [--clamp axis lo hi] [--quiet]
+ *
+ * --clamp fixes every vertex whose coordinate on `axis` (0, 1 or 2) lies in
+ * [lo, hi]: its three degrees of freedom leave the system, which is a clamped
+ * boundary. mesh2faust is free-free only, and every tine and reed in the
+ * instruments this is for is a cantilever — the six rigid-body modes go away
+ * and the first bending mode drops by a factor of about six. Checked against
+ * the clamped-free Euler–Bernoulli rod in tools/meshgen.py's tine family.
  *
  * This is mesh2faust's `mesh2modal()` — Vega's StVK stiffness and mass
  * assembly, Spectra's shift-invert generalised eigensolver — with a different
@@ -74,6 +81,8 @@ int main(int argc, char** argv)
     double minfreq = 20.0, maxfreq = 20000.0;
     double E = 2e11, nu = 0.29, rho = 7850.0, alpha = 5.0, beta = 3e-8;
     bool   quiet = false;
+    int    clamp_axis = -1;
+    double clamp_lo = 0, clamp_hi = 0;
     for(int i = 1; i < argc; i++)
     {
         const std::string a = argv[i];
@@ -86,6 +95,7 @@ int main(int argc, char** argv)
         else if(a == "--minfreq") minfreq = atof(next());
         else if(a == "--maxfreq") maxfreq = atof(next());
         else if(a == "--quiet") quiet = true;
+        else if(a == "--clamp") { clamp_axis = atoi(next()); clamp_lo = atof(next()); clamp_hi = atof(next()); }
         else if(a == "--material")
         {
             E = atof(next()); nu = atof(next()); rho = atof(next()); alpha = atof(next()); beta = atof(next());
@@ -132,12 +142,32 @@ int main(int argc, char** argv)
     kmat.ComputeStiffnessMatrix(zero.data(), Kv);
     delete abcd;
 
-    const int n = Kv->Getn();
+    /* the clamp: a map from every degree of freedom to its row in the reduced
+       system, or -1 for a fixed one */
+    const int nfull = Kv->Getn();
+    std::vector<int> dof(nfull, -1);
+    int n = 0, clamped = 0;
+    for(int v = 0; v < nv; v++)
+    {
+        const Vec3d& q = vol->getVertex(v);
+        const bool fixed = clamp_axis >= 0 && q[clamp_axis] >= clamp_lo && q[clamp_axis] <= clamp_hi;
+        if(fixed) { clamped++; continue; }
+        for(int d = 0; d < 3; d++) dof[3 * v + d] = n++;
+    }
+    if(!quiet && clamp_axis >= 0) fprintf(stderr, "  clamped %d vertices (%d of %d dofs remain)\n", clamped, n, nfull);
     std::vector<Eigen::Triplet<double>> kt, mt;
     for(int i = 0; i < Kv->GetNumRows(); i++)
-        for(int j = 0; j < Kv->GetRowLength(i); j++) kt.push_back({i, Kv->GetColumnIndex(i, j), Kv->GetEntry(i, j)});
+        for(int j = 0; j < Kv->GetRowLength(i); j++)
+        {
+            const int r = dof[i], c = dof[Kv->GetColumnIndex(i, j)];
+            if(r >= 0 && c >= 0) kt.push_back({r, c, Kv->GetEntry(i, j)});
+        }
     for(int i = 0; i < Mv->GetNumRows(); i++)
-        for(int j = 0; j < Mv->GetRowLength(i); j++) mt.push_back({i, Mv->GetColumnIndex(i, j), Mv->GetEntry(i, j)});
+        for(int j = 0; j < Mv->GetRowLength(i); j++)
+        {
+            const int r = dof[i], c = dof[Mv->GetColumnIndex(i, j)];
+            if(r >= 0 && c >= 0) mt.push_back({r, c, Mv->GetEntry(i, j)});
+        }
     Eigen::SparseMatrix<double> K(n, n), M(n, n);
     K.setFromTriplets(kt.begin(), kt.end());
     M.setFromTriplets(mt.begin(), mt.end());
@@ -189,8 +219,12 @@ int main(int argc, char** argv)
         md.g.resize(ex.size());
         for(size_t p = 0; p < ex.size(); p++)
         {
-            const int base = 3 * vid[p];
-            md.g[p] = vec(base, m) * ex[p].d[0] + vec(base + 1, m) * ex[p].d[1] + vec(base + 2, m) * ex[p].d[2];
+            md.g[p] = 0.0;
+            for(int d = 0; d < 3; d++)
+            {
+                const int r = dof[3 * vid[p] + d];
+                if(r >= 0) md.g[p] += vec(r, m) * ex[p].d[d];
+            }
         }
         modes.push_back(md);
         if((int)modes.size() >= nmodes) break;
@@ -207,7 +241,7 @@ int main(int argc, char** argv)
     fprintf(f, "# signed. zeta is Rayleigh alpha/(2w) + beta*w/2 and is a model, not a measurement.\n");
     fprintf(f, "mesh %s\n", obj.c_str());
     fprintf(f, "material %g %g %g %g %g\n", E, nu, rho, alpha, beta);
-    fprintf(f, "tetverts %d elements %d femmodes %d rigid %d\n", nv, vol->getNumElements(), femN, rigid);
+    fprintf(f, "tetverts %d elements %d femmodes %d rigid %d clamped %d\n", nv, vol->getNumElements(), femN, rigid, clamped);
     fprintf(f, "positions %zu\n", ex.size());
     for(size_t p = 0; p < ex.size(); p++)
     {

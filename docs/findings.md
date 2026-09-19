@@ -264,6 +264,22 @@ swept one. The shape half is still a quarter of the frequency half within a
 family, so the go/no-go does not change; what changes is that a family is
 reconstructible and a corpus of families is not.
 
+**The tine, added after the bake.** A Rhodes tine — a 2 mm steel rod clamped
+at one end, the tuning spring as a thicker section near the tip, length swept
+5 to 15 cm — is the first family where the shapes carry more than the
+frequencies: G only 2.0 against Λ only 1.05, full 2.97, spread **2.89x**. A
+cantilever's frequency ratios are scale-invariant (1 : 6.27 : 17.5 whatever the
+length), so once pitch is normalised the frequency list barely moves along the
+sweep, and what moves is where the spring sits relative to the length and what
+that does to every mode's gain at the strike — which is exactly the half the
+bake said was worth nothing. It was worth nothing in a corpus of bars, plates
+and bells because those sweeps move frequencies; it is most of a tine. 2.89x is
+within sight of Saw's 2.03x, the best any designed world in Kyklophoria's table
+manages, and it is the first world of the instrument this is turning into. The
+clamp is `--clamp` in modalfem, checked against the clamped-free rod at +8%
+everywhere in the sweep; the four-family corpus reproduces the brief's three
+headline rows to the last digit under `--family bar,plate,bell`.
+
 **Glides.** `render --mode glide` is one oscillator bank that keeps ringing
 while the point moves: each mode's phase accumulates at whatever its frequency
 is now, its envelope decays at whatever its damping is now, its weight is

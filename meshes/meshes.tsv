@@ -35,3 +35,15 @@ bell08	bell	flare	0.8727	16560	81000
 bell09	bell	flare	0.9818	16560	81000
 bell10	bell	flare	1.0909	16560	81000
 bell11	bell	flare	1.2000	16560	81000
+tine00	tine	length	0.0500	2900	11040
+tine01	tine	length	0.0591	3425	13056
+tine02	tine	length	0.0682	3950	15072
+tine03	tine	length	0.0773	4475	17088
+tine04	tine	length	0.0864	5000	19104
+tine05	tine	length	0.0955	5525	21120
+tine06	tine	length	0.1045	6050	23136
+tine07	tine	length	0.1136	6575	25152
+tine08	tine	length	0.1227	7100	27168
+tine09	tine	length	0.1318	7625	29184
+tine10	tine	length	0.1409	8150	31200
+tine11	tine	length	0.1500	8675	33216
