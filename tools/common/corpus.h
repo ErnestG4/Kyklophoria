@@ -29,12 +29,14 @@ struct Model
 struct Corpus
 {
     int N = 0, P = 0;
-    std::vector<Model> m;
-    static constexpr int kFamilies = 5;
-    static const char* FamilyName(int f)
+    std::vector<Model>       m;
+    std::vector<std::string> families;   /* the name table from the file */
+    int         Families() const { return (int)families.size(); }
+    const char* FamilyName(int f) const { return f >= 0 && f < (int)families.size() ? families[f].c_str() : "?"; }
+    int         FamilyIndex(const std::string& name) const
     {
-        static const char* names[kFamilies] = {"bar", "plate", "bell", "tine", "wurli"};
-        return f >= 0 && f < kFamilies ? names[f] : "?";
+        for(size_t i = 0; i < families.size(); i++) if(families[i] == name) return (int)i;
+        return -1;
     }
 };
 
@@ -50,13 +52,23 @@ inline bool ReadCorpus(const std::string& path, Corpus& c)
     size_t  n;
     while((n = fread(buf, 1, sizeof buf, f)) > 0) b.insert(b.end(), buf, buf + n);
     fclose(f);
-    if(b.size() < 20 || std::memcmp(b.data(), "MODB", 4) != 0 || U32(b.data() + 4) != 1u) return false;
+    if(b.size() < 20 || std::memcmp(b.data(), "MODB", 4) != 0 || U32(b.data() + 4) != 2u) return false;
     const uint32_t M = U32(b.data() + 8), N = U32(b.data() + 12), P = U32(b.data() + 16);
+    /* version 2: a family name table between the header and the models */
+    if(b.size() < 24) return false;
+    const uint32_t F = U32(b.data() + 20);
     const size_t per = 16 + 4 + 4 + 4 + 4 * (size_t)N * 2 + 4 * (size_t)N * P;
-    if(b.size() != 20 + per * M) return false;
+    if(b.size() != 24 + 16 * (size_t)F + per * M) return false;
     c.N = (int)N; c.P = (int)P;
+    c.families.clear();
+    for(uint32_t f = 0; f < F; f++)
+    {
+        char nm[17] = {0};
+        std::memcpy(nm, b.data() + 24 + 16 * f, 16);
+        c.families.push_back(nm);
+    }
     c.m.clear();
-    const uint8_t* p = b.data() + 20;
+    const uint8_t* p = b.data() + 24 + 16 * F;
     for(uint32_t k = 0; k < M; k++)
     {
         Model md;

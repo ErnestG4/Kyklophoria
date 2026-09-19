@@ -1,0 +1,170 @@
+id	family	param	value	dynamic	source
+ep000	ep	midi	46	MAX	MAX/a#1 max.wav
+ep001	ep	midi	58	MAX	MAX/a#2 max.wav
+ep002	ep	midi	70	MAX	MAX/a#3 max.wav
+ep003	ep	midi	82	MAX	MAX/a#4 max.wav
+ep004	ep	midi	94	MAX	MAX/a#5 max.wav
+ep005	ep	midi	106	MAX	MAX/a#6 max.wav
+ep006	ep	midi	118	MAX	MAX/a#7 max.wav
+ep007	ep	midi	45	MAX	MAX/a1 max.wav
+ep008	ep	midi	57	MAX	MAX/a2 max.wav
+ep009	ep	midi	69	MAX	MAX/a3 max.wav
+ep010	ep	midi	81	MAX	MAX/a4 max.wav
+ep011	ep	midi	93	MAX	MAX/a5 max.wav
+ep012	ep	midi	105	MAX	MAX/a6 max.wav
+ep013	ep	midi	117	MAX	MAX/a7 max.wav
+ep014	ep	midi	47	MAX	MAX/b1 max.wav
+ep015	ep	midi	59	MAX	MAX/b2 max.wav
+ep016	ep	midi	71	MAX	MAX/b3 max.wav
+ep017	ep	midi	83	MAX	MAX/b4 max.wav
+ep018	ep	midi	95	MAX	MAX/b5 max.wav
+ep019	ep	midi	107	MAX	MAX/b6 max.wav
+ep020	ep	midi	119	MAX	MAX/b7 max.wav
+ep021	ep	midi	37	MAX	MAX/c#1 max.wav
+ep022	ep	midi	49	MAX	MAX/c#2 max.wav
+ep023	ep	midi	61	MAX	MAX/c#3 max.wav
+ep024	ep	midi	73	MAX	MAX/c#4 max.wav
+ep025	ep	midi	85	MAX	MAX/c#5 max.wav
+ep026	ep	midi	97	MAX	MAX/c#6 max.wav
+ep027	ep	midi	109	MAX	MAX/c#7 max.wav
+ep028	ep	midi	36	MAX	MAX/c1 max.wav
+ep029	ep	midi	48	MAX	MAX/c2 max.wav
+ep030	ep	midi	60	MAX	MAX/c3 max.wav
+ep031	ep	midi	72	MAX	MAX/c4 max.wav
+ep032	ep	midi	84	MAX	MAX/c5 max.wav
+ep033	ep	midi	96	MAX	MAX/c6 max.wav
+ep034	ep	midi	108	MAX	MAX/c7 max.wav
+ep035	ep	midi	120	MAX	MAX/c8 max.wav
+ep036	ep	midi	39	MAX	MAX/d#1 max.wav
+ep037	ep	midi	51	MAX	MAX/d#2 max.wav
+ep038	ep	midi	63	MAX	MAX/d#3 max.wav
+ep039	ep	midi	75	MAX	MAX/d#4 max.wav
+ep040	ep	midi	87	MAX	MAX/d#5 max.wav
+ep041	ep	midi	99	MAX	MAX/d#6 max.wav
+ep042	ep	midi	111	MAX	MAX/d#7 max.wav
+ep043	ep	midi	38	MAX	MAX/d1 max.wav
+ep044	ep	midi	50	MAX	MAX/d2 max.wav
+ep045	ep	midi	62	MAX	MAX/d3 max.wav
+ep046	ep	midi	74	MAX	MAX/d4 max.wav
+ep047	ep	midi	86	MAX	MAX/d5 max.wav
+ep048	ep	midi	98	MAX	MAX/d6 max.wav
+ep049	ep	midi	110	MAX	MAX/d7 max.wav
+ep050	ep	midi	40	MAX	MAX/e1 max.wav
+ep051	ep	midi	52	MAX	MAX/e2 max.wav
+ep052	ep	midi	64	MAX	MAX/e3 max.wav
+ep053	ep	midi	76	MAX	MAX/e4 max.wav
+ep054	ep	midi	88	MAX	MAX/e5 max.wav
+ep055	ep	midi	100	MAX	MAX/e6 max.wav
+ep056	ep	midi	112	MAX	MAX/e7 max.wav
+ep057	ep	midi	42	MAX	MAX/f#1 max.wav
+ep058	ep	midi	54	MAX	MAX/f#2 max.wav
+ep059	ep	midi	66	MAX	MAX/f#3 max.wav
+ep060	ep	midi	78	MAX	MAX/f#4 max.wav
+ep061	ep	midi	90	MAX	MAX/f#5 max.wav
+ep062	ep	midi	102	MAX	MAX/f#6 max.wav
+ep063	ep	midi	114	MAX	MAX/f#7 max.wav
+ep064	ep	midi	41	MAX	MAX/f1 max.wav
+ep065	ep	midi	53	MAX	MAX/f2 max.wav
+ep066	ep	midi	65	MAX	MAX/f3 max.wav
+ep067	ep	midi	77	MAX	MAX/f4 max.wav
+ep068	ep	midi	89	MAX	MAX/f5 max.wav
+ep069	ep	midi	101	MAX	MAX/f6 max.wav
+ep070	ep	midi	113	MAX	MAX/f7 max.wav
+ep071	ep	midi	44	MAX	MAX/g#1 max.wav
+ep072	ep	midi	56	MAX	MAX/g#2 max.wav
+ep073	ep	midi	68	MAX	MAX/g#3 max.wav
+ep074	ep	midi	80	MAX	MAX/g#4 max.wav
+ep075	ep	midi	92	MAX	MAX/g#5 max.wav
+ep076	ep	midi	104	MAX	MAX/g#6 max.wav
+ep077	ep	midi	116	MAX	MAX/g#7 max.wav
+ep078	ep	midi	43	MAX	MAX/g1 max.wav
+ep079	ep	midi	55	MAX	MAX/g2 max.wav
+ep080	ep	midi	67	MAX	MAX/g3 max.wav
+ep081	ep	midi	79	MAX	MAX/g4 max.wav
+ep082	ep	midi	91	MAX	MAX/g5 max.wav
+ep083	ep	midi	103	MAX	MAX/g6 max.wav
+ep084	ep	midi	115	MAX	MAX/g7 max.wav
+ep085	ep	midi	46	MED	MED/a#1.wav
+ep086	ep	midi	58	MED	MED/a#2.wav
+ep087	ep	midi	70	MED	MED/a#3.wav
+ep088	ep	midi	82	MED	MED/a#4.wav
+ep089	ep	midi	94	MED	MED/a#5.wav
+ep090	ep	midi	106	MED	MED/a#6.wav
+ep091	ep	midi	118	MED	MED/a#7.wav
+ep092	ep	midi	45	MED	MED/a1.wav
+ep093	ep	midi	57	MED	MED/a2.wav
+ep094	ep	midi	69	MED	MED/a3.wav
+ep095	ep	midi	81	MED	MED/a4.wav
+ep096	ep	midi	93	MED	MED/a5.wav
+ep097	ep	midi	105	MED	MED/a6.wav
+ep098	ep	midi	117	MED	MED/a7.wav
+ep099	ep	midi	47	MED	MED/b1.wav
+ep100	ep	midi	59	MED	MED/b2.wav
+ep101	ep	midi	71	MED	MED/b3.wav
+ep102	ep	midi	83	MED	MED/b4.wav
+ep103	ep	midi	95	MED	MED/b5.wav
+ep104	ep	midi	107	MED	MED/b6.wav
+ep105	ep	midi	119	MED	MED/b7.wav
+ep106	ep	midi	37	MED	MED/c#1.wav
+ep107	ep	midi	49	MED	MED/c#2.wav
+ep108	ep	midi	61	MED	MED/c#3.wav
+ep109	ep	midi	73	MED	MED/c#4.wav
+ep110	ep	midi	85	MED	MED/c#5.wav
+ep111	ep	midi	97	MED	MED/c#6.wav
+ep112	ep	midi	109	MED	MED/c#7.wav
+ep113	ep	midi	36	MED	MED/c1.wav
+ep114	ep	midi	48	MED	MED/c2.wav
+ep115	ep	midi	60	MED	MED/c3.wav
+ep116	ep	midi	72	MED	MED/c4.wav
+ep117	ep	midi	84	MED	MED/c5.wav
+ep118	ep	midi	96	MED	MED/c6.wav
+ep119	ep	midi	108	MED	MED/c7.wav
+ep120	ep	midi	120	MED	MED/c8.wav
+ep121	ep	midi	39	MED	MED/d#1.wav
+ep122	ep	midi	51	MED	MED/d#2.wav
+ep123	ep	midi	63	MED	MED/d#3.wav
+ep124	ep	midi	75	MED	MED/d#4.wav
+ep125	ep	midi	87	MED	MED/d#5.wav
+ep126	ep	midi	99	MED	MED/d#6.wav
+ep128	ep	midi	38	MED	MED/d1.wav
+ep129	ep	midi	50	MED	MED/d2.wav
+ep130	ep	midi	62	MED	MED/d3.wav
+ep131	ep	midi	74	MED	MED/d4.wav
+ep132	ep	midi	86	MED	MED/d5.wav
+ep133	ep	midi	98	MED	MED/d6.wav
+ep134	ep	midi	110	MED	MED/d7.wav
+ep135	ep	midi	40	MED	MED/e1.wav
+ep136	ep	midi	52	MED	MED/e2.wav
+ep137	ep	midi	64	MED	MED/e3.wav
+ep138	ep	midi	76	MED	MED/e4.wav
+ep139	ep	midi	88	MED	MED/e5.wav
+ep140	ep	midi	100	MED	MED/e6.wav
+ep141	ep	midi	112	MED	MED/e7.wav
+ep142	ep	midi	42	MED	MED/f#1.wav
+ep143	ep	midi	54	MED	MED/f#2.wav
+ep144	ep	midi	66	MED	MED/f#3.wav
+ep145	ep	midi	78	MED	MED/f#4.wav
+ep146	ep	midi	90	MED	MED/f#5.wav
+ep147	ep	midi	102	MED	MED/f#6.wav
+ep148	ep	midi	114	MED	MED/f#7.wav
+ep149	ep	midi	41	MED	MED/f1.wav
+ep150	ep	midi	53	MED	MED/f2.wav
+ep151	ep	midi	65	MED	MED/f3.wav
+ep152	ep	midi	77	MED	MED/f4.wav
+ep153	ep	midi	89	MED	MED/f5.wav
+ep154	ep	midi	101	MED	MED/f6.wav
+ep155	ep	midi	113	MED	MED/f7.wav
+ep156	ep	midi	44	MED	MED/g#1.wav
+ep157	ep	midi	56	MED	MED/g#2.wav
+ep158	ep	midi	68	MED	MED/g#3.wav
+ep159	ep	midi	80	MED	MED/g#4.wav
+ep160	ep	midi	92	MED	MED/g#5.wav
+ep161	ep	midi	104	MED	MED/g#6.wav
+ep162	ep	midi	116	MED	MED/g#7.wav
+ep163	ep	midi	43	MED	MED/g1.wav
+ep164	ep	midi	55	MED	MED/g2.wav
+ep165	ep	midi	67	MED	MED/g3.wav
+ep166	ep	midi	79	MED	MED/g4.wav
+ep167	ep	midi	91	MED	MED/g5.wav
+ep168	ep	midi	103	MED	MED/g6.wav
+ep169	ep	midi	115	MED	MED/g7.wav

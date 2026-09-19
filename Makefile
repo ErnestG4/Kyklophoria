@@ -171,10 +171,11 @@ out/wav/plate-to-bar-lambda-only.wav: build/render out/space-lambda.msp
 # ── one family at a time ─────────────────────────────────────────────────────
 FAMILIES = bar plate bell tine
 # a fitted family is diagonal — frequency, decay, amplitude per partial — and
-# carries its measured decay
-out/space-fam-wurli.msp out/bake-fam-wurli.txt: build/bake out/corpus.mdb out/align.bin
-	build/bake out/corpus.mdb out/align.bin out/space-fam-wurli.msp out/bake-fam-wurli.txt --variant diagonal --decay --family wurli --extent $(EXTENT)
-FITTED_SPACES = out/space-fam-wurli.msp
+# carries its measured decay. One per directory under out/fit/ with a manifest.
+FITTED = $(patsubst out/fit/%/fits.tsv,%,$(FITS))
+$(foreach f,$(FITTED),out/space-fam-$(f).msp): out/space-fam-%.msp: build/bake out/corpus.mdb out/align.bin
+	build/bake out/corpus.mdb out/align.bin out/space-fam-$*.msp out/bake-fam-$*.txt --variant diagonal --decay --family $* --extent $(EXTENT)
+FITTED_SPACES = $(foreach f,$(FITTED),out/space-fam-$(f).msp)
 fitted: $(FITTED_SPACES) build/grade
 	@for s in $(FITTED_SPACES); do n=$$(basename $$s .msp | sed 's/^space-//'); \
 	  build/grade $$s out/corpus.mdb out/align.bin out/grade-$$n.txt --normalise-pitch --ring $(GRADEFLAGS) | sed "s/^grade [a-z]*/$$n/"; done
@@ -219,3 +220,12 @@ out/wav/wurli-glide.wav: build/render out/space-fam-wurli.msp
 out/wav/walk-wurli.wav: build/render out/space-fam-wurli.msp
 	build/render out/space-fam-wurli.msp out/corpus.mdb out/align.bin $@ --walk 7 --seconds 16 --mode glide --interval 0.5
 GLIDES += out/wav/wurli-keyboard.wav out/wav/wurli-glide.wav out/wav/walk-wurli.wav
+
+# ── renders of every fitted world: the keyboard as strikes, and a walk ───────
+$(foreach f,$(FITTED),out/wav/$(f)-keyboard.wav): out/wav/%-keyboard.wav: build/render out/space-fam-%.msp
+	@mkdir -p out/wav
+	build/render out/space-fam-$*.msp out/corpus.mdb out/align.bin $@ --family $* --strikes 25 --interval 0.4
+$(foreach f,$(FITTED),out/wav/walk-$(f).wav): out/wav/walk-%.wav: build/render out/space-fam-%.msp
+	@mkdir -p out/wav
+	build/render out/space-fam-$*.msp out/corpus.mdb out/align.bin $@ --walk 8 --seconds 16 --mode glide --interval 0.4
+fitted-renders: $(foreach f,$(FITTED),out/wav/$(f)-keyboard.wav out/wav/walk-$(f).wav)

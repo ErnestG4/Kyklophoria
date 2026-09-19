@@ -41,13 +41,16 @@ thing the bake's round-trip check caught.
 ── corpus.mdb ─────────────────────────────────────────────────────────────
 
     0    char[4]   'MODB'
-    4    u32       version, 1
+    4    u32       version, 2
     8    u32       M, models
    12    u32       N, modes per model
    16    u32       P, gain positions per mode
-   20    per model, M times:
+   20    u32       F, families
+   24    char[16]  family name, F times, NUL padded, in the order the
+                   family byte below indexes them
+         per model, M times:
            char[16]  id, NUL padded
-           u8        family: 0 bar, 1 plate, 2 bell, 3 tine, 4 wurli
+           u8        family, an index into the table
            u8        flags: bit 0 fitted (one recording, flat gains)
            u8[2]     zero
            f32       parameter value (taper, aspect, flare)
@@ -63,7 +66,6 @@ import os
 import struct
 import sys
 
-FAMILY = {'bar': 0, 'plate': 1, 'bell': 2, 'tine': 3, 'wurli': 4}
 JUNK_HZ0, JUNK_HZ_STEP, JUNK_ZETA, JUNK_GAIN = 22000.0, 250.0, 0.5, 1e-3
 
 
@@ -116,6 +118,11 @@ def main():
                 r['dir'] = d
                 r['fitted'] = fitted
                 rows.append(r)
+    families = []
+    for r in rows:
+        if r['family'] not in families:
+            families.append(r['family'])
+    FAMILY = {f: i for i, f in enumerate(families)}
     body = b''
     man = open(manifest, 'w')
     man.write('id\tfamily\tparam\tvalue\tmodes_real\tlowest_hz\thighest_real_hz\n')
@@ -169,7 +176,8 @@ def main():
             '  fitted' if r['fitted'] else ''))
     man.close()
     with open(out, 'wb') as f:
-        f.write(b'MODB' + struct.pack('<IIII', 1, len(rows), N, P) + body)
+        f.write(b'MODB' + struct.pack('<IIIII', 2, len(rows), N, P, len(families))
+                + b''.join(struct.pack('<16s', n.encode()[:16]) for n in families) + body)
     print('  %s: %d models, N=%d P=%d, %d bytes' % (out, len(rows), N, P, 20 + len(body)))
     return 0
 

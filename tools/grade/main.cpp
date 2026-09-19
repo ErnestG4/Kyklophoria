@@ -251,7 +251,7 @@ int main(int argc, char** argv)
             fprintf(rep, "\nveering map — second difference of each aligned slot's log frequency along each sweep, in cents.\n"
                          "a smooth trajectory is under 100; a slot that trades places with its neighbour is hundreds.\n"
                          "listed: every (family, parameter, slot) over 300 cents, and each family's worst.\n");
-            for(int fam = 0; fam < Corpus::kFamilies; fam++)
+            for(int fam = 0; fam < c.Families(); fam++)
             {
                 std::vector<int> ids;
                 for(size_t k = 0; k < c.m.size(); k++) if(c.m[k].family == fam) ids.push_back((int)k);
@@ -259,7 +259,7 @@ int main(int argc, char** argv)
                 std::sort(ids.begin(), ids.end(), [&](int x, int y) { return c.m[x].param < c.m[y].param; });
                 double worst = 0; int worst_slot = -1; double worst_param = 0;
                 int    over = 0;
-                fprintf(rep, "  %s:", Corpus::FamilyName(fam));
+                fprintf(rep, "  %s:", c.FamilyName(fam));
                 for(size_t i = 1; i + 1 < ids.size(); i++)
                 {
                     const int a = ids[i - 1], b = ids[i], d = ids[i + 1];

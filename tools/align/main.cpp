@@ -173,7 +173,7 @@ int main(int argc, char** argv)
                  "matches itself across models by construction and would flatter every number.\n\n");
 
     /* within / cross family summary */
-    const int F = Corpus::kFamilies;
+    const int F = c.Families();
     std::vector<double> fam((size_t)F * F, 0.0), famn((size_t)F * F, 0.0);
     for(int a = 0; a < M; a++)
         for(int b = 0; b < M; b++)
@@ -184,11 +184,11 @@ int main(int argc, char** argv)
             famn[(size_t)c.m[a].family * F + c.m[b].family] += 1;
         }
     fprintf(rep, "family x family, mean over ordered pairs:\n           ");
-    for(int f = 0; f < F; f++) fprintf(rep, "%8s", Corpus::FamilyName(f));
+    for(int f = 0; f < F; f++) fprintf(rep, "%8s", c.FamilyName(f));
     fprintf(rep, "\n");
     for(int f = 0; f < F; f++)
     {
-        fprintf(rep, "  %-8s ", Corpus::FamilyName(f));
+        fprintf(rep, "  %-8s ", c.FamilyName(f));
         for(int g = 0; g < F; g++) fprintf(rep, "%8.3f", famn[(size_t)f * F + g] ? fam[(size_t)f * F + g] / famn[(size_t)f * F + g] : 0.0);
         fprintf(rep, "\n");
     }
@@ -206,7 +206,7 @@ int main(int argc, char** argv)
         for(int k = 0; k < M; k++) if(c.m[k].family == f) ids.push_back(k);
         if(ids.empty()) continue;
         std::sort(ids.begin(), ids.end(), [&](int x, int y) { return c.m[x].param < c.m[y].param; });
-        fprintf(rep, "  %-6s", Corpus::FamilyName(f));
+        fprintf(rep, "  %-6s", c.FamilyName(f));
         double lo = 1, s = 0; int n = 0;
         for(size_t k = 0; k + 1 < ids.size(); k++)
         {
@@ -224,7 +224,7 @@ int main(int argc, char** argv)
         if(k == refi) continue;
         const Match& m = pair[(size_t)refi * M + k];
         fprintf(rep, "  %-8s %-6s %6.3f  real %.3f over %2d modes   all %.3f\n", c.m[k].id.c_str(),
-                Corpus::FamilyName(c.m[k].family), c.m[k].param, m.real_mean, m.real, m.mean);
+                c.FamilyName(c.m[k].family), c.m[k].param, m.real_mean, m.real, m.mean);
     }
 
     /* full pair table, real-mode MAC */

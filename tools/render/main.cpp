@@ -104,7 +104,7 @@ static void WriteWav(const std::string& path, const std::vector<float>& x, int s
 int main(int argc, char** argv)
 {
     if(argc < 5) { fprintf(stderr, "render space.msp corpus.mdb align.bin out.wav --from id --to id [options]\n"); return 2; }
-    std::string from, to, via;
+    std::string from, to, via, family;
     int    strikes = 20, pos_s = 0, pos_l = 0;
     double interval = 0.25, alpha = 5.0, beta = 3e-8, gain = 0.5;
     bool   pitchnorm = false, glide = false;
@@ -117,6 +117,7 @@ int main(int argc, char** argv)
         if(a == "--from") from = next();
         else if(a == "--to") to = next();
         else if(a == "--via") via = next();
+        else if(a == "--family") family = next();   /* lowest to highest parameter of that family */
         else if(a == "--strikes") strikes = atoi(next());
         else if(a == "--interval") interval = atof(next());
         else if(a == "--strike") pos_s = atoi(next());
@@ -135,6 +136,19 @@ int main(int argc, char** argv)
     if(!ReadCorpus(argv[2], c)) { fprintf(stderr, "cannot read %s\n", argv[2]); return 1; }
     std::vector<std::vector<double>> vecs;
     if(!LoadAlignedVectors(argv[3], c, sp.chart, vecs)) { fprintf(stderr, "cannot read %s\n", argv[3]); return 1; }
+    if(!family.empty())
+    {
+        const int fi = c.FamilyIndex(family);
+        int lo = -1, hi = -1;
+        for(size_t k = 0; k < c.m.size(); k++)
+            if(c.m[k].family == fi)
+            {
+                if(lo < 0 || c.m[k].param < c.m[lo].param) lo = (int)k;
+                if(hi < 0 || c.m[k].param > c.m[hi].param) hi = (int)k;
+            }
+        if(lo < 0) { fprintf(stderr, "no family %s\n", family.c_str()); return 1; }
+        from = c.m[lo].id; to = c.m[hi].id;
+    }
     auto find = [&](const std::string& id) { for(size_t k = 0; k < c.m.size(); k++) if(c.m[k].id == id) return (int)k; return -1; };
     const int a = walk >= 0 ? -2 : find(from), b = walk >= 0 ? -2 : find(to), m = via.empty() ? -1 : find(via);
     if(walk < 0 && (a < 0 || b < 0 || (!via.empty() && m < 0))) { fprintf(stderr, "unknown model\n"); return 1; }

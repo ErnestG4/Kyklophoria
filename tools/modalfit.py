@@ -56,7 +56,7 @@ def load(path, seconds, onset_db):
     thr = 10 ** (onset_db / 20)
     idx = np.argmax(np.abs(x) > thr)
     if not (np.abs(x) > thr).any():
-        sys.exit('no onset above %g dBFS' % onset_db)
+        raise ValueError('no onset above %g dBFS' % onset_db)
     x = x[idx: idx + int(seconds * sr)]
     x = x / (np.max(np.abs(x)) or 1.0)
     return x, sr
@@ -108,7 +108,7 @@ def stft_mag(y, n, hop):
     return torch.stft(y, n, hop, window=win, return_complex=True).abs()
 
 
-def fit(x, sr, init, steps, device):
+def fit(x, sr, init, steps, device, verbose=True):
     t = torch.arange(len(x), device=device, dtype=torch.float32) / sr
     target = torch.tensor(x, device=device, dtype=torch.float32)
     f0 = torch.tensor([m[0] for m in init], device=device)
@@ -144,7 +144,7 @@ def fit(x, sr, init, steps, device):
             loss = loss + (ym - tm).norm() / tn + (torch.log(ym + 1e-4) - tl).abs().mean()
         loss.backward()
         opt.step()
-        if step % 100 == 0 or step == steps - 1:
+        if verbose and (step % 100 == 0 or step == steps - 1):
             print('  step %4d  loss %.4f' % (step, loss.item()))
     with torch.no_grad():
         y = render()

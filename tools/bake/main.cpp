@@ -189,7 +189,8 @@ int main(int argc, char** argv)
     int     K = 4;
     double  extent = 2.2;
     std::vector<int> hold = {3, 8};
-    std::vector<int> families;   /* empty: every family in the corpus */
+    std::vector<int>         families;       /* empty: every family in the corpus */
+    std::vector<std::string> wanted_names;
     bool             decay = false;
     for(int i = 5; i < argc; i++)
     {
@@ -213,7 +214,7 @@ int main(int argc, char** argv)
             {
                 const size_t c = f.find(',', at);
                 const std::string one = f.substr(at, c == std::string::npos ? std::string::npos : c - at);
-                for(int q = 0; q < Corpus::kFamilies; q++) if(one == Corpus::FamilyName(q)) families.push_back(q);
+                wanted_names.push_back(one);
                 if(c == std::string::npos) break;
                 at = c + 1;
             }
@@ -233,6 +234,12 @@ int main(int argc, char** argv)
     Aligned al;
     if(!LoadAligned(argv[2], c, al)) { fprintf(stderr, "cannot read %s\n", argv[2]); return 1; }
     const int M = (int)c.m.size();
+    for(const std::string& nm : wanted_names)
+    {
+        const int q = c.FamilyIndex(nm);
+        if(q < 0) { fprintf(stderr, "no family %s in the corpus\n", nm.c_str()); return 1; }
+        families.push_back(q);
+    }
     std::vector<int> keep;
     auto wanted = [&](int fam) { return families.empty() || std::find(families.begin(), families.end(), fam) != families.end(); };
     for(int k = 0; k < M; k++) if(wanted(c.m[k].family)) keep.push_back(k);
@@ -272,14 +279,14 @@ int main(int argc, char** argv)
     if(!rep) { fprintf(stderr, "cannot write %s\n", argv[4]); return 1; }
     fprintf(rep, "bake — variant %s%s, K=%d, extent %.2f, reference %s, D=%d over %zu models%s, blocks weighted by %s\n\n",
             VariantName(variant), decay ? " with decay" : "", K, extent, c.m[al.ref].id.c_str(), chart.D(), keep.size(),
-            family >= 0 ? (std::string(" (") + Corpus::FamilyName(family) + " only)").c_str() : "",
+            family >= 0 ? (std::string(" (") + c.FamilyName(family) + " only)").c_str() : "",
             gBlockTotal ? "total variance" : "entry");
     fprintf(rep, "map round trip (log then exp, no PCA): worst %.2e over cents and relative gain\n\n", worst_rt);
 
     /* holdouts: the given sweep positions of every family */
     std::vector<int> train, test;
     {
-        std::vector<std::vector<int>> fam(Corpus::kFamilies);
+        std::vector<std::vector<int>> fam(c.Families());
         for(int k : keep) fam[c.m[k].family].push_back(k);
         for(auto& ids : fam)
         {
@@ -305,7 +312,7 @@ int main(int argc, char** argv)
             double ferr = 0;
             Project(sp, vecs[k], coord, got, &ferr);
             const Err e = Compare(al.rep[k], got, c.m[k].nreal, c.P, ferr);
-            fprintf(rep, "  %-8s %-6s %7.3f   %9.1f %9.3f %9.1f %9.2e %5d  ", c.m[k].id.c_str(), Corpus::FamilyName(c.m[k].family),
+            fprintf(rep, "  %-8s %-6s %7.3f   %9.1f %9.3f %9.1f %9.2e %5d  ", c.m[k].id.c_str(), c.FamilyName(c.m[k].family),
                     c.m[k].param, e.cents, e.gain, e.minhz, e.frame, e.neg);
             for(int q = 0; q < K; q++) fprintf(rep, " %6.2f", coord[q]);
             fprintf(rep, "  %s\n", tag);
