@@ -62,8 +62,30 @@ def load(path, seconds, onset_db):
     return x, sr
 
 
-def initialise(x, sr, nmodes, nfft=8192, hop=512):
-    """Peaks of the mean spectrum, and a decay per peak from its bin's track."""
+def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None):
+    """Peaks of the mean spectrum, verified, with a decay per peak from its
+    bin's track.
+
+    Verification is what the first version lacked, and what let a whistle into
+    the guitars: a peak of the *mean* spectrum can be a partial, or it can be a
+    noise ridge, an mp3 artefact, a room resonance or mains hum, and every one
+    of those fits perfectly well as a sinusoid that never decays. Three tests
+    from the sinusoidal-modelling literature, each a number a reader can check:
+
+      prominence   the peak stands at least 8 dB above the median of the two
+                   octaves' worth of bins around it, in the mean spectrum —
+                   a ridge in the noise does not
+      coherence    the phase advance of its bin between hops is steady: the
+                   deviation from the bin's own frequency has a standard
+                   deviation under a third of a radian over the frames where
+                   the partial is above its floor — noise wanders, a sinusoid
+                   does not
+      decay        its log magnitude over time is a line going down: the fit's
+                   r^2 is at least 0.5 and the slope negative, or the partial
+                   is the fundamental's own region and merely flat — a partial
+                   dies, hum and a room mode do not
+
+    A candidate that fails any test is reported, not fitted."""
     win = np.hanning(nfft)
     frames = []
     for s in range(0, len(x) - nfft, hop):
@@ -71,8 +93,8 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512):
     C = np.array(frames)                       # complex, frames x bins
     S = np.abs(C)
     mean = S.mean(axis=0)
+    logmean = np.log(mean + 1e-12)
     freqs = np.fft.rfftfreq(nfft, 1.0 / sr)
-    # peaks: local maxima above 40 Hz, ranked by height
     cand = []
     for b in range(2, len(mean) - 2):
         if freqs[b] < 40 or freqs[b] > 20000:
@@ -81,26 +103,83 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512):
             cand.append((mean[b], b))
     cand.sort(reverse=True)
     modes = []
+    rejected = {'prominence': 0, 'coherence': 0, 'decay': 0}
     t = np.arange(len(S)) * hop / sr
-    for h, b in cand[:nmodes]:
-        # the phase advance between hops, unwrapped about the bin's own
-        # frequency, over the frames where the partial is well above the floor
+    for h, b in cand:
+        if len(modes) >= nmodes:
+            break
+        # prominence over the local floor: the median over an octave each side
+        lo, hi = max(1, b // 2), min(len(mean) - 1, b * 2)
+        floor = np.median(logmean[lo:hi])
+        if logmean[b] - floor < 8.0 / 8.686:          # 8 dB, in nepers
+            rejected['prominence'] += 1
+            continue
         track = np.log(S[:, b] + 1e-9)
         ok = track > track.max() - 6.0
         dphi = np.angle(C[1:, b] * np.conj(C[:-1, b]))
         expect = 2 * math.pi * b * hop / nfft
         dev = np.angle(np.exp(1j * (dphi - expect)))
         good = ok[1:] & ok[:-1]
+        if good.sum() >= 2 and np.std(dev[good]) > 0.33:
+            rejected['coherence'] += 1
+            continue
         f = (expect + (np.median(dev[good]) if good.any() else 0.0)) * sr / (2 * math.pi * hop)
-        # fit over the frames where the track is above the floor
         if ok.sum() >= 3:
             p = np.polyfit(t[ok], track[ok], 1)
+            pred = np.polyval(p, t[ok])
+            ss = np.sum((track[ok] - track[ok].mean()) ** 2)
+            r2 = 1.0 - np.sum((track[ok] - pred) ** 2) / ss if ss > 0 else 0.0
+            if p[0] > 0 or (r2 < 0.5 and ok.sum() > 6):
+                rejected['decay'] += 1
+                continue
             rate = max(0.5, -p[0])
         else:
             rate = 5.0
         amp = S[0, b] / (nfft / 4)
         modes.append((f, rate, amp))
+    if report is not None:
+        report.update(rejected)
     return modes
+
+
+def excess_db(y, x, sr, n=2048, hop=512):
+    """The whistle detector: how much energy the resynthesis has where the
+    recording has none. Over the time-frequency cells where the target sits at
+    or below its own floor (20th percentile of log magnitude), the mean of the
+    model's excess above that floor, in dB. A clean fit is under 1; a whistle
+    is several."""
+    tx = torch.tensor(x, dtype=torch.float32)
+    ty = torch.tensor(y, dtype=torch.float32)
+    X = torch.log(stft_mag(tx, n, hop) + 1e-4)
+    Y = torch.log(stft_mag(ty, n, hop) + 1e-4)
+    floor = torch.quantile(X.flatten(), 0.2)
+    quiet = X <= floor
+    if not quiet.any():
+        return 0.0
+    return float(8.686 * torch.relu(Y[quiet] - floor).mean())
+
+
+def validate(f, r, amp, x, sr, nfft=4096, hop=256, margin_db=6.0):
+    """Drop a fitted mode the recording does not show: over the mode's own
+    first half-second (or its T60, if shorter), the target's magnitude at its
+    frequency has to sit `margin_db` above the target's floor at that time. A
+    mode that passed the fit but not this is one the optimiser invented to fill
+    a hole in the loss, and it is the kind that whistles."""
+    win = np.hanning(nfft)
+    frames = [np.abs(np.fft.rfft(x[s:s + nfft] * win)) for s in range(0, len(x) - nfft, hop)]
+    S = np.log(np.array(frames) + 1e-9)
+    floor = np.quantile(S, 0.2)
+    keep = np.ones(len(f), dtype=bool)
+    for i in range(len(f)):
+        b = int(round(f[i] * nfft / sr))
+        if b < 1 or b >= S.shape[1]:
+            keep[i] = False
+            continue
+        n = max(1, min(len(S), int(min(0.5, 6.91 / r[i]) * sr / hop)))
+        seen = S[:n, max(0, b - 1):b + 2].max()
+        if seen - floor < margin_db / 8.686:
+            keep[i] = False
+    return keep
 
 
 def stft_mag(y, n, hop):
@@ -124,26 +203,40 @@ def fit(x, sr, init, steps, device, verbose=True):
     tmag = [stft_mag(target, n, h) for n, h in scales]
     tlog = [torch.log(m + 1e-4) for m in tmag]
     tnorm = [m.norm() for m in tmag]
+    # the target's own floor, per scale: the 20th percentile of its log
+    # magnitude. Below it there is nothing to match, only noise to imitate.
+    tfloor = [torch.quantile(tl.flatten(), 0.2) for tl in tlog]
 
     def render():
         f, r, a = torch.exp(logf), torch.exp(logr), torch.exp(loga)
         env = torch.exp(-r[:, None] * t[None, :])
         return (a[:, None] * env * torch.sin(2 * math.pi * f[:, None] * t[None, :] + phase[:, None])).sum(0)
 
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps, eta_min=0.0)
     for step in range(steps):
         opt.zero_grad()
         y = render()
-        # two terms a scale: spectral convergence, which is relative and so is
-        # dominated by the loud partials, and log-magnitude L1, which is what
-        # hears the decay tails. Log L1 alone let the two loudest modes ring
-        # four times too long — two loud bins out of two thousand hardly move
-        # a mean over the floor.
+        # three terms a scale. Spectral convergence, relative and so dominated
+        # by the loud partials. Log-magnitude L1 at a tenth of the weight —
+        # Diaz et al. (ICASSP 2023) use 1.0 linear against 0.1 log for the same
+        # fit, and equal weights here let the floor's two thousand bins outvote
+        # the partials: the loudest modes rang four times too long. And an
+        # asymmetric term, the model's log magnitude above the target's where
+        # the target is at its own floor — energy the instrument never made,
+        # which is exactly what a whistle is. The log terms sit on a floor at
+        # the target's 20th percentile, so imitating noise buys nothing.
         loss = 0.0
-        for (n, h), tm, tl, tn in zip(scales, tmag, tlog, tnorm):
+        for (n, h), tm, tl, tn, tf in zip(scales, tmag, tlog, tnorm, tfloor):
             ym = stft_mag(y, n, h)
-            loss = loss + (ym - tm).norm() / tn + (torch.log(ym + 1e-4) - tl).abs().mean()
+            yl = torch.log(ym + 1e-4)
+            sc = (ym - tm).norm() / tn
+            lg = (torch.clamp(yl, min=tf) - torch.clamp(tl, min=tf)).abs().mean()
+            excess = torch.relu(yl - torch.clamp(tl, min=tf))
+            ex = excess[tl <= tf].mean() if (tl <= tf).any() else excess.mean()
+            loss = loss + sc + 0.1 * lg + 1.0 * ex
         loss.backward()
         opt.step()
+        sched.step()
         if verbose and (step % 100 == 0 or step == steps - 1):
             print('  step %4d  loss %.4f' % (step, loss.item()))
     with torch.no_grad():
@@ -170,22 +263,30 @@ def main():
     ap.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
     a = ap.parse_args()
     x, sr = load(a.wav, a.seconds, a.onset)
-    init = initialise(x, sr, a.modes)
-    print('  %d candidate modes from the spectrum, %.1f .. %.1f Hz' % (len(init), min(m[0] for m in init), max(m[0] for m in init)))
+    rep = {}
+    init = initialise(x, sr, a.modes, report=rep)
+    print('  %d candidate modes from the spectrum, %.1f .. %.1f Hz; rejected %s' % (
+        len(init), min(m[0] for m in init), max(m[0] for m in init), rep))
     f, r, amp, y, loss = fit(x, sr, init, a.steps, a.device)
     # a mode the fit has turned down to nothing is a mode it could not place,
     # not a quiet one: keep it out of the record rather than in with a decay
     # nobody measured
     cap = a.max_t60 if a.max_t60 > 0 else 3.0 * a.seconds
     r = np.maximum(r, 6.91 / cap)
-    keep = amp > amp.max() * 10 ** (a.floor / 20)
+    keep = (amp > amp.max() * 10 ** (a.floor / 20)) & validate(f, r, amp, x, sr)
     dropped = int((~keep).sum())
     f, r, amp = f[keep], r[keep], amp[keep]
     order = np.argsort(f)
+    # resynthesise what survived, for the file and for the whistle detector
+    t = np.arange(len(x)) / sr
+    y = np.zeros_like(x)
+    for i in range(len(f)):
+        y += amp[i] * np.exp(-r[i] * t) * np.sin(2 * math.pi * f[i] * t)
+    ex = excess_db(y, x, sr)
     with open(a.out, 'w') as o:
         o.write('# modalfit record: a strike fitted as decaying sines on %s. zeta is measured,\n' % a.device)
         o.write('# gains are the fitted amplitude at the one position the recording is, repeated.\n')
-        o.write('source %s\nfitted 1\nloss %.5f\n' % (a.wav, loss))
+        o.write('source %s\nfitted 1\nloss %.5f\nexcess_db %.3f\n' % (a.wav, loss, ex))
         o.write('positions %d\n' % a.positions)
         o.write('modes %d\n' % len(order))
         for k, i in enumerate(order):
@@ -195,7 +296,7 @@ def main():
         sf.write(a.resynth, np.clip(y / (np.max(np.abs(y)) or 1.0) * 0.5, -1, 1), sr)
     if a.target:
         sf.write(a.target, np.clip(x * 0.5, -1, 1), sr)
-    print('  fitted %d modes (%d dropped below %.0f dB), final loss %.4f -> %s' % (len(order), dropped, a.floor, loss, a.out))
+    print('  fitted %d modes (%d dropped), final loss %.4f, excess %.2f dB -> %s' % (len(order), dropped, loss, ex, a.out))
     for i in order[:8]:
         print('    %8.1f Hz  T60 %.2fs  amp %.3g' % (f[i], 6.91 / r[i], amp[i]))
 
