@@ -236,3 +236,28 @@ $(foreach f,$(FITTED),out/wav/walk-$(f).wav): out/wav/walk-%.wav: build/render o
 	@mkdir -p out/wav
 	build/render out/space-fam-$*.msp out/corpus.mdb out/align.bin $@ --walk 8 --seconds 16 --mode glide --interval 0.4
 fitted-renders: $(foreach f,$(FITTED),out/wav/$(f)-keyboard.wav out/wav/walk-$(f).wav)
+
+# ── the runtime prototype, and what it costs on the M7 ───────────────────────
+build/modaltest: tools/modaltest/main.cpp runtime/modal_bank.h
+	@mkdir -p build
+	$(CXX) -std=c++17 -O2 -Wall tools/modaltest/main.cpp -o $@
+
+# Cortex-M7 instructions for one sample of the bank at 48 modes and of the
+# pickup, from the target compiler's own output — counted the way
+# Kyklophoria counts its shapers, because desktop timings lie about the M7
+# by an order of magnitude
+.PHONY: armcost
+armcost:
+	@mkdir -p build/arm
+	@printf '#include "modal_bank.h"\n'\
+'extern "C" void c_bank(mb::ModalBank* b, float* out, int n){ b->Process(out, n); }\n'\
+'extern "C" void c_pickup(mb::Pickup* p, float* io, int n){ p->Process(io, n); }\n'\
+	  > build/arm/probe.cpp
+	@arm-none-eabi-g++ -std=gnu++17 -O3 -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard \
+	  -mthumb -ffp-contract=off -fno-exceptions -fno-rtti -Iruntime -c build/arm/probe.cpp -o build/arm/probe.o
+	@echo "  Cortex-M7 instructions (whole function, per call over n samples):"
+	@for f in c_bank c_pickup; do \
+	  n=$$(arm-none-eabi-objdump -d build/arm/probe.o | awk -v fn=$$f '$$0 ~ "<"fn">:" {p=1;next} p && /^$$/ {exit} p' | grep -cE "^[[:space:]]+[0-9a-f]+:"); \
+	  printf "    %-9s %3d\n" $$f $$n; done
+	@echo "  the bank's inner loop (per mode per sample):"
+	@arm-none-eabi-objdump -d build/arm/probe.o | awk '/<c_bank>:/{p=1;next} p && /^$$/{exit} p' | grep -E "vfma|vmla|vmul|vadd|vldr|vstr|vldm|vstm|bne|cmp|add|sub" | awk '{print $$3}' | sort | uniq -c | sort -rn | head -12

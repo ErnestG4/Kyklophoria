@@ -83,9 +83,12 @@ separate instrument with the same tools behind it.
    `dirty_`/render logic, then the world's `Shaper` — the bell field,
    differentiated, the coil — where the world carries one. Header-only, no
    heap, no exceptions; measured with `make armcost` before it is believed.
-   The bank is small for an electric world (a few modes) and the stage is a
-   table lookup, a difference and a biquad: cheaper than the 48 harmonics it
-   replaces.
+   Prototyped in `runtime/modal_bank.h` (host-compilable, no heap, no
+   exceptions; `tools/modaltest` renders a shaped record through it and its
+   bark table matches the fit's at both ends within 3 dB). `make armcost`:
+   about 15 Cortex-M7 instructions a mode a sample for the bank and ~30 a
+   sample for the pickup — 48 modes is ~36 M instructions/s at 48 kHz,
+   under a tenth of the M7, and an electric world is a handful of modes.
 
 ## What is not a modal body
 
