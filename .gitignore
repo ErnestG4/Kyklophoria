@@ -1,0 +1,4 @@
+build/
+meshes/*.tet
+out/*.log
+out/wav/
