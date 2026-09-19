@@ -300,11 +300,95 @@ this touches the grade.
 Nothing physical happens to an object whose shape changes while it rings. The
 glides are the instrument the space would be, not a claim about metal.
 
+## Recorded worlds, and the night the fitter was made honest
+
+Five worlds are fitted from recordings rather than meshed: a Wurlitzer
+(11 single notes, C2–C7), a tine electric piano (169 notes at two velocities,
+`samples/EP`), and the Philharmonia's guitar (71), banjo (74) and mandolin
+(39). Each note is one record — frequency, decay and amplitude per partial, the
+twelve positions copies of one — and the packer places its partials by
+harmonic number so that slot k is harmonic k across the keyboard, padding a
+missing harmonic in place, silent and short. The world is then the diagonal
+space over those records with decay carried (`make fitted`), rendered as a
+keyboard of strikes and a walk in `out/wav/`.
+
+The first fits whistled. Low and high Wurlitzer notes and most of the guitar
+came back with partials well above anything the instrument makes — a guitar
+with feedback. The night of 19 September was spent on that, in three passes,
+each of which found a defect the previous one had hidden. The metric
+throughout is **excess**: the resynthesis's mean log magnitude above the
+recording's own floor, in the time–frequency cells where the recording is at
+its floor, in dB. Zero is a model that makes no sound the instrument did not.
+
+**Pass 2 — verification and an honest loss** (`docs/lit-fitting.md` has the
+sources). A candidate partial has to stand 8 dB over the median of the two
+octaves around it, hold its phase advance to a third of a radian, and decay;
+the log term of the loss is weighed a tenth of the linear one, both stand on
+the recording's own floor, and a third term charges for energy above that
+floor where the recording has none; after the fit a mode the recording does
+not show at its frequency is dropped, and the survivors are fitted again.
+Checked on the offending notes, then run over everything at 2000 steps.
+
+**Three defects found by reading the records, not the loss.**
+
+- *The guitar A2 had no fundamental.* The decay gate wanted a line, and the
+  fundamental of a plucked string beats — two polarisations — so its log
+  track had r² 0.41 while falling 14 dB. The gate now also accepts a clear
+  drop, first quarter over last, and hum still fails it.
+- *Three guitar notes had two, three and five modes.* The recordings open
+  with a second and a half of hands on strings at 22 dB below the note; a
+  threshold from the front fired on that, the window began in noise, every
+  initial amplitude was 1e-4 and the fit starved. The onset is now found from
+  the strike backwards: the envelope's peak, then the last 5 ms 20 dB below it.
+- *Two notes converged to nothing (spectral convergence 0.94 and 1.00) with
+  low excess.* The Philharmonia guitar carries a median quarter of its energy
+  below 40 Hz — one note, 99% — and spectral convergence is a ratio over the
+  whole spectrum. An eighth-order high-pass at 40 Hz before anything else
+  halved the guitar's loss on identical files (1.89 → 0.91) and cut the
+  banjo's 1.57 → 1.26; the Wurlitzer and EP have no energy there and did not
+  move.
+
+**Where it ended.** Mean excess over each set, first fit → final; in brackets
+the number of notes over 1 dB:
+
+| set | notes | excess, dB | notes over 1 dB | modes per note |
+|---|---|---|---|---|
+| Wurlitzer | 11 | 1.61 → 0.45 | 9 → 0 | 29.7 → 28.2 |
+| guitar | 71 | 2.97 → 0.21 | 70 → 0 | 27.8 → 20.2 |
+| banjo | 74 | 2.06 → 0.25 | 68 → 0 | 30.7 → 33.5 |
+| EP | 169 | 1.38 → 0.05 | 91 → 0 | 16.8 → 15.8 |
+| mandolin | 39 | — → 0.24 | — → 0 | — → 34.6 |
+
+The worst note in each set was the loudest complaint: Wurlitzer C7 3.08 →
+0.84, guitar D5 forte 8.83 → 0.07, banjo E5 3.54 → 0.12, EP F6 med 3.69 →
+0.04. The guitar lost a quarter of its modes and they were the whistle; the
+banjo gained modes because the onset fix gave its fits a real first frame.
+A/Bs — recording, 0.4 s, resynthesis — for the notes named here are in
+`out/fit/*-overnight-AB.wav`, and the set-level A/Bs under `out/fit/<set>/`
+were regenerated from the final records.
+
+What the numbers do not say: a banjo D3 has no fundamental in the record
+because the head has none at 147 Hz — the recording has it at −37 dB — and
+that is right; the guitar D♯5 *piano* take is 99% rumble with the note buried
+and fits five modes at a loss of 2.7 whatever the fitter does — that is the
+take; and the EP's high notes fit three to nine modes because a tine at 1.7 kHz
+has three to nine partials under 20 kHz — pass 1 had five of them, four of
+which were one beating partial split by the phase vocoder.
+
+The fitted worlds' spreads (pitch-normalised, ring-weighted, four components)
+are what a keyboard is: one long axis. Wurlitzer 2.17× (was 55× with the
+spurious partials in), banjo 5.7×, mandolin 5.1×, guitar 24×, EP 436× — the
+EP's third and fourth components carry nothing (axis variety 0.03) because
+two velocities of one tine are two curves, and a spread over a curve is not a
+number that means anything. What the EP world needs is a second parameter,
+which is the tonebar, which is the roadmap.
+
 ## Reproducing it
 
     make -j8 all-stages                 # ~10 minutes: 36 FEMs in parallel, then seconds
     make -B grade GRADEFLAGS="--strike 6 --listen 6"
     make -B align REF=bell05 && make bake grade    # a different reference
+    tools/overnight.sh                  # every recorded set through the fitter, then the fitted worlds (GPU, ~3 h)
 
 Dependencies beside the repo, unmodified: `../faust` (mesh2faust's Vega and
 Spectra), `../eigen`. Host C++ and Python stdlib.
