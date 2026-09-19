@@ -10,6 +10,10 @@
  *             being interpolated, which is what the proposal has to beat.
  *   linear    Lambda in Hz and G as they are. No manifold at all, which is what
  *             the machinery has to earn its keep against.
+ *   gonly     the other half of `lambda`: the shapes move and the frequencies
+ *             are the reference's, frozen. Not one of the brief's three; it is
+ *             here because the go/no-go is whether the shapes add anything,
+ *             and the cleanest way to see what they add is to move nothing else.
  *
  * ── the maps, for `full` ────────────────────────────────────────────────
  *
@@ -44,6 +48,7 @@
  *   full     [ y (N) ][ vec Delta (N*P) ][ vec R~ (P*P) ]
  *   lambda   [ y (N) ]
  *   linear   [ hz (N) ][ vec G (N*P) ]
+ *   gonly    [ vec Delta (N*P) ][ vec R~ (P*P) ]
  *
  * Each block is scaled by one number before PCA — its standard deviation over
  * the corpus — so that no block wins by having bigger units. Log frequencies
@@ -62,8 +67,11 @@
 
 namespace mb {
 
-enum class Variant : int { Full = 0, Lambda = 1, Linear = 2 };
-inline const char* VariantName(Variant v) { return v == Variant::Full ? "full" : v == Variant::Lambda ? "lambda" : "linear"; }
+enum class Variant : int { Full = 0, Lambda = 1, Linear = 2, GOnly = 3 };
+inline const char* VariantName(Variant v)
+{
+    return v == Variant::Full ? "full" : v == Variant::Lambda ? "lambda" : v == Variant::Linear ? "linear" : "gonly";
+}
 
 /* One model, aligned to the reference: hz[k] and row k of G are the mode that
  * matched reference mode k, sign resolved. */
@@ -125,6 +133,7 @@ struct Chart
         {
             case Variant::Full:   return N + N * P + P * P;
             case Variant::Lambda: return N;
+            case Variant::GOnly:  return N * P + P * P;
             default:              return N + N * P;
         }
     }
@@ -132,6 +141,7 @@ struct Chart
     /* which block each vector entry belongs to */
     int BlockOf(int i) const
     {
+        if(variant == Variant::GOnly) return i < N * P ? 0 : 1;
         if(i < N) return 0;
         if(variant == Variant::Full && i >= N + N * P) return 2;
         return 1;
@@ -145,7 +155,15 @@ struct Chart
         Mat R;
         QR(r.G, Qr, R);
         Gref = r.G;
+        /* A reference whose G has dependent columns has no frame, and the maps
+         * at a frame that is not one are garbage for every model. The first
+         * corpus did this: padding rows that were all one pattern gave a bar of
+         * ten real modes a G of rank eleven. */
+        double rmin = 1e300;
+        for(int i = 0; i < P; i++) rmin = std::min(rmin, R(i, i));
+        frame_ok = rmin > 1e-9;
     }
+    bool frame_ok = true;
 
     /* log map: model -> vector */
     void ToVector(const Rep& r, std::vector<double>& v) const
@@ -157,15 +175,16 @@ struct Chart
             for(int i = 0; i < N * P; i++) v[N + i] = r.G.a[i];
             return;
         }
-        for(int i = 0; i < N; i++) v[i] = std::log(r.hz[i]) - lam_ref[i];
+        const int off = variant == Variant::GOnly ? 0 : N;
+        if(variant != Variant::GOnly) for(int i = 0; i < N; i++) v[i] = std::log(r.hz[i]) - lam_ref[i];
         if(variant == Variant::Lambda) return;
         Mat Q, R;
         QR(r.G, Q, R);
         Mat Dl = GrassLog(Qr, Q);
         Mat Qt = GrassExp(Qr, Dl);
         Mat Rt = Mul(Tr(Qt), r.G);
-        for(int i = 0; i < N * P; i++) v[N + i] = Dl.a[i];
-        for(int i = 0; i < P * P; i++) v[N + N * P + i] = Rt.a[i];
+        for(int i = 0; i < N * P; i++) v[off + i] = Dl.a[i];
+        for(int i = 0; i < P * P; i++) v[off + N * P + i] = Rt.a[i];
     }
 
     /* exp map: vector -> model. `frame_error` reports how far the reconstructed
@@ -181,11 +200,12 @@ struct Chart
             if(frame_error) *frame_error = 0.0;
             return;
         }
-        for(int i = 0; i < N; i++) r.hz[i] = std::exp(lam_ref[i] + v[i]);
+        const int off = variant == Variant::GOnly ? 0 : N;
+        for(int i = 0; i < N; i++) r.hz[i] = std::exp(lam_ref[i] + (variant == Variant::GOnly ? 0.0 : v[i]));
         if(variant == Variant::Lambda) { r.G = Gref; if(frame_error) *frame_error = 0.0; return; }
         Mat Dl(N, P), Rt(P, P);
-        for(int i = 0; i < N * P; i++) Dl.a[i] = v[N + i];
-        for(int i = 0; i < P * P; i++) Rt.a[i] = v[N + N * P + i];
+        for(int i = 0; i < N * P; i++) Dl.a[i] = v[off + i];
+        for(int i = 0; i < P * P; i++) Rt.a[i] = v[off + N * P + i];
         Mat Qt = GrassExp(Qr, Dl);
         if(frame_error)
         {
@@ -224,6 +244,20 @@ struct Space
         std::vector<double> v;
         VectorAt(p01, v);
         chart.FromVector(v, r, frame_error);
+    }
+    /* Where a model's vector lands in the cube: its whitened coordinates,
+     * mapped through the extent so that the cube is [0,1]^K. A model outside
+     * the cube gets coordinates outside [0,1], which is information. */
+    void Coord(const std::vector<double>& v, double* p01) const
+    {
+        const int D = chart.D();
+        for(int k = 0; k < K; k++)
+        {
+            double s = 0;
+            for(int i = 0; i < D; i++) s += (v[i] - mean[i]) / block_scale[chart.BlockOf(i)] * comp[k][i];
+            const double c = sdev[k] > 0 ? s / sdev[k] : 0.0;
+            p01[k] = 0.5 + c / (2.0 * extent);
+        }
     }
 
     bool Write(const std::string& path) const

@@ -6,7 +6,19 @@ for [Kyklophoria](../Kyklophoria), which is not modified by anything here.
 
 The output is three numbers and a listening set, not an instrument. The
 findings are in `docs/findings.md`; the numbers there are the numbers that came
-out, not the numbers anyone wanted.
+out, not the numbers anyone wanted. The short version: the eigenvector half of
+a modal operator adds about a tenth of the spectral motion the frequency half
+adds, so a space of both is a space of frequencies, and a space of frequencies
+is a crossfade. The manifold machinery keeps the space valid — no negative
+frequencies, no cliffs — and does not make it varied.
+
+    variant                        spread     variety   (pitch-normalised)
+    (a) full, tangent-space PCA     6.60x      19.0     5.07x   12.5
+    (b) frequencies only            5.97x      19.5     9.08x   17.8
+    (c) linear PCA on raw (Λ, G)   20.27x      38.0    25.06x   29.1
+    (d) shapes only                18.73x       1.6    14.17x    1.7
+    Kyklophoria FM                  1.83x      12.76
+    Kyklophoria Saw                 2.03x       1.44
 
 ## Stages
 

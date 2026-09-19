@@ -1,0 +1,30 @@
+ablations — spread / variety, raw and pitch-normalised; held-out worst from the bake
+
+ref bar05   blocks total full    raw: spread 6.60x  variety 18.985  twins 0.0% np: spread 5.07x  variety 12.451  twins 0.0% bake: 485.2 cents / gain 0.689 / 0 negative; explained 73.6%
+ref bar05   blocks total lambda  raw: spread 5.97x  variety 19.474  twins 0.0% np: spread 9.08x  variety 17.775  twins 0.0% bake: 261.1 cents / gain 3.373 / 0 negative; explained 95.9%
+ref bar05   blocks total gonly   raw: spread 18.73x  variety 1.632  twins 4.3% np: spread 14.17x  variety 1.678  twins 2.2% bake: 2084.4 cents / gain 0.746 / 0 negative; explained 66.3%
+ref bar05   blocks entry full    raw: spread 6.87x  variety 18.698  twins 0.0% np: spread 5.62x  variety 12.379  twins 0.0% bake: 522.7 cents / gain 0.761 / 0 negative; explained 59.3%
+ref bar05   blocks entry lambda  raw: spread 5.97x  variety 19.474  twins 0.0% np: spread 9.08x  variety 17.775  twins 0.0% bake: 261.1 cents / gain 3.373 / 0 negative; explained 95.9%
+ref bar05   blocks entry gonly   raw: spread 18.31x  variety 1.446  twins 4.1% np: spread 13.41x  variety 1.492  twins 1.6% bake: 2084.4 cents / gain 0.781 / 0 negative; explained 57.7%
+ref plate05 blocks total full    raw: spread 5.21x  variety 17.813  twins 0.0% np: spread 6.94x  variety 12.079  twins 0.0% bake: 535.0 cents / gain 0.672 / 0 negative; explained 75.0%
+ref plate05 blocks total lambda  raw: spread 4.23x  variety 18.002  twins 0.0% np: spread 3.75x  variety 18.338  twins 0.0% bake: 258.3 cents / gain 1.448 / 0 negative; explained 96.0%
+ref plate05 blocks total gonly   raw: spread 2.57x  variety 2.006  twins 0.0%  np: spread 2.29x  variety 2.066  twins 0.0%  bake: 2612.7 cents / gain 0.670 / 0 negative; explained 69.4%
+ref plate05 blocks entry full    raw: spread 7.54x  variety 17.496  twins 0.0% np: spread 10.65x  variety 12.085  twins 0.0% bake: 609.2 cents / gain 0.669 / 0 negative; explained 64.8%
+ref plate05 blocks entry lambda  raw: spread 4.23x  variety 18.002  twins 0.0% np: spread 3.75x  variety 18.338  twins 0.0% bake: 258.3 cents / gain 1.448 / 0 negative; explained 96.0%
+ref plate05 blocks entry gonly   raw: spread 2.79x  variety 1.915  twins 0.0%  np: spread 2.54x  variety 1.969  twins 0.0%  bake: 2612.7 cents / gain 0.675 / 0 negative; explained 63.5%
+ref bell05  blocks total full    raw: spread 6.66x  variety 18.808  twins 0.0% np: spread 6.32x  variety 11.266  twins 0.0% bake: 452.4 cents / gain 0.690 / 0 negative; explained 73.9%
+ref bell05  blocks total lambda  raw: spread 3.39x  variety 16.749  twins 0.0% np: spread 3.32x  variety 19.101  twins 0.0% bake: 264.2 cents / gain 1.063 / 0 negative; explained 96.9%
+ref bell05  blocks total gonly   raw: spread 2.60x  variety 2.249  twins 0.0%  np: spread 2.47x  variety 2.292  twins 0.0%  bake: 3008.0 cents / gain 0.856 / 0 negative; explained 66.2%
+ref bell05  blocks entry full    raw: spread 7.06x  variety 18.364  twins 0.0% np: spread 5.43x  variety 11.418  twins 0.0% bake: 527.5 cents / gain 0.701 / 0 negative; explained 61.2%
+ref bell05  blocks entry lambda  raw: spread 3.39x  variety 16.749  twins 0.0% np: spread 3.32x  variety 19.101  twins 0.0% bake: 264.2 cents / gain 1.063 / 0 negative; explained 96.9%
+ref bell05  blocks entry gonly   raw: spread 2.64x  variety 2.265  twins 0.0%  np: spread 2.53x  variety 2.301  twins 0.0%  bake: 3008.0 cents / gain 0.730 / 0 negative; explained 59.8%
+
+strike/listen position, full and gonly, reference bar05, blocks total:
+  position  0 full   spread 5.07x  variety 12.451  twins 0.0%
+  position  0 gonly  spread 14.17x  variety 1.678  twins 2.2%
+  position  3 full   spread 4.54x  variety 15.000  twins 0.0%
+  position  3 gonly  spread 4.44x  variety 2.221  twins 0.0%
+  position  6 full   spread 5.08x  variety 15.836  twins 0.0%
+  position  6 gonly  spread 9.82x  variety 1.300  twins 1.5%
+  position 11 full   spread 6.79x  variety 13.881  twins 0.0%
+  position 11 gonly  spread 14.80x  variety 2.043  twins 1.9%

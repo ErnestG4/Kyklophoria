@@ -24,6 +24,18 @@
  * reference — a permutation and a sign per mode — so that "mode k" means the
  * same thing everywhere the bake looks.
  *
+ * The correspondence to the reference is *chained*, not direct. Neighbours in
+ * a sweep match at MAC 0.84 to 0.97 and a plate matches a bar at 0.46, so a
+ * plate aligned straight to the bar reference has its modes assigned by a
+ * coin toss that lands differently at every parameter value — measured, the
+ * veering map of that alignment showed 93 slots of the plate sweep jumping by
+ * more than 300 cents between neighbours, the worst by seven octaves, and
+ * none of it was veering. So each model is matched to its neighbour towards
+ * the middle of its own sweep, the middle model of each family is matched to
+ * the reference, and the permutations compose. The cross-family step is still
+ * the coin toss, taken once per family instead of once per model. --direct
+ * gives the old behaviour for comparison.
+ *
  * If cross-family MAC comes out uniformly low, that is the finding and it is
  * printed as such. Nothing here tries to make it better.
  */
@@ -83,6 +95,20 @@ static Match Align(const Model& a, const Model& b, int N, int P)
     for(size_t k = 0; k < cost.size(); k++) cost[k] = 1.0 - mac[k];
     Match m;
     m.perm = Hungarian(cost, N);
+    /* A reference row that is padding has the same junk pattern in every
+     * model, so every real mode of b matches it equally well and the Hungarian
+     * breaks the tie however it likes — which would scramble those modes'
+     * order from one model to the next and turn every frequency trajectory
+     * through them into a cliff. Modes with no real counterpart in the
+     * reference are ordered by frequency instead, which is what "mode k" has
+     * to mean when there is no shape to say otherwise. */
+    {
+        std::vector<std::pair<double, int>> spill;
+        std::vector<int> slots;
+        for(int i = a.nreal; i < N; i++) { spill.push_back({b.hz[m.perm[i]], m.perm[i]}); slots.push_back(i); }
+        std::sort(spill.begin(), spill.end());
+        for(size_t k = 0; k < slots.size(); k++) m.perm[slots[k]] = spill[k].second;
+    }
     double s = 0, sr = 0;
     for(int i = 0; i < N; i++)
     {
@@ -99,10 +125,12 @@ int main(int argc, char** argv)
 {
     if(argc < 4) { fprintf(stderr, "align corpus.mdb report.txt align.bin [--ref id]\n"); return 2; }
     std::string ref = "bar05";
+    bool        direct = false;
     for(int i = 4; i < argc; i++)
     {
         const std::string a = argv[i];
         if(a == "--ref" && i + 1 < argc) ref = argv[++i];
+        else if(a == "--direct") direct = true;
         else { fprintf(stderr, "unknown option %s\n", a.c_str()); return 2; }
     }
     Corpus c;
@@ -193,10 +221,57 @@ int main(int argc, char** argv)
             else fprintf(rep, " %4.2f", pair[(size_t)a * M + b].real_mean);
         fprintf(rep, "\n");
     }
-    fclose(rep);
 
     /* binary: for each model, perm[k] = which of its modes is reference mode k,
        and the sign to apply, after the largest-component convention */
+    /* a link a -> b: for each mode i of a, the matched mode of b and whether
+       its row agrees in sign with a's */
+    auto link = [&](int a, int b, std::vector<int>& perm, std::vector<int>& sg) {
+        const Match& m = pair[(size_t)a * M + b];
+        perm.assign(N, 0); sg.assign(N, 1);
+        for(int i = 0; i < N; i++)
+        {
+            perm[i] = m.perm[i];
+            const double* ga = &w[a].g[(size_t)i * P];
+            const double* gb = &w[b].g[(size_t)m.perm[i] * P];
+            sg[i] = Dot(ga, gb, P) < 0 ? -1 : 1;
+        }
+    };
+    /* the path from the reference to each model: reference -> family hub ->
+       neighbour -> ... -> model, or one direct hop */
+    std::vector<std::vector<int>> toref_perm(M, std::vector<int>(N)), toref_sign(M, std::vector<int>(N));
+    {
+        std::vector<std::vector<int>> fam(3);
+        for(int k = 0; k < M; k++) fam[c.m[k].family].push_back(k);
+        for(auto& ids : fam) std::sort(ids.begin(), ids.end(), [&](int x, int y) { return c.m[x].param < c.m[y].param; });
+        for(int k = 0; k < M; k++)
+        {
+            std::vector<int> path;   /* models along the way, reference first */
+            path.push_back(refi);
+            if(!direct && k != refi)
+            {
+                const auto& ids = fam[c.m[k].family];
+                const int   hub = ids[ids.size() / 2];
+                const int   pos = (int)(std::find(ids.begin(), ids.end(), k) - ids.begin());
+                const int   hpos = (int)(ids.size() / 2);
+                if(hub != refi) path.push_back(hub);
+                if(pos < hpos) for(int q = hpos - 1; q >= pos; q--) path.push_back(ids[q]);
+                else for(int q = hpos + 1; q <= pos; q++) path.push_back(ids[q]);
+            }
+            else if(k != refi) path.push_back(k);
+            /* compose along the path */
+            std::vector<int> perm(N), sg(N);
+            for(int i = 0; i < N; i++) { perm[i] = i; sg[i] = 1; }
+            for(size_t h = 0; h + 1 < path.size(); h++)
+            {
+                std::vector<int> lp, ls;
+                link(path[h], path[h + 1], lp, ls);
+                for(int i = 0; i < N; i++) { sg[i] *= ls[perm[i]]; perm[i] = lp[perm[i]]; }
+            }
+            /* the convention sign of the model's own row, then the chain */
+            for(int i = 0; i < N; i++) { toref_perm[k][i] = perm[i]; toref_sign[k][i] = sign[k][perm[i]] * sg[i]; }
+        }
+    }
     FILE* bin = fopen(argv[3], "wb");
     if(!bin) { fprintf(stderr, "cannot write %s\n", argv[3]); return 1; }
     fwrite("MALN", 1, 4, bin);
@@ -205,23 +280,13 @@ int main(int argc, char** argv)
     for(int k = 0; k < M; k++)
     {
         std::vector<int32_t> perm(N), sg(N);
-        if(k == refi) for(int i = 0; i < N; i++) { perm[i] = i; sg[i] = sign[k][i]; }
-        else
-        {
-            const Match& m = pair[(size_t)refi * M + k];
-            for(int i = 0; i < N; i++)
-            {
-                perm[i] = m.perm[i];
-                /* sign: the convention, then agreement with the reference row */
-                const double* gr = &w[refi].g[(size_t)i * P];
-                const double* gk = &w[k].g[(size_t)m.perm[i] * P];
-                sg[i] = sign[k][m.perm[i]] * (Dot(gr, gk, P) < 0 ? -1 : 1);
-            }
-        }
+        for(int i = 0; i < N; i++) { perm[i] = toref_perm[k][i]; sg[i] = toref_sign[k][i]; }
         fwrite(perm.data(), 4, N, bin);
         fwrite(sg.data(), 4, N, bin);
     }
     fclose(bin);
+    fprintf(rep, "\ncorrespondence to the reference: %s\n", direct ? "direct, one Hungarian hop per model" : "chained through each family's sweep from its middle model");
+    fclose(rep);
     printf("align: within-family MAC %.3f, cross-family %.3f, reference %s\n", within / wn, cross / cn, ref.c_str());
     return 0;
 }

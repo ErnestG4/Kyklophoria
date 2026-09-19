@@ -2,6 +2,7 @@
  *
  *   bake out/corpus.mdb out/align.bin out/space-full.msp out/bake-full.txt
  *        [--variant full|lambda|linear] [--K 4] [--extent 2.2] [--holdout 3,8]
+ *        [--block-weight total|entry]
  *
  * kykeigen's recipe — analyse, take logs, PCA, whiten, reconstruct
  * everywhere — with the analysis replaced by the alignment stage and the logs
@@ -62,6 +63,7 @@ static bool LoadAligned(const std::string& path, const Corpus& c, Aligned& out)
 }
 
 /* Fit: block scales, mean, K components, sdevs, from the given models. */
+static bool gBlockTotal = true;
 static void Fit(const Chart& chart, const std::vector<std::vector<double>>& vecs, const std::vector<int>& use,
                 int K, Space& sp, std::vector<double>& explained)
 {
@@ -79,7 +81,20 @@ static void Fit(const Chart& chart, const std::vector<std::vector<double>>& vecs
             sp.block_scale[chart.BlockOf(i)] += d * d;
             cnt[chart.BlockOf(i)] += 1;
         }
-    for(int b = 0; b < B; b++) sp.block_scale[b] = cnt[b] ? std::sqrt(sp.block_scale[b] / cnt[b]) : 1.0;
+    /* Two ways to weigh the blocks. `entry` gives every entry unit variance,
+     * which hands the tangent block — 576 of the 768 entries — three quarters
+     * of the variance the PCA is asked to explain, and the 48 frequencies six
+     * per cent. `total` gives every block the same total variance, so the
+     * frequencies, the subspace and the coefficients are three equal votes.
+     * Neither is canonical. `total` is the default because the go/no-go is
+     * whether the eigenvector half adds anything to the frequency half, and a
+     * weighting that drowns the frequency half decides that before measuring. */
+    for(int b = 0; b < B; b++)
+    {
+        const double per_entry = cnt[b] ? sp.block_scale[b] / cnt[b] : 1.0;        /* mean variance of an entry */
+        const double per_model = cnt[b] ? sp.block_scale[b] / (double)M : 1.0;   /* total variance of the block */
+        sp.block_scale[b] = std::sqrt(gBlockTotal ? per_model : per_entry);
+    }
     for(int b = 0; b < B; b++) if(sp.block_scale[b] < 1e-12) sp.block_scale[b] = 1.0;
     /* X: M x D, centred and scaled */
     std::vector<std::vector<double>> X(M, std::vector<double>(D));
@@ -172,9 +187,10 @@ int main(int argc, char** argv)
         if(a == "--variant")
         {
             const std::string v = next();
-            variant = v == "lambda" ? Variant::Lambda : v == "linear" ? Variant::Linear : Variant::Full;
+            variant = v == "lambda" ? Variant::Lambda : v == "linear" ? Variant::Linear : v == "gonly" ? Variant::GOnly : Variant::Full;
         }
         else if(a == "--K") K = atoi(next());
+        else if(a == "--block-weight") gBlockTotal = std::string(next()) != "entry";
         else if(a == "--extent") extent = atof(next());
         else if(a == "--holdout")
         {
@@ -194,6 +210,7 @@ int main(int argc, char** argv)
     Chart chart;
     chart.variant = variant;
     chart.SetReference(al.rep[al.ref]);
+    if(!chart.frame_ok) { fprintf(stderr, "reference %s has a rank-deficient G; no frame to map at\n", c.m[al.ref].id.c_str()); return 1; }
     std::vector<std::vector<double>> vecs(M);
     for(int k = 0; k < M; k++) chart.ToVector(al.rep[k], vecs[k]);
 
@@ -211,8 +228,8 @@ int main(int argc, char** argv)
 
     FILE* rep = fopen(argv[4], "w");
     if(!rep) { fprintf(stderr, "cannot write %s\n", argv[4]); return 1; }
-    fprintf(rep, "bake — variant %s, K=%d, extent %.2f, reference %s, D=%d over %d models\n\n",
-            VariantName(variant), K, extent, c.m[al.ref].id.c_str(), chart.D(), M);
+    fprintf(rep, "bake — variant %s, K=%d, extent %.2f, reference %s, D=%d over %d models, blocks weighted by %s\n\n",
+            VariantName(variant), K, extent, c.m[al.ref].id.c_str(), chart.D(), M, gBlockTotal ? "total variance" : "entry");
     fprintf(rep, "map round trip (log then exp, no PCA): worst %.2e over cents and relative gain\n\n", worst_rt);
 
     /* holdouts: the given sweep positions of every family */

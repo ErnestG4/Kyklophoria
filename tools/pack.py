@@ -14,6 +14,11 @@ nothing downstream has to guess.
 
 Junk modes are the same in every padded model on purpose: two models that are
 both mostly padding should agree on their padding rather than differ by it.
+Each junk mode's gain row is a different fixed pseudo-random pattern, not one
+pattern repeated: the bake takes the column space of G, and a bar with ten real
+modes and thirty-eight copies of one padding row has a G of rank eleven, which
+is not a point on the Grassmann manifold at all. Measured — it was the first
+thing the bake's round-trip check caught.
 
 ── corpus.mdb ─────────────────────────────────────────────────────────────
 
@@ -41,6 +46,15 @@ import sys
 
 FAMILY = {'bar': 0, 'plate': 1, 'bell': 2}
 JUNK_HZ0, JUNK_HZ_STEP, JUNK_ZETA, JUNK_GAIN = 22000.0, 250.0, 0.5, 1e-3
+
+
+def junk_pattern(k, p):
+    """A fixed pseudo-random value in [-1, 1] for junk mode k at position p, the
+    same in every model and every run. A small LCG, because the point is
+    determinism and independence between rows, not quality."""
+    x = (1103515245 * (k * 131 + p * 7 + 17) + 12345) & 0x7fffffff
+    x = (1103515245 * x + 12345) & 0x7fffffff
+    return (x % 20001) / 10000.0 - 1.0
 
 
 def read_mmr(path):
@@ -88,7 +102,7 @@ def main():
         for k in range(nreal, N):
             hz.append(JUNK_HZ0 + JUNK_HZ_STEP * (k - nreal))
             zeta.append(JUNK_ZETA)
-            g.append([JUNK_GAIN * (1.0 if (p + k) % 2 == 0 else -1.0) for p in range(P)])
+            g.append([JUNK_GAIN * junk_pattern(k, p) for p in range(P)])
         body += struct.pack('<16sB3xfI', r['id'].encode()[:16], FAMILY[r['family']], float(r['value']), nreal)
         body += struct.pack('<%df' % N, *hz)
         body += struct.pack('<%df' % N, *zeta)

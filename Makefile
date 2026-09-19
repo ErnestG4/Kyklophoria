@@ -44,8 +44,9 @@ VEGASRC   = $(VEGA)/objMesh/objMesh.cpp $(VEGA)/objMesh/objMesh-disjointSet.cpp 
             $(VEGA)/wildMagic/meshKey/tetKey.cpp $(VEGA)/wildMagic/meshKey/triKey.cpp
 VEGAOBJ   = $(patsubst $(VEGA)/%.cpp,build/vega/%.o,$(VEGASRC))
 
-.PHONY: all clean corpus
-all: build/modalfem
+.PHONY: all clean corpus align bake grade renders all-stages
+all: build/modalfem build/align build/bake build/grade build/render
+all-stages: corpus align bake grade renders
 
 build/vega/%.o: $(VEGA)/%.cpp
 	@mkdir -p $(dir $@)
@@ -101,4 +102,57 @@ EXTENT ?= 2.2
 out/space-%.msp out/bake-%.txt: build/bake out/corpus.mdb out/align.bin
 	build/bake out/corpus.mdb out/align.bin out/space-$*.msp out/bake-$*.txt --variant $* --extent $(EXTENT)
 
-bake: out/space-full.msp out/space-lambda.msp out/space-linear.msp
+bake: out/space-full.msp out/space-lambda.msp out/space-linear.msp out/space-gonly.msp
+
+build/grade: tools/grade/main.cpp $(COMMON) tools/common/linalg.h tools/common/space.h tools/common/spectrum.h
+	@mkdir -p build
+	$(CXX) $(FLAGS) tools/grade/main.cpp -o $@
+
+# ── Stage 4/5: the grade, and the three numbers ──────────────────────────────
+GRADEFLAGS ?=
+out/grade-%.txt: build/grade out/space-%.msp out/corpus.mdb out/align.bin
+	build/grade out/space-$*.msp out/corpus.mdb out/align.bin $@ $(GRADEFLAGS)
+
+# the pitch-normalised grade, beside the brief's
+out/grade-%-np.txt: build/grade out/space-%.msp out/corpus.mdb out/align.bin
+	build/grade out/space-$*.msp out/corpus.mdb out/align.bin $@ --normalise-pitch $(GRADEFLAGS)
+
+VARIANTS = full lambda linear gonly
+grade: $(patsubst %,out/grade-%.txt,$(VARIANTS)) $(patsubst %,out/grade-%-np.txt,$(VARIANTS))
+	@echo; for v in $(VARIANTS); do printf "%-7s " $$v; grep -h "^spread" out/grade-$$v.txt | cut -c1-14 | tr -d '\n'; printf "  pitch-normalised "; grep -h "^spread" out/grade-$$v-np.txt | cut -c1-14; done
+
+build/render: tools/render/main.cpp $(COMMON) tools/common/linalg.h tools/common/space.h
+	@mkdir -p build
+	$(CXX) $(FLAGS) tools/render/main.cpp -o $@
+
+# ── the listening set ────────────────────────────────────────────────────────
+# Eight paths through the full space, plus the same two cross-family paths
+# through the frequency-only space, which is what the go/no-go is about.
+RENDERS = out/wav/bar-sweep.wav out/wav/plate-sweep.wav out/wav/bell-sweep.wav \
+          out/wav/bar-to-bell.wav out/wav/plate-to-bar.wav out/wav/bell-to-plate.wav \
+          out/wav/plate-veering.wav out/wav/bar-to-bell-via-plate.wav \
+          out/wav/bar-to-bell-lambda-only.wav out/wav/plate-to-bar-lambda-only.wav
+renders: $(RENDERS)
+out/wav/bar-sweep.wav: build/render out/space-full.msp
+	@mkdir -p out/wav
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from bar00 --to bar11
+out/wav/plate-sweep.wav: build/render out/space-full.msp
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from plate00 --to plate11
+out/wav/bell-sweep.wav: build/render out/space-full.msp
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from bell00 --to bell11
+out/wav/bar-to-bell.wav: build/render out/space-full.msp
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from bar05 --to bell05
+out/wav/plate-to-bar.wav: build/render out/space-full.msp
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from plate05 --to bar05
+out/wav/bell-to-plate.wav: build/render out/space-full.msp
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from bell05 --to plate05
+# the square plate's degenerate pairs splitting: aspect 1.0 to 1.55, where the
+# veering map puts every jump over 300 cents the plate sweep has
+out/wav/plate-veering.wav: build/render out/space-full.msp
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from plate00 --to plate03 --strikes 32 --interval 0.15
+out/wav/bar-to-bell-via-plate.wav: build/render out/space-full.msp
+	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from bar05 --to bell05 --via plate05 --strikes 32
+out/wav/bar-to-bell-lambda-only.wav: build/render out/space-lambda.msp
+	build/render out/space-lambda.msp out/corpus.mdb out/align.bin $@ --from bar05 --to bell05
+out/wav/plate-to-bar-lambda-only.wav: build/render out/space-lambda.msp
+	build/render out/space-lambda.msp out/corpus.mdb out/align.bin $@ --from plate05 --to bar05
