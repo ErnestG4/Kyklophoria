@@ -357,7 +357,7 @@ attack ramp and the clamp below), and the number of notes over 1 dB:
 | guitar | 71 | 2.97 → 0.06 | 70 → 0 | 27.8 → 19.7 |
 | banjo | 74 | 2.06 → 0.06 | 68 → 0 | 30.7 → 34.9 |
 | EP | 169 | 1.38 → 0.03 | 91 → 0 | 16.8 → 16.1 |
-| mandolin | 39 | — → 0.24 | — → 0 | — → 34.6 |
+| mandolin | 39 | — → 0.12 | — → 0 | — → 36.3 |
 
 The worst note in each set was the loudest complaint: Wurlitzer C7 3.08 →
 0.14, guitar D5 forte 8.83 → 0.02, banjo E5 3.54 → 0.02, EP F6 med 3.69 →
@@ -402,8 +402,8 @@ Four passes in a night, then, each defect found by reading the records the
 previous pass produced, none by the loss: the loss was fine every time.
 
 The fitted worlds' spreads (pitch-normalised, ring-weighted, four components)
-are what a keyboard is: one long axis. Wurlitzer 2.17× (was 55× with the
-spurious partials in), banjo 5.7×, mandolin 5.1×, guitar 24×, EP 436× — the
+are what a keyboard is: one long axis. Wurlitzer 1.95× (was 55× with the
+spurious partials in), banjo 6.2×, mandolin 4.4×, guitar 31×, EP 292× — the
 EP's third and fourth components carry nothing (axis variety 0.03) because
 two velocities of one tine are two curves, and a spread over a curve is not a
 number that means anything. What the EP world needs is a second parameter,
