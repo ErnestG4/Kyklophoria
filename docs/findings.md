@@ -348,20 +348,20 @@ Checked on the offending notes, then run over everything at 2000 steps.
   banjo's 1.57 → 1.26; the Wurlitzer and EP have no energy there and did not
   move.
 
-**Where it ended.** Mean excess over each set, first fit → final; in brackets
-the number of notes over 1 dB:
+**Where it ended.** Mean excess over each set, first fit → final (after the
+attack ramp and the clamp below), and the number of notes over 1 dB:
 
 | set | notes | excess, dB | notes over 1 dB | modes per note |
 |---|---|---|---|---|
 | Wurlitzer | 11 | 1.61 → 0.06 | 9 → 0 | 29.7 → 27.1 |
-| guitar | 71 | 2.97 → 0.21 | 70 → 0 | 27.8 → 20.2 |
-| banjo | 74 | 2.06 → 0.25 | 68 → 0 | 30.7 → 33.5 |
-| EP | 169 | 1.38 → 0.05 | 91 → 0 | 16.8 → 15.8 |
+| guitar | 71 | 2.97 → 0.06 | 70 → 0 | 27.8 → 19.7 |
+| banjo | 74 | 2.06 → 0.06 | 68 → 0 | 30.7 → 34.9 |
+| EP | 169 | 1.38 → 0.03 | 91 → 0 | 16.8 → 16.1 |
 | mandolin | 39 | — → 0.24 | — → 0 | — → 34.6 |
 
 The worst note in each set was the loudest complaint: Wurlitzer C7 3.08 →
-0.84, guitar D5 forte 8.83 → 0.07, banjo E5 3.54 → 0.12, EP F6 med 3.69 →
-0.04. The guitar lost a quarter of its modes and they were the whistle; the
+0.14, guitar D5 forte 8.83 → 0.02, banjo E5 3.54 → 0.02, EP F6 med 3.69 →
+0.03. The guitar lost a quarter of its modes and they were the whistle; the
 banjo gained modes because the onset fix gave its fits a real first frame.
 A/Bs — recording, 0.4 s, resynthesis — for the notes named here are in
 `out/fit/*-overnight-AB.wav`, and the set-level A/Bs under `out/fit/<set>/`
@@ -388,6 +388,18 @@ Separately, 6000 steps against 2000 on the Wurlitzer and twelve guitar notes
 moved the loss +6% and −6%: noise, and one note (B6) doubled its loss on the
 longer run, so the schedule is 2000 and the polish 1000, and steps are not
 the lever.
+
+**And what the ramp let in.** With the model's onset soft, the EP's hardest
+strikes collapsed: the optimiser built the hammer's click out of one
+overdamped sine — 14.5 kHz, ζ 1.9, amplitude four million times the loudest
+partial — and the −60 dB threshold, judged at t = 0, threw every real partial
+away under it (e5 13 modes → 1, A♯2 33 → 3). Nothing that dies inside 5 ms is
+a mode: the decay is clamped there in the fit, and audibility is judged
+10 ms in. Every set but the guitar (whose pass with the ramp had two
+harmless sub-5 ms thumps) was refitted once more with the clamp; nothing
+collapsed, and the mode counts came back to where the third pass had them.
+Four passes in a night, then, each defect found by reading the records the
+previous pass produced, none by the loss: the loss was fine every time.
 
 The fitted worlds' spreads (pitch-normalised, ring-weighted, four components)
 are what a keyboard is: one long axis. Wurlitzer 2.17× (was 55× with the
