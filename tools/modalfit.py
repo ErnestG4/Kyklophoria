@@ -582,7 +582,7 @@ if __name__ == '__main__':
 # takes.
 # ---------------------------------------------------------------------------
 
-def fit_shaped(xs, sr, init, steps, device, verbose=True):
+def fit_shaped(xs, sr, init, steps, device, verbose=True, normalised=False):
     """xs: list of takes (numpy, same length, one note at several velocities,
     softest first). Returns (f, r, a, phase, gains, (h, w, K), ys, loss)."""
     n = min(len(x) for x in xs)
@@ -618,7 +618,11 @@ def fit_shaped(xs, sr, init, steps, device, verbose=True):
     logfc = torch.tensor(math.log(4000.0), device=device, requires_grad=True)
     logQ = torch.tensor(0.0, device=device, requires_grad=True)
     freqs = torch.fft.rfftfreq(n, 1.0 / sr).to(device)
-    opt = torch.optim.Adam([{'params': [logr, loga, phase, logg, h, logw, logK, logfc, logQ], 'lr': 0.02},
+    # takes a sample library normalised one by one carry no level: give each
+    # its own output gain after the coil, so that the swing into the field
+    # is decided by the harmonics alone
+    logout = torch.zeros(len(xs), device=device, requires_grad=normalised)
+    opt = torch.optim.Adam([{'params': [logr, loga, phase, logg, h, logw, logK, logfc, logQ] + ([logout] if normalised else []), 'lr': 0.02},
                             {'params': [logf], 'lr': 0.0005}])
     scales = [(4096, 1024), (1024, 256), (256, 64)]
     T = []
@@ -644,7 +648,7 @@ def fit_shaped(xs, sr, init, steps, device, verbose=True):
 
     def render():
         u = metal()
-        return [coil(torch.exp(logg[k]) * u) for k in range(len(xs))]
+        return [torch.exp(logout[k]) * coil(torch.exp(logg[k]) * u) for k in range(len(xs))]
 
     with torch.no_grad():
         y0 = render()[0]
@@ -681,3 +685,20 @@ def fit_shaped(xs, sr, init, steps, device, verbose=True):
     return (f.cpu().numpy(), r.cpu().numpy(), a.cpu().numpy(), phase.detach().cpu().numpy(),
             torch.exp(logg).detach().cpu().numpy(),
             (h.item(), math.exp(logw.item()), math.exp(logK.item()), math.exp(logfc.item()), math.exp(logQ.item())), ys, loss.item())
+
+
+def bar_metal(init, f0, tol=0.03):
+    """The metal of a tine or reed piano is a clamped bar: its own partials
+    sit at 1 : 6.27 : 17.5, and anything within tol of an integer multiple of
+    the fundamental (from the second up) is the pickup's, not the metal's.
+    Keep the fundamental and the inharmonic partials; the field has to make
+    the rest — which is the one constraint that lets two velocities separate
+    metal from transducer when the takes were normalised and their levels
+    say nothing."""
+    out = []
+    for m in init:
+        k = m[0] / f0
+        if abs(k - round(k)) * f0 <= tol * f0 * max(1.0, round(k)) and round(k) >= 2:
+            continue
+        out.append(m)
+    return out
