@@ -70,6 +70,7 @@ int main(int argc, char** argv)
         else if(a == "--damping-rate") sg.damping_rate = atof(next());
         else if(a == "--elapsed") sg.elapsed = atof(next());
         else if(a == "--normalise-pitch") sg.normalise_pitch = true;
+        else if(a == "--ring") sg.ring = true;
         else { fprintf(stderr, "unknown option %s\n", a.c_str()); return 2; }
     }
     Space sp;
@@ -85,6 +86,7 @@ int main(int argc, char** argv)
             VariantName(sp.chart.variant), K, sp.extent, sg.bands_per_octave, sg.f_lo, sg.f_hi, sg.kernel,
             sg.strike, sg.listen, sg.omega ? "1/omega" : "no 1/omega", sg.damping_rate, sg.elapsed);
     if(sg.normalise_pitch) fprintf(rep, "pitch normalised: the lowest audible mode of every point is moved to %.0f Hz before banding\n\n", sg.pitch_ref);
+    if(sg.ring) fprintf(rep, "ring: modes weighed by their energy over the whole decay (%s)\n\n", sp.chart.decay ? "the space's own zeta" : "Rayleigh, the space carries no decay");
 
     long skipped_total = 0, evals = 0;
     auto at = [&](const double* p01, std::vector<double>& out) {
@@ -165,8 +167,8 @@ int main(int argc, char** argv)
     fprintf(rep, "\n");
     fprintf(rep, "modes skipped as unrenderable (non-positive or above the top band): %.2f per evaluation over %ld evaluations\n\n",
             (double)skipped_total / (evals ? evals : 1), evals);
-    printf("grade %s%s: spread %.2fx  variety %.3f  twins %.1f%%\n", VariantName(sp.chart.variant),
-           sg.normalise_pitch ? " (pitch normalised)" : "", spread, mean, twins);
+    printf("grade %s%s%s: spread %.2fx  variety %.3f  twins %.1f%%\n", VariantName(sp.chart.variant),
+           sg.normalise_pitch ? " (pitch normalised)" : "", sg.ring ? " (ring)" : "", spread, mean, twins);
 
     /* ── continuity, from cont_check, on spectra and on log frequencies ── */
     auto worst_step = [&](int ax, int steps, bool on_freq, std::vector<double>* profile) {

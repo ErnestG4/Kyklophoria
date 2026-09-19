@@ -58,6 +58,13 @@ struct Spectrograph
     double elapsed = 0.2;            /* s */
     bool   normalise_pitch = false;
     double pitch_ref = 440.0;        /* where the lowest mode goes when normalised */
+    /* --ring: weigh every mode by its energy over the whole ring instead of
+       its amplitude at one instant — amplitude times sqrt(1 / 2 zeta omega),
+       the space's own zeta where it carries one and Rayleigh (alpha, beta)
+       where not. This is the grade that can hear decay, which the brief's
+       could not and the listening set could. */
+    bool   ring = false;
+    double alpha = 5.0, beta = 3e-8;
 
     int Bands() const { return (int)std::ceil(std::log2(f_hi / f_lo) * bands_per_octave); }
     double BandCentre(int b) const { return f_lo * std::pow(2.0, (b + 0.5) / bands_per_octave); }
@@ -73,7 +80,13 @@ struct Spectrograph
         {
             if(!(r.hz[i] > 0.0)) { sk++; continue; }
             double a = r.G(i, strike) * r.G(i, listen);
-            if(omega) a /= 2.0 * M_PI * r.hz[i];
+            const double w = 2.0 * M_PI * r.hz[i];
+            if(omega) a /= w;
+            if(ring)
+            {
+                const double z = i < (int)r.zeta.size() && r.zeta[i] > 0 ? r.zeta[i] : 0.5 * (alpha / w + beta * w);
+                a *= std::sqrt(1.0 / (2.0 * z * w));
+            }
             amp[i] = std::fabs(a) * env;
         }
         if(skipped) *skipped = sk;

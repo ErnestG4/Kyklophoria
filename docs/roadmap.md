@@ -30,12 +30,13 @@ separate instrument with the same tools behind it.
    cantilever; mesh2faust was free-free. Checked against the clamped-free rod:
    +8% at every length, the same everywhere in a sweep.
 
-2. **A grade that hears decay.** The bake's spectrum was uniform-damped at
-   200 ms because the brief said so, and that is the meter that cannot hear
-   why the listening set sounds like something. The next grade renders a
-   strike over its whole ring — per-mode decay, the pickup's nonlinearity —
-   and measures variety on that. Pitch normalised, so that a Rhodes an octave
-   apart is the same thing and a Rhodes against a Wurlitzer is not.
+2. **A grade that hears decay.** Done in its first form: `grade --ring`
+   weighs every mode by its energy over the whole decay, and the space can
+   carry decay as a block (`bake --decay`, log zeta per mode) so that a fitted
+   record's measured decay survives into a world. On the FEM corpus the ring
+   grade moves nothing — Rayleigh decay is a function of frequency, so it adds
+   no information — which is the point: it is there for the records that come
+   from recordings. The pickup's nonlinearity is still to come.
 
 3. **The Rhodes as the first world.** Four real parameters, not one: tine
    length, tuning-spring position, tonebar coupling, strike point. The tonebar
@@ -46,13 +47,17 @@ separate instrument with the same tools behind it.
    Rayleigh model, which is where the GPU comes in.
 
 4. **Fitting to sources on the GPU.** Two uses, in order of how sure they are:
-   - *Modal fitting.* Partial tracking on a recording gives a modal set; a
-     differentiable renderer (sum of decaying sines, all parameters
-     continuous) fits frequency, decay and gain by gradient to the recording
-     and gives the corpus a row that is a *measured* Rhodes beside the FEM
-     ones. This is the part that makes a model "absolutely kick ass" rather
-     than plausible: the FEM supplies the parametric freedom, the recording
-     supplies the truth, and the space is built from both.
+   - *Modal fitting.* Done in its first form: `tools/modalfit.py`, torch on
+     the 4090 (the `fmexplorer` venv has it). Phase-vocoder initialisation,
+     then a differentiable sum of decaying sines fitted by gradient against a
+     multi-resolution STFT loss — spectral convergence plus log magnitude,
+     because log magnitude alone let the loud modes ring four times too long:
+     two loud bins in two thousand do not move a mean over the floor. Checked
+     on synthetic strikes with known modes: the modes above -20 dB come back
+     within a cent and within 2% in T60; modes that ring for 80 ms at -26 dB
+     are dropped rather than misfitted, and the record says how many. A
+     recording is one strike position, and the record says that too. What it
+     needs now is recordings: a Rhodes, a Wurlitzer, the water drum.
    - *Geometry fitting.* Fit the FEM's *inputs* — dimensions, material, the
      spring's position — so that its modes match the recording. The FEM is not
      differentiable, so this is black-box optimisation over a handful of

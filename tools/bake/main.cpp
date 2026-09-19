@@ -2,7 +2,7 @@
  *
  *   bake out/corpus.mdb out/align.bin out/space-full.msp out/bake-full.txt
  *        [--variant full|lambda|linear] [--K 4] [--extent 2.2] [--holdout 3,8]
- *        [--block-weight total|entry] [--family bar|plate|bell]
+ *        [--block-weight total|entry] [--family bar|plate|bell] [--decay]
  *
  * --family bakes one family's twelve models alone, or a comma-separated list
  * of families. The brief's three are `bar,plate,bell`; the corpus has grown a
@@ -58,10 +58,12 @@ static bool LoadAligned(const std::string& path, const Corpus& c, Aligned& out)
         if(fread(perm.data(), 4, N, f) != (size_t)N || fread(sg.data(), 4, N, f) != (size_t)N) { fclose(f); return false; }
         Rep& r = out.rep[k];
         r.hz.resize(N);
+        r.zeta.resize(N);
         r.G = Mat(N, c.P);
         for(int i = 0; i < N; i++)
         {
             r.hz[i] = c.m[k].hz[perm[i]];
+            r.zeta[i] = c.m[k].zeta[perm[i]];
             for(int p = 0; p < c.P; p++) r.G(i, p) = sg[i] * c.m[k].G(perm[i], p, c.P);
         }
     }
@@ -188,6 +190,7 @@ int main(int argc, char** argv)
     double  extent = 2.2;
     std::vector<int> hold = {3, 8};
     std::vector<int> families;   /* empty: every family in the corpus */
+    bool             decay = false;
     for(int i = 5; i < argc; i++)
     {
         const std::string a = argv[i];
@@ -199,6 +202,7 @@ int main(int argc, char** argv)
         }
         else if(a == "--K") K = atoi(next());
         else if(a == "--block-weight") gBlockTotal = std::string(next()) != "entry";
+        else if(a == "--decay") decay = true;
         else if(a == "--family")
         {
             /* one name or a comma-separated list */
@@ -245,6 +249,7 @@ int main(int argc, char** argv)
 
     Chart chart;
     chart.variant = variant;
+    chart.decay   = decay;
     chart.SetReference(al.rep[al.ref]);
     if(!chart.frame_ok) { fprintf(stderr, "reference %s has a rank-deficient G; no frame to map at\n", c.m[al.ref].id.c_str()); return 1; }
     std::vector<std::vector<double>> vecs(M);
@@ -264,8 +269,8 @@ int main(int argc, char** argv)
 
     FILE* rep = fopen(argv[4], "w");
     if(!rep) { fprintf(stderr, "cannot write %s\n", argv[4]); return 1; }
-    fprintf(rep, "bake — variant %s, K=%d, extent %.2f, reference %s, D=%d over %zu models%s, blocks weighted by %s\n\n",
-            VariantName(variant), K, extent, c.m[al.ref].id.c_str(), chart.D(), keep.size(),
+    fprintf(rep, "bake — variant %s%s, K=%d, extent %.2f, reference %s, D=%d over %zu models%s, blocks weighted by %s\n\n",
+            VariantName(variant), decay ? " with decay" : "", K, extent, c.m[al.ref].id.c_str(), chart.D(), keep.size(),
             family >= 0 ? (std::string(" (") + Corpus::FamilyName(family) + " only)").c_str() : "",
             gBlockTotal ? "total variance" : "entry");
     fprintf(rep, "map round trip (log then exp, no PCA): worst %.2e over cents and relative gain\n\n", worst_rt);

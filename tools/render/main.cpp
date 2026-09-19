@@ -70,10 +70,11 @@ static bool LoadAlignedVectors(const std::string& path, const Corpus& c, const C
         std::vector<int32_t> perm(N), sg(N);
         if(fread(perm.data(), 4, N, f) != (size_t)N || fread(sg.data(), 4, N, f) != (size_t)N) { fclose(f); return false; }
         Rep r;
-        r.hz.resize(N); r.G = Mat(N, c.P);
+        r.hz.resize(N); r.zeta.resize(N); r.G = Mat(N, c.P);
         for(int i = 0; i < N; i++)
         {
             r.hz[i] = c.m[k].hz[perm[i]];
+            r.zeta[i] = c.m[k].zeta[perm[i]];
             for(int p = 0; p < c.P; p++) r.G(i, p) = sg[i] * c.m[k].G(perm[i], p, c.P);
         }
         chart.ToVector(r, vecs[k]);
@@ -195,7 +196,8 @@ int main(int argc, char** argv)
                 if(!(hz > 40.0) || hz > 20000.0) { amp[i] = 0.0; w[i] = 0.0; rate[i] = 50.0; continue; }
                 w[i]    = 2 * M_PI * hz;
                 amp[i]  = r.G(i, pos_s) * r.G(i, pos_l) / w[i];
-                rate[i] = 0.5 * (alpha / w[i] + beta * w[i]) * w[i];
+                /* the space's own decay where it carries one, Rayleigh where not */
+                rate[i] = (i < (int)r.zeta.size() ? r.zeta[i] : 0.5 * (alpha / w[i] + beta * w[i])) * w[i];
                 e2 += amp[i] * amp[i] / (2.0 * rate[i]);
             }
             /* a strike on every interval, adding to whatever is still ringing,
@@ -241,7 +243,8 @@ int main(int argc, char** argv)
             if(!(hz > 40.0) || hz > 20000.0) continue;
             const double w2 = 2 * M_PI * hz;
             const double aa = r.G((int)i, pos_s) * r.G((int)i, pos_l) / w2;
-            e2 += aa * aa / (2.0 * 0.5 * (alpha / w2 + beta * w2) * w2);
+            const double z2 = i < r.zeta.size() ? r.zeta[i] : 0.5 * (alpha / w2 + beta * w2);
+            e2 += aa * aa / (2.0 * z2 * w2);
         }
         const double norm = e2 > 0 ? 1.0 / std::sqrt(e2) : 0.0;
         for(size_t i = 0; i < r.hz.size(); i++)
@@ -250,7 +253,7 @@ int main(int argc, char** argv)
             if(!(hz > 40.0) || hz > 20000.0) continue;
             const double w    = 2 * M_PI * hz;
             const double amp  = norm * r.G((int)i, pos_s) * r.G((int)i, pos_l) / w;
-            const double zeta = 0.5 * (alpha / w + beta * w);
+            const double zeta = i < r.zeta.size() ? r.zeta[i] : 0.5 * (alpha / w + beta * w);
             const double rate = zeta * w;
             const size_t len  = std::min(out.size() - at, (size_t)(sr * std::fmin(6.0, 6.9 / std::fmax(rate, 0.5))));
             for(size_t n = 0; n < len; n++)

@@ -50,6 +50,13 @@
  *   linear   [ hz (N) ][ vec G (N*P) ]
  *   gonly    [ vec Delta (N*P) ][ vec R~ (P*P) ]
  *
+ * With `decay` on, every variant gets one more block, [ log zeta (N) ], the
+ * damping ratio per mode. Off for the brief's bake, which graded with uniform
+ * damping and says so; on for the worlds, because a struck thing's identity is
+ * in how it dies and the FEM's Rayleigh number is a stand-in until a fitted
+ * record (tools/modalfit.py) replaces it. Log, so a decay can only get shorter
+ * or longer and never negative.
+ *
  * Each block is scaled by one number before PCA — its standard deviation over
  * the corpus — so that no block wins by having bigger units. Log frequencies
  * are tenths, tangent entries are radians, coefficients are whatever the
@@ -77,8 +84,9 @@ inline const char* VariantName(Variant v)
  * matched reference mode k, sign resolved. */
 struct Rep
 {
-    std::vector<double> hz;   /* N */
-    Mat                 G;    /* N x P */
+    std::vector<double> hz;    /* N */
+    Mat                 G;     /* N x P */
+    std::vector<double> zeta;  /* N, or empty when the space carries no decay */
 };
 
 /* Grassmann log map at Qr of Q. */
@@ -122,12 +130,13 @@ inline Mat GrassExp(const Mat& Qr, const Mat& D)
 struct Chart
 {
     Variant             variant = Variant::Full;
+    bool                decay = false;
     int                 N = 0, P = 0;
     std::vector<double> lam_ref;   /* log hz of the reference */
     Mat                 Qr;        /* N x P, the reference frame */
     Mat                 Gref;      /* N x P, for the lambda-only variant */
 
-    int D() const
+    int Core() const   /* the vector without the decay block */
     {
         switch(variant)
         {
@@ -137,10 +146,13 @@ struct Chart
             default:              return N + N * P;
         }
     }
-    int Blocks() const { return variant == Variant::Full ? 3 : variant == Variant::Lambda ? 1 : 2; }
+    int D() const { return Core() + (decay ? N : 0); }
+    int CoreBlocks() const { return variant == Variant::Full ? 3 : variant == Variant::Lambda ? 1 : 2; }
+    int Blocks() const { return CoreBlocks() + (decay ? 1 : 0); }
     /* which block each vector entry belongs to */
     int BlockOf(int i) const
     {
+        if(decay && i >= Core()) return CoreBlocks();
         if(variant == Variant::GOnly) return i < N * P ? 0 : 1;
         if(i < N) return 0;
         if(variant == Variant::Full && i >= N + N * P) return 2;
@@ -169,6 +181,8 @@ struct Chart
     void ToVector(const Rep& r, std::vector<double>& v) const
     {
         v.assign(D(), 0.0);
+        if(decay)
+            for(int i = 0; i < N; i++) v[Core() + i] = std::log(i < (int)r.zeta.size() && r.zeta[i] > 0 ? r.zeta[i] : 1e-3);
         if(variant == Variant::Linear)
         {
             for(int i = 0; i < N; i++) v[i] = r.hz[i];
@@ -192,6 +206,8 @@ struct Chart
     void FromVector(const std::vector<double>& v, Rep& r, double* frame_error = nullptr) const
     {
         r.hz.assign(N, 0.0);
+        r.zeta.clear();
+        if(decay) { r.zeta.resize(N); for(int i = 0; i < N; i++) r.zeta[i] = std::exp(v[Core() + i]); }
         if(variant == Variant::Linear)
         {
             for(int i = 0; i < N; i++) r.hz[i] = v[i];
@@ -267,7 +283,7 @@ struct Space
         auto w32 = [&](uint32_t x) { fwrite(&x, 4, 1, f); };
         auto wd  = [&](const std::vector<double>& d) { fwrite(d.data(), 8, d.size(), f); };
         fwrite("MSPC", 1, 4, f);
-        w32(1u); w32((uint32_t)chart.variant); w32((uint32_t)chart.N); w32((uint32_t)chart.P);
+        w32(2u); w32((uint32_t)chart.variant | (chart.decay ? 0x100u : 0u)); w32((uint32_t)chart.N); w32((uint32_t)chart.P);
         w32((uint32_t)K); w32((uint32_t)chart.D()); w32((uint32_t)chart.Blocks());
         fwrite(&extent, 8, 1, f);
         wd(chart.lam_ref); wd(chart.Qr.a); wd(chart.Gref.a);
@@ -284,12 +300,12 @@ struct Space
         char magic[4];
         if(fread(magic, 1, 4, f) != 4 || std::memcmp(magic, "MSPC", 4) != 0) { fclose(f); return false; }
         uint32_t ver, var, N, P, k, D, B;
-        if(fread(&ver, 4, 1, f) != 1 || ver != 1u) { fclose(f); return false; }
-        fread(&var, 4, 1, f); fread(&N, 4, 1, f); fread(&P, 4, 1, f); fread(&k, 4, 1, f); fread(&D, 4, 1, f); fread(&B, 4, 1, f);
-        fread(&extent, 8, 1, f);
-        chart.variant = (Variant)var; chart.N = (int)N; chart.P = (int)P; K = (int)k;
+        if(fread(&ver, 4, 1, f) != 1 || (ver != 1u && ver != 2u)) { fclose(f); return false; }
+        bool ok = fread(&var, 4, 1, f) == 1 && fread(&N, 4, 1, f) == 1 && fread(&P, 4, 1, f) == 1
+                  && fread(&k, 4, 1, f) == 1 && fread(&D, 4, 1, f) == 1 && fread(&B, 4, 1, f) == 1
+                  && fread(&extent, 8, 1, f) == 1;
+        chart.variant = (Variant)(var & 0xFFu); chart.decay = (var & 0x100u) != 0; chart.N = (int)N; chart.P = (int)P; K = (int)k;
         auto rd = [&](std::vector<double>& d, size_t n) { d.resize(n); return fread(d.data(), 8, n, f) == n; };
-        bool ok = true;
         ok &= rd(chart.lam_ref, N);
         chart.Qr = Mat((int)N, (int)P); ok &= rd(chart.Qr.a, (size_t)N * P);
         chart.Gref = Mat((int)N, (int)P); ok &= rd(chart.Gref.a, (size_t)N * P);
