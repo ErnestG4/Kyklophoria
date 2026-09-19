@@ -193,6 +193,16 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None):
         knee = knee_of(track, t)
         if knee:
             rejected['double'] = rejected.get('double', 0) + 1
+        # the hammer: where the track's first frame stands more than 3 dB
+        # above the decay line's own value there, the difference is a fast
+        # partner at the same frequency — the thump the fits used to invent
+        # for themselves with a free decay, proposed here with a 50 ms one
+        thump = None
+        if ok.sum() >= 4:
+            over = track[0] - np.polyval(p_fall, t[0])
+            if over > 3.0 / 8.686:
+                thump = amp * (1.0 - np.exp(-over))
+                rejected['thump'] = rejected.get('thump', 0) + 1
         for part in parts:
             ff, share = part[0], part[1]
             ph = part[2] if len(part) > 2 else 0.0
@@ -205,6 +215,8 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None):
                 modes.append((ff, rr, amp * share, ph))
             else:
                 modes.append((ff, rate, amp * share, ph))
+        if thump is not None:
+            modes.append((f, 6.91 / 0.05, thump, 0.0))
     if len(modes) > nmodes:
         # the split can overrun the budget: keep the loudest
         modes = sorted(modes, key=lambda m: -m[2])[:nmodes]
@@ -307,7 +319,9 @@ def beat_of(track, ok, dt, min_depth=0.35):
     if z == 0 or z >= len(ac) - 2:
         return None
     pk = z + int(np.argmax(ac[z:]))
-    if ac[pk] < 0.2 or pk < 3:
+    # a course beats at a few hertz: a period under ten frames (~115 ms,
+    # 8.6 Hz) is not a pair, it is the attack or noise in the autocorrelation
+    if ac[pk] < 0.2 or pk < 10:
         return None
     period = pk * dt
     if period > 0.6 * len(seg) * dt:
@@ -329,9 +343,19 @@ def decay_ratio(f, r, amp, x, sr, nfft=4096, hop=256, top=10):
     S = np.log(np.array([np.abs(np.fft.rfft(x[s:s + nfft] * win)) for s in range(0, len(x) - nfft, hop)]) + 1e-9)
     t = np.arange(len(S)) * hop / sr
     energy = amp ** 2 / (2 * np.maximum(r, 1e-3))
+    # modes sharing a bin — a thump under a partial, a pair, a double decay —
+    # are one track to the ear: the bin's decay is its slowest component's,
+    # and the bin's energy is the sum
+    groups = []                                    # [energy, r_slow, f]
+    for i in np.argsort(f):
+        if groups and (f[i] - groups[-1][2]) < max(0.015 * f[i], 1.5 * sr / nfft):
+            groups[-1][0] += energy[i]
+            groups[-1][1] = min(groups[-1][1], r[i])
+        else:
+            groups.append([energy[i], r[i], f[i]])
     ratios = []
-    for i in np.argsort(-energy)[:top]:
-        b = int(round(f[i] * nfft / sr))
+    for e, r_slow, fg in sorted(groups, key=lambda g: -g[0])[:top]:
+        b = int(round(fg * nfft / sr))
         if b < 1 or b >= S.shape[1] - 1:
             continue
         tr = S[:, b - 1:b + 2].max(axis=1)
@@ -346,7 +370,7 @@ def decay_ratio(f, r, amp, x, sr, nfft=4096, hop=256, top=10):
         slope = np.polyfit(t[ok], tr[ok], 1)[0]
         if slope >= -0.05:
             continue                                   # the track did not decay in the window
-        ratios.append(np.log((6.91 / r[i]) / (6.91 / -slope)))
+        ratios.append(np.log((6.91 / r_slow) / (6.91 / -slope)))
     return float(np.exp(np.mean(ratios))) if ratios else 1.0
 
 
@@ -397,8 +421,9 @@ def stft_mag(y, n, hop):
 
 ATTACK_MS = 3.0
 MIN_T60 = 0.005      # s; faster is exciter, not mode
-DECAY_PRIOR = 2.0    # weight holding log decay to the track's measurement
-DECAY_BAND = 0.405   # ln 1.5: the free band around it
+import os as _os
+DECAY_PRIOR = float(_os.environ.get('MB_DECAY_PRIOR', 2.0))   # weight holding log decay to the track's measurement
+DECAY_BAND = float(_os.environ.get('MB_DECAY_BAND', 0.405))   # ln 1.5: the free band around it
 
 
 def audible(amp, r, floor_db=-60.0, at=0.01):
