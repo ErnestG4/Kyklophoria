@@ -136,6 +136,13 @@ build/render: tools/render/main.cpp $(COMMON) tools/common/linalg.h tools/common
 	@mkdir -p build
 	$(CXX) $(FLAGS) tools/render/main.cpp -o $@
 
+# Epi's physical models as a note generator: ../epi (GPL-3.0), engine only,
+# no JUCE. See tools/epigen/main.cpp
+EPI ?= ../epi
+build/epigen: tools/epigen/main.cpp $(EPI)/src/epi/dsp/EpiEngine.cpp
+	@mkdir -p build
+	$(CXX) -std=c++20 -O2 -I$(EPI)/src tools/epigen/main.cpp $(EPI)/src/epi/dsp/EpiEngine.cpp -o $@
+
 # ── the listening set ────────────────────────────────────────────────────────
 # Eight paths through the full space, plus the same two cross-family paths
 # through the frequency-only space, which is what the go/no-go is about.
