@@ -47,7 +47,19 @@ def discover(indir, layout, articulation):
     """(path, midi, dynamic, label) for every single-note file"""
     out = []
     exts = ('.mp3', '.wav', '.flac', '.aif', '.aiff')
-    if layout == 'philharmonia':
+    if layout == 'manifest':
+        # an existing fits.tsv names the files and their pitches: for sets whose
+        # files carry no note name and were pitched by hand or by ear
+        with open(os.path.join(indir, 'fits.tsv')) as m:
+            next(m)
+            for line in m:
+                c = line.rstrip('\n').split('\t')
+                for e in exts:
+                    path = os.path.join(indir, c[0] + e)
+                    if os.path.exists(path):
+                        out.append((path, int(float(c[3])), c[4] if len(c) > 4 and c[4] else '-', c[0]))
+                        break
+    elif layout == 'philharmonia':
         for f in sorted(os.listdir(indir)):
             if not f.lower().endswith(exts):
                 continue
@@ -99,7 +111,12 @@ def main():
     ap.add_argument('--steps', type=int, default=800)
     ap.add_argument('--max-seconds', type=float, default=4.0)
     ap.add_argument('--limit', type=int, default=0)
+    ap.add_argument('--polish', type=int, default=-1,
+                    help='steps of a second fit from the surviving modes after validation (default steps/2, 0 for none)')
+    ap.add_argument('--keep-ids', action='store_true', help='name records after their files rather than family+index')
     a = ap.parse_args()
+    if a.polish < 0:
+        a.polish = a.steps // 2
     os.makedirs(a.outdir, exist_ok=True)
     rows = discover(a.indir, a.layout, a.articulation)
     if a.limit:
@@ -109,7 +126,7 @@ def main():
     with open(os.path.join(a.outdir, 'fits.tsv'), 'w') as man:
         man.write('id\tfamily\tparam\tvalue\tdynamic\tsource\tmodes\tloss\texcess_db\n')
         for n, (path, midi, dyn, f) in enumerate(rows):
-            mid = '%s%03d' % (a.family, n)
+            mid = os.path.splitext(os.path.basename(path))[0] if a.keep_ids else '%s%03d' % (a.family, n)
             raw, sr = sf.read(path, always_2d=True)
             raw = raw.mean(axis=1)
             secs = ring_seconds(raw, sr, a.max_seconds)
@@ -127,6 +144,13 @@ def main():
             r = np.maximum(r, 6.91 / cap)
             keep = (amp > amp.max() * 10 ** (-60 / 20)) & modalfit.validate(fr, r, amp, x, sr)
             fr, r, amp = fr[keep], r[keep], amp[keep]
+            if a.polish and len(fr) and (~keep).any():
+                # the survivors, fitted again without the modes that were
+                # taking energy they had no claim to
+                fr, r, amp, y, loss = modalfit.fit(x, sr, list(zip(fr, r, amp)), a.polish, device, verbose=False)
+                r = np.maximum(r, 6.91 / cap)
+                keep = (amp > amp.max() * 10 ** (-60 / 20)) & modalfit.validate(fr, r, amp, x, sr)
+                fr, r, amp = fr[keep], r[keep], amp[keep]
             order = np.argsort(fr)
             tt = np.arange(len(x)) / sr
             y = np.zeros_like(x)
