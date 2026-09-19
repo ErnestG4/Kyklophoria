@@ -4,3 +4,6 @@ out/*.log
 samples/
 out/fit/*-target.wav
 out/fit/*-resynth.wav
+out/fit/*/*-target.wav
+out/fit/*/*-resynth.wav
+out/fit/*/fit.log

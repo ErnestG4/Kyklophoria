@@ -14,6 +14,11 @@
  *             are the reference's, frozen. Not one of the brief's three; it is
  *             here because the go/no-go is whether the shapes add anything,
  *             and the cleanest way to see what they add is to move nothing else.
+ *   diagonal  log frequency and log amplitude per mode, nothing about shape:
+ *             the representation of a *fitted* family, where every model is one
+ *             recording at one position and the gain rows are flat. With
+ *             --decay it is (f, T60, a) per mode, which is everything a
+ *             recording can say and everything a resonator bank needs.
  *
  * ── the maps, for `full` ────────────────────────────────────────────────
  *
@@ -49,6 +54,7 @@
  *   lambda   [ y (N) ]
  *   linear   [ hz (N) ][ vec G (N*P) ]
  *   gonly    [ vec Delta (N*P) ][ vec R~ (P*P) ]
+ *   diagonal [ y (N) ][ log |a| (N) ]
  *
  * With `decay` on, every variant gets one more block, [ log zeta (N) ], the
  * damping ratio per mode. Off for the brief's bake, which graded with uniform
@@ -74,10 +80,11 @@
 
 namespace mb {
 
-enum class Variant : int { Full = 0, Lambda = 1, Linear = 2, GOnly = 3 };
+enum class Variant : int { Full = 0, Lambda = 1, Linear = 2, GOnly = 3, Diagonal = 4 };
 inline const char* VariantName(Variant v)
 {
-    return v == Variant::Full ? "full" : v == Variant::Lambda ? "lambda" : v == Variant::Linear ? "linear" : "gonly";
+    return v == Variant::Full ? "full" : v == Variant::Lambda ? "lambda" : v == Variant::Linear ? "linear"
+                                                                        : v == Variant::GOnly ? "gonly" : "diagonal";
 }
 
 /* One model, aligned to the reference: hz[k] and row k of G are the mode that
@@ -143,6 +150,7 @@ struct Chart
             case Variant::Full:   return N + N * P + P * P;
             case Variant::Lambda: return N;
             case Variant::GOnly:  return N * P + P * P;
+            case Variant::Diagonal: return N + N;
             default:              return N + N * P;
         }
     }
@@ -153,6 +161,7 @@ struct Chart
     int BlockOf(int i) const
     {
         if(decay && i >= Core()) return CoreBlocks();
+        if(variant == Variant::Diagonal) return i < N ? 0 : 1;
         if(variant == Variant::GOnly) return i < N * P ? 0 : 1;
         if(i < N) return 0;
         if(variant == Variant::Full && i >= N + N * P) return 2;
@@ -173,7 +182,7 @@ struct Chart
          * ten real modes a G of rank eleven. */
         double rmin = 1e300;
         for(int i = 0; i < P; i++) rmin = std::min(rmin, R(i, i));
-        frame_ok = rmin > 1e-9;
+        frame_ok = rmin > 1e-9 || variant == Variant::Lambda || variant == Variant::Diagonal;
     }
     bool frame_ok = true;
 
@@ -192,6 +201,13 @@ struct Chart
         const int off = variant == Variant::GOnly ? 0 : N;
         if(variant != Variant::GOnly) for(int i = 0; i < N; i++) v[i] = std::log(r.hz[i]) - lam_ref[i];
         if(variant == Variant::Lambda) return;
+        if(variant == Variant::Diagonal)
+        {
+            /* the amplitude at the recording's position, which is every
+               column; the sign is a phase and is dropped */
+            for(int i = 0; i < N; i++) v[N + i] = std::log(std::fabs(r.G(i, 0)) + 1e-9);
+            return;
+        }
         Mat Q, R;
         QR(r.G, Q, R);
         Mat Dl = GrassLog(Qr, Q);
@@ -219,6 +235,13 @@ struct Chart
         const int off = variant == Variant::GOnly ? 0 : N;
         for(int i = 0; i < N; i++) r.hz[i] = std::exp(lam_ref[i] + (variant == Variant::GOnly ? 0.0 : v[i]));
         if(variant == Variant::Lambda) { r.G = Gref; if(frame_error) *frame_error = 0.0; return; }
+        if(variant == Variant::Diagonal)
+        {
+            r.G = Mat(N, P);
+            for(int i = 0; i < N; i++) for(int p = 0; p < P; p++) r.G(i, p) = std::exp(v[N + i]);
+            if(frame_error) *frame_error = 0.0;
+            return;
+        }
         Mat Dl(N, P), Rt(P, P);
         for(int i = 0; i < N * P; i++) Dl.a[i] = v[off + i];
         for(int i = 0; i < P * P; i++) Rt.a[i] = v[off + N * P + i];

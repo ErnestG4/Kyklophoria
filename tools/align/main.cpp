@@ -91,9 +91,24 @@ static Match Align(const Model& a, const Model& b, int N, int P)
 {
     std::vector<double> mac;
     MacMatrix(a, b, N, P, mac);
+    Match m;
+    if(a.fitted || b.fitted)
+    {
+        /* A recording has one strike position, so its gain rows are all the
+         * same direction and MAC is 1 for every pair — there is no shape to
+         * match on. Partials are matched by rank instead: the k-th lowest of
+         * one to the k-th lowest of the other, which for a near-harmonic
+         * instrument is the k-th partial to the k-th partial. Both models are
+         * stored ascending, so the rank map is the identity. */
+        m.perm.resize(N);
+        for(int i = 0; i < N; i++) m.perm[i] = i;
+        for(int i = 0; i < N; i++) if(i < a.nreal && i < b.nreal) { m.real_mean += mac[(size_t)i * N + i]; m.real++; }
+        m.real_mean = m.real ? m.real_mean / m.real : 0.0;
+        m.mean = m.real_mean;
+        return m;
+    }
     std::vector<double> cost((size_t)N * N);
     for(size_t k = 0; k < cost.size(); k++) cost[k] = 1.0 - mac[k];
-    Match m;
     m.perm = Hungarian(cost, N);
     /* A reference row that is padding has the same junk pattern in every
      * model, so every real mode of b matches it equally well and the Hungarian

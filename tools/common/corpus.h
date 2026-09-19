@@ -16,7 +16,8 @@ namespace mb {
 struct Model
 {
     std::string id;
-    int         family = 0;      /* 0 bar, 1 plate, 2 bell */
+    int         family = 0;      /* see FamilyName */
+    bool        fitted = false;  /* one recording: flat gain rows, no shape */
     double      param  = 0.0;
     int         nreal  = 0;
     std::vector<double> hz;      /* N */
@@ -29,10 +30,10 @@ struct Corpus
 {
     int N = 0, P = 0;
     std::vector<Model> m;
-    static constexpr int kFamilies = 4;
+    static constexpr int kFamilies = 5;
     static const char* FamilyName(int f)
     {
-        static const char* names[kFamilies] = {"bar", "plate", "bell", "tine"};
+        static const char* names[kFamilies] = {"bar", "plate", "bell", "tine", "wurli"};
         return f >= 0 && f < kFamilies ? names[f] : "?";
     }
 };
@@ -63,6 +64,7 @@ inline bool ReadCorpus(const std::string& path, Corpus& c)
         std::memcpy(id, p, 16);
         md.id     = id;
         md.family = p[16];
+        md.fitted = (p[17] & 1u) != 0;
         md.param  = F32(p + 20);
         md.nreal  = (int)U32(p + 24);
         p += 28;

@@ -77,8 +77,12 @@ out/mmr/%.mmr: meshes/%.tet meshes/%.expos build/modalfem
 	@mkdir -p out/mmr
 	build/modalfem --tet $< --expos meshes/$*.expos --out $@ --nmodes $(NMODES) --quiet $$(cat meshes/$*.opts 2>/dev/null)
 
-out/corpus.mdb: $(RECORDS) tools/pack.py meshes/meshes.tsv
-	python3 tools/pack.py meshes/meshes.tsv out/mmr out/corpus.mdb out/manifest.tsv --N $(NMODES)
+# fitted families ride in beside the FEM ones: a manifest and a record
+# directory each, from tools/modalfit.py
+FITS = $(wildcard out/fit/*/fits.tsv)
+out/corpus.mdb: $(RECORDS) tools/pack.py meshes/meshes.tsv $(FITS) $(foreach f,$(FITS),$(wildcard $(dir $(f))*.mmr))
+	python3 tools/pack.py meshes/meshes.tsv out/mmr out/corpus.mdb out/manifest.tsv --N $(NMODES) \
+	  $(foreach f,$(FITS),--fits $(f) $(dir $(f)))
 
 corpus: out/corpus.mdb
 
@@ -166,6 +170,14 @@ out/wav/plate-to-bar-lambda-only.wav: build/render out/space-lambda.msp
 
 # ── one family at a time ─────────────────────────────────────────────────────
 FAMILIES = bar plate bell tine
+# a fitted family is diagonal — frequency, decay, amplitude per partial — and
+# carries its measured decay
+out/space-fam-wurli.msp out/bake-fam-wurli.txt: build/bake out/corpus.mdb out/align.bin
+	build/bake out/corpus.mdb out/align.bin out/space-fam-wurli.msp out/bake-fam-wurli.txt --variant diagonal --decay --family wurli --extent $(EXTENT)
+FITTED_SPACES = out/space-fam-wurli.msp
+fitted: $(FITTED_SPACES) build/grade
+	@for s in $(FITTED_SPACES); do n=$$(basename $$s .msp | sed 's/^space-//'); \
+	  build/grade $$s out/corpus.mdb out/align.bin out/grade-$$n.txt --normalise-pitch --ring $(GRADEFLAGS) | sed "s/^grade [a-z]*/$$n/"; done
 out/space-fam-%.msp out/bake-fam-%.txt: build/bake out/corpus.mdb out/align.bin
 	build/bake out/corpus.mdb out/align.bin out/space-fam-$*.msp out/bake-fam-$*.txt --variant full --family $* --extent $(EXTENT)
 out/space-famlambda-%.msp out/bake-famlambda-%.txt: build/bake out/corpus.mdb out/align.bin
@@ -200,3 +212,10 @@ out/wav/walk-tine.wav: build/render out/space-fam-tine.msp
 out/wav/tine-sweep.wav: build/render out/space-fam-tine.msp
 	build/render out/space-fam-tine.msp out/corpus.mdb out/align.bin $@ --from tine00 --to tine11 --strikes 24 --interval 0.3 --strike 11 --listen 11
 GLIDES += out/wav/walk-tine.wav out/wav/tine-sweep.wav
+out/wav/wurli-keyboard.wav: build/render out/space-fam-wurli.msp
+	build/render out/space-fam-wurli.msp out/corpus.mdb out/align.bin $@ --from wurlz002 --to wurlz017 --strikes 25 --interval 0.4
+out/wav/wurli-glide.wav: build/render out/space-fam-wurli.msp
+	build/render out/space-fam-wurli.msp out/corpus.mdb out/align.bin $@ --from wurlz002 --to wurlz017 --mode glide --strikes 12 --interval 1.0
+out/wav/walk-wurli.wav: build/render out/space-fam-wurli.msp
+	build/render out/space-fam-wurli.msp out/corpus.mdb out/align.bin $@ --walk 7 --seconds 16 --mode glide --interval 0.5
+GLIDES += out/wav/wurli-keyboard.wav out/wav/wurli-glide.wav out/wav/walk-wurli.wav

@@ -198,7 +198,8 @@ int main(int argc, char** argv)
         if(a == "--variant")
         {
             const std::string v = next();
-            variant = v == "lambda" ? Variant::Lambda : v == "linear" ? Variant::Linear : v == "gonly" ? Variant::GOnly : Variant::Full;
+            variant = v == "lambda" ? Variant::Lambda : v == "linear" ? Variant::Linear : v == "gonly" ? Variant::GOnly
+                    : v == "diagonal" ? Variant::Diagonal : Variant::Full;
         }
         else if(a == "--K") K = atoi(next());
         else if(a == "--block-weight") gBlockTotal = std::string(next()) != "entry";
