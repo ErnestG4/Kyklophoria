@@ -46,6 +46,7 @@ import math
 import sys
 
 import numpy as np
+from scipy import signal
 import soundfile as sf
 import torch
 
@@ -68,6 +69,12 @@ def load(path, seconds, onset_db):
     quiet = np.where(env[:pk] < env[pk] * 10 ** (-20 / 20))[0]
     idx = max(0, (int(quiet[-1]) - 1) * hop) if len(quiet) else 0
     x = x[idx: idx + int(seconds * sr)]
+    # nothing under 40 Hz is a mode of anything here, and the Philharmonia
+    # guitar carries a quarter of its energy there (one note, 99%) — stand
+    # rumble and mic handling that the fit was spending its convergence on
+    # and could never explain. Eighth-order Butterworth, run both ways
+    sos = signal.butter(8, 40.0, 'highpass', fs=sr, output='sos')
+    x = signal.sosfiltfilt(sos, x)
     x = x / (np.max(np.abs(x)) or 1.0)
     return x, sr
 
