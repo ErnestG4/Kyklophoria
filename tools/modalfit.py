@@ -156,7 +156,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('wav')
     ap.add_argument('out')
-    ap.add_argument('--resynth')
+    ap.add_argument('--resynth', help='write the resynthesis here')
+    ap.add_argument('--target', help='write the analysed excerpt here, at the same level, for an A/B')
+    ap.add_argument('--max-t60', type=float, default=0.0,
+                    help='cap a fitted T60 at this many seconds (0: three times the analysed length). A decay longer '
+                         'than the window was not measured; on recordings it is room rumble and mp3 floor')
     ap.add_argument('--modes', type=int, default=48)
     ap.add_argument('--seconds', type=float, default=2.0)
     ap.add_argument('--steps', type=int, default=600)
@@ -172,6 +176,8 @@ def main():
     # a mode the fit has turned down to nothing is a mode it could not place,
     # not a quiet one: keep it out of the record rather than in with a decay
     # nobody measured
+    cap = a.max_t60 if a.max_t60 > 0 else 3.0 * a.seconds
+    r = np.maximum(r, 6.91 / cap)
     keep = amp > amp.max() * 10 ** (a.floor / 20)
     dropped = int((~keep).sum())
     f, r, amp = f[keep], r[keep], amp[keep]
@@ -187,6 +193,8 @@ def main():
             o.write('mode %d hz %.6f zeta %.9g gains %s\n' % (k, f[i], r[i] / w, ' '.join('%.9g' % amp[i] for _ in range(a.positions))))
     if a.resynth:
         sf.write(a.resynth, np.clip(y / (np.max(np.abs(y)) or 1.0) * 0.5, -1, 1), sr)
+    if a.target:
+        sf.write(a.target, np.clip(x * 0.5, -1, 1), sr)
     print('  fitted %d modes (%d dropped below %.0f dB), final loss %.4f -> %s' % (len(order), dropped, a.floor, loss, a.out))
     for i in order[:8]:
         print('    %8.1f Hz  T60 %.2fs  amp %.3g' % (f[i], 6.91 / r[i], amp[i]))

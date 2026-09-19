@@ -2,3 +2,5 @@ build/
 meshes/*.tet
 out/*.log
 samples/
+out/fit/*-target.wav
+out/fit/*-resynth.wav
