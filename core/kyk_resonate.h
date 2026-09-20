@@ -18,10 +18,13 @@
  *     y[n] = 2 r cos w · y[n-1] − r² · y[n-2] + x[n],   r = exp(−ζ w),
  * whose impulse response is r^n sin((n+1)w) / sin w: a decaying sine at the
  * mode's frequency and decay, so the gain is multiplied by sin w once at
- * Set() and the loop is three multiply-adds a mode a sample. A strike is a
- * 0.1 ms raised-cosine pulse of the strike's swing into every mode — the
- * hammer's own spectrum is already in the fitted gains; the pulse is only so
- * that the hit does not splatter above 12 kHz the way an impulse does.
+ * Set() and the loop is three multiply-adds a mode a sample. A strike is an
+ * impulse of the strike's swing into a second bank of the same modes, whose
+ * output rises under a 3 ms raised cosine — the envelope the fit's model
+ * had and the gains were fitted under — and whose state is then added into
+ * the main bank's, which a linear bank allows exactly. Two banks for 144
+ * samples, then one. An impulse into the main bank was a click the fit
+ * never heard; a 3 ms pulse would have starved the high modes.
  *
  * The pickup. The stage a shaped world carries per point: the bank's sum is
  * the tine's displacement u; a magnetic pole sees phi = 1/(1 + ((u−h)/w)²)
@@ -66,14 +69,20 @@ struct ResonatorBank
     int   n;
     float c1[kMax], c2[kMax], g[kMax];   /* 2 r cos w, −r², gain · sin w */
     float y1[kMax], y2[kMax];
-    float pulse_left, pulse_n, pulse_amp, pulse_len;
+    /* the strike bank: a new hit rings here under a 3 ms raised-cosine ramp
+       — the envelope the fit's model had, and the gains were fitted under —
+       and is then added into the main state, which a linear bank allows
+       exactly. An impulse into the main bank was a click the fit never
+       heard; a 3 ms pulse would starve the high modes */
+    float s1[kMax], s2[kMax];
+    float ramp_n, ramp_len;
+    bool  ramping;
 
     void Init()
     {
         n = 0;
-        pulse_left = pulse_n = pulse_amp = 0.f;
-        pulse_len = 1.f;
-        for(int i = 0; i < kMax; i++) c1[i] = c2[i] = g[i] = y1[i] = y2[i] = 0.f;
+        ramp_n = 0.f; ramp_len = 144.f; ramping = false;
+        for(int i = 0; i < kMax; i++) c1[i] = c2[i] = g[i] = y1[i] = y2[i] = s1[i] = s2[i] = 0.f;
     }
 
     void Set(const float* hz, const float* zeta, const float* gain, int count, float sr)
@@ -86,18 +95,28 @@ struct ResonatorBank
             c1[i] = 2.f * r * std::cos(w);
             c2[i] = -r * r;
             g[i]  = gain[i] * std::sin(w);
-            y1[i] = y2[i] = 0.f;
+            y1[i] = y2[i] = s1[i] = s2[i] = 0.f;
         }
-        pulse_len = 0.0001f * sr < 4.f ? 4.f : 0.0001f * sr;
+        ramp_len = 0.003f * sr;
+        ramping = false;
     }
 
-    /* the hammer: a raised-cosine pulse of the given swing, added to
-       whatever is still ringing */
+    /* the hammer: an impulse of the given swing into the strike bank. A
+       strike while a strike is still ramping folds the earlier one into the
+       main state first, un-ramped from there on — 3 ms of envelope is
+       inaudible against a second hit that close */
     void Strike(float swing)
     {
-        pulse_amp  = swing;
-        pulse_n    = 0.f;
-        pulse_left = pulse_len;
+        if(ramping) Fold();
+        for(int i = 0; i < n; i++) { s1[i] = swing * g[i]; s2[i] = 0.f; }
+        ramp_n = 0.f;
+        ramping = true;
+    }
+
+    void Fold()
+    {
+        for(int i = 0; i < n; i++) { y1[i] += s1[i]; y2[i] += s2[i]; s1[i] = s2[i] = 0.f; }
+        ramping = false;
     }
 
     /* the displacement, summed over the modes, into out (overwrite) */
@@ -105,21 +124,27 @@ struct ResonatorBank
     {
         for(int k = 0; k < frames; k++)
         {
-            float x = 0.f;
-            if(pulse_left > 0.f)
-            {
-                const float p = (pulse_n + 0.5f) / pulse_len;
-                x = pulse_amp * (1.f - std::cos(6.2831853f * p)) / pulse_len;
-                pulse_n += 1.f;
-                pulse_left -= 1.f;
-            }
             float acc = 0.f;
             for(int i = 0; i < n; i++)
             {
-                const float y = c1[i] * y1[i] + c2[i] * y2[i] + x * g[i];
+                const float y = c1[i] * y1[i] + c2[i] * y2[i];
                 y2[i] = y1[i];
                 y1[i] = y;
                 acc += y;
+            }
+            if(ramping)
+            {
+                const float r = 0.5f - 0.5f * std::cos(3.1415927f * ramp_n / ramp_len);
+                float sacc = 0.f;
+                for(int i = 0; i < n; i++)
+                {
+                    const float y = c1[i] * s1[i] + c2[i] * s2[i];
+                    s2[i] = s1[i];
+                    s1[i] = y;
+                    sacc += y;
+                }
+                acc += r * sacc;
+                if(++ramp_n >= ramp_len) Fold();
             }
             out[k] = acc;
         }
