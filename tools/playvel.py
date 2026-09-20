@@ -33,14 +33,14 @@ def read(path):
         if w[0] == 'mode':
             modes.append((float(w[3]), float(w[5]), float(w[7])))
         elif w[0] == 'shaper':
-            shaper = [float(v) for v in w[2:7]]
+            shaper = [w[1]] + [float(v) for v in w[2:7]]
         elif w[0] == 'take':
             takes.append((w[1], float(w[3])))
     return modes, shaper, takes
 
 
 def note(modes, shaper, swing, seconds, sr):
-    h, w, K, fc, Q = shaper
+    form, h, w, K, fc, Q = shaper
     t = np.arange(int(seconds * sr)) / sr
     u = np.zeros(len(t))
     for hz, zeta, a in modes:
@@ -49,7 +49,10 @@ def note(modes, shaper, swing, seconds, sr):
     k = int(0.003 * sr)
     u[:k] *= 0.5 - 0.5 * np.cos(np.pi * np.arange(k) / k)
     u *= swing
-    phi = 1.0 / (1.0 + ((u - h) / w) ** 2)
+    if form == 'gap':
+        phi = 1.0 / (1.0 - 0.9 * np.tanh(u / (0.9 * w)))
+    else:
+        phi = 1.0 / (1.0 + ((u - h) / w) ** 2)
     d = np.diff(phi, prepend=phi[0])
     # the coil: H(s) = 1 / (1 - (f/fc)^2 + j f/(fc Q)), as a biquad
     w0 = 2 * math.pi * fc / sr

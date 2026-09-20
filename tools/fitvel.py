@@ -16,6 +16,7 @@ The record is a modal record with the stage after it:
 
     mode k hz F zeta Z gains A...          the metal, unit swing
     shaper bell H W K FC Q                 field offset, width, coil gain, coil f, Q
+    shaper gap 0 G K FC Q                  an electrostatic plate: rest gap G (--form gap)
     take v030 swing G level L              one line per take
 
 The packer reads the modes and ignores the rest; the stage is for the
@@ -58,6 +59,7 @@ def main():
     ap.add_argument('--seconds', type=float, default=3.0)
     ap.add_argument('--bar', action='store_true', help='the metal is a clamped bar: only inharmonic partials')
     ap.add_argument('--normalised', action='store_true', help='takes were levelled: an output gain per take')
+    ap.add_argument('--form', default='bell', choices=['bell', 'gap'], help='the transducer: a magnetic pole (bell) or an electrostatic plate (gap)')
     ap.add_argument('--limit', type=int, default=0)
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
@@ -107,7 +109,7 @@ def main():
             if not init:
                 print('  %-6s no partials' % key)
                 continue
-            f, r, amp, ph, g, (h, w, K, fc, Q), ys, loss = modalfit.fit_shaped(xs, sr, init, a.steps, device, verbose=False, normalised=a.normalised)
+            f, r, amp, ph, g, (h, w, K, fc, Q), ys, loss = modalfit.fit_shaped(xs, sr, init, a.steps, device, verbose=False, normalised=a.normalised, form=a.form)
             keep = modalfit.audible(amp, r) & (amp > 0)
             order = [i for i in np.argsort(f) if keep[i]]
             mid = '%s%03d' % (a.family, n)
@@ -124,7 +126,7 @@ def main():
                 o.write('source %s\nfitted 1\nshaped 1\nloss %.5f\npositions 12\nmodes %d\n' % (files[key][0], loss, len(order)))
                 for k, i in enumerate(order):
                     o.write('mode %d hz %.6f zeta %.9g gains %s\n' % (k, f[i], r[i] / (2 * math.pi * f[i]), ' '.join('%.9g' % amp[i] for _ in range(12))))
-                o.write('shaper bell %.6g %.6g %.6g %.6g %.6g\n' % (h, w, K, fc, Q))
+                o.write('shaper %s %.6g %.6g %.6g %.6g %.6g\n' % (a.form, h, w, K, fc, Q))
                 for k, d in enumerate(dirs):
                     o.write('take %s swing %.6g level %.6g\n' % (d, g[k], float(np.sqrt(np.mean(xs[k] ** 2)))))
             man.write('%s\t%s\tmidi\t%d\tall\t%s\t%d\t%.4f\t%.3f\t%.0f\t%.2f\t%s\t%s\t%s\n' % (

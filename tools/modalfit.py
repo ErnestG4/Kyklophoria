@@ -614,7 +614,7 @@ if __name__ == '__main__':
 # takes.
 # ---------------------------------------------------------------------------
 
-def fit_shaped(xs, sr, init, steps, device, verbose=True, normalised=False):
+def fit_shaped(xs, sr, init, steps, device, verbose=True, normalised=False, form='bell'):
     """xs: list of takes (numpy, same length, one note at several velocities,
     softest first). Returns (f, r, a, phase, gains, (h, w, K), ys, loss)."""
     n = min(len(x) for x in xs)
@@ -640,7 +640,11 @@ def fit_shaped(xs, sr, init, steps, device, verbose=True, normalised=False):
     # loss's answer to noise is silence
     with torch.no_grad():
         swing = float(torch.exp(loga).sum())
-    h = torch.tensor(0.3 * 10.0 * swing, device=device, requires_grad=True)
+    # form 'bell': a magnetic pole, phi = 1 / (1 + ((u - h) / w)^2), h the
+    # voicing. form 'gap': an electrostatic plate, C = C0 / (1 - u / g) (Epi's
+    # Wurlitzer law, i = V dC/dt), asymmetric by nature, g the rest gap in
+    # swing units; h is unused and w is the gap
+    h = torch.tensor(0.3 * 10.0 * swing if form == 'bell' else 0.0, device=device, requires_grad=(form == 'bell'))
     logw = torch.tensor(math.log(10.0 * swing), device=device, requires_grad=True)
     logK = torch.tensor(0.0, device=device, requires_grad=True)
     # the coil: inductance against its own capacitance and the cable is a
@@ -671,7 +675,12 @@ def fit_shaped(xs, sr, init, steps, device, verbose=True, normalised=False):
 
     def coil(u):
         w = torch.exp(logw)
-        phi = 1.0 / (1.0 + ((u - h) / w) ** 2)
+        if form == 'gap':
+            # bounded short of the plate: the reed does not pass through it
+            sgap = 0.9 * torch.tanh(u / (0.9 * w))
+            phi = 1.0 / (1.0 - sgap)
+        else:
+            phi = 1.0 / (1.0 + ((u - h) / w) ** 2)
         d = torch.diff(phi, prepend=phi[:1])   # Faraday, per sample
         fc, Q = torch.exp(logfc), torch.exp(logQ)
         s_ = freqs / fc
