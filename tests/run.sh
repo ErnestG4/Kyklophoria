@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Host test suite. Run from the repo root: tests/run.sh [--update]
 #   1. core_check   — unit suite under ASan/UBSan (space, interp, fft, osc, engine)
+#   1b. resonate_check — the modal mode's runtime (kyk_resonate.h): a mode's
+#                     frequency, decay and level; a fitted EP world's pickup
+#                     barking with velocity at the level the fit found; a
+#                     Wurlitzer world struck across its keyboard and
+#                     interpolated between its points
 #   2. rotate_check — rotation identity/permutation, the stereo pair, telemetry
 #   3. morph_check  — morph linearity, level across a cell, band-limit continuity,
 #                     and a diversity report on the generated space
@@ -34,6 +39,10 @@ update=0
 echo "== core_check =="
 $CXX $CORE_FLAGS $SAN tests/core_check.cpp -o "$OUT/core_check" || fail=1
 "$OUT/core_check" || fail=1
+
+echo "== resonate_check =="
+$CXX $CORE_FLAGS $SAN tests/resonate_check.cpp -o "$OUT/resonate_check" || fail=1
+"$OUT/resonate_check" || fail=1
 
 echo "== rotate_check =="
 $CXX $CORE_FLAGS $SAN tests/rotate_check.cpp -o "$OUT/rotate_check" || fail=1
