@@ -38,13 +38,16 @@ separate instrument with the same tools behind it.
    no information — which is the point: it is there for the records that come
    from recordings. The pickup's nonlinearity is still to come.
 
-3. **The Rhodes as the first world.** Half done, from the other end: the
-   pickup is fitted (`fit_shaped`, findings), and it turned out to be most of
-   the instrument — the tine is one sine, the harmonics and the velocity
-   behaviour are the field's. What is left of this step is the tone bar as
-   a second body and the strike point; the pickup is a `Shaper` with a
-   voicing knob. Epi (`../epi`) is the bench for all of it: any note, any
-   velocity, any voicing, eight metals, with the answer known. Four real parameters, not one: tine
+3. **The Rhodes as the first world.** Done, from both ends. The pickup is
+   fitted (`fit_shaped`, findings) and turned out to be most of the
+   instrument — the tine is one sine, the harmonics and the velocity
+   behaviour are the field's — and the voicing sweep says the fitted knob
+   is the screw. The tone bar is in the records as the 1.4-1.7x partial the
+   metal carries, measured rather than modelled; the strike point is the
+   twelve gains of a FEM tine, and the geometry fit (4) puts that FEM tine
+   on the recorded note. Epi (`../epi`) is the bench for all of it: any
+   note, any velocity, any voicing, eight metals, with the answer known.
+   As first written: Four real parameters, not one: tine
    length, tuning-spring position, tonebar coupling, strike point. The tonebar
    is a second FEM body coupled through the clamp; the pickup is a memoryless
    nonlinearity at a position — a `Shaper` stage, which exists. Where a
@@ -64,12 +67,15 @@ separate instrument with the same tools behind it.
      are dropped rather than misfitted, and the record says how many. A
      recording is one strike position, and the record says that too. What it
      needs now is recordings: a Rhodes, a Wurlitzer, the water drum.
-   - *Geometry fitting.* Fit the FEM's *inputs* — dimensions, material, the
-     spring's position — so that its modes match the recording. The FEM is not
-     differentiable, so this is black-box optimisation over a handful of
-     parameters, and the 4090 is for running many FEMs rather than for
-     gradients. Also where the "crazy topologies" go: sweep a parametric family
-     of shells, tubes with baffles, coupled cavities, and keep what sounds like
+   - *Geometry fitting.* Done in its first form: `tools/geofit.py`,
+     Nelder-Mead over the tine's length and spring position, a fresh mesh
+     and a modalfem run per evaluation (a second each), against the two
+     numbers a shaped record gives the metal — the fundamental and the
+     second bending mode's ratio. Seven EP notes, C3 to E6: f1 to a tenth of
+     a hertz and the ratio to a hundredth on every one, with lengths 106 to
+     33 mm and springs 18 to 49 mm from the tip (`out/geofit-ep.tsv`). The
+     FEM family is the instrument, note by note. Where the "crazy topologies"
+     go is unchanged: sweep a parametric family and keep what sounds like
      something.
    Neither needs torch on the module; both need it on the desktop, and the
    `fmexplorer` venv has torch 2.11 with CUDA on the 4090.

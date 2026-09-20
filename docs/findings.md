@@ -508,6 +508,17 @@ and the output comes out an octave up, and where the fit reproduces it
 symmetric. Monotonic in |h|, zero at centre: the fitted number is the
 screw, and a world can have it as an axis.
 
+*The geometry, from the other end.* The shaped records give the metal two
+numbers a note: the fundamental, and the second bending mode's ratio to it
+(5.4-7.5 across the EP's keyboard; a uniform clamped rod's is 6.27 and the
+tuning spring moves it). `tools/geofit.py` drives the FEM tine's length and
+spring position onto them — Nelder-Mead, a mesh and a modalfem run per
+evaluation, a second each — and lands both on every one of seven notes:
+C3 106 mm with the spring 41 mm from the tip, C4 77 / 39, C5 53 / 26, E6
+33 / 18. Real tines run about that. The FEM family is not a stand-in for
+the instrument any more; it is the instrument, note by note, and a world
+can be baked from it with the pickup on top.
+
 *Decay, measured honestly.* `decay_ratio` is now energy-weighted, because a
 thump at a three-hundredth of the fundamental's energy judged against a
 track that is the room's had a vote equal to the fundamental's and read the
