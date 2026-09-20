@@ -10,14 +10,13 @@
  *         r = exp(-zeta w), whose impulse response is r^n sin((n+1) w) / sin(w):
  *         a decaying sine at the mode's frequency and decay, so the gain is
  *         multiplied by sin(w) once at Set() and the bank is three
- *         multiply-adds a mode a sample. Every strike excites every mode with the same pulse
- *         — the mode's gain is where the strike position lives, as in the
- *         records — and the pulse is a 0.1 ms raised cosine rather than an
- *         impulse. The hammer's own spectrum is already in the fitted gains
- *         (the fit's model ramps its envelope over 3 ms and the gains were
- *         fitted with that), so the pulse is not the hammer; it is only
- *         there so that the strike itself does not splatter above 12 kHz,
- *         which is where an impulse's click lives (docs/findings.md).
+ *         multiply-adds a mode a sample. A strike is an impulse of the
+ *         strike's swing into a second bank of the same modes, whose output
+ *         rises under a 3 ms raised cosine — the envelope the fit's model had
+ *         and the gains were fitted under — and whose state is then added
+ *         into the main bank's, which a linear bank allows exactly. An
+ *         impulse into the main bank was a click the fit never heard; a 3 ms
+ *         pulse would starve the high modes.
  *
  * Pickup. The stage a record carries as `shaper bell h w K fc Q`: the bank's
  *         sum is the tine's displacement u, the coil sees the field
@@ -44,8 +43,14 @@ struct ModalBank
     int   n = 0;
     float c1[kMax], c2[kMax], g[kMax];   /* 2 r cos w, -r^2, gain * sin w */
     float y1[kMax], y2[kMax];
-    float pulse_left = 0.0f, pulse_n = 0.0f, pulse_amp = 0.0f;
-    float pulse_len = 1.0f;
+    /* the strike bank: a new hit rings here under a 3 ms raised-cosine ramp
+       — the envelope the fit's model had, and the gains were fitted under —
+       and is then added into the main state, which a linear bank allows
+       exactly. An impulse into the main bank was a click the fit never
+       heard; a 3 ms pulse would starve the high modes */
+    float s1[kMax], s2[kMax];
+    float ramp_n = 0.0f, ramp_len = 144.0f;
+    bool  ramping = false;
 
     void Set(const float* hz, const float* zeta, const float* gain, int count, float sr)
     {
@@ -57,18 +62,28 @@ struct ModalBank
             c1[i] = 2.0f * r * std::cos(w);
             c2[i] = -r * r;
             g[i]  = gain[i] * std::sin(w);
-            y1[i] = y2[i] = 0.0f;
+            y1[i] = y2[i] = s1[i] = s2[i] = 0.0f;
         }
-        pulse_len = 0.0001f * sr < 4.0f ? 4.0f : 0.0001f * sr;
+        ramp_len = 0.003f * sr;
+        ramping = false;
     }
 
-    /* the hammer: a raised-cosine pulse of the given swing, added to
-       whatever is still ringing */
+    /* the hammer: an impulse of the given swing into the strike bank. A
+       strike while a strike is still ramping folds the earlier one into the
+       main state first, un-ramped from there on — 3 ms of envelope is
+       inaudible against a second hit that close */
     void Strike(float swing)
     {
-        pulse_amp  = swing;
-        pulse_n    = 0.0f;
-        pulse_left = pulse_len;
+        if(ramping) Fold();
+        for(int i = 0; i < n; i++) { s1[i] = swing * g[i]; s2[i] = 0.0f; }
+        ramp_n = 0.0f;
+        ramping = true;
+    }
+
+    void Fold()
+    {
+        for(int i = 0; i < n; i++) { y1[i] += s1[i]; y2[i] += s2[i]; s1[i] = s2[i] = 0.0f; }
+        ramping = false;
     }
 
     /* the displacement, summed over the modes, into out (overwrite) */
@@ -76,24 +91,27 @@ struct ModalBank
     {
         for(int k = 0; k < frames; k++)
         {
-            float x = 0.0f;
-            if(pulse_left > 0.0f)
-            {
-                /* a raised cosine whose samples sum to the swing: the same
-                   energy into every mode as an impulse, without the impulse's
-                   splatter */
-                const float p = (pulse_n + 0.5f) / pulse_len;
-                x = pulse_amp * (1.0f - std::cos(6.2831853f * p)) / pulse_len;
-                pulse_n += 1.0f;
-                pulse_left -= 1.0f;
-            }
             float acc = 0.0f;
             for(int i = 0; i < n; i++)
             {
-                const float y = c1[i] * y1[i] + c2[i] * y2[i] + x * g[i];
+                const float y = c1[i] * y1[i] + c2[i] * y2[i];
                 y2[i] = y1[i];
                 y1[i] = y;
                 acc += y;
+            }
+            if(ramping)
+            {
+                const float r = 0.5f - 0.5f * std::cos(3.1415927f * ramp_n / ramp_len);
+                float sacc = 0.0f;
+                for(int i = 0; i < n; i++)
+                {
+                    const float y = c1[i] * s1[i] + c2[i] * s2[i];
+                    s2[i] = s1[i];
+                    s1[i] = y;
+                    sacc += y;
+                }
+                acc += r * sacc;
+                if(++ramp_n >= ramp_len) Fold();
             }
             out[k] = acc;
         }

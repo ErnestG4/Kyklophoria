@@ -240,7 +240,7 @@ $(foreach f,$(FITTED),out/wav/walk-$(f).wav): out/wav/walk-%.wav: build/render o
 fitted-renders: $(foreach f,$(FITTED),out/wav/$(f)-keyboard.wav out/wav/walk-$(f).wav)
 
 # ── the runtime prototype, and what it costs on the M7 ───────────────────────
-build/modaltest: tools/modaltest/main.cpp runtime/modal_bank.h
+build/modaltest: tools/modaltest/main.cpp runtime/modal_bank.h runtime/world.h
 	@mkdir -p build
 	$(CXX) -std=c++17 -O2 -Wall tools/modaltest/main.cpp -o $@
 

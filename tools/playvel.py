@@ -60,6 +60,11 @@ def note(modes, shaper, swing, seconds, sr):
     b0 = (1 - math.cos(w0)) / 2; b1 = 1 - math.cos(w0); b2 = b0
     a0 = 1 + alpha; a1 = -2 * math.cos(w0); a2 = 1 - alpha
     y = signal.lfilter([b0 / a0, b1 / a0, b2 / a0], [1, a1 / a0, a2 / a0], d)
+    # a tine rings for half a minute and the buffer does not: the last 100 ms
+    # go out on a raised cosine, or every note ends in a step and the file
+    # pops at every strike time plus the ring
+    k = min(len(y), int(0.1 * sr))
+    y[-k:] *= 0.5 + 0.5 * np.cos(np.pi * np.arange(k) / k)
     return K * y
 
 

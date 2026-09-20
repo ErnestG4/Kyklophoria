@@ -66,6 +66,10 @@ static int world(const char* path, const char* out_path, float vel, int sr)
     }
     float rms = 0; for(float s : out) rms += s * s; rms = std::sqrt(rms / out.size());
     if(rms > 0) for(float& s : out) s = std::tanh(s * 0.1f / rms);
+    /* the voices are still ringing at the end of the file: fade the last
+       quarter second so it does not end in a step */
+    const size_t fade = std::min(out.size(), (size_t)(sr / 4));
+    for(size_t i = 0; i < fade; i++) out[out.size() - 1 - i] *= (float)i / fade;
     wav(out_path, out, sr);
     printf("  %s: %d strikes at velocity %.2f\n", out_path, w.P, vel);
     return 0;
