@@ -8,7 +8,7 @@ A shaped record (fitvel) is the metal's modes, `shaper bell h w K fc q`, and a
 `take` line per velocity with the swing the fit gave it. Velocity here is a
 swing: 0 is the softest take's, 1 the hardest's, log-interpolated between,
 and above 1 is allowed — the field does not care that nobody recorded it.
-The chain is the fit's: decaying sines with the 3 ms attack, the bell,
+The chain is the fit's: decaying sines at their fitted phases with the 3 ms attack, the bell,
 Faraday as a first difference, the coil as a second-order low-pass. Every
 note is struck at the same swing scale so that what changes with velocity is
 the field's doing, then the file is levelled to -20 dBFS RMS.
@@ -43,9 +43,9 @@ def note(modes, shaper, swing, seconds, sr):
     form, h, w, K, fc, Q = shaper
     t = np.arange(int(seconds * sr)) / sr
     u = np.zeros(len(t))
-    for hz, zeta, a in modes:
+    for hz, zeta, a, ph in modes:
         r = zeta * 2 * math.pi * hz
-        u += a * np.exp(-r * t) * np.sin(2 * math.pi * hz * t)
+        u += a * np.exp(-r * t) * np.sin(2 * math.pi * hz * t + ph)
     k = int(0.003 * sr)
     u[:k] *= 0.5 - 0.5 * np.cos(np.pi * np.arange(k) / k)
     u *= swing
