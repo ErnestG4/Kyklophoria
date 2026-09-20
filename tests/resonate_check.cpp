@@ -181,10 +181,11 @@ int main()
         CHECK(w.Attach(blob.data(), (uint32_t)blob.size()), "wurli.kykm did not attach");
         CHECK(w.form == 0 && w.N >= 40 && w.P == 11, "wurli: form %d N %d P %d", w.form, w.N, w.P);
         /* the burst: a strike with the point's burst and one without differ
-           in their first 40 ms and not after it — the attack the modes are
+           in their first 40 ms and not after 70 — the attack the modes are
            not, played once and gone. ModalBake's tools/bursts.py made them
-           the recording's first 40 ms minus the modes', so with the burst
-           the first 40 ms is the recording's */
+           the recording's first 60 ms minus the modes', crossing into the
+           modes over the last 30, so with the burst the first 40 ms is the
+           recording's and by 70 nothing of it is left */
         {
             ResonatorVoice with; with.Init(); w.At(60.f, with, sr); with.Strike(1.f);
             ResonatorVoice without; without.Init(); w.At(60.f, without, sr); without.bursts = nullptr; without.Strike(1.f);
@@ -192,10 +193,10 @@ int main()
             with.Process(ya.data(), 4800); without.Process(yb.data(), 4800);
             double d_early = 0, d_late = 0, e_late = 0;
             for(int i = 0; i < 1920; i++) d_early += (ya[i] - yb[i]) * (ya[i] - yb[i]);
-            for(int i = 2400; i < 4800; i++) { d_late += (ya[i] - yb[i]) * (ya[i] - yb[i]); e_late += yb[i] * yb[i]; }
+            for(int i = 3360; i < 4800; i++) { d_late += (ya[i] - yb[i]) * (ya[i] - yb[i]); e_late += yb[i] * yb[i]; }
             CHECK(d_early > 0.0, "the burst added nothing in the first 40 ms");
-            CHECK(d_late < 1e-6 * e_late, "the burst is still there after 50 ms: %.3g of the signal", d_late / e_late);
-            printf("  wurli: C4's burst adds %.1f in the first 40 ms and %.2g after 50 ms\n", d_early, d_late);
+            CHECK(d_late < 1e-6 * e_late, "the burst is still there after 70 ms: %.3g of the signal", d_late / e_late);
+            printf("  wurli: C4's burst adds %.1f in the first 40 ms and %.2g after 70 ms\n", d_early, d_late);
         }
         for(int i = 0; i < w.P; i++)
         {
