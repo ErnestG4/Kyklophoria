@@ -488,15 +488,21 @@ The metal on every note: one sine and a thump. The swing ratio between the
 layers 2.5× on every note, as two fixed velocity layers should give.
 
 *Over the whole sets* (`fitvel`, the bark judged over the harmonics the
-target has above −40 dB re h1): Epi's tine, 37 notes at six velocities, one
-metal mode the median, error 2.4 dB mean and 5.0 at the 90th percentile;
+target has above −40 dB re h1): Epi's tine, 35 notes at six velocities, one
+metal mode the median, error 2.4 dB mean and 6.0 at the 90th percentile
+(the top octave only after the metal was initialised from the loudest take
+— its softest takes are noise at −90 dBFS, and a metal initialised from
+noise opened the field flat);
 the hardest take's h2 runs from +2 to +32 dB across the keyboard and the
 model has it within 2.1 dB. The recorded EP, 84 notes at two levelled
 velocities, six metal modes the median (the thump and the tone bar), 7.4 dB
 mean and 22 at the 90th — the top octave, where a levelled take at MED and
 one at MAX barely differ and there is little to fit. Epi's reed at 7.0 dB
-mean is the form being wrong rather than the fit: an electrostatic pickup
-is a gap, 1/(g − u)², not a bell, and it wants its own stage.
+mean with the bell was the form being wrong rather than the fit: an
+electrostatic pickup is a gap, 1/(g − u)², not a bell; with its own stage
+(`--form gap`) the 37 notes come to 4.5 dB mean, and what remains is the
+reed reaching the plate plane at the top two velocities, where Epi's
+capacitance turns over and a gap that only narrows cannot follow.
 
 *The voicing screw.* The one test that says whether a fitted number is a
 physical one: Epi's tine at six pickup heights, one velocity, nineteen
