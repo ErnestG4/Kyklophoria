@@ -1,0 +1,15 @@
+# modalfit shaped record via fitvel: d2 at 6 velocities, loss 1.0736
+source v015/d2.wav
+fitted 1
+shaped 1
+loss 1.07360
+positions 12
+modes 1
+mode 0 hz 73.484475 zeta 0.000680407523 gains 0.60331413 0.60331413 0.60331413 0.60331413 0.60331413 0.60331413 0.60331413 0.60331413 0.60331413 0.60331413 0.60331413 0.60331413
+shaper bell 1.34128 7.93516 31.9689 258.809 1.51023
+take v015 swing 1.40846 level 0.00558186
+take v030 swing 3.89693 level 0.0177181
+take v050 swing 9.13522 level 0.0562816
+take v070 swing 18.2581 level 0.13057
+take v085 swing 29.1801 level 0.203717
+take v100 swing 48.6391 level 0.283524
