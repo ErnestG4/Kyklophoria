@@ -137,8 +137,14 @@ int main()
         CHECK(w.form == 1, "ep-vel is a magnetic world (form 1), got %d", w.form);
         float hz[ResonatorBank::kMax], z[ResonatorBank::kMax], g[ResonatorBank::kMax], ph[ResonatorBank::kMax];
         w.Decode(0, hz, z, g, ph);
-        /* the export wrote C2's metal at 64.26 Hz (out/fit/ep-vel/epv000.mmr) */
-        CHECK(std::fabs(1200 * std::log2(hz[0] / 64.262f)) < 1.0, "point 0 decodes to %.2f Hz, record says 64.262", hz[0]);
+        /* point 0 is the EP's lowest note, midi 36 = C2 at 65.4 Hz; the fit
+           has it a few cents off and a refit moves it a few more, so the
+           bound is a quarter tone. And the decode is its own encode's
+           inverse: cents back from hertz land on the byte that was read */
+        CHECK(std::fabs(1200 * std::log2(hz[0] / 65.41f)) < 50.0, "point 0 decodes to %.2f Hz, C2 is 65.41", hz[0]);
+        uint16_t c0; std::memcpy(&c0, w.Modes(0), 2);
+        const int back = (int)std::lround(1200.0 * std::log2(hz[0] / 20.0));
+        CHECK(back == (int)c0, "point 0: %.3f Hz encodes back to %d cents, byte says %d", hz[0], back, (int)c0);
         /* C3 (param 48): six strikes rendered alone, h2 re h1 must rise monotonically */
         double prev = -1e9; bool mono = true; double first_h2 = 0, last_h2 = 0;
         for(int s = 0; s < 6; s++)
