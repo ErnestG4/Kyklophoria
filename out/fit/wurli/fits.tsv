@@ -1,12 +1,12 @@
-id	family	param	value	dynamic	source	modes	loss	excess_db
-wurlz002	wurli	midi	36	-	wurlz002	47	1.5499	0.073
-wurlz003	wurli	midi	43	-	wurlz003	46	1.9787	0.036
-wurlz001	wurli	midi	48	-	wurlz001	48	1.7927	0.042
-wurlz007	wurli	midi	55	-	wurlz007	21	0.6311	0.029
-wurlz008	wurli	midi	60	-	wurlz008	19	1.0966	0.010
-wurlz010	wurli	midi	67	-	wurlz010	30	0.5763	0.060
-wurlz012	wurli	midi	72	-	wurlz012	17	0.4383	0.024
-wurlz013	wurli	midi	79	-	wurlz013	14	0.4965	0.087
-wurlz014	wurli	midi	84	-	wurlz014	19	0.3332	0.033
-wurlz016	wurli	midi	91	-	wurlz016	18	0.6333	0.171
-wurlz017	wurli	midi	96	-	wurlz017	19	0.5845	0.144
+id	family	param	value	dynamic	source	modes	loss	excess_db	decay_ratio
+wurlz002	wurli	midi	36	-	wurlz002	43	1.5869	0.021	0.789
+wurlz003	wurli	midi	43	-	wurlz003	44	2.0057	0.038	1.184
+wurlz001	wurli	midi	48	-	wurlz001	47	2.0793	0.031	0.864
+wurlz007	wurli	midi	55	-	wurlz007	45	0.5479	0.032	1.002
+wurlz008	wurli	midi	60	-	wurlz008	39	1.0009	0.019	1.284
+wurlz010	wurli	midi	67	-	wurlz010	36	0.7830	0.112	1.146
+wurlz012	wurli	midi	72	-	wurlz012	29	0.4453	0.029	0.803
+wurlz013	wurli	midi	79	-	wurlz013	22	0.4309	0.063	0.725
+wurlz014	wurli	midi	84	-	wurlz014	20	0.3797	0.033	0.961
+wurlz016	wurli	midi	91	-	wurlz016	32	0.5246	0.189	1.148
+wurlz017	wurli	midi	96	-	wurlz017	28	0.4811	0.133	0.848

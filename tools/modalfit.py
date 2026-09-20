@@ -332,7 +332,7 @@ def beat_of(track, ok, dt, min_depth=0.35):
 
 def decay_ratio(f, r, amp, x, sr, nfft=4096, hop=256, top=10):
     """Fitted T60 against the recording's own, for the `top` modes by ring
-    energy: the geometric mean of fit/track. One is right; a half is a model
+    energy: the energy-weighted geometric mean of fit/track. One is right; a half is a model
     twice as dead as the instrument. The track's T60 is the slope of the log
     magnitude at the mode's bin over the frames within 10 dB of its peak —
     a beating pair shares a bin, and the line through the beats is the pair's
@@ -368,10 +368,16 @@ def decay_ratio(f, r, amp, x, sr, nfft=4096, hop=256, top=10):
         if ok.sum() < 6:
             continue
         slope = np.polyfit(t[ok], tr[ok], 1)[0]
-        if slope >= -0.05:
-            continue                                   # the track did not decay in the window
-        ratios.append(np.log((6.91 / r_slow) / (6.91 / -slope)))
-    return float(np.exp(np.mean(ratios))) if ratios else 1.0
+        if slope >= -0.05 or (tr[pk] - tr[ok][-1]) < 10 / 8.686:
+            continue                                   # a decay the window did not show 10 dB of was not measured
+        ratios.append((np.log((6.91 / r_slow) / (6.91 / -slope)), e))
+    if not ratios:
+        return 1.0
+    # weighted by ring energy: a thump at a three-hundredth of the loudest
+    # partial's energy, judged against a track that is the room's, does not
+    # get a vote equal to the fundamental's
+    w = np.array([e for _, e in ratios])
+    return float(np.exp(np.sum([v * e for v, e in ratios]) / w.sum()))
 
 
 def excess_db(y, x, sr, n=2048, hop=512):

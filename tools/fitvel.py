@@ -89,7 +89,7 @@ def main():
             xs = []
             for rel in files[key]:
                 try:
-                    x, sr = modalfit.load(os.path.join(a.indir, rel), a.seconds, -70.0, normalise=a.normalised)
+                    x, sr = modalfit.load(os.path.join(a.indir, rel), a.seconds, -90.0, normalise=a.normalised)
                 except ValueError as e:
                     print('  %-6s skipped: %s' % (key, e))
                     xs = None

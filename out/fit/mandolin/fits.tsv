@@ -1,40 +1,40 @@
-id	family	param	value	dynamic	source	modes	loss	excess_db
-mandolin000	mandolin	midi	57	piano	mandolin_A3_very-long_piano_normal.mp3	32	1.8772	0.136
-mandolin001	mandolin	midi	69	piano	mandolin_A4_very-long_piano_normal.mp3	45	1.9455	0.445
-mandolin002	mandolin	midi	81	piano	mandolin_A5_very-long_piano_normal.mp3	33	1.0292	0.032
-mandolin003	mandolin	midi	93	piano	mandolin_A6_very-long_piano_normal.mp3	43	1.2720	0.028
-mandolin004	mandolin	midi	58	piano	mandolin_As3_very-long_piano_normal.mp3	40	1.6800	0.108
-mandolin005	mandolin	midi	70	piano	mandolin_As4_very-long_piano_normal.mp3	45	1.4497	0.276
-mandolin006	mandolin	midi	82	piano	mandolin_As5_very-long_piano_normal.mp3	31	1.2593	0.024
-mandolin007	mandolin	midi	59	piano	mandolin_B3_very-long_piano_normal.mp3	41	1.6844	0.248
-mandolin008	mandolin	midi	71	piano	mandolin_B4_very-long_piano_normal.mp3	40	0.9868	0.026
-mandolin009	mandolin	midi	83	piano	mandolin_B5_very-long_piano_normal.mp3	39	0.9483	0.158
-mandolin010	mandolin	midi	60	piano	mandolin_C4_very-long_piano_normal.mp3	35	2.0300	0.263
-mandolin011	mandolin	midi	72	piano	mandolin_C5_very-long_piano_normal.mp3	44	1.6326	0.220
-mandolin012	mandolin	midi	84	piano	mandolin_C6_very-long_piano_normal.mp3	27	0.7439	0.010
-mandolin013	mandolin	midi	61	piano	mandolin_Cs4_very-long_piano_normal.mp3	29	1.3705	0.121
-mandolin014	mandolin	midi	73	piano	mandolin_Cs5_very-long_piano_normal.mp3	31	0.8980	0.022
-mandolin015	mandolin	midi	85	piano	mandolin_Cs6_very-long_piano_normal.mp3	32	0.6583	0.017
-mandolin016	mandolin	midi	62	piano	mandolin_D4_very-long_piano_normal.mp3	34	1.8217	0.419
-mandolin017	mandolin	midi	74	piano	mandolin_D5_very-long_piano_normal.mp3	34	1.2159	0.050
-mandolin018	mandolin	midi	86	piano	mandolin_D6_very-long_piano_normal.mp3	33	0.6362	0.012
-mandolin019	mandolin	midi	63	piano	mandolin_Ds4_very-long_piano_normal.mp3	31	1.1804	0.168
-mandolin020	mandolin	midi	75	piano	mandolin_Ds5_very-long_piano_normal.mp3	35	1.1886	0.045
-mandolin021	mandolin	midi	87	piano	mandolin_Ds6_very-long_piano_normal.mp3	32	0.9434	0.014
-mandolin022	mandolin	midi	64	piano	mandolin_E4_very-long_piano_normal.mp3	26	1.5469	0.149
-mandolin023	mandolin	midi	76	piano	mandolin_E5_very-long_piano_normal.mp3	41	1.1715	0.073
-mandolin024	mandolin	midi	88	piano	mandolin_E6_very-long_piano_normal.mp3	42	1.7523	0.031
-mandolin025	mandolin	midi	65	piano	mandolin_F4_very-long_piano_normal.mp3	25	1.5116	0.197
-mandolin026	mandolin	midi	77	piano	mandolin_F5_very-long_piano_normal.mp3	46	1.1592	0.056
-mandolin027	mandolin	midi	89	piano	mandolin_F6_very-long_piano_normal.mp3	40	1.1968	0.016
-mandolin028	mandolin	midi	66	piano	mandolin_Fs4_very-long_piano_normal.mp3	41	1.8776	0.294
-mandolin029	mandolin	midi	78	piano	mandolin_Fs5_very-long_piano_normal.mp3	47	1.2829	0.069
-mandolin030	mandolin	midi	90	piano	mandolin_Fs6_very-long_piano_normal.mp3	36	1.3555	0.011
-mandolin031	mandolin	midi	55	piano	mandolin_G3_very-long_piano_normal.mp3	23	1.6990	0.360
-mandolin032	mandolin	midi	67	piano	mandolin_G4_very-long_piano_normal.mp3	36	1.6461	0.195
-mandolin033	mandolin	midi	79	piano	mandolin_G5_very-long_piano_normal.mp3	42	1.5812	0.111
-mandolin034	mandolin	midi	91	piano	mandolin_G6_very-long_piano_normal.mp3	45	1.5111	0.067
-mandolin035	mandolin	midi	56	piano	mandolin_Gs3_very-long_piano_normal.mp3	30	1.3861	0.206
-mandolin036	mandolin	midi	68	piano	mandolin_Gs4_very-long_piano_normal.mp3	26	1.5491	0.137
-mandolin037	mandolin	midi	80	piano	mandolin_Gs5_very-long_piano_normal.mp3	37	1.1880	0.016
-mandolin038	mandolin	midi	92	piano	mandolin_Gs6_very-long_piano_normal.mp3	45	1.3784	0.017
+id	family	param	value	dynamic	source	modes	loss	excess_db	decay_ratio
+mandolin000	mandolin	midi	57	piano	mandolin_A3_very-long_piano_normal.mp3	41	1.5274	0.253	0.787
+mandolin001	mandolin	midi	69	piano	mandolin_A4_very-long_piano_normal.mp3	47	1.8045	0.470	0.796
+mandolin002	mandolin	midi	81	piano	mandolin_A5_very-long_piano_normal.mp3	41	0.9685	0.045	0.724
+mandolin003	mandolin	midi	93	piano	mandolin_A6_very-long_piano_normal.mp3	41	1.4592	0.032	1.445
+mandolin004	mandolin	midi	58	piano	mandolin_As3_very-long_piano_normal.mp3	44	1.6350	0.092	0.644
+mandolin005	mandolin	midi	70	piano	mandolin_As4_very-long_piano_normal.mp3	44	1.5049	0.280	0.659
+mandolin006	mandolin	midi	82	piano	mandolin_As5_very-long_piano_normal.mp3	42	1.0565	0.030	0.921
+mandolin007	mandolin	midi	59	piano	mandolin_B3_very-long_piano_normal.mp3	41	1.7174	0.234	0.672
+mandolin008	mandolin	midi	71	piano	mandolin_B4_very-long_piano_normal.mp3	38	1.2965	0.061	1.018
+mandolin009	mandolin	midi	83	piano	mandolin_B5_very-long_piano_normal.mp3	41	0.9850	0.159	0.738
+mandolin010	mandolin	midi	60	piano	mandolin_C4_very-long_piano_normal.mp3	48	1.3667	0.182	0.903
+mandolin011	mandolin	midi	72	piano	mandolin_C5_very-long_piano_normal.mp3	45	1.3892	0.131	0.577
+mandolin012	mandolin	midi	84	piano	mandolin_C6_very-long_piano_normal.mp3	37	0.7806	0.011	0.674
+mandolin013	mandolin	midi	61	piano	mandolin_Cs4_very-long_piano_normal.mp3	43	1.3069	0.114	0.466
+mandolin014	mandolin	midi	73	piano	mandolin_Cs5_very-long_piano_normal.mp3	35	0.7374	0.032	0.601
+mandolin015	mandolin	midi	85	piano	mandolin_Cs6_very-long_piano_normal.mp3	37	0.6286	0.013	1.183
+mandolin016	mandolin	midi	62	piano	mandolin_D4_very-long_piano_normal.mp3	36	1.7093	0.477	0.637
+mandolin017	mandolin	midi	74	piano	mandolin_D5_very-long_piano_normal.mp3	41	1.0767	0.052	0.567
+mandolin018	mandolin	midi	86	piano	mandolin_D6_very-long_piano_normal.mp3	40	0.6785	0.011	0.704
+mandolin019	mandolin	midi	63	piano	mandolin_Ds4_very-long_piano_normal.mp3	39	0.9052	0.117	0.703
+mandolin020	mandolin	midi	75	piano	mandolin_Ds5_very-long_piano_normal.mp3	42	1.0866	0.089	0.662
+mandolin021	mandolin	midi	87	piano	mandolin_Ds6_very-long_piano_normal.mp3	36	1.0656	0.016	0.768
+mandolin022	mandolin	midi	64	piano	mandolin_E4_very-long_piano_normal.mp3	43	1.3911	0.256	0.637
+mandolin023	mandolin	midi	76	piano	mandolin_E5_very-long_piano_normal.mp3	42	1.1093	0.081	0.511
+mandolin024	mandolin	midi	88	piano	mandolin_E6_very-long_piano_normal.mp3	44	1.6848	0.059	1.463
+mandolin025	mandolin	midi	65	piano	mandolin_F4_very-long_piano_normal.mp3	37	1.3067	0.363	0.883
+mandolin026	mandolin	midi	77	piano	mandolin_F5_very-long_piano_normal.mp3	41	1.1620	0.037	0.897
+mandolin027	mandolin	midi	89	piano	mandolin_F6_very-long_piano_normal.mp3	36	1.7883	0.034	1.013
+mandolin028	mandolin	midi	66	piano	mandolin_Fs4_very-long_piano_normal.mp3	48	1.7721	0.360	1.064
+mandolin029	mandolin	midi	78	piano	mandolin_Fs5_very-long_piano_normal.mp3	43	1.5605	0.083	0.855
+mandolin030	mandolin	midi	90	piano	mandolin_Fs6_very-long_piano_normal.mp3	42	1.4070	0.045	1.389
+mandolin031	mandolin	midi	55	piano	mandolin_G3_very-long_piano_normal.mp3	38	1.7222	0.352	0.948
+mandolin032	mandolin	midi	67	piano	mandolin_G4_very-long_piano_normal.mp3	43	1.4145	0.206	0.934
+mandolin033	mandolin	midi	79	piano	mandolin_G5_very-long_piano_normal.mp3	47	1.5372	0.106	0.833
+mandolin034	mandolin	midi	91	piano	mandolin_G6_very-long_piano_normal.mp3	45	1.9085	0.074	1.271
+mandolin035	mandolin	midi	56	piano	mandolin_Gs3_very-long_piano_normal.mp3	45	1.3239	0.238	0.714
+mandolin036	mandolin	midi	68	piano	mandolin_Gs4_very-long_piano_normal.mp3	41	1.2657	0.177	0.556
+mandolin037	mandolin	midi	80	piano	mandolin_Gs5_very-long_piano_normal.mp3	44	1.0706	0.020	0.715
+mandolin038	mandolin	midi	92	piano	mandolin_Gs6_very-long_piano_normal.mp3	40	1.7195	0.028	0.701

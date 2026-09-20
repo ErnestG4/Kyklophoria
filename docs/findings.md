@@ -485,7 +485,37 @@ into the field is decided by the harmonics alone (`normalised`). With those:
 | C4 | −3 / −11 / −39 | −3 / −12 / −32 | 0.91 → 3.36 |
 
 The metal on every note: one sine and a thump. The swing ratio between the
-layers 2.5× on every note, as two fixed velocity layers should give. This is
+layers 2.5× on every note, as two fixed velocity layers should give.
+
+*Over the whole sets* (`fitvel`, the bark judged over the harmonics the
+target has above −40 dB re h1): Epi's tine, 37 notes at six velocities, one
+metal mode the median, error 2.4 dB mean and 5.0 at the 90th percentile;
+the hardest take's h2 runs from +2 to +32 dB across the keyboard and the
+model has it within 2.1 dB. The recorded EP, 84 notes at two levelled
+velocities, six metal modes the median (the thump and the tone bar), 7.4 dB
+mean and 22 at the 90th — the top octave, where a levelled take at MED and
+one at MAX barely differ and there is little to fit. Epi's reed at 7.0 dB
+mean is the form being wrong rather than the fit: an electrostatic pickup
+is a gap, 1/(g − u)², not a bell, and it wants its own stage.
+
+*The voicing screw.* The one test that says whether a fitted number is a
+physical one: Epi's tine at six pickup heights, one velocity, nineteen
+notes each. Fitted h/w against Epi's `pickupPos`: 0.27 at −0.85, 0.21 at
+−0.65, 0.18 at −0.45, 0.08 at −0.25, **0.01 at −0.05** — the centreline,
+where Epi's own note says the tine crosses the field's peak twice a cycle
+and the output comes out an octave up, and where the fit reproduces it
+(h2 +2 dB over h1, model +2) — then 0.04 on the far side, the bell being
+symmetric. Monotonic in |h|, zero at centre: the fitted number is the
+screw, and a world can have it as an axis.
+
+*Decay, measured honestly.* `decay_ratio` is now energy-weighted, because a
+thump at a three-hundredth of the fundamental's energy judged against a
+track that is the room's had a vote equal to the fundamental's and read the
+EP as ×0.30 when its fundamental was ×1.12. After the sixth pass:
+Wurlitzer ×0.96, EP ×0.96, guitar ×1.01, banjo ×0.87, mandolin ×0.79 (was
+×0.56 by the old unweighted metric on the same records' predecessors; the
+two numbers are not comparable, and the mandolin is still the deadest,
+which is body and sympathetic courses, not partials). This is
 a `Shaper` stage after the modal bank, per world, off for the acoustic
 worlds; the record carries it as `shaper bell h w K fc Q`, which the packer
 ignores and the runtime will read. What the world then needs at runtime is

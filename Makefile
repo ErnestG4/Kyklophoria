@@ -79,7 +79,9 @@ out/mmr/%.mmr: meshes/%.tet meshes/%.expos build/modalfem
 
 # fitted families ride in beside the FEM ones: a manifest and a record
 # directory each, from tools/modalfit.py
-FITS = $(wildcard out/fit/*/fits.tsv)
+# the velocity sets (fitvel, *-vel and the voicing sweep) are shaped records
+# for the runtime, not worlds for the bake — yet
+FITS = $(filter-out out/fit/%-vel/fits.tsv,$(wildcard out/fit/*/fits.tsv))
 out/corpus.mdb: $(RECORDS) tools/pack.py meshes/meshes.tsv $(FITS) $(foreach f,$(FITS),$(wildcard $(dir $(f))*.mmr))
 	python3 tools/pack.py meshes/meshes.tsv out/mmr out/corpus.mdb out/manifest.tsv --N $(NMODES) \
 	  $(foreach f,$(FITS),--fits $(f) $(dir $(f)))
