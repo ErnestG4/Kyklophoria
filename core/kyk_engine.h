@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "kyk_world.h"
+#include "kyk_resonate.h"
 #include "kyk_fft.h"
 #include "kyk_osc.h"
 
@@ -50,7 +51,25 @@ public:
         DerivePhases();
         phase_dirty_ = false;
         dirty_ = true;
+        rvoice_.Init();
+        rnote_ = 1e9f;
     }
+
+    /* ── the resonate path ───────────────────────────────────────────────
+     * A resonate world is a ResonatorVoice after the oscillator, whose
+     * frame is silent for that kind. The voice is built from the world at
+     * the current pitch in SetWorld; a strike where the pitch has moved
+     * retunes the bank with its state ringing on, as the oscillator follows
+     * the pitch, and every strike adds to what rings, as a hammer does. Who strikes is the shell's business (a host action, a
+     * gate, a pot for the velocity — docs/modal-mode.md). */
+    void Strike(float velocity01)
+    {
+        if(!world_ || !world_->IsResonate()) return;
+        const float note = NoteOf(f0_);
+        if(std::fabs(note - rnote_) > 0.01f) { world_->Res().At(note, rvoice_, sr_, true); rnote_ = note; }
+        rvoice_.Strike(velocity01);
+    }
+    static float NoteOf(float hz) { return 69.f + 12.f * std::log2(hz > 1.f ? hz / 440.f : 1.f / 440.f); }
 
     /* Position moves that are smaller than this are not worth a re-render.
      * The pots and CVs are read through a 16-bit ADC, so a perfectly still
@@ -168,6 +187,16 @@ public:
         }
         osc_.SetFreq(f0_, sr_);
         osc_.Process(out, n, render);
+        if(world_ && world_->IsResonate())
+        {
+            float tmp[48];
+            for(int i = 0; i < n; i += 48)
+            {
+                const int m = n - i < 48 ? n - i : 48;
+                rvoice_.Process(tmp, m);
+                for(int k = 0; k < m; k++) out[i + k] += tmp[k];
+            }
+        }
         /* Cells are normalised to unit RMS, so peak depends on how the
          * harmonics happen to line up. Measured crest factor across a baked
          * space: median 2.5, p95 3.2, worst 4.2. The old default put peaks
@@ -300,6 +329,12 @@ public:
         hold_      = 0;
         for(int a = 0; a < kMaxN; a++) rendered_[a] = 1e9f;   /* force a re-render */
         morph_r_ = 1e9f;                                     /* and the blend with it */
+        /* the voice is state derived from the world: rebuilt here and only
+         * here, silent, at the current pitch — arriving at a resonate world
+         * is the same as starting in it */
+        rvoice_.Init();
+        rnote_ = 1e9f;
+        if(w && w->IsResonate()) { rnote_ = NoteOf(f0_); w->Res().At(rnote_, rvoice_, sr_); }
     }
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
@@ -478,6 +513,8 @@ private:
     }
 
     const World* world_ = nullptr;
+    ResonatorVoice rvoice_;         /* the resonate path; idle for every other kind */
+    float          rnote_ = 1e9f;   /* the note the voice was built at */
 
     const World*   morph_world_ = nullptr;
 

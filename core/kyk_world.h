@@ -33,6 +33,7 @@
 #include "kyk_unison.h"
 #include "kyk_modal.h"
 #include "kyk_bend.h"
+#include "kyk_resonate.h"
 
 namespace kyk {
 
@@ -61,7 +62,7 @@ struct VertexField
 class World
 {
 public:
-    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3, Fm = 4, Formant = 5, Table = 6, Lock = 7, Unison = 8, Modal = 9, Bend = 10 };
+    enum class Kind : uint8_t { None = 0, Lattice = 1, Analytic = 2, Vertices = 3, Fm = 4, Formant = 5, Table = 6, Lock = 7, Unison = 8, Modal = 9, Bend = 10, Resonate = 11 };
     /* Which phase spectrum the engine should render this world's coefficients
      * against. This is not a detail — it decides whether the instrument can
      * produce a recognisable waveform at all.
@@ -255,6 +256,22 @@ public:
     }
 
     Kind Which() const { return kind_; }
+    /* A fitted world (ModalBake, a .kykm blob): resonators struck in real
+     * time, not a frame. The engine renders nothing for it through the
+     * oscillator — Evaluate gives silence — and plays a ResonatorVoice after
+     * it instead (kyk_resonate.h, docs/modal-mode.md). The blob is attached
+     * where it lies; the world holds a reader, not a copy. */
+    void UseResonate(const uint8_t* blob, uint32_t bytes)
+    {
+        res_.Init();
+        kind_  = res_.Attach(blob, bytes) ? Kind::Resonate : Kind::None;
+        phase_ = Phase::Random;   /* see UseLattice: these buffers are reused */
+        p_     = 0;
+        for(int a = 0; a < kMaxN; a++) topo_[a] = 0u;
+    }
+    const ResonatorWorld& Res() const { return res_; }
+    bool  IsResonate() const { return kind_ == Kind::Resonate; }
+
     bool Ready() const { return kind_ != Kind::None; }
     /* A switch, not a ternary chain. This was seven levels of nested `?:`
      * and adding a world to it silently missed — the new kind fell through to
@@ -275,6 +292,7 @@ public:
             case Kind::Modal:    return modal_.n;
             case Kind::Bend:     return bend_.n;
             case Kind::Analytic: return basis_.n;
+            case Kind::Resonate: return 1;          /* one axis: the note */
             default:             return 0;
         }
     }
@@ -292,6 +310,7 @@ public:
             case Kind::Modal:    return modal_.k;
             case Kind::Bend:     return bend_.k;
             case Kind::Analytic: return basis_.k;
+            case Kind::Resonate: return 1;          /* a silent frame of one harmonic */
             default:             return 0;
         }
     }
@@ -803,6 +822,7 @@ private:
     UnisonField  uni_;
     ModalField   modal_;
     BendField    bend_;
+    ResonatorWorld res_;
     /* One node buffer, lent to whichever table-shaped world is live. 24 rows
      * because that is the 24-cell's vertex count; a shape table uses 16 of
      * them. Six kilobytes, in DTCM with the World. */

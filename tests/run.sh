@@ -6,6 +6,10 @@
 #                     barking with velocity at the level the fit found; a
 #                     Wurlitzer world struck across its keyboard and
 #                     interpolated between its points
+#   1c. resonate_engine_check — the resonate path inside the engine: equal to
+#                     the standalone voice bit for bit, a wavetable world's frame
+#                     untouched by its existence, arriving equal to starting,
+#                     a strike at a new pitch a new note, a retune ringing on
 #   2. rotate_check — rotation identity/permutation, the stereo pair, telemetry
 #   3. morph_check  — morph linearity, level across a cell, band-limit continuity,
 #                     and a diversity report on the generated space
@@ -43,6 +47,10 @@ $CXX $CORE_FLAGS $SAN tests/core_check.cpp -o "$OUT/core_check" || fail=1
 echo "== resonate_check =="
 $CXX $CORE_FLAGS $SAN tests/resonate_check.cpp -o "$OUT/resonate_check" || fail=1
 "$OUT/resonate_check" || fail=1
+
+echo "== resonate_engine_check =="
+$CXX $CORE_FLAGS $SAN tests/resonate_engine_check.cpp -o "$OUT/resonate_engine_check" || fail=1
+"$OUT/resonate_engine_check" || fail=1
 
 echo "== rotate_check =="
 $CXX $CORE_FLAGS $SAN tests/rotate_check.cpp -o "$OUT/rotate_check" || fail=1

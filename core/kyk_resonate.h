@@ -95,7 +95,10 @@ struct ResonatorBank
        two samples before n = 0, which is where the fitted phase — the
        hammer's timing per mode — goes in. From zero phase every partial
        rises together and the onset is a spike the recording never had */
-    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr)
+    /* keep: retune the coefficients and leave the state ringing — a pitch
+       change under a sounding note, which follows it as the oscillator's
+       does; the strike bank's state is left too, mid-ramp */
+    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr, bool keep = false)
     {
         n = count > kMax ? kMax : count;
         for(int i = 0; i < n; i++)
@@ -107,10 +110,10 @@ struct ResonatorBank
             c2[i] = -r * r;
             p1[i] = gain[i] * std::sin(ph - w) / r;
             p2[i] = gain[i] * std::sin(ph - 2.0f * w) / (r * r);
-            y1[i] = y2[i] = s1[i] = s2[i] = 0.f;
+            if(!keep) y1[i] = y2[i] = s1[i] = s2[i] = 0.f;
         }
         ramp_len = 0.003f * sr;
-        ramping = false;
+        if(!keep) ramping = false;
     }
 
     /* the hammer: the strike bank set to the given swing at every mode's
@@ -305,7 +308,9 @@ struct ResonatorVoice
 
     void Strike(float velocity01)
     {
-        const float s = swing_soft * std::pow(swing_hard / swing_soft, velocity01);
+        /* between the softest and hardest take in log; a world fitted from
+           one take (swing_soft == swing_hard) scales linearly with velocity */
+        const float s = swing_hard > swing_soft ? swing_soft * std::pow(swing_hard / swing_soft, velocity01) : swing_soft * velocity01;
         bank.Strike(s);
         burst.Strike(bursts, s);
     }
@@ -383,7 +388,7 @@ struct ResonatorWorld
 
     /* the world at a parameter value, into a voice: the two neighbouring
        points interpolated by slot, the stage with them */
-    void At(float param, ResonatorVoice& v, float sr) const
+    void At(float param, ResonatorVoice& v, float sr, bool keep = false) const
     {
         if(P == 0) return;
         int a = 0;
@@ -414,12 +419,21 @@ struct ResonatorWorld
            the bank takes them */
         for(int k = 0; k < N; k++) ga[k] *= st[7];
         for(int k = 0; k < N; k++) za[k] /= decay;            /* T60 x decay */
-        v.bank.Set(ha, za, ga, N, sr, fa);
+        v.bank.Set(ha, za, ga, N, sr, fa, keep);
         st[0] += voicing * st[1];                                /* h moves by widths */
         st[3] *= coil;
         v.bursts = Bursts(t < 0.5f ? a : b);      /* a burst is not interpolated: the nearer point's */
         v.swing_soft = st[5]; v.swing_hard = st[6];
-        if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
+        if(keep && v.pickup.on)
+        {
+            /* the pickup retunes without a click: its filter state and its
+               last flux stay, only the field and the coil move */
+            const float prev = v.pickup.prev, z1 = v.pickup.z1, z2 = v.pickup.z2;
+            if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
+            else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);
+            v.pickup.prev = prev; v.pickup.z1 = z1; v.pickup.z2 = z2;
+        }
+        else if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
         else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);
         else v.pickup.on = false;
     }

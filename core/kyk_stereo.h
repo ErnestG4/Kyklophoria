@@ -73,6 +73,8 @@ public:
         for(int a = 0; a < kMaxN; a++) c_[a] = target_[a];
     }
     void SetF0(float f0) { L.SetF0(f0); R.SetF0(f0); }
+    /* a resonate world's strike, both sides */
+    void Strike(float velocity01) { L.Strike(velocity01); R.Strike(velocity01); }
 
     /* Change worlds under a running voice. Build the World fully first. */
     void SetWorld(const World* w)

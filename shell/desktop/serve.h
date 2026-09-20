@@ -479,7 +479,10 @@ public:
         if(!eng) return 3u;
         switch(op)
         {
-            case kyk::kActResetPhase: eng->L.ResetPhase(); eng->R.ResetPhase(); return 0u;
+            /* a phase reset on a resonate world is a strike, at a fixed
+               velocity until the page has a control for it: the one host
+               action that means "now" */
+            case kyk::kActResetPhase: eng->L.ResetPhase(); eng->R.ResetPhase(); eng->Strike(0.8f); return 0u;
             case kyk::kActRenderDiv: if(len < 1 || args[0] < 1) return 2u; eng->SetRenderDiv(args[0]); return 0u;
             case kyk::kActAimMorph:
             {

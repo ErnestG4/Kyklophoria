@@ -118,6 +118,34 @@ what it is). Concretely:
    needs nothing new to start (the position is the note). The bark is the
    thing to show later: h2/h1 per strike is one DFT the desktop shell can do.
 
+## What is wired now (host-tested)
+
+- `World::Kind::Resonate` (11) and `World::UseResonate(blob, bytes)`: a
+  `.kykm` attached where it lies; `N() == 1` (the note), `K() == 1` (a
+  silent frame). `Evaluate` gives silence for it, as for any unknown kind.
+- `Engine`: a `ResonatorVoice` after `osc_.Process`, built in `SetWorld` —
+  and only there — at the current pitch; `Engine::Strike(velocity)` retunes
+  the bank with its state ringing on when the pitch has moved (the way the
+  oscillator follows the pitch) and strikes; `StereoEngine::Strike` both
+  sides. Every other kind renders bit for bit as before: the path is behind
+  the world's kind.
+- Host: the desktop script has `t strike v`, and the phase-reset action
+  strikes at 0.8 until the page has a velocity control.
+- `tests/resonate_engine_check`: the engine path equals the standalone voice
+  bit for bit; Saw's frame is unchanged by the path's existence; arriving
+  at a resonate world equals starting in it past the oscillator's
+  crossfade; a strike at a new pitch is the new note (a C4 series with the
+  C3's fundamental 52 dB under it), a retune keeps the ring, a re-strike
+  adds. The golden renders are unchanged.
+
+Still the bench's: the hardware trigger (J2's edge, or the oscillator into
+the bank), the three pots on `ResonatorWorld::voicing / decay / coil`, the
+velocity, SDRAM placement and the cycle budget, the page's kind and send
+path for `.kykm`. A retune re-reads the old state at the new frequency,
+which lifts or drops the ringing note's amplitude by the frequency ratio at
+low frequencies (a tone up: about 1 dB; an octave: 6 dB); if that is heard,
+the state can be rescaled at retune.
+
 ## What is not done, and why
 
 Nothing above the header is wired. The engine change is small in lines and

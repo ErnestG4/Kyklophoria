@@ -130,6 +130,10 @@ public:
                     }
                 }
                 else if(e.cmd == "plane") eng.spread_plane = (int)e.v[0];
+                /* a resonate world's strike, at a velocity in [0,1]; the
+                   pitch is whatever f0 is at that moment. Nothing on any
+                   other kind of world (docs/modal-mode.md) */
+                else if(e.cmd == "strike") { eng.SetF0(f0_); eng.Strike(e.v.empty() ? 0.8f : e.v[0]); }
                 else if(e.cmd == "glide_f0") { gf0_ = true; f0_from_ = f0_; f0_to_ = e.v[0]; f0_t0_ = t; f0_t1_ = t + e.dur; }
                 else if(e.cmd == "glide_pos")
                 {
