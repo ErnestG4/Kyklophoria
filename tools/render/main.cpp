@@ -189,6 +189,13 @@ int main(int argc, char** argv)
         /* one oscillator bank, parameters refreshed every block */
         const int N = sp.chart.N, block = 96;
         std::vector<double> phase(N, 0.0), env(N, 0.0), w(N, 0.0), amp(N, 0.0), rate(N, 0.0);
+        /* the previous block's values, so that amplitude and frequency move
+           sample by sample across the block rather than stepping at its
+           edge — a step every 96 samples on a mode above 12 kHz is zipper,
+           and it measured as seventy broadband bursts a second on the bell
+           walks (tools/earcheck.py) */
+        std::vector<double> amp0(N, 0.0), w0(N, 0.0), rate0(N, 0.0);
+        bool first = true;
         const int ramp_len = (int)(attack_ms * 1e-3 * sr);
         int ramp_n = ramp_len; double inject = 0.0;
         const double dt = 1.0 / sr;
@@ -208,10 +215,14 @@ int main(int argc, char** argv)
                 if(lowest > 0) shift = 440.0 / lowest;
             }
             double e2 = 0;
+            for(int i = 0; i < N; i++) { amp0[i] = amp[i]; w0[i] = w[i]; rate0[i] = rate[i]; }
             for(int i = 0; i < N; i++)
             {
                 const double hz = r.hz[i] * shift;
-                if(!(hz > 40.0) || hz > 20000.0) { amp[i] = 0.0; w[i] = 0.0; rate[i] = 50.0; continue; }
+                /* out of range: the amplitude fades to nothing over the block
+                   and the frequency stays where it was — swept to zero it
+                   was a 2 ms chirp, thirty of them in a tine walk */
+                if(!(hz > 40.0) || hz > 20000.0) { amp[i] = 0.0; rate[i] = 50.0; if(w[i] == 0.0) w[i] = 2 * M_PI * 20000.0; continue; }
                 w[i]    = 2 * M_PI * hz;
                 amp[i]  = r.G(i, pos_s) * r.G(i, pos_l) / w[i];
                 /* the space's own decay where it carries one, Rayleigh where not */
@@ -222,9 +233,11 @@ int main(int argc, char** argv)
                at unit energy */
             const long this_strike = (long)std::floor(tt / interval), prev_strike = (long)std::floor((tt - block * dt) / interval);
             if(tt < total && this_strike != prev_strike && e2 > 0) { inject = 1.0 / std::sqrt(e2); ramp_n = 0; }
+            if(first) { for(int i = 0; i < N; i++) { amp0[i] = amp[i]; w0[i] = w[i]; rate0[i] = rate[i]; } first = false; }
             for(int n = 0; n < block; n++)
             {
                 double y = 0;
+                const double f = (n + 1.0) / block;
                 /* the strike arrives over the attack, as a raised cosine, not
                    as a step: a step is a click above 12 kHz */
                 double g = 0.0;
@@ -236,12 +249,15 @@ int main(int argc, char** argv)
                 }
                 for(int i = 0; i < N; i++)
                 {
-                    if(amp[i] == 0.0) continue;
+                    if(amp[i] == 0.0 && amp0[i] == 0.0) continue;
+                    const double a = amp0[i] + (amp[i] - amp0[i]) * f;
+                    const double ww = w0[i] + (w[i] - w0[i]) * f;
+                    const double rr = rate0[i] + (rate[i] - rate0[i]) * f;
                     env[i] += g;
-                    phase[i] += w[i] * dt;
+                    phase[i] += ww * dt;
                     if(phase[i] > 2 * M_PI) phase[i] -= 2 * M_PI;
-                    env[i] *= std::exp(-rate[i] * dt);
-                    y += amp[i] * env[i] * std::sin(phase[i]);
+                    env[i] *= std::exp(-rr * dt);
+                    y += a * env[i] * std::sin(phase[i]);
                 }
                 out[at + n] = (float)y;
             }

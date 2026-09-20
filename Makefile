@@ -141,6 +141,8 @@ build/render: tools/render/main.cpp $(COMMON) tools/common/linalg.h tools/common
 # Epi's physical models as a note generator: ../epi (GPL-3.0), engine only,
 # no JUCE. See tools/epigen/main.cpp
 EPI ?= ../epi
+# the fitting venv's python: numpy, scipy, soundfile — for earcheck and the fitters
+PYFIT ?= $(HOME)/fmexplorer/bin/python
 build/epigen: tools/epigen/main.cpp $(EPI)/src/epi/dsp/EpiEngine.cpp
 	@mkdir -p build
 	$(CXX) -std=c++20 -O2 -I$(EPI)/src tools/epigen/main.cpp $(EPI)/src/epi/dsp/EpiEngine.cpp -o $@
@@ -153,6 +155,7 @@ RENDERS = out/wav/bar-sweep.wav out/wav/plate-sweep.wav out/wav/bell-sweep.wav \
           out/wav/plate-veering.wav out/wav/bar-to-bell-via-plate.wav \
           out/wav/bar-to-bell-lambda-only.wav out/wav/plate-to-bar-lambda-only.wav
 renders: $(RENDERS)
+	@$(PYFIT) tools/earcheck.py $(RENDERS)
 out/wav/bar-sweep.wav: build/render out/space-full.msp
 	@mkdir -p out/wav
 	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from bar00 --to bar11
@@ -203,6 +206,7 @@ families: $(FAMSPACES) build/grade
 GLIDES = out/wav/glide-bar-to-bell.wav out/wav/glide-plate-veering.wav out/wav/walk-full-1.wav \
          out/wav/walk-full-2.wav out/wav/walk-plate.wav out/wav/walk-bell.wav out/wav/walk-bar.wav
 glides: $(GLIDES)
+	@$(PYFIT) tools/earcheck.py $(GLIDES)
 out/wav/glide-bar-to-bell.wav: build/render out/space-full.msp
 	build/render out/space-full.msp out/corpus.mdb out/align.bin $@ --from bar05 --to bell05 --mode glide --strikes 24 --interval 0.5
 out/wav/glide-plate-veering.wav: build/render out/space-full.msp
@@ -238,6 +242,7 @@ $(foreach f,$(FITTED),out/wav/walk-$(f).wav): out/wav/walk-%.wav: build/render o
 	@mkdir -p out/wav
 	build/render out/space-fam-$*.msp out/corpus.mdb out/align.bin $@ --walk 8 --seconds 16 --mode glide --interval 0.4
 fitted-renders: $(foreach f,$(FITTED),out/wav/$(f)-keyboard.wav out/wav/walk-$(f).wav)
+	@$(PYFIT) tools/earcheck.py $^
 
 # ── the runtime prototype, and what it costs on the M7 ───────────────────────
 build/modaltest: tools/modaltest/main.cpp runtime/modal_bank.h runtime/world.h
