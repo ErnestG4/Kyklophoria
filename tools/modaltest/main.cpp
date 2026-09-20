@@ -64,8 +64,11 @@ static int world(const char* path, const char* out_path, float vel, int sr)
             for(int k = 0; k < nn; k++) out[pos + k] += tmp[k];
         }
     }
-    float rms = 0; for(float s : out) rms += s * s; rms = std::sqrt(rms / out.size());
-    if(rms > 0) for(float& s : out) s = std::tanh(s * 0.1f / rms);
+    /* levelled to -1 dBFS peak, linearly: a tanh here squashed exactly the
+       bright attack peaks and the keyboard came out duller than its records
+       (the Wurlitzer's G5 at a centroid of 699 Hz against 810) */
+    float peak = 0; for(float s : out) peak = std::fmax(peak, std::fabs(s));
+    if(peak > 0) for(float& s : out) s *= 0.891f / peak;
     /* the voices are still ringing at the end of the file: fade the last
        quarter second so it does not end in a step */
     const size_t fade = std::min(out.size(), (size_t)(sr / 4));

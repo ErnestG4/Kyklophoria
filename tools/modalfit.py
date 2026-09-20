@@ -425,17 +425,34 @@ def stft_mag(y, n, hop):
     return torch.stft(y, n, hop, window=win, return_complex=True).abs()
 
 
-ATTACK_MS = 3.0
-MIN_T60 = 0.005      # s; faster is exciter, not mode
 import os as _os
+ATTACK_MS = 3.0
+BURST_MS = float(_os.environ.get('MB_BURST_MS', 60.0))      # the window a stored burst will carry; the fit weighs it down
+BURST_FLOOR = float(_os.environ.get('MB_BURST_FLOOR', 0.3))  # a frame's weight at the strike (1 = no weighting)
+AUDIBLE_DB = float(_os.environ.get('MB_AUDIBLE_DB', -60.0))  # a fitted mode this far under the loudest (at 10 ms) leaves the record
+
+
+def time_weight(frames, hop, sr, device):
+    """Per-frame weight (1 x frames) rising from BURST_FLOOR at the strike to
+    one at BURST_MS on a raised cosine, then one."""
+    t = torch.arange(frames, device=device, dtype=torch.float32) * hop / sr
+    w = torch.where(t < BURST_MS / 1000.0,
+                    BURST_FLOOR + (1.0 - BURST_FLOOR) * (0.5 - 0.5 * torch.cos(math.pi * t / (BURST_MS / 1000.0))),
+                    torch.ones_like(t))
+    return w[None, :]
+
+
+MIN_T60 = 0.005      # s; faster is exciter, not mode
 DECAY_PRIOR = float(_os.environ.get('MB_DECAY_PRIOR', 2.0))   # weight holding log decay to the track's measurement
 DECAY_BAND = float(_os.environ.get('MB_DECAY_BAND', 0.405))   # ln 1.5: the free band around it
 LEVEL_WEIGHT = float(_os.environ.get('MB_LEVEL', 2.0))       # loudness per take in the shaped fit (log RMS ratio squared)
 
 
-def audible(amp, r, floor_db=-60.0, at=0.01):
+def audible(amp, r, floor_db=None, at=0.01):
     """Which modes stand within floor_db of the loudest, judged 10 ms in rather
     than at t=0, where a fast mode's amplitude says nothing about what is heard."""
+    if floor_db is None:
+        floor_db = AUDIBLE_DB
     a = amp * np.exp(-r * at)
     return a > a.max() * 10 ** (floor_db / 20)
 
@@ -486,6 +503,13 @@ def fit(x, sr, init, steps, device, verbose=True):
     # the target's own floor, per scale: the 20th percentile of its log
     # magnitude. Below it there is nothing to match, only noise to imitate.
     tfloor = [torch.quantile(tl.flatten(), 0.2) for tl in tlog]
+    # the burst will carry the first BURST_MS of the note (tools/bursts.py),
+    # so the modes are fitted to the sustain: frames inside that window are
+    # weighed down to BURST_FLOOR, rising to one at its end. Otherwise the
+    # loss makes the modes imitate the hammer and the burst has to cancel
+    # what they invented (the EP's hardest take: a burst of 2.4x the
+    # target's attack energy, mostly cancellation)
+    tweights = [time_weight(m.shape[1], h, sr, device) for m, (n, h) in zip(tmag, scales)]
 
     # a sine that starts as a step is a click: after the partials were right,
     # nine tenths of what the whistle metric still measured on the Wurlitzer
@@ -512,12 +536,12 @@ def fit(x, sr, init, steps, device, verbose=True):
         # which is exactly what a whistle is. The log terms sit on a floor at
         # the target's 20th percentile, so imitating noise buys nothing.
         loss = 0.0
-        for (n, h), tm, tl, tn, tf in zip(scales, tmag, tlog, tnorm, tfloor):
+        for (n, h), tm, tl, tn, tf, tw in zip(scales, tmag, tlog, tnorm, tfloor, tweights):
             ym = stft_mag(y, n, h)
             yl = torch.log(ym + 1e-4)
-            sc = (ym - tm).norm() / tn
-            lg = (torch.clamp(yl, min=tf) - torch.clamp(tl, min=tf)).abs().mean()
-            excess = torch.relu(yl - torch.clamp(tl, min=tf))
+            sc = ((ym - tm) * tw).norm() / tn
+            lg = ((torch.clamp(yl, min=tf) - torch.clamp(tl, min=tf)).abs() * tw).mean()
+            excess = torch.relu(yl - torch.clamp(tl, min=tf)) * tw
             ex = excess[tl <= tf].mean() if (tl <= tf).any() else excess.mean()
             loss = loss + sc + 0.1 * lg + 1.0 * ex
         # a band, not a point: free within DECAY_BAND of the measurement so a
@@ -672,6 +696,7 @@ def fit_shaped(xs, sr, init, steps, device, verbose=True, normalised=False, form
         tmag = [stft_mag(target, nn, hh) for nn, hh in scales]
         tlog = [torch.log(m + 1e-4) for m in tmag]
         T.append((tmag, tlog, [m.norm() for m in tmag], [torch.quantile(tl.flatten(), 0.2) for tl in tlog]))
+    tweights = [time_weight(m.shape[1], hh, sr, device) for m, (nn, hh) in zip(T[0][0], scales)]
     ramp = torch.tensor(attack_ramp(n, sr), device=device, dtype=torch.float32)
 
     def metal():
@@ -707,12 +732,12 @@ def fit_shaped(xs, sr, init, steps, device, verbose=True, normalised=False, form
         ys = render()
         loss = 0.0
         for y, (tmag, tlog, tnorm, tfloor) in zip(ys, T):
-            for (nn, hh), tm, tl, tn, tf in zip(scales, tmag, tlog, tnorm, tfloor):
+            for (nn, hh), tm, tl, tn, tf, tw in zip(scales, tmag, tlog, tnorm, tfloor, tweights):
                 ym = stft_mag(y, nn, hh)
                 yl = torch.log(ym + 1e-4)
-                sc = (ym - tm).norm() / tn
-                lg = (torch.clamp(yl, min=tf) - torch.clamp(tl, min=tf)).abs().mean()
-                excess = torch.relu(yl - torch.clamp(tl, min=tf))
+                sc = ((ym - tm) * tw).norm() / tn
+                lg = ((torch.clamp(yl, min=tf) - torch.clamp(tl, min=tf)).abs() * tw).mean()
+                excess = torch.relu(yl - torch.clamp(tl, min=tf)) * tw
                 ex = excess[tl <= tf].mean() if (tl <= tf).any() else excess.mean()
                 loss = loss + sc + 0.1 * lg + 1.0 * ex
         loss = loss / len(xs) + DECAY_PRIOR * (torch.relu((logr - logr0).abs() - DECAY_BAND) ** 2).mean()
