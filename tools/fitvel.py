@@ -61,6 +61,8 @@ def main():
     ap.add_argument('--normalised', action='store_true', help='takes were levelled: an output gain per take')
     ap.add_argument('--form', default='bell', choices=['bell', 'gap'], help='the transducer: a magnetic pole (bell) or an electrostatic plate (gap)')
     ap.add_argument('--limit', type=int, default=0)
+    ap.add_argument('--from', dest='lo', type=int, default=0, help='first midi note')
+    ap.add_argument('--to', dest='hi', type=int, default=127, help='last midi note')
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     dirs = a.order.split(',') if a.order else sorted(d for d in os.listdir(a.indir) if os.path.isdir(os.path.join(a.indir, d)))
@@ -78,7 +80,7 @@ def main():
             m = re.match(r'^([a-gA-G][#sb]?-?\d+)', os.path.splitext(f)[0])
             if m and m.group(1).lower() in files:
                 files[m.group(1).lower()].append(os.path.join(d, f))
-    keys = sorted(files, key=lambda k: midi_of(k))
+    keys = sorted((k for k in files if a.lo <= midi_of(k) + 12 * a.octave <= a.hi), key=lambda k: midi_of(k))
     if a.limit:
         keys = keys[:a.limit]
     print('  %s: %d notes in every one of %d velocity folders (%s)' % (a.family, len(keys), len(dirs), ', '.join(dirs)))
@@ -103,7 +105,17 @@ def main():
             xs = [x[:m] for x in xs]
             peak = max(float(np.abs(x).max()) for x in xs) or 1.0
             xs = [x / peak for x in xs]
-            init = modalfit.initialise(xs[0] / (np.abs(xs[0]).max() or 1.0), sr, a.modes)
+            # a take 60 dB under the loudest is noise, not a velocity: leave
+            # it out, and initialise the metal from the loudest take — the
+            # bar prior takes its harmonics away again; the top octave's
+            # softest takes sit near -90 dBFS and initialised a metal of
+            # nothing, which opened the field flat
+            rms = [float(np.sqrt(np.mean(x ** 2))) for x in xs]
+            keep = [i for i, v in enumerate(rms) if v > max(rms) * 1e-3]
+            xs = [xs[i] for i in keep]
+            used = [dirs[i] for i in keep]
+            loud = int(np.argmax([rms[i] for i in keep]))
+            init = modalfit.initialise(xs[loud] / (np.abs(xs[loud]).max() or 1.0), sr, a.modes)
             if a.bar:
                 init = modalfit.bar_metal(init, f0)
             if not init:
@@ -119,22 +131,22 @@ def main():
                 bt.append('/'.join('%+.0f' % (v - hx[0]) for v in hx[1:]))
                 bm.append('/'.join('%+.0f' % (v - hy[0]) for v in hy[1:]))
                 lvl = float(np.sqrt(np.mean(x ** 2)))
-                sf.write(os.path.join(a.outdir, '%s-%s-target.wav' % (mid, dirs[k])), np.clip(x * 0.9, -1, 1), sr)
-                sf.write(os.path.join(a.outdir, '%s-%s-resynth.wav' % (mid, dirs[k])), np.clip(y / (np.abs(y).max() or 1) * 0.9 * (np.abs(x).max()), -1, 1), sr)
+                sf.write(os.path.join(a.outdir, '%s-%s-target.wav' % (mid, used[k])), np.clip(x * 0.9, -1, 1), sr)
+                sf.write(os.path.join(a.outdir, '%s-%s-resynth.wav' % (mid, used[k])), np.clip(y / (np.abs(y).max() or 1) * 0.9 * (np.abs(x).max()), -1, 1), sr)
             with open(os.path.join(a.outdir, mid + '.mmr'), 'w') as o:
                 o.write('# modalfit shaped record via fitvel: %s at %d velocities, loss %.4f\n' % (key, len(xs), loss))
                 o.write('source %s\nfitted 1\nshaped 1\nloss %.5f\npositions 12\nmodes %d\n' % (files[key][0], loss, len(order)))
                 for k, i in enumerate(order):
                     o.write('mode %d hz %.6f zeta %.9g gains %s\n' % (k, f[i], r[i] / (2 * math.pi * f[i]), ' '.join('%.9g' % amp[i] for _ in range(12))))
                 o.write('shaper %s %.6g %.6g %.6g %.6g %.6g\n' % (a.form, h, w, K, fc, Q))
-                for k, d in enumerate(dirs):
+                for k, d in enumerate(used):
                     o.write('take %s swing %.6g level %.6g\n' % (d, g[k], float(np.sqrt(np.mean(xs[k] ** 2)))))
             man.write('%s\t%s\tmidi\t%d\tall\t%s\t%d\t%.4f\t%.3f\t%.0f\t%.2f\t%s\t%s\t%s\n' % (
                 mid, a.family, midi, files[key][0], len(order), loss, h / w, fc, Q,
                 ','.join('%.2f' % v for v in g), ' '.join(bt), ' '.join(bm)))
             man.flush()
             print('  %-6s %-8s midi %3d  %2d metal  loss %.3f  h/w %.2f coil %.0f Hz Q %.2f  swings %s' % (mid, key, midi, len(order), loss, h / w, fc, Q, ','.join('%.2f' % v for v in g)))
-            for k, d in enumerate(dirs):
+            for k, d in enumerate(used):
                 print('         %-5s target h2/h3/h4 %-14s model %s' % (d, bt[k], bm[k]))
     print('  done: %s' % a.outdir)
 
