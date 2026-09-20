@@ -157,6 +157,19 @@ struct Pickup
         prev = 1.f;
     }
 
+    /* tanh without libm: a (3,2) Pade clamped at |x| = 3, within 0.024 of
+       the real thing everywhere, for the reed's plate-bound. The whole-
+       function count rises by about thirty instructions with it inline;
+       libm's tanh counted as one — a bl — and cost about a hundred cycles
+       a sample, which the count did not see */
+    static float Tanh(float x)
+    {
+        x = x > 3.f ? 3.f : (x < -3.f ? -3.f : x);
+        const float x2 = x * x;
+        const float y = x * (27.f + x2) / (27.f + 9.f * x2);
+        return y > 1.f ? 1.f : (y < -1.f ? -1.f : y);
+    }
+
     /* in place: displacement in, coil voltage out */
     void Process(float* io, int frames)
     {
@@ -164,7 +177,7 @@ struct Pickup
         for(int k = 0; k < frames; k++)
         {
             const float u   = (io[k] - h) * inv_w;
-            const float phi = gap ? 1.f / (1.f - 0.9f * std::tanh(u / 0.9f)) : 1.f / (1.f + u * u);
+            const float phi = gap ? 1.f / (1.f - 0.9f * Tanh(u / 0.9f)) : 1.f / (1.f + u * u);
             const float d   = phi - prev;
             prev = phi;
             const float y = b0 * d + z1;          /* transposed direct form II */

@@ -40,9 +40,10 @@ slot. They attach where they lie in SDRAM; nothing is copied.
   run (the export's level scale applied after the bank had taken the gains:
   the pickup driven 2.4× too hard, barking 15 dB early).
 - `make armcost`: `c_resonate` 68 instructions for the whole function, about
-  fifteen a mode a sample in the loop; `c_pickup` 93 (the electrostatic
-  form's `tanh` is libm's — a rational approximation is the first thing to do
-  if a reed world is wanted at full rate). Forty-eight modes at 48 kHz is
+  fifteen a mode a sample in the loop; `c_pickup` 121 with the electrostatic
+  form's `tanh` as an inline clamped Padé (it was 93 with libm's `tanh`,
+  which the count saw as one instruction — a `bl` — and which cost about a
+  hundred cycles a sample: the count misleads on a call). Forty-eight modes at 48 kHz is
   about 36 M instructions a second, under a tenth of the M7; an electric
   world is four to twelve modes.
 - Both structs are trivially constructible (`static_assert` in the check),
