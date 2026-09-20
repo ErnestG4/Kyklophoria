@@ -164,6 +164,29 @@ int main()
             for(float v_ : y) if(!(v_ == v_)) { CHECK(false, "NaN in the EP world at velocity %d", s); break; }
         }
         CHECK(mono, "h2 re h1 is not monotonic in velocity");
+        /* the spin: decay x2 doubles the fundamental's ring; voicing of a
+           width moves h2, coil x0.5 darkens. Each against the untuned voice */
+        {
+            auto ring = [&](float dec, float voi) {
+                ResonatorWorld w2 = w; w2.decay = dec; w2.voicing = voi;
+                ResonatorVoice v; v.Init(); w2.At(48.f, v, sr); v.Strike(0.6f);
+                std::vector<float> y(48000); v.Process(y.data(), 48000);
+                float p1 = 0, p2 = 0;
+                for(int i = 4800; i < 4800 + 400; i++) p1 = std::fmax(p1, std::fabs(y[i]));
+                for(int i = 43200; i < 43200 + 400; i++) p2 = std::fmax(p2, std::fabs(y[i]));
+                double h[4]; harmonics(y.data(), 16384, sr, 130.8f, h);
+                return std::make_pair(20 * std::log10(p1 / (p2 + 1e-12)), h[1] - h[0]);
+            };
+            auto base = ring(1.f, 0.f), voiced = ring(1.f, 0.5f);
+            CHECK(std::fabs(voiced.second - base.second) > 2.0, "voicing +0.5 width moved h2 by only %.1f dB", voiced.second - base.second);
+            /* decay x2 halves every mode's damping: the bank's own c2 = -r^2
+               says so exactly, -ln r being zeta w */
+            ResonatorWorld w2 = w; w2.decay = 2.f;
+            ResonatorVoice a1, a2; a1.Init(); a2.Init(); w.At(48.f, a1, sr); w2.At(48.f, a2, sr);
+            const double d1 = -std::log(std::sqrt(-a1.bank.c2[0])), d2 = -std::log(std::sqrt(-a2.bank.c2[0]));
+            CHECK(std::fabs(d2 / d1 - 0.5) < 0.01, "decay x2: mode 0's damping went %.3g -> %.3g a sample (expected half)", d1, d2);
+            printf("  spin: decay x2 halves the damping (%.3g -> %.3g); voicing +0.5 width h2 %+.1f -> %+.1f dB\n", d1, d2, base.second, voiced.second);
+        }
         CHECK(last_h2 - first_h2 > 6.0, "h2 grows only %.1f dB from softest to hardest; the pickup is not barking", last_h2 - first_h2);
         /* and at the level the fit found: the record's own model made C3's
            hardest take +19 dB and its softest +7 (out/fit/ep-vel/fits.tsv in

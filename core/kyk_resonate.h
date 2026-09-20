@@ -325,6 +325,11 @@ struct ResonatorWorld
     uint16_t N, P;
     uint8_t  form, body;
     float    lo, hi;
+    /* the spin: what a pot does to a loaded point. voicing moves the pole
+       off centre by that many widths on top of the fitted h; decay
+       multiplies every mode's T60; coil multiplies the coil's fc. Applied at
+       At(), so a sent world keeps its own fitted values as the centre */
+    float    voicing, decay, coil;
 
     static constexpr uint32_t kHeader = 4 + 8 + 8;
     uint32_t FixedBytes() const { return 4 + 8 * 4 + 5u * N; }
@@ -346,7 +351,7 @@ struct ResonatorWorld
         return q;
     }
 
-    void Init() { blob = nullptr; size = 0; N = P = 0; form = body = 0; lo = hi = 0.f; }
+    void Init() { blob = nullptr; size = 0; N = P = 0; form = body = 0; lo = hi = 0.f; voicing = 0.f; decay = coil = 1.f; }
 
     bool Attach(const void* data, uint32_t bytes)
     {
@@ -408,7 +413,10 @@ struct ResonatorWorld
            swing into the field is absolute, so the gains get it back before
            the bank takes them */
         for(int k = 0; k < N; k++) ga[k] *= st[7];
+        for(int k = 0; k < N; k++) za[k] /= decay;            /* T60 x decay */
         v.bank.Set(ha, za, ga, N, sr, fa);
+        st[0] += voicing * st[1];                                /* h moves by widths */
+        st[3] *= coil;
         v.bursts = Bursts(t < 0.5f ? a : b);      /* a burst is not interpolated: the nearer point's */
         v.swing_soft = st[5]; v.swing_hard = st[6];
         if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
