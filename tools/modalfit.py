@@ -743,3 +743,102 @@ def bar_metal(init, f0, tol=0.03):
             continue
         out.append(m)
     return out
+
+
+# ---------------------------------------------------------------------------
+# The body: what the partials did not explain, as broad modes.
+#
+# x - y after the modal fit is the pluck, the body's dense low-Q resonances
+# and the sympathetic strings. The body is still modes, only broad ones, so
+# it is fitted the same way: candidates at the peaks of the residual's
+# spectrum smoothed over a sixth of an octave — a hump, not a line — with a
+# Q of ten to start, and the same fit() against the residual as target. At
+# runtime they are resonators like the rest; in the world they take their
+# own slots, aligned by frequency, because a body is the same body under
+# every note.
+# ---------------------------------------------------------------------------
+
+def body_init(res, sr, nbody, partials=(), nfft=8192, f_lo=80.0, f_hi=6000.0, q=10.0, clear=0.03):
+    win = np.hanning(nfft)
+    frames = [np.abs(np.fft.rfft(res[s:s + nfft] * win)) for s in range(0, max(1, len(res) - nfft), nfft // 4)]
+    mean = np.mean(frames, axis=0)
+    freqs = np.fft.rfftfreq(nfft, 1.0 / sr)
+    logm = np.log(mean + 1e-12)
+    # smooth over a sixth of an octave: a running mean whose width grows with
+    # frequency, done on a log-frequency resample
+    grid = np.exp(np.linspace(np.log(f_lo), np.log(f_hi), 600))
+    lg = np.interp(grid, freqs, logm)
+    k = 600 // (int(np.log2(f_hi / f_lo) * 6) or 1)
+    k = max(3, k | 1)
+    sm = np.convolve(lg, np.ones(k) / k, 'same')
+    pk, _ = signal.find_peaks(sm, distance=k)
+    # not at a partial: what the partial fit left there is its own error —
+    # a pair's beating, a phase — and a body mode on top of it would be that
+    # error dressed up, at an amplitude the body never had
+    pk = [i for i in pk if not any(abs(grid[i] / f - 1) < clear for f in partials)]
+    pk = sorted(pk, key=lambda i: -sm[i])[:nbody]
+    out = []
+    for i in pk:
+        f = float(grid[i])
+        rate = 2 * math.pi * f / (2 * q)              # zeta = 1/(2Q), r = zeta w
+        amp = float(np.exp(sm[i])) / (nfft / 4)
+        out.append((f, rate, amp, 0.0))
+    return out
+
+
+BODY_GRID = np.exp(np.linspace(np.log(80.0), np.log(6000.0), 600))
+
+
+def residual_spectrum(res, sr, nfft=8192):
+    """The residual's mean log magnitude on the body grid (80 Hz to 6 kHz,
+    log-spaced), from the first 0.5 s — where the body speaks."""
+    win = np.hanning(nfft)
+    n = min(len(res), int(0.5 * sr))
+    frames = [np.abs(np.fft.rfft(res[s:s + nfft] * win)) for s in range(0, max(1, n - nfft), nfft // 4)] or [np.abs(np.fft.rfft(np.pad(res[:n], (0, nfft - n)) * win))]
+    mean = np.mean(frames, axis=0) / (nfft / 4)
+    freqs = np.fft.rfftfreq(nfft, 1.0 / sr)
+    return np.interp(BODY_GRID, freqs, np.log(mean + 1e-12))
+
+
+def set_body(spectra, nbody, q_default=12.0):
+    """[(hz, Q)] of the body: peaks of the mean residual spectrum over the
+    set, smoothed over a sixth of an octave, the Q from each peak's half-power
+    width where it can be read and q_default where it cannot."""
+    mean = np.mean(spectra, axis=0)
+    k = 600 // int(np.log2(6000.0 / 80.0) * 6)
+    k = max(3, k | 1)
+    sm = np.convolve(mean, np.ones(k) / k, 'same')
+    pk, props = signal.find_peaks(sm, distance=k, prominence=0.2)
+    pk = sorted(pk, key=lambda i: -sm[i])[:nbody]
+    out = []
+    for i in sorted(pk):
+        f = float(BODY_GRID[i])
+        half = sm[i] - np.log(np.sqrt(2.0))
+        lo = i
+        while lo > 0 and sm[lo] > half:
+            lo -= 1
+        hi = i
+        while hi < len(sm) - 1 and sm[hi] > half:
+            hi += 1
+        bw = BODY_GRID[hi] - BODY_GRID[lo]
+        q = f / bw if bw > 0 and 2.0 < f / bw < 60.0 else q_default
+        out.append((f, float(q)))
+    return out
+
+
+def append_body(path, body, spectrum, sr, clear=0.03):
+    """Write the body's modes into a record at this note's residual level,
+    silent where they sit on one of the note's partials."""
+    lines = open(path).read().splitlines()
+    partials = [float(l.split()[3]) for l in lines if l.startswith('mode ')]
+    k = len(partials)
+    out = [l for l in lines if not l.startswith('body ')]
+    out = [l if not l.startswith('modes ') else 'modes %d' % (k + len(body)) for l in out]
+    out.append('body %d' % len(body))
+    for f, q in body:
+        lvl = float(np.exp(np.interp(f, BODY_GRID, spectrum)))
+        if any(abs(f / p - 1) < clear for p in partials):
+            lvl = 1e-6
+        out.append('mode %d hz %.6f zeta %.9g gains %s' % (k, f, 1.0 / (2 * q), ' '.join('%.9g' % lvl for _ in range(12))))
+        k += 1
+    open(path, 'w').write('\n'.join(out) + '\n')

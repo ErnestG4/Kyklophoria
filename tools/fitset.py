@@ -115,6 +115,7 @@ def main():
                     help='steps of a second fit from the surviving modes after validation (default steps/2, 0 for none)')
     ap.add_argument('--keep-ids', action='store_true', help='name records after their files rather than family+index')
     ap.add_argument('--first-id', type=int, default=0, help='number records from here, for a set fitted in parts')
+    ap.add_argument('--body', type=int, default=0, help='fit this many broad modes to the residual after the partials: the body')
     a = ap.parse_args()
     if a.polish < 0:
         a.polish = a.steps // 2
@@ -124,6 +125,7 @@ def main():
         rows = rows[:a.limit]
     print('  %s: %d single-note files, articulation %s' % (a.family, len(rows), a.articulation))
     device = 'cuda' if modalfit.torch.cuda.is_available() else 'cpu'
+    residuals = []
     with open(os.path.join(a.outdir, 'fits.tsv'), 'w') as man:
         man.write('id\tfamily\tparam\tvalue\tdynamic\tsource\tmodes\tloss\texcess_db\tdecay_ratio\n')
         for n, (path, midi, dyn, f) in enumerate(rows):
@@ -153,12 +155,19 @@ def main():
                 keep = modalfit.audible(amp, r) & modalfit.validate(fr, r, amp, x, sr)
                 fr, r, amp = fr[keep], r[keep], amp[keep]
             order = np.argsort(fr)
+            nbody = 0
+            if a.body:
+                # the body is fitted once for the set, from the mean residual
+                # spectrum of every note (below); here, keep this note's
+                # residual spectrum and what it needs to place the body
+                res = x - y[:len(x)]
+                residuals.append((mid, modalfit.residual_spectrum(res, sr), sr, len(x)))
             y = modalfit.resynth(fr, r, amp, len(x), sr)
             ex = modalfit.excess_db(y, x, sr)
             dr = modalfit.decay_ratio(fr, r, amp, x, sr)
             with open(os.path.join(a.outdir, mid + '.mmr'), 'w') as o:
                 o.write('# modalfit record via fitset: %s, %.2f s analysed, loss %.4f, excess %.2f dB, decay ratio %.2f\n' % (f, secs, loss, ex, dr))
-                o.write('source %s\nfitted 1\nloss %.5f\nexcess_db %.3f\ndecay_ratio %.3f\npositions 12\nmodes %d\n' % (path, loss, ex, dr, len(order)))
+                o.write('source %s\nfitted 1\nloss %.5f\nexcess_db %.3f\ndecay_ratio %.3f\npositions 12\nmodes %d\nbody %d\n' % (path, loss, ex, dr, len(order), nbody))
                 for k, i in enumerate(order):
                     w = 2 * math.pi * fr[i]
                     o.write('mode %d hz %.6f zeta %.9g gains %s\n' % (k, fr[i], r[i] / w, ' '.join('%.9g' % amp[i] for _ in range(12))))
@@ -167,6 +176,15 @@ def main():
             man.write('%s\t%s\tmidi\t%d\t%s\t%s\t%d\t%.4f\t%.3f\t%.3f\n' % (mid, a.family, midi + 12 * a.octave, dyn, f, len(order), loss, ex, dr))
             man.flush()
             print('  %-10s %-40s midi %3d %-6s %.2fs  %2d modes  loss %.3f  excess %.2f dB  decay x%.2f' % (mid, f, midi, dyn, secs, len(order), loss, ex, dr))
+    if a.body and residuals:
+        # the body: the peaks of the mean residual spectrum over the set —
+        # note-specific errors average out, the instrument's resonances do
+        # not — placed into every record with the note's own residual level
+        # there, clear of the note's partials
+        body = modalfit.set_body([sp for _, sp, _, _ in residuals], a.body)
+        print('  body of the set: %s' % ', '.join('%.0f Hz Q%.0f' % (f, q) for f, q in body))
+        for mid, sp, sr, n in residuals:
+            modalfit.append_body(os.path.join(a.outdir, mid + '.mmr'), body, sp, sr)
     print('  done: %s' % a.outdir)
 
 
