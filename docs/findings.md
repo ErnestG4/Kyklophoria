@@ -525,6 +525,21 @@ C3 106 mm with the spring 41 mm from the tip, C4 77 / 39, C5 53 / 26, E6
 the instrument any more; it is the instrument, note by note, and a world
 can be baked from it with the pickup on top.
 
+*The onset was a spike, and the phases were the cure.* Combust heard
+popping in the first velocity files; two of the causes were bugs (a stale
+binary, notes truncated while ringing — `tools/earcheck.py` now fails both
+on every render) and the third was the model. `resynth()` and the runtime
+had started every partial at phase zero, so thirty to forty-eight sines rose
+together and summed to a spike: level-matched, the first 40 ms of a
+zero-phase resynthesis of the Wurlitzer B6 carries 1.7× the recording's
+energy. The fit *has* the phases — they are where the hammer's timing per
+mode lives — and the record had thrown them away. Kept (`phase P` in every
+mode line, a fifth byte a mode in the world), the first 40 ms come to 1.0×
+and the whistle metric on that note halves, 0.20 → 0.08 dB, because the
+attack is the recording's at last. The runtime strikes by setting each
+resonator's state from amplitude and phase — a decaying sine obeys its
+recursion from any two samples — with no impulse at all.
+
 *Decay, measured honestly.* `decay_ratio` is now energy-weighted, because a
 thump at a three-hundredth of the fundamental's energy judged against a
 track that is the room's had a vote equal to the fundamental's and read the
