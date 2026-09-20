@@ -32,6 +32,54 @@ static void wav(const char* path, const std::vector<float>& x, int sr)
 /* a .kykm world across its keyboard through the runtime: every point struck
    once at the given velocity, then the file; and a decode check against
    the first point's hertz printed for the eye */
+/* --sweep voicing|decay|coil lo hi at --param P: the same note struck at
+   the given velocity while the spin walks from lo to hi over the strikes;
+   what the pot does */
+static int sweep(const char* path, const char* out_path, float vel, float param, const char* which, float lo, float hi, int strikes, int sr)
+{
+    FILE* f = fopen(path, "rb");
+    if(!f) { printf("cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+    std::vector<uint8_t> blob(n);
+    if(fread(blob.data(), 1, n, f) != (size_t)n) return 1;
+    fclose(f);
+    mb::World w;
+    if(!w.Attach(blob.data(), (uint32_t)n)) { printf("not a world: %s\n", path); return 1; }
+    const double interval = 0.5, ring = 3.0;
+    std::vector<float> out((size_t)((strikes * interval + ring) * sr), 0.0f);
+    std::vector<mb::ModalVoice> voices(strikes);
+    for(int i = 0; i < strikes; i++)
+    {
+        const float x = lo + (hi - lo) * (strikes > 1 ? (float)i / (strikes - 1) : 0.f);
+        mb::World wi = w;
+        if(!strcmp(which, "voicing")) wi.voicing = x;
+        else if(!strcmp(which, "decay")) wi.decay = x;
+        else if(!strcmp(which, "coil")) wi.coil = x;
+        wi.At(param, voices[i], (float)sr);
+    }
+    const int block = 48;
+    for(size_t pos = 0; pos < out.size(); pos += block)
+    {
+        const int nn = (int)std::min((size_t)block, out.size() - pos);
+        float tmp[48];
+        for(int i = 0; i < strikes; i++)
+        {
+            const size_t at = (size_t)(i * interval * sr);
+            if(pos + nn <= at) continue;
+            if(pos <= at && at < pos + nn) voices[i].Strike(vel);
+            voices[i].Process(tmp, nn);
+            for(int k = 0; k < nn; k++) out[pos + k] += tmp[k];
+        }
+    }
+    float peak = 0; for(float s : out) peak = std::fmax(peak, std::fabs(s));
+    if(peak > 0) for(float& s : out) s *= 0.891f / peak;
+    const size_t fade = std::min(out.size(), (size_t)(sr / 4));
+    for(size_t i = 0; i < fade; i++) out[out.size() - 1 - i] *= (float)i / fade;
+    wav(out_path, out, sr);
+    printf("  %s: %s %g .. %g over %d strikes at param %g\n", out_path, which, lo, hi, strikes, param);
+    return 0;
+}
+
 static int world(const char* path, const char* out_path, float vel, int sr)
 {
     FILE* f = fopen(path, "rb");
@@ -80,11 +128,18 @@ static int world(const char* path, const char* out_path, float vel, int sr)
 
 int main(int argc, char** argv)
 {
-    if(argc < 3) { printf("usage: modaltest record.mmr out.wav [--velocities n] [--sr 48000]\n       modaltest world.kykm out.wav [--velocity v]\n"); return 1; }
+    if(argc < 3) { printf("usage: modaltest record.mmr out.wav [--velocities n] [--sr 48000]\n       modaltest world.kykm out.wav [--velocity v] [--param P --sweep voicing|decay|coil lo hi [--strikes n]]\n"); return 1; }
     if(strstr(argv[1], ".kykm"))
     {
-        float vel = 0.8f;
-        for(int i = 3; i + 1 < argc; i++) if(!strcmp(argv[i], "--velocity")) vel = (float)atof(argv[++i]);
+        float vel = 0.8f, param = -1.f, lo = 0.f, hi = 1.f; const char* which = nullptr; int strikes = 9;
+        for(int i = 3; i < argc; i++)
+        {
+            if(!strcmp(argv[i], "--velocity") && i + 1 < argc) vel = (float)atof(argv[++i]);
+            else if(!strcmp(argv[i], "--param") && i + 1 < argc) param = (float)atof(argv[++i]);
+            else if(!strcmp(argv[i], "--sweep") && i + 3 < argc) { which = argv[++i]; lo = (float)atof(argv[++i]); hi = (float)atof(argv[++i]); }
+            else if(!strcmp(argv[i], "--strikes") && i + 1 < argc) strikes = atoi(argv[++i]);
+        }
+        if(which) return sweep(argv[1], argv[2], vel, param, which, lo, hi, strikes, 48000);
         return world(argv[1], argv[2], vel, 48000);
     }
     int vels = 6, sr = 48000;
