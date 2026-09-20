@@ -22,6 +22,11 @@ struct World
     uint16_t N = 0, P = 0;
     uint8_t  form = 0, body = 0;
     float    lo = 0, hi = 0;
+    /* the spin: what a pot does to a loaded point. voicing moves the pole
+       off centre by that many widths on top of the fitted h; decay
+       multiplies every mode's T60; coil multiplies the coil's fc. Applied at
+       At(), so a sent world keeps its own fitted values as the centre */
+    float    voicing = 0.0f, decay = 1.0f, coil = 1.0f;
 
     static constexpr uint32_t kHeader = 4 + 8 + 8;
     uint32_t FixedBytes() const { return 4 + 8 * 4 + 5u * N; }
@@ -104,7 +109,10 @@ struct World
            swing into the field is absolute, so the gains get it back before
            the bank takes them */
         for(int k = 0; k < N; k++) ga[k] *= st[7];
+        for(int k = 0; k < N; k++) za[k] /= decay;            /* T60 x decay */
         v.bank.Set(ha, za, ga, N, sr, fa);
+        st[0] += voicing * st[1];                                /* h moves by widths */
+        st[3] *= coil;
         v.bursts = Bursts(t < 0.5f ? a : b);      /* a burst is not interpolated: the nearer point's */
         v.swing_soft = st[5]; v.swing_hard = st[6];
         if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
