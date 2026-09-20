@@ -3,7 +3,7 @@
 # signed. zeta is Rayleigh alpha/(2w) + beta*w/2 and is a model, not a measurement.
 mesh meshes/bell10.tet
 material 2e+11 0.29 7850 5 3e-08
-tetverts 16560 elements 81000 femmodes 140 rigid 6
+tetverts 16560 elements 81000 femmodes 140 rigid 6 clamped 0
 positions 12
 pos 0 vertex 82 at 0.030582 0.000000 0.020000 strike -1.0000 -0.0000 0.0000
 pos 1 vertex 1973 at 0.022727 0.020463 0.020000 strike -0.7071 -0.7071 0.0000
