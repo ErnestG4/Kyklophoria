@@ -82,7 +82,13 @@ def write(path, N, points, form=0, body=0):
         out += struct.pack('<f', p)
         loudest = max((abs(m[2]) for m in modes), default=1.0)
         out += struct.pack('<8f', *(stage or (0, 1, 1, 0, 1, 1, 1)), loudest)
-        rows = [tuple(m) + (0.0,) * (4 - len(m)) for m in list(modes)[:N]] + [(20.0, 1.0, 0.0, 0.0)] * max(0, N - len(modes))
+        # a record with more modes than the bank keeps its loudest by ring
+        # energy, not its lowest: the ones over the budget are the quiet
+        # ones, wherever they sit
+        ms = [tuple(m) + (0.0,) * (4 - len(m)) for m in modes]
+        if len(ms) > N:
+            ms = sorted(sorted(ms, key=lambda m: -(m[2] ** 2 / max(m[1] * m[0], 1e-9)))[:N])
+        rows = ms + [(20.0, 1.0, 0.0, 0.0)] * max(0, N - len(ms))
         for hz, zeta, g, ph in rows:
             out += struct.pack('<HBBB', cents(hz), decay8(zeta), level8(g, loudest), phase8(ph))
         out += struct.pack('<H', len(bursts))

@@ -138,7 +138,7 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None):
         # prominence over the local floor: the median over an octave each side
         lo, hi = max(1, b // 2), min(len(mean) - 1, b * 2)
         floor = np.median(logmean[lo:hi])
-        if logmean[b] - floor < 8.0 / 8.686:          # 8 dB, in nepers
+        if logmean[b] - floor < PROMINENCE_DB / 8.686:  # in nepers
             rejected['prominence'] += 1
             continue
         track = np.log(S[:, b] + 1e-9)
@@ -430,6 +430,7 @@ ATTACK_MS = 3.0
 BURST_MS = float(_os.environ.get('MB_BURST_MS', 60.0))      # the window a stored burst will carry; the fit weighs it down
 BURST_FLOOR = float(_os.environ.get('MB_BURST_FLOOR', 0.3))  # a frame's weight at the strike (1 = no weighting)
 AUDIBLE_DB = float(_os.environ.get('MB_AUDIBLE_DB', -60.0))  # a fitted mode this far under the loudest (at 10 ms) leaves the record
+PROMINENCE_DB = float(_os.environ.get('MB_PROMINENCE_DB', 8.0))  # a candidate stands this far over the two-octave median
 
 
 def time_weight(frames, hop, sr, device):

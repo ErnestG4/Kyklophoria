@@ -594,6 +594,19 @@ hardest recorded swing the pickup's output turns into a spike train, which
 is what an overdriven pickup does and what the listening files now stop
 short of.
 
+*Brightness, and where it stops.* The records sit 4 dB (Wurlitzer) to 8 dB
+(guitar) under the recording above 4 kHz. Three things were tried on ten
+guitar notes: re-levelling each partial group against the recording's own
+peak (dropped: spectral convergence +0.01 worse, +0.4 dB — the deficit is
+missing partials, not mis-levelled ones); a wider budget and a lower floor
+(64 modes, −72 dB: +14 modes for +1.5 dB, SC and whistle unchanged); and a
+5 dB prominence gate on top of that (nothing more). What is left above
+4 kHz after the first 60 ms is a guitar's string and pick noise, which is
+not a mode and which no burst covers, so the defaults stay at 48 modes and
+−60 dB and the knobs exist (`MB_AUDIBLE_DB`, `MB_PROMINENCE_DB`). A record
+that overflows the bank now keeps its loudest modes by ring energy rather
+than its lowest, which would have thrown exactly the brightness out.
+
 *Decay, measured honestly.* `decay_ratio` is now energy-weighted, because a
 thump at a three-hundredth of the fundamental's energy judged against a
 track that is the room's had a vote equal to the fundamental's and read the
