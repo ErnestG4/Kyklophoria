@@ -87,7 +87,7 @@ def read_mmr(path):
             w = line.split()
             hz.append(float(w[3]))
             zeta.append(float(w[5]))
-            g.append([float(x) for x in w[7:]])
+            g.append([float(x) for x in w[w.index('gains') + 1:]])   # a record may carry a phase before its gains
     return hz, zeta, g
 
 

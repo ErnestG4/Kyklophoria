@@ -137,7 +137,7 @@ def main():
                 o.write('# modalfit shaped record via fitvel: %s at %d velocities, loss %.4f\n' % (key, len(xs), loss))
                 o.write('source %s\nfitted 1\nshaped 1\nloss %.5f\npositions 12\nmodes %d\n' % (files[key][0], loss, len(order)))
                 for k, i in enumerate(order):
-                    o.write('mode %d hz %.6f zeta %.9g gains %s\n' % (k, f[i], r[i] / (2 * math.pi * f[i]), ' '.join('%.9g' % amp[i] for _ in range(12))))
+                    o.write('mode %d hz %.6f zeta %.9g phase %.5f gains %s\n' % (k, f[i], r[i] / (2 * math.pi * f[i]), float(np.remainder(ph[i], 2 * math.pi)), ' '.join('%.9g' % amp[i] for _ in range(12))))
                 o.write('shaper %s %.6g %.6g %.6g %.6g %.6g\n' % (a.form, h, w, K, fc, Q))
                 for k, d in enumerate(used):
                     o.write('take %s swing %.6g level %.6g\n' % (d, g[k], float(np.sqrt(np.mean(xs[k] ** 2)))))

@@ -9,7 +9,7 @@ d = sys.argv[1]
 rows = list(csv.DictReader(open(os.path.join(d, 'fits.tsv')), delimiter='\t'))
 fields = rows[0].keys()
 for r in rows:
-    rec = [(float(l.split()[3]), float(l.split()[5]), float(l.split()[7])) for l in open(os.path.join(d, r['id'] + '.mmr')) if l.startswith('mode ')]
+    rec = [(float(w[3]), float(w[5]), float(w[w.index('gains') + 1])) for w in (l.split() for l in open(os.path.join(d, r['id'] + '.mmr'))) if w and w[0] == 'mode']
     f = np.array([m[0] for m in rec]); z = np.array([m[1] for m in rec]); a = np.array([m[2] for m in rec])
     x, sr = sf.read(os.path.join(d, r['id'] + '-target.wav'))
     r['decay_ratio'] = '%.3f' % modalfit.decay_ratio(f, z * 2 * math.pi * f, a, x, sr)

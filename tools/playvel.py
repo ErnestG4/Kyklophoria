@@ -31,7 +31,7 @@ def read(path):
         if not w:
             continue
         if w[0] == 'mode':
-            modes.append((float(w[3]), float(w[5]), float(w[7])))
+            modes.append((float(w[3]), float(w[5]), float(w[w.index('gains') + 1]), float(w[w.index('phase') + 1]) if 'phase' in w else 0.0))
         elif w[0] == 'shaper':
             shaper = [w[1]] + [float(v) for v in w[2:7]]
         elif w[0] == 'take':

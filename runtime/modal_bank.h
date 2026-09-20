@@ -41,7 +41,8 @@ struct ModalBank
     static constexpr int kMax = 48;
 
     int   n = 0;
-    float c1[kMax], c2[kMax], g[kMax];   /* 2 r cos w, -r^2, gain * sin w */
+    float c1[kMax], c2[kMax];            /* 2 r cos w, -r^2 */
+    float p1[kMax], p2[kMax];            /* the state a unit strike starts from: A sin(phi-w)/r, A sin(phi-2w)/r^2 */
     float y1[kMax], y2[kMax];
     /* the strike bank: a new hit rings here under a 3 ms raised-cosine ramp
        — the envelope the fit's model had, and the gains were fitted under —
@@ -52,30 +53,39 @@ struct ModalBank
     float ramp_n = 0.0f, ramp_len = 144.0f;
     bool  ramping = false;
 
-    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr)
+    /* modes: frequency, decay, amplitude, and the phase at the strike. A
+       decaying sine A r^n sin(n w + phi) obeys the recursion from any two
+       consecutive samples, so a strike is not an impulse but a state: the
+       two samples before n = 0, which is where the fitted phase — the
+       hammer's timing per mode — goes in. From zero phase every partial
+       rises together and the onset is a spike the recording never had */
+    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr)
     {
         n = count > kMax ? kMax : count;
         for(int i = 0; i < n; i++)
         {
             const float w = 6.2831853f * hz[i] / sr;
             const float r = std::exp(-zeta[i] * w);
+            const float ph = phase ? phase[i] : 0.0f;
             c1[i] = 2.0f * r * std::cos(w);
             c2[i] = -r * r;
-            g[i]  = gain[i] * std::sin(w);
+            p1[i] = gain[i] * std::sin(ph - w) / r;
+            p2[i] = gain[i] * std::sin(ph - 2.0f * w) / (r * r);
             y1[i] = y2[i] = s1[i] = s2[i] = 0.0f;
         }
         ramp_len = 0.003f * sr;
         ramping = false;
     }
 
-    /* the hammer: an impulse of the given swing into the strike bank. A
+    /* the hammer: the strike bank set to the given swing at every mode's
+       fitted phase. A
        strike while a strike is still ramping folds the earlier one into the
        main state first, un-ramped from there on — 3 ms of envelope is
        inaudible against a second hit that close */
     void Strike(float swing)
     {
         if(ramping) Fold();
-        for(int i = 0; i < n; i++) { s1[i] = swing * g[i]; s2[i] = 0.0f; }
+        for(int i = 0; i < n; i++) { s1[i] = swing * p1[i]; s2[i] = swing * p2[i]; }
         ramp_n = 0.0f;
         ramping = true;
     }

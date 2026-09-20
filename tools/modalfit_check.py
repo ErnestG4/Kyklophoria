@@ -44,7 +44,7 @@ got = []
 for line in open(out):
     if line.startswith('mode '):
         w = line.split()
-        hz, zeta, amp = float(w[3]), float(w[5]), float(w[7])
+        hz, zeta, amp = float(w[3]), float(w[5]), float(w[w.index('gains') + 1])
         got.append((hz, zeta * 2 * math.pi * hz, amp))
 truth.sort(); got.sort()
 # match each true mode to the nearest fitted one in log frequency

@@ -43,8 +43,8 @@ static int world(const char* path, const char* out_path, float vel, int sr)
     mb::World w;
     if(!w.Attach(blob.data(), (uint32_t)n)) { printf("not a world: %s\n", path); return 1; }
     printf("%s: %d points, %d modes, form %d, param %.0f..%.0f\n", path, w.P, w.N, w.form, w.lo, w.hi);
-    float hz[mb::ModalBank::kMax], z[mb::ModalBank::kMax], g[mb::ModalBank::kMax];
-    w.Decode(0, hz, z, g);
+    float hz[mb::ModalBank::kMax], z[mb::ModalBank::kMax], g[mb::ModalBank::kMax], ph[mb::ModalBank::kMax];
+    w.Decode(0, hz, z, g, ph);
     printf("  point 0 (param %.0f): %.1f Hz zeta %.4g gain %.3f | %.1f Hz | %.1f Hz\n", w.Param(0), hz[0], z[0], g[0], hz[1], hz[2]);
     const double interval = 0.3, ring = 3.0;
     std::vector<float> out((size_t)((w.P * interval + ring) * sr), 0.0f);
@@ -90,7 +90,7 @@ int main(int argc, char** argv)
         if(!strcmp(argv[i], "--velocities") && i + 1 < argc) vels = atoi(argv[++i]);
         else if(!strcmp(argv[i], "--sr") && i + 1 < argc) sr = atoi(argv[++i]);
     }
-    std::vector<float> hz, zeta, gain;
+    std::vector<float> hz, zeta, gain, phase;
     float sh[5] = { 0, 1, 1, 4000, 1 }; bool shaped = false;
     float soft = 1e9, hard = 0;
     FILE* f = fopen(argv[1], "r");
@@ -100,8 +100,9 @@ int main(int argc, char** argv)
     {
         if(!strncmp(line, "mode ", 5))
         {
-            int k; float h, z, g;
-            if(sscanf(line, "mode %d hz %f zeta %f gains %f", &k, &h, &z, &g) == 4) { hz.push_back(h); zeta.push_back(z); gain.push_back(g); }
+            int k; float h, z, g, p = 0.f;
+            if(sscanf(line, "mode %d hz %f zeta %f phase %f gains %f", &k, &h, &z, &p, &g) == 5 || (p = 0.f, sscanf(line, "mode %d hz %f zeta %f gains %f", &k, &h, &z, &g) == 4))
+            { hz.push_back(h); zeta.push_back(z); gain.push_back(g); phase.push_back(p); }
         }
         else if(!strncmp(line, "shaper bell", 11))
         {
@@ -118,7 +119,7 @@ int main(int argc, char** argv)
     if(hard <= 0) { soft = hard = 1.0f; }
 
     mb::ModalVoice v;
-    v.bank.Set(hz.data(), zeta.data(), gain.data(), (int)hz.size(), (float)sr);
+    v.bank.Set(hz.data(), zeta.data(), gain.data(), (int)hz.size(), (float)sr, phase.data());
     if(shaped) v.pickup.Set(sh[0], sh[1], sh[2], sh[3], sh[4], (float)sr);
     v.swing_soft = soft; v.swing_hard = hard;
 
@@ -147,7 +148,7 @@ int main(int argc, char** argv)
     for(int s = 0; s < vels; s++)
     {
         mb::ModalVoice one;
-        one.bank.Set(hz.data(), zeta.data(), gain.data(), (int)hz.size(), (float)sr);
+        one.bank.Set(hz.data(), zeta.data(), gain.data(), (int)hz.size(), (float)sr, phase.data());
         if(shaped) one.pickup.Set(sh[0], sh[1], sh[2], sh[3], sh[4], (float)sr);
         one.swing_soft = soft; one.swing_hard = hard;
         one.Strike(vels > 1 ? (float)s / (vels - 1) : 1.0f);

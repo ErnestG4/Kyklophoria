@@ -447,12 +447,16 @@ def attack_ramp(n, sr, ms=ATTACK_MS):
     return ramp
 
 
-def resynth(f, r, amp, n, sr):
-    """The record as sound: decaying sines from zero phase, the model's own attack."""
+def resynth(f, r, amp, n, sr, phase=None):
+    """The record as sound: decaying sines at their fitted phases, under the
+    model's own attack. From zero phase every partial rises together and
+    the sum is a spike the recording never had — ten to twenty-five times
+    the target's energy in the first 40 ms, measured on four instruments;
+    the phases are where the hammer's timing per mode lives."""
     t = np.arange(n) / sr
     y = np.zeros(n)
     for i in range(len(f)):
-        y += amp[i] * np.exp(-r[i] * t) * np.sin(2 * math.pi * f[i] * t)
+        y += amp[i] * np.exp(-r[i] * t) * np.sin(2 * math.pi * f[i] * t + (phase[i] if phase is not None else 0.0))
     return y * attack_ramp(n, sr)
 
 
@@ -532,7 +536,8 @@ def fit(x, sr, init, steps, device, verbose=True):
     with torch.no_grad():
         y = render()
         f, r, a = torch.exp(logf), torch.exp(logr), torch.exp(loga)
-    return f.cpu().numpy(), r.cpu().numpy(), a.cpu().numpy(), y.cpu().numpy(), loss.item()
+    ph = torch.remainder(phase.detach(), 2 * math.pi)
+    return f.cpu().numpy(), r.cpu().numpy(), a.cpu().numpy(), y.cpu().numpy(), loss.item(), ph.cpu().numpy()
 
 
 def main():
@@ -557,7 +562,7 @@ def main():
     init = initialise(x, sr, a.modes, report=rep)
     print('  %d candidate modes from the spectrum, %.1f .. %.1f Hz; rejected %s' % (
         len(init), min(m[0] for m in init), max(m[0] for m in init), rep))
-    f, r, amp, y, loss = fit(x, sr, init, a.steps, a.device)
+    f, r, amp, y, loss, ph = fit(x, sr, init, a.steps, a.device)
     # a mode the fit has turned down to nothing is a mode it could not place,
     # not a quiet one: keep it out of the record rather than in with a decay
     # nobody measured
@@ -565,10 +570,10 @@ def main():
     r = np.maximum(r, 6.91 / cap)
     keep = audible(amp, r, a.floor) & validate(f, r, amp, x, sr)
     dropped = int((~keep).sum())
-    f, r, amp = f[keep], r[keep], amp[keep]
+    f, r, amp, ph = f[keep], r[keep], amp[keep], ph[keep]
     order = np.argsort(f)
     # resynthesise what survived, for the file and for the whistle detector
-    y = resynth(f, r, amp, len(x), sr)
+    y = resynth(f, r, amp, len(x), sr, ph)
     ex = excess_db(y, x, sr)
     with open(a.out, 'w') as o:
         o.write('# modalfit record: a strike fitted as decaying sines on %s. zeta is measured,\n' % a.device)
@@ -578,7 +583,7 @@ def main():
         o.write('modes %d\n' % len(order))
         for k, i in enumerate(order):
             w = 2 * math.pi * f[i]
-            o.write('mode %d hz %.6f zeta %.9g gains %s\n' % (k, f[i], r[i] / w, ' '.join('%.9g' % amp[i] for _ in range(a.positions))))
+            o.write('mode %d hz %.6f zeta %.9g phase %.5f gains %s\n' % (k, f[i], r[i] / w, ph[i], ' '.join('%.9g' % amp[i] for _ in range(a.positions))))
     if a.resynth:
         sf.write(a.resynth, np.clip(y / (np.max(np.abs(y)) or 1.0) * 0.5, -1, 1), sr)
     if a.target:

@@ -142,18 +142,18 @@ def main():
             if not init:
                 print('  %-10s %s: no partials found' % (mid, f))
                 continue
-            fr, r, amp, y, loss = modalfit.fit(x, sr, init, a.steps, device, verbose=False)
+            fr, r, amp, y, loss, ph = modalfit.fit(x, sr, init, a.steps, device, verbose=False)
             cap = 3.0 * secs
             r = np.maximum(r, 6.91 / cap)
             keep = modalfit.audible(amp, r) & modalfit.validate(fr, r, amp, x, sr)
-            fr, r, amp = fr[keep], r[keep], amp[keep]
+            fr, r, amp, ph = fr[keep], r[keep], amp[keep], ph[keep]
             if a.polish and len(fr) and (~keep).any():
                 # the survivors, fitted again without the modes that were
-                # taking energy they had no claim to
-                fr, r, amp, y, loss = modalfit.fit(x, sr, list(zip(fr, r, amp)), a.polish, device, verbose=False)
+                # taking energy they had no claim to, from their own phases
+                fr, r, amp, y, loss, ph = modalfit.fit(x, sr, list(zip(fr, r, amp, ph)), a.polish, device, verbose=False)
                 r = np.maximum(r, 6.91 / cap)
                 keep = modalfit.audible(amp, r) & modalfit.validate(fr, r, amp, x, sr)
-                fr, r, amp = fr[keep], r[keep], amp[keep]
+                fr, r, amp, ph = fr[keep], r[keep], amp[keep], ph[keep]
             order = np.argsort(fr)
             nbody = 0
             if a.body:
@@ -162,7 +162,7 @@ def main():
                 # residual spectrum and what it needs to place the body
                 res = x - y[:len(x)]
                 residuals.append((mid, modalfit.residual_spectrum(res, sr), sr, len(x)))
-            y = modalfit.resynth(fr, r, amp, len(x), sr)
+            y = modalfit.resynth(fr, r, amp, len(x), sr, ph)
             ex = modalfit.excess_db(y, x, sr)
             dr = modalfit.decay_ratio(fr, r, amp, x, sr)
             with open(os.path.join(a.outdir, mid + '.mmr'), 'w') as o:
@@ -170,7 +170,7 @@ def main():
                 o.write('source %s\nfitted 1\nloss %.5f\nexcess_db %.3f\ndecay_ratio %.3f\npositions 12\nmodes %d\nbody %d\n' % (path, loss, ex, dr, len(order), nbody))
                 for k, i in enumerate(order):
                     w = 2 * math.pi * fr[i]
-                    o.write('mode %d hz %.6f zeta %.9g gains %s\n' % (k, fr[i], r[i] / w, ' '.join('%.9g' % amp[i] for _ in range(12))))
+                    o.write('mode %d hz %.6f zeta %.9g phase %.5f gains %s\n' % (k, fr[i], r[i] / w, ph[i], ' '.join('%.9g' % amp[i] for _ in range(12))))
             sf.write(os.path.join(a.outdir, mid + '-resynth.wav'), np.clip(y / (np.max(np.abs(y)) or 1) * 0.5, -1, 1), sr)
             sf.write(os.path.join(a.outdir, mid + '-target.wav'), np.clip(x * 0.5, -1, 1), sr)
             man.write('%s\t%s\tmidi\t%d\t%s\t%s\t%d\t%.4f\t%.3f\t%.3f\n' % (mid, a.family, midi + 12 * a.octave, dyn, f, len(order), loss, ex, dr))

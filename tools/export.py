@@ -6,7 +6,7 @@
 
 One file a world, small enough to sit in SDRAM beside the wavetables:
 
-    'KYKM' u16 version=1  u16 N  u16 P  u8 form  u8 body
+    'KYKM' u16 version=2  u16 N  u16 P  u8 form  u8 body
     f32 param_lo  f32 param_hi
     P points, each:
         f32 param
@@ -16,8 +16,11 @@ One file a world, small enough to sit in SDRAM beside the wavetables:
         u16 cents from 20 Hz  (12 * 100 * log2(hz / 20): 20 Hz .. 20 kHz in 1 cent)
         u8  decay  (-10 ln zeta, clamped: zeta 1 .. 1e-11, a tenth of a neper)
         u8  level  (dB under the point's loudest, in quarter dB, 0 .. 63.75)
+        u8  phase  (0 .. 255 over a turn: the fitted phase at the strike, where the
+                    hammer's timing per mode lives — from zero phase every partial
+                    rises together and the onset is a spike the recording never had)
 
-Four bytes a mode and 36 a point; 48 modes x 85 notes is 19 KB. The stage
+Five bytes a mode and 36 a point; 48 modes x 85 notes is 23 KB. The stage
 is per point because it is: the fitted voicing walks up the keyboard. The runtime decodes a point
 at note-on (exp2, exp, a table), never a sample.
 
@@ -48,18 +51,22 @@ def level8(gain, loudest):
     return int(np.clip(round(-db * 4), 0, 255))
 
 
+def phase8(ph):
+    return int(round((ph % (2 * math.pi)) / (2 * math.pi) * 256)) % 256
+
+
 def write(path, N, points, form=0, body=0):
     """points: [(param, modes, stage)] with stage = (h, w, K, fc, Q, swing_soft, swing_hard) or None"""
     params = [p[0] for p in points]
-    out = b'KYKM' + struct.pack('<HHHBB', 1, N, len(points), form, body)
+    out = b'KYKM' + struct.pack('<HHHBB', 2, N, len(points), form, body)
     out += struct.pack('<ff', min(params), max(params))
     for p, modes, stage in points:
         out += struct.pack('<f', p)
-        loudest = max((abs(g) for _, _, g in modes), default=1.0)
+        loudest = max((abs(m[2]) for m in modes), default=1.0)
         out += struct.pack('<8f', *(stage or (0, 1, 1, 0, 1, 1, 1)), loudest)
-        rows = list(modes)[:N] + [(20.0, 1.0, 0.0)] * max(0, N - len(modes))
-        for hz, zeta, g in rows:
-            out += struct.pack('<HBB', cents(hz), decay8(zeta), level8(g, loudest))
+        rows = [tuple(m) + (0.0,) * (4 - len(m)) for m in list(modes)[:N]] + [(20.0, 1.0, 0.0, 0.0)] * max(0, N - len(modes))
+        for hz, zeta, g, ph in rows:
+            out += struct.pack('<HBBB', cents(hz), decay8(zeta), level8(g, loudest), phase8(ph))
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     open(path, 'wb').write(out)
     print('%s: %d points x %d modes, form %d, %d bytes' % (path, len(points), N, form, len(out)))
@@ -87,7 +94,20 @@ def main():
     if kind == 'corpus':
         N, rows = read_corpus(sys.argv[2])
         fam = sys.argv[3]
-        pts = sorted([(r[3], list(zip(r[5], r[6], r[7])), None) for r in rows if r[1] == fam], key=lambda p: p[0])
+        # the corpus carries no phase; the family's records do, matched by frequency
+        phases = {}
+        recdir = os.path.join('out', 'fit', fam)
+        if os.path.isdir(recdir):
+            for r in rows:
+                if r[1] != fam:
+                    continue
+                rp = os.path.join(recdir, r[0] + '.mmr')
+                if os.path.exists(rp):
+                    for w in (l.split() for l in open(rp)):
+                        if w and w[0] == 'mode' and 'phase' in w:
+                            phases[(r[0], round(float(w[3]), 3))] = float(w[w.index('phase') + 1])
+        pts = sorted([(r[3], [(h, z, g, phases.get((r[0], round(h, 3)), 0.0)) for h, z, g in zip(r[5], r[6], r[7])], None)
+                      for r in rows if r[1] == fam], key=lambda p: p[0])
         if not pts:
             print('no family', fam); return 1
         write(sys.argv[4], N, pts)
@@ -102,7 +122,7 @@ def main():
                 if not w:
                     continue
                 if w[0] == 'mode':
-                    modes.append((float(w[3]), float(w[5]), float(w[7])))
+                    modes.append((float(w[3]), float(w[5]), float(w[w.index('gains') + 1]), float(w[w.index('phase') + 1]) if 'phase' in w else 0.0))
                 elif w[0] == 'shaper':
                     form = {'bell': 1, 'gap': 2}[w[1]]
                     shaper = tuple(float(v) for v in w[2:7])
