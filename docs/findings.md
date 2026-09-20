@@ -533,6 +533,49 @@ ignores and the runtime will read. What the world then needs at runtime is
 not 48 harmonics a note but a handful of metal modes and five numbers, and
 velocity comes out of the physics instead of out of a layer.
 
+## Where the roadmap ended, 19-20 September
+
+Every step of `docs/roadmap.md` has been taken to the line where it needs
+hands, and the line is drawn in each.
+
+1. *Clamped boundaries* — done, +8% against the clamped-free rod.
+2. *A grade that hears decay* — done, and the fitter now holds decay to the
+   track's measurement; `decay_ratio` is the number.
+3. *The Rhodes as the first world* — done from both ends: the pickup fitted
+   and shown to be the instrument (the metal is one sine), the fitted
+   voicing shown to be the screw, the FEM tine put on the recorded note.
+   The tone bar is measured, not modelled; a second body coupled through the
+   clamp is the one piece of physics left here.
+4. *Fitting on the GPU* — modal fitting done, with pairs, double decays, the
+   thump, the decay prior and two honest metrics; geometry fitting done on
+   the tine (length and spring to a tenth of a hertz and a hundredth of a
+   ratio). The body layer is measured and makes no measurable difference; it
+   is an option. The electrostatic stage halves the reed's error and what is
+   left is the plate plane, not the fit.
+5. *Condense* — `.kykm`, four bytes a mode, the stage per point; the
+   Wurlitzer is 2.5 KB and the EP with its pickup 7 KB.
+6. *The runtime* — `kyk_resonate.h` on Kyklophoria's `modal` branch, its
+   check in the suite (which caught a real bug on its first run), its cost
+   counted; the wiring behind `Engine::Process` written as a design for a
+   session with the module on the bench.
+
+What is measured, reasoned and hunch, so nobody reads more than is there:
+
+- **Measured.** Whistle: 238 notes over 1 dB → 0. Decay: ×0.96 / ×0.96 /
+  ×1.01 / ×0.87 / ×0.79 (Wurlitzer, EP, guitar, banjo, mandolin). The bark:
+  2.4 dB mean on Epi's tine, 7.4 on the recorded EP from two levelled takes.
+  h/w against the voicing screw, monotonic and zero at centre. FEM geometry
+  on seven EP notes. The runtime against the record: +8.5 → +20.2 against
+  the fit's +7 → +19. Fifteen M7 instructions a mode a sample.
+- **Reasoned.** That the pickup form is the right decomposition for a
+  Wurlitzer too (Epi's reed says a gap, not a bell, and the gap halved the
+  error); that the mandolin's remaining ×0.79 is body and sympathetic
+  courses (the records show them; the body layer at the residual's level
+  does not move the number).
+- **Hunch.** That the gate is the exciter a struck world wants on the module
+  and the oscillator the exciter a sustained one wants; that one pot on the
+  voicing is the knob a player reaches for. Neither has been played.
+
 ## Reproducing it
 
     make -j8 all-stages                 # ~10 minutes: 36 FEMs in parallel, then seconds
