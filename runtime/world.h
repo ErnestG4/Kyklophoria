@@ -24,7 +24,7 @@ struct World
     float    lo = 0, hi = 0;
 
     static constexpr uint32_t kHeader = 4 + 8 + 8;
-    uint32_t PointBytes() const { return 4 + 7 * 4 + 4u * N; }
+    uint32_t PointBytes() const { return 4 + 8 * 4 + 4u * N; }
 
     bool Attach(const void* data, uint32_t bytes)
     {
@@ -39,7 +39,7 @@ struct World
 
     float Param(int i) const { float p; std::memcpy(&p, blob + kHeader + i * PointBytes(), 4); return p; }
     const float* Stage(int i) const { return (const float*)(blob + kHeader + i * PointBytes() + 4); }   /* unaligned-safe on M7 */
-    const uint8_t* Modes(int i) const { return blob + kHeader + i * PointBytes() + 4 + 28; }
+    const uint8_t* Modes(int i) const { return blob + kHeader + i * PointBytes() + 4 + 32; }
 
     /* decode point i: hz, zeta, gain (unit = the point's loudest) per slot */
     void Decode(int i, float* hz, float* zeta, float* gain) const
@@ -74,12 +74,15 @@ struct World
             za[k] = za[k] * std::pow(zb[k] / za[k], t);
             ga[k] = ga[k] * std::pow((gb[k] + 1e-9f) / (ga[k] + 1e-9f), t);
         }
+        float st[8], sb[8];
+        std::memcpy(st, Stage(a), 32);
+        std::memcpy(sb, Stage(b), 32);
+        for(int k = 0; k < 8; k++) st[k] += t * (sb[k] - st[k]);
+        /* the level bytes are relative to the point's loudest mode; the
+           swing into the field is absolute, so the gains get it back before
+           the bank takes them */
+        for(int k = 0; k < N; k++) ga[k] *= st[7];
         v.bank.Set(ha, za, ga, N, sr);
-        float st[7];
-        std::memcpy(st, Stage(a), 28);
-        float sb[7];
-        std::memcpy(sb, Stage(b), 28);
-        for(int k = 0; k < 7; k++) st[k] += t * (sb[k] - st[k]);
         v.swing_soft = st[5]; v.swing_hard = st[6];
         if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
         else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);

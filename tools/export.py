@@ -11,12 +11,13 @@ One file a world, small enough to sit in SDRAM beside the wavetables:
     P points, each:
         f32 param
         f32 h  f32 w  f32 K  f32 fc  f32 Q  f32 swing_soft  f32 swing_hard   (the stage at this point; zeros if none)
+        f32 loudest   (the absolute gain the level bytes are relative to: the swing into the field needs it)
         N modes of
         u16 cents from 20 Hz  (12 * 100 * log2(hz / 20): 20 Hz .. 20 kHz in 1 cent)
         u8  decay  (-10 ln zeta, clamped: zeta 1 .. 1e-11, a tenth of a neper)
         u8  level  (dB under the point's loudest, in quarter dB, 0 .. 63.75)
 
-Four bytes a mode and 32 a point; 48 modes x 85 notes is 19 KB. The stage
+Four bytes a mode and 36 a point; 48 modes x 85 notes is 19 KB. The stage
 is per point because it is: the fitted voicing walks up the keyboard. The runtime decodes a point
 at note-on (exp2, exp, a table), never a sample.
 
@@ -54,8 +55,8 @@ def write(path, N, points, form=0, body=0):
     out += struct.pack('<ff', min(params), max(params))
     for p, modes, stage in points:
         out += struct.pack('<f', p)
-        out += struct.pack('<7f', *(stage or (0, 1, 1, 0, 1, 1, 1)))
         loudest = max((abs(g) for _, _, g in modes), default=1.0)
+        out += struct.pack('<8f', *(stage or (0, 1, 1, 0, 1, 1, 1)), loudest)
         rows = list(modes)[:N] + [(20.0, 1.0, 0.0)] * max(0, N - len(modes))
         for hz, zeta, g in rows:
             out += struct.pack('<HBB', cents(hz), decay8(zeta), level8(g, loudest))
