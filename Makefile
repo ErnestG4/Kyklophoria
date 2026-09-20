@@ -226,18 +226,24 @@ out/wav/walk-tine.wav: build/render out/space-fam-tine.msp
 out/wav/tine-sweep.wav: build/render out/space-fam-tine.msp
 	build/render out/space-fam-tine.msp out/corpus.mdb out/align.bin $@ --from tine00 --to tine11 --strikes 24 --interval 0.3 --strike 11 --listen 11
 GLIDES += out/wav/walk-tine.wav out/wav/tine-sweep.wav
-out/wav/wurli-keyboard.wav: build/render out/space-fam-wurli.msp
-	build/render out/space-fam-wurli.msp out/corpus.mdb out/align.bin $@ --from wurlz002 --to wurlz017 --strikes 25 --interval 0.4
 out/wav/wurli-glide.wav: build/render out/space-fam-wurli.msp
 	build/render out/space-fam-wurli.msp out/corpus.mdb out/align.bin $@ --from wurlz002 --to wurlz017 --mode glide --strikes 12 --interval 1.0
 out/wav/walk-wurli.wav: build/render out/space-fam-wurli.msp
 	build/render out/space-fam-wurli.msp out/corpus.mdb out/align.bin $@ --walk 7 --seconds 16 --mode glide --interval 0.5
-GLIDES += out/wav/wurli-keyboard.wav out/wav/wurli-glide.wav out/wav/walk-wurli.wav
+GLIDES += out/wav/wurli-glide.wav out/wav/walk-wurli.wav
 
 # ── renders of every fitted world: the keyboard as strikes, and a walk ───────
-$(foreach f,$(FITTED),out/wav/$(f)-keyboard.wav): out/wav/%-keyboard.wav: build/render out/space-fam-%.msp
+# the keyboard comes from the records through the runtime (a .kykm world:
+# every mode, its phase, its burst), not from the space — the harmonic-slot
+# corpus keeps one mode of a cluster and its render was dull on the low
+# Wurlitzer notes (centroid 209 Hz against the recording's 321). The walk is
+# the space's, because a walk is what the space is for
+out/worlds/%.kykm: out/fit/%/fits.tsv tools/export.py
+	@mkdir -p out/worlds
+	$(PYFIT) tools/export.py records out/fit/$* $@
+$(foreach f,$(FITTED),out/wav/$(f)-keyboard.wav): out/wav/%-keyboard.wav: build/modaltest out/worlds/%.kykm
 	@mkdir -p out/wav
-	build/render out/space-fam-$*.msp out/corpus.mdb out/align.bin $@ --family $* --strikes 25 --interval 0.4
+	build/modaltest out/worlds/$*.kykm $@ --velocity 0.9
 $(foreach f,$(FITTED),out/wav/walk-$(f).wav): out/wav/walk-%.wav: build/render out/space-fam-%.msp
 	@mkdir -p out/wav
 	build/render out/space-fam-$*.msp out/corpus.mdb out/align.bin $@ --walk 8 --seconds 16 --mode glide --interval 0.4

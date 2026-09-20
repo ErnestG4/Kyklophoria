@@ -127,6 +127,17 @@ def main():
                     top = max((m[2] for m in init), default=0.1)
                     init.append((f0, 1.0, 0.3 * top, 0.0))
                 init = sorted(init, key=lambda m: -m[2])[:a.modes]
+                # the decay is read off the softest usable take, where the
+                # pickup is near-linear and the output decays as the metal
+                # does; on the loudest take the field compresses the
+                # envelope and the metal came out decaying 2.7x too fast
+                # (Epi's E2: 12 s against 33)
+                soft = modalfit.initialise(xs[0] / (np.abs(xs[0]).max() or 1.0), sr, 4 * a.modes)
+                fixed = []
+                for m in init:
+                    near = [q for q in soft if abs(q[0] / m[0] - 1) < 0.03]
+                    fixed.append((m[0], min(near, key=lambda q: abs(q[0] - m[0]))[1], m[2]) + tuple(m[3:]) if near else m)
+                init = fixed
             if not init:
                 print('  %-6s no partials' % key)
                 continue

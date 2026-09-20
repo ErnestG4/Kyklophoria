@@ -430,6 +430,7 @@ MIN_T60 = 0.005      # s; faster is exciter, not mode
 import os as _os
 DECAY_PRIOR = float(_os.environ.get('MB_DECAY_PRIOR', 2.0))   # weight holding log decay to the track's measurement
 DECAY_BAND = float(_os.environ.get('MB_DECAY_BAND', 0.405))   # ln 1.5: the free band around it
+LEVEL_WEIGHT = float(_os.environ.get('MB_LEVEL', 2.0))       # loudness per take in the shaped fit (log RMS ratio squared)
 
 
 def audible(amp, r, floor_db=-60.0, at=0.01):
@@ -715,6 +716,18 @@ def fit_shaped(xs, sr, init, steps, device, verbose=True, normalised=False, form
                 ex = excess[tl <= tf].mean() if (tl <= tf).any() else excess.mean()
                 loss = loss + sc + 0.1 * lg + 1.0 * ex
         loss = loss / len(xs) + DECAY_PRIOR * (torch.relu((logr - logr0).abs() - DECAY_BAND) ** 2).mean()
+        # loudness across the takes: the model's RMS against the take's, in
+        # log, per take. The STFT terms are each normalised by their own
+        # take and never see that a hard strike must be louder than a
+        # medium one; without this the bell saturated early and the hardest
+        # take came out quieter than the one before it (Epi's E2: -13.0 dB
+        # against the take's -10.7, and -19.7 against -24.7 in the middle).
+        # A levelled library has no levels to match and skips it
+        if not normalised and LEVEL_WEIGHT > 0:
+            lvl = 0.0
+            for y, target in zip(ys, targets):
+                lvl = lvl + (torch.log(y.pow(2).mean() + 1e-12) - torch.log(target.pow(2).mean() + 1e-12)) ** 2
+            loss = loss + LEVEL_WEIGHT * lvl / len(xs)
         loss.backward()
         opt.step()
         sched.step()
