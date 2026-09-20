@@ -74,9 +74,16 @@ separate instrument with the same tools behind it.
    Neither needs torch on the module; both need it on the desktop, and the
    `fmexplorer` venv has torch 2.11 with CUDA on the 4090.
 
-5. **Condense.** kykeigen's recipe on the per-family corpus — log, PCA,
-   whiten, bake to a lattice — which is what `tools/bake` already does with a
-   manifold in the middle. Four components a family, the lattice in SDRAM.
+5. **Condense.** Done in its first form: `tools/export.py` writes a world as
+   a `.kykm` — four bytes a mode (cents, a log-decay byte, a quarter-dB
+   byte), the stage per point, 48 harmonic slots from the aligned corpus for
+   a pitched world or the metal's few modes for a shaped one. The EP is
+   38 KB, the Wurlitzer 2.5 KB. `runtime/world.h` attaches the blob where
+   it lies, decodes a point at note-on and interpolates between the two
+   neighbouring points by slot — log frequency, log decay, dB — so eleven
+   recorded Wurlitzer notes are a keyboard. Round trip within a cent. The
+   bake's four-component manifold is the other road to the same lattice and
+   stays for the FEM families; for a keyboard, the keyboard is the lattice.
 
 6. **The runtime.** A `World::Kind::Modal` that evaluates to a modal set
    instead of a spectrum, and a resonator bank in the engine behind the same

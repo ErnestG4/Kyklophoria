@@ -9,6 +9,7 @@
  * fit's. The same chain as tools/playvel.py, in the form the module runs.
  */
 #include "../../runtime/modal_bank.h"
+#include "../../runtime/world.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -28,9 +29,57 @@ static void wav(const char* path, const std::vector<float>& x, int sr)
     fclose(f);
 }
 
+/* a .kykm world across its keyboard through the runtime: every point struck
+   once at the given velocity, then the file; and a decode check against
+   the first point's hertz printed for the eye */
+static int world(const char* path, const char* out_path, float vel, int sr)
+{
+    FILE* f = fopen(path, "rb");
+    if(!f) { printf("cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+    std::vector<uint8_t> blob(n);
+    if(fread(blob.data(), 1, n, f) != (size_t)n) return 1;
+    fclose(f);
+    mb::World w;
+    if(!w.Attach(blob.data(), (uint32_t)n)) { printf("not a world: %s\n", path); return 1; }
+    printf("%s: %d points, %d modes, form %d, param %.0f..%.0f\n", path, w.P, w.N, w.form, w.lo, w.hi);
+    float hz[mb::ModalBank::kMax], z[mb::ModalBank::kMax], g[mb::ModalBank::kMax];
+    w.Decode(0, hz, z, g);
+    printf("  point 0 (param %.0f): %.1f Hz zeta %.4g gain %.3f | %.1f Hz | %.1f Hz\n", w.Param(0), hz[0], z[0], g[0], hz[1], hz[2]);
+    const double interval = 0.3, ring = 3.0;
+    std::vector<float> out((size_t)((w.P * interval + ring) * sr), 0.0f);
+    std::vector<mb::ModalVoice> voices(w.P);
+    for(int i = 0; i < w.P; i++) w.At(w.Param(i), voices[i], (float)sr);
+    const int block = 48;
+    for(size_t pos = 0; pos < out.size(); pos += block)
+    {
+        const int nn = (int)std::min((size_t)block, out.size() - pos);
+        float tmp[48];
+        for(int i = 0; i < w.P; i++)
+        {
+            const size_t at = (size_t)(i * interval * sr);
+            if(pos + nn <= at) continue;
+            if(pos <= at && at < pos + nn) voices[i].Strike(vel);
+            voices[i].Process(tmp, nn);
+            for(int k = 0; k < nn; k++) out[pos + k] += tmp[k];
+        }
+    }
+    float rms = 0; for(float s : out) rms += s * s; rms = std::sqrt(rms / out.size());
+    if(rms > 0) for(float& s : out) s = std::tanh(s * 0.1f / rms);
+    wav(out_path, out, sr);
+    printf("  %s: %d strikes at velocity %.2f\n", out_path, w.P, vel);
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
-    if(argc < 3) { printf("usage: modaltest record.mmr out.wav [--velocities n] [--sr 48000]\n"); return 1; }
+    if(argc < 3) { printf("usage: modaltest record.mmr out.wav [--velocities n] [--sr 48000]\n       modaltest world.kykm out.wav [--velocity v]\n"); return 1; }
+    if(strstr(argv[1], ".kykm"))
+    {
+        float vel = 0.8f;
+        for(int i = 3; i + 1 < argc; i++) if(!strcmp(argv[i], "--velocity")) vel = (float)atof(argv[++i]);
+        return world(argv[1], argv[2], vel, 48000);
+    }
     int vels = 6, sr = 48000;
     for(int i = 3; i < argc; i++)
     {

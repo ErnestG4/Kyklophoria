@@ -58,9 +58,11 @@ artifact changed.
     tools/epigen/        Epi's physical pianos (../epi, GPL-3.0) as a generator of
                          labelled notes: any velocity, voicing, metal
     tools/playvel.py     a shaped record played soft to hard (numpy/scipy)
-    runtime/             the runtime prototype: resonator bank, hammer, pickup —
-                         header-only, no heap; tools/modaltest renders through it,
-                         make armcost counts it on the M7
+    tools/export.py      a fitted world condensed for the module (.kykm, out/worlds/)
+    runtime/             the runtime prototype: resonator bank, hammer, pickup, and
+                         the world loader — header-only, no heap; tools/modaltest
+                         renders records and worlds through it, make armcost counts
+                         it on the M7
     lineage/             the three Kyklophoria files these started from, verbatim
     docs/                findings
 

@@ -102,14 +102,23 @@ struct ModalBank
 
 struct Pickup
 {
-    bool  on = false;
+    bool  on = false, gap = false;
     float h = 0.0f, inv_w = 1.0f, K = 1.0f;
     float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;   /* the coil */
     float prev = 0.0f, z1 = 0.0f, z2 = 0.0f;
 
+    /* the electrostatic plate: C = C0 / (1 - u/g), the reed short of the
+       plate through a tanh, as the fit had it */
+    void SetGap(float g_, float K_, float fc, float Q, float sr)
+    {
+        Set(0.0f, g_, K_, fc, Q, sr);
+        gap = true;
+        prev = 1.0f;
+    }
+
     void Set(float h_, float w_, float K_, float fc, float Q, float sr)
     {
-        on = true; h = h_; inv_w = 1.0f / w_; K = K_;
+        on = true; gap = false; h = h_; inv_w = 1.0f / w_; K = K_;
         const float w0 = 6.2831853f * fc / sr;
         const float alpha = std::sin(w0) / (2.0f * Q);
         const float cw = std::cos(w0), a0 = 1.0f + alpha;
@@ -127,7 +136,7 @@ struct Pickup
         for(int k = 0; k < frames; k++)
         {
             const float u   = (io[k] - h) * inv_w;
-            const float phi = 1.0f / (1.0f + u * u);
+            const float phi = gap ? 1.0f / (1.0f - 0.9f * std::tanh(u / 0.9f)) : 1.0f / (1.0f + u * u);
             const float d   = phi - prev;
             prev = phi;
             /* transposed direct form II */
