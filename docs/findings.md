@@ -556,6 +556,44 @@ one sine and a material can only change how long it rings. A material ×
 voicing world is a decay × voicing world for a tine, which is modest as a
 manifold and honest as physics (`out/fit/tine-mh/`).
 
+*The attack as a stored burst.* What the modes are not — the felt, the
+pick, the noise — was being imitated by sines with a 50 ms decay, a thock
+and not a hammer. The MT-32, the SY99 and the Nord Wave answered this with
+a stored attack under a synthesised sustain, and so does `tools/bursts.py`,
+with the attack measured from the note it sits under: the recording's first
+60 ms minus the modal resynthesis at the fitted phases, crossing into the
+modes on a 30 ms raised cosine, faded in over 1 ms because the analysed
+window of a fast note can open mid-attack. The thump sines leave the record;
+the burst carries them. For a shaped world the residual is against the
+model as the runtime plays it — the metal at the take's swing through the
+field and the coil — one burst a take, the runtime crossfading the two that
+bracket a strike's swing. Sixteen-bit in the world, ~6 KB a burst.
+
+Two things it found on the way. The fit's loss is STFT magnitude, which
+cannot see a sign: every phase plus π leaves every magnitude where it was,
+and half the records had come back as the negative of their recording (38
+of 71 guitar, 5 of 11 Wurlitzer, 80 of 169 EP — the guitar A2's residual
+carried 3.7× the recording's energy). The residual can see it; the sign
+that leaves less residual is written into the phases, once, and kept. And
+the bake's corpus cannot carry a fitted record: the fit puts a *cluster* at
+a harmonic — a pair, a thump, a double decay — whose phases partly cancel,
+and one-mode-a-harmonic keeps the loudest, which on the Wurlitzer's C4 was
+a third harmonic at 2.7 where the cluster sums to a fraction. Worlds are
+exported from the records now, every mode kept; the corpus stays the
+bake's representation.
+
+Measured: the Wurlitzer B6's whole-signal spectral convergence 0.36 → 0.095
+with the burst, the guitar E5's 0.46 → 0.165; the runtime's first 40 ms of
+the Wurlitzer C4 132 against the recording's 158 (the difference is the
+crossfade), where the corpus path had given 896. The EP's hardest take
+shows the limit: the shaped model's own attack is 3.6× the target's energy
+and its burst largely *cancels* it, which holds at the recorded swings and
+is fragile between them — the fit would rather have known a burst would
+cover its first 60 ms, and that is the next thing to teach it. Past the
+hardest recorded swing the pickup's output turns into a spike train, which
+is what an overdriven pickup does and what the listening files now stop
+short of.
+
 *Decay, measured honestly.* `decay_ratio` is now energy-weighted, because a
 thump at a three-hundredth of the fundamental's energy judged against a
 track that is the room's had a vote equal to the fundamental's and read the

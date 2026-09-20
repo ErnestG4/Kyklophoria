@@ -33,6 +33,7 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 
 namespace mb {
 
@@ -190,21 +191,92 @@ struct Pickup
 };
 
 /* A world: a bank and its pickup, and the two swings the fit measured. */
+/* The attack the modes are not: a stored burst a point (tools/bursts.py,
+ * the recording's first 40 ms minus the model's), played at strike time
+ * after the pickup, scaled by the strike's swing over the burst's own. A
+ * shaped world has a burst a take and crossfades the two that bracket the
+ * strike's swing — hammer noise that follows velocity. The samples are
+ * 16-bit in the world blob and read from there; nothing is copied. Two
+ * bursts at once at most (the crossfade), each a pointer, a position, a
+ * gain. */
+struct BurstPlayer
+{
+    struct Slot { const int16_t* s; uint32_t n, pos; float gain; };
+    Slot slot[2];
+    int  active;
+
+    void Init() { active = 0; for(auto& q : slot) { q.s = nullptr; q.n = q.pos = 0; q.gain = 0.0f; } }
+
+    /* bursts: pointer to the point's burst block in the world (nbursts,
+       then per burst swing, scale, len, samples), and the strike's swing */
+    void Strike(const uint8_t* block, float swing)
+    {
+        active = 0;
+        if(!block) return;
+        uint16_t nb; std::memcpy(&nb, block, 2);
+        const uint8_t* q = block + 2;
+        /* find the two bursts bracketing the swing (bursts are in ascending swing) */
+        const uint8_t* lo = nullptr; const uint8_t* hi = nullptr;
+        float slo = 0.0f, shi = 0.0f;
+        for(uint16_t i = 0; i < nb; i++)
+        {
+            float sw, sc; uint16_t n;
+            std::memcpy(&sw, q, 4); std::memcpy(&sc, q + 4, 4); std::memcpy(&n, q + 8, 2);
+            if(!lo || sw <= swing) { lo = q; slo = sw; }
+            if(sw >= swing) { hi = q; shi = sw; break; }
+            q += 10 + 2u * n;
+        }
+        if(!lo) return;
+        if(!hi) { hi = lo; shi = slo; }
+        const float t = (hi != lo && shi > slo) ? (swing - slo) / (shi - slo) : 0.0f;
+        const uint8_t* pick[2] = { lo, hi };
+        const float wgt[2] = { 1.f - t, t };
+        const float ref[2] = { slo, shi };
+        for(int i = 0; i < 2; i++)
+        {
+            if(wgt[i] <= 0.0f || (i == 1 && hi == lo)) continue;
+            float sw, sc; uint16_t n;
+            std::memcpy(&sw, pick[i], 4); std::memcpy(&sc, pick[i] + 4, 4); std::memcpy(&n, pick[i] + 8, 2);
+            Slot& q2 = slot[active++];
+            q2.s = (const int16_t*)(pick[i] + 10);
+            q2.n = n; q2.pos = 0;
+            q2.gain = wgt[i] * sc / 32767.f * (ref[i] > 0.0f ? swing / ref[i] : 1.f);
+        }
+    }
+
+    void Process(float* io, int frames)
+    {
+        for(int a = 0; a < active; a++)
+        {
+            Slot& q = slot[a];
+            for(int k = 0; k < frames && q.pos < q.n; k++, q.pos++)
+            {
+                int16_t v; std::memcpy(&v, q.s + q.pos, 2);   /* the blob may be unaligned */
+                io[k] += q.gain * v;
+            }
+        }
+    }
+};
+
 struct ModalVoice
 {
-    ModalBank bank;
-    Pickup    pickup;
-    float     swing_soft = 1.0f, swing_hard = 1.0f;
+    ModalBank      bank;
+    Pickup         pickup;
+    BurstPlayer    burst{};
+    const uint8_t* bursts = nullptr;  /* the point's burst block in the world, or null */
+    float          swing_soft = 1.0f, swing_hard = 1.0f;
 
     void Strike(float velocity01)
     {
         const float s = swing_soft * std::pow(swing_hard / swing_soft, velocity01);
         bank.Strike(s);
+        burst.Strike(bursts, s);
     }
     void Process(float* out, int frames)
     {
         bank.Process(out, frames);
         pickup.Process(out, frames);
+        burst.Process(out, frames);
     }
 };
 

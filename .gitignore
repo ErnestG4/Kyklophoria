@@ -12,3 +12,4 @@ out/fitsets*.log
 out/gen/
 out/fit/*-vel/*-target.wav
 out/fit/*-vel/*-resynth.wav
+out/fit/*/*-burst.wav

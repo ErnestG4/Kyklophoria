@@ -24,7 +24,24 @@ struct World
     float    lo = 0, hi = 0;
 
     static constexpr uint32_t kHeader = 4 + 8 + 8;
-    uint32_t PointBytes() const { return 4 + 8 * 4 + 5u * N; }
+    uint32_t FixedBytes() const { return 4 + 8 * 4 + 5u * N; }
+
+    /* a point is fixed bytes then its burst block, so the points are walked
+       — at note-on, over a couple of hundred at most */
+    const uint8_t* Point(int i) const
+    {
+        const uint8_t* q = blob + kHeader;
+        for(int j = 0; j < i; j++) q = BurstEnd(q + FixedBytes());
+        return q;
+    }
+    const uint8_t* Bursts(int i) const { return Point(i) + FixedBytes(); }
+    static const uint8_t* BurstEnd(const uint8_t* b)
+    {
+        uint16_t nb; std::memcpy(&nb, b, 2);
+        const uint8_t* q = b + 2;
+        for(uint16_t k = 0; k < nb; k++) { uint16_t n; std::memcpy(&n, q + 8, 2); q += 10 + 2u * n; }
+        return q;
+    }
 
     bool Attach(const void* data, uint32_t bytes)
     {
@@ -34,12 +51,12 @@ struct World
         std::memcpy(&N, blob + 6, 2); std::memcpy(&P, blob + 8, 2);
         form = blob[10]; body = blob[11];
         std::memcpy(&lo, blob + 12, 4); std::memcpy(&hi, blob + 16, 4);
-        return ver == 2 && N <= ModalBank::kMax && size >= kHeader + (uint32_t)P * PointBytes();
+        return ver == 3 && N <= ModalBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
     }
 
-    float Param(int i) const { float p; std::memcpy(&p, blob + kHeader + i * PointBytes(), 4); return p; }
-    const float* Stage(int i) const { return (const float*)(blob + kHeader + i * PointBytes() + 4); }   /* unaligned-safe on M7 */
-    const uint8_t* Modes(int i) const { return blob + kHeader + i * PointBytes() + 4 + 32; }
+    float Param(int i) const { float p; std::memcpy(&p, Point(i), 4); return p; }
+    const uint8_t* Stage(int i) const { return Point(i) + 4; }
+    const uint8_t* Modes(int i) const { return Point(i) + 4 + 32; }
 
     /* decode point i: hz, zeta, gain (unit = the point's loudest) per slot */
     void Decode(int i, float* hz, float* zeta, float* gain, float* phase) const
@@ -88,6 +105,7 @@ struct World
            the bank takes them */
         for(int k = 0; k < N; k++) ga[k] *= st[7];
         v.bank.Set(ha, za, ga, N, sr, fa);
+        v.bursts = Bursts(t < 0.5f ? a : b);      /* a burst is not interpolated: the nearer point's */
         v.swing_soft = st[5]; v.swing_hard = st[6];
         if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
         else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);

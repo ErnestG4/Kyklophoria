@@ -11,10 +11,13 @@ showed in a bark table or a spectral convergence, and both happened. So:
               envelope flat to 1% for over a second at more than -20 dBFS
     click     a broadband burst: a 1 ms frame of the signal above 12 kHz
               that stands 20 dB over the median of the 200 ms around it and
-              above -50 dBFS, and gone again (20 dB down) within 3 ms — a
-              note cut off while ringing, or one starting at full amplitude.
-              A partial up there is not isolated, and an attack arrives fast
-              but stays
+              above -50 dBFS, and short: 20 dB down within 3 ms on both
+              sides — a note cut off while ringing, or one starting at full
+              amplitude, and broadband: its energy above 12 kHz within a
+              tenth of its 4-12 kHz energy. A partial up there is not isolated,
+              an attack arrives fast but stays, a stored 40 ms hammer burst
+              that fades out is broad on one side, and a bright partial dying
+              at 8 kHz leaks through the high-pass at a hundredth of itself
     silence   more than 50% of 50 ms frames under -80 dBFS
     level     RMS outside -40 .. -6 dBFS
     nan       any
@@ -58,6 +61,12 @@ def check(path):
     hfx = sg.sosfiltfilt(sos, x) if len(x) > 100 else x
     fh = max(1, int(0.001 * sr))
     henv = np.array([np.sqrt(np.mean(hfx[i:i + fh] ** 2)) for i in range(0, max(fh, len(hfx) - fh), fh)])
+    # and a click is broadband: its energy above 12 kHz is of the order of
+    # its energy in 4-12 kHz. A bright partial dying at 8 kHz leaks through
+    # the high-pass at a hundredth of its own band and is not one
+    sos2 = sg.butter(6, [4000.0, 12000.0], 'bandpass', fs=sr, output='sos')
+    mfx = sg.sosfiltfilt(sos2, x) if len(x) > 100 else x
+    menv = np.array([np.sqrt(np.mean(mfx[i:i + fh] ** 2)) for i in range(0, max(fh, len(mfx) - fh), fh)])
     steps = 0
     k = 100
     for i in range(len(henv)):
@@ -68,7 +77,9 @@ def check(path):
             # and it ends: 20 dB down again within 3 ms. An attack's high
             # band arrives fast too, but it stays
             after = henv[i + 1:i + 4]
-            if len(after) and after.min() < 0.1 * henv[i]:
+            before = henv[max(0, i - 3):i]
+            if len(after) and after.min() < 0.1 * henv[i] and (len(before) == 0 or before.min() < 0.1 * henv[i]) \
+               and henv[i] > 0.1 * menv[i]:
                 steps += 1
     if steps:
         bad.append('%d clicks' % steps)

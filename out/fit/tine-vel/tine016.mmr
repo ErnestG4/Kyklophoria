@@ -13,3 +13,10 @@ take v050 swing 15.9992 level 0.0399881
 take v070 swing 35.9085 level 0.104389
 take v085 swing 59.4596 level 0.180306
 take v100 swing 94.2429 level 0.270315
+signed 1
+burst v015 tine016-v015-burst.wav
+burst v030 tine016-v030-burst.wav
+burst v050 tine016-v050-burst.wav
+burst v070 tine016-v070-burst.wav
+burst v085 tine016-v085-burst.wav
+burst v100 tine016-v100-burst.wav

@@ -17,3 +17,6 @@ mode 8 hz 672.966933 zeta 0.0256103463 phase 3.44322 gains 0.115465622 0.1154656
 shaper bell 0.0213456 1.41077 939.136 677.689 0.0986841
 take MED swing 0.97772 level 0.186901
 take MAX swing 2.91907 level 0.127306
+signed 1
+burst MED epv007-MED-burst.wav
+burst MAX epv007-MAX-burst.wav

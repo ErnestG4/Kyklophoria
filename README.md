@@ -57,7 +57,11 @@ artifact changed.
     tools/fitvel.py      a note at several velocities -> metal + pickup (fit_shaped)
     tools/epigen/        Epi's physical pianos (../epi, GPL-3.0) as a generator of
                          labelled notes: any velocity, voicing, metal
-    tools/playvel.py     a shaped record played soft to hard (numpy/scipy)
+    tools/bursts.py      the attack as a stored burst: the recording's first 60 ms
+                         minus the model's, into every record; fixes the sign the
+                         STFT loss cannot see
+    tools/playvel.py     a record played soft to hard, burst and all (numpy/scipy)
+    tools/earcheck.py    grades every rendered wav for rails, silence, level, clicks
     tools/export.py      a fitted world condensed for the module (.kykm, out/worlds/)
     runtime/             the runtime prototype: resonator bank, hammer, pickup, and
                          the world loader — header-only, no heap; tools/modaltest

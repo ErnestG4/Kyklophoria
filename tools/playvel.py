@@ -25,7 +25,7 @@ from scipy import signal
 
 
 def read(path):
-    modes, shaper, takes = [], None, []
+    modes, shaper, takes, bursts = [], None, [], []
     for line in open(path):
         w = line.split()
         if not w:
@@ -36,7 +36,24 @@ def read(path):
             shaper = [w[1]] + [float(v) for v in w[2:7]]
         elif w[0] == 'take':
             takes.append((w[1], float(w[3])))
-    return modes, shaper, takes
+        elif w[0] == 'burst':
+            bursts.append((w[1], w[2]) if len(w) > 2 else (None, w[1]))
+    return modes, shaper, takes, bursts
+
+
+def burst_for(recdir, bursts, takes, swing, sr):
+    """the burst nearest the swing, resampled to sr and scaled by swing over
+    its own — the attack the modes are not, as the runtime plays it"""
+    if not bursts:
+        return None
+    from scipy.signal import resample_poly
+    sw = dict(takes)
+    best = min(bursts, key=lambda b: abs(math.log((sw.get(b[0], 1.0) or 1.0) / swing)))
+    x, bsr = sf.read(os.path.join(recdir, best[1]))
+    if bsr != sr:
+        x = resample_poly(x, sr, bsr)
+    ref = sw.get(best[0], 1.0) or 1.0
+    return x * (swing / ref)
 
 
 def note(modes, shaper, swing, seconds, sr):
@@ -49,6 +66,11 @@ def note(modes, shaper, swing, seconds, sr):
     k = int(0.003 * sr)
     u[:k] *= 0.5 - 0.5 * np.cos(np.pi * np.arange(k) / k)
     u *= swing
+    if form == 'none':
+        y = u
+        k = min(len(y), int(0.1 * sr))
+        y[-k:] *= 0.5 + 0.5 * np.cos(np.pi * np.arange(k) / k)
+        return y
     if form == 'gap':
         phi = 1.0 / (1.0 - 0.9 * np.tanh(u / (0.9 * w)))
     else:
@@ -91,14 +113,21 @@ def main():
     out = np.zeros(int((strikes * a.interval + a.ring) * sr))
     i = 0
     for midi, rid in recs:
-        modes, shaper, takes = read(os.path.join(a.recdir, rid + '.mmr'))
-        if not modes or shaper is None or not takes:
+        modes, shaper, takes, bursts = read(os.path.join(a.recdir, rid + '.mmr'))
+        if not modes:
             continue
+        if shaper is None:
+            shaper = ['none', 0, 1, 1, 0, 1]      # a pitched record: the modes are the sound
+        if not takes:
+            takes = [('-', 1.0)]
         g0, g1 = min(g for _, g in takes), max(g for _, g in takes)
         for v in range(a.velocities):
             x = (v / max(1, a.velocities - 1)) * a.top
             swing = g0 * (g1 / g0) ** x if g1 > g0 else g0
             y = note(modes, shaper, swing, a.ring, sr)
+            b = burst_for(a.recdir, bursts, takes, swing, sr)
+            if b is not None:
+                y[:len(b)] += b[:len(y)]
             at = int(i * a.interval * sr)
             n = min(len(y), len(out) - at)
             out[at:at + n] += y[:n]

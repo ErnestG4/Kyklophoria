@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """export.py — a fitted world, condensed for the module.
 
-    export.py corpus out/corpus.mdb wurli out/worlds/wurli.kykm
+    export.py records out/fit/wurli out/worlds/wurli.kykm
     export.py shaped out/fit/ep-vel out/worlds/ep-vel.kykm
+    export.py corpus out/corpus.mdb wurli out/worlds/wurli-slots.kykm
 
 One file a world, small enough to sit in SDRAM beside the wavetables:
 
-    'KYKM' u16 version=2  u16 N  u16 P  u8 form  u8 body
+    'KYKM' u16 version=3  u16 N  u16 P  u8 form  u8 body
     f32 param_lo  f32 param_hi
     P points, each:
         f32 param
@@ -20,15 +21,29 @@ One file a world, small enough to sit in SDRAM beside the wavetables:
                     hammer's timing per mode lives — from zero phase every partial
                     rises together and the onset is a spike the recording never had)
 
-Five bytes a mode and 36 a point; 48 modes x 85 notes is 23 KB. The stage
+        then u16 nbursts, and per burst: f32 swing, f32 scale, u16 len, i16 samples[len]
+        at 48 kHz — the attack the modes are not (tools/bursts.py): the recording's
+        first 40 ms minus the model's, played at strike time after the pickup,
+        scaled by swing / this burst's swing; a shaped world crossfades the two
+        bursts bracketing the strike's swing
+
+Five bytes a mode and 36 a point, plus ~4 KB a burst; the EP with two
+bursts a note is 700 KB, the Wurlitzer 45 KB. The stage
 is per point because it is: the fitted voicing walks up the keyboard. The runtime decodes a point
 at note-on (exp2, exp, a table), never a sample.
 
-`corpus` takes a pitched family out of the aligned corpus: slot k is
-harmonic k, so the runtime can interpolate between the points it has (a
-Wurlitzer with eleven notes recorded) by slot. `shaped` takes a fitvel set:
-the metal's few modes by frequency rank, and the stage. form 0 is no stage,
-1 the bell, 2 the gap.
+`records` takes a fitted set's records as they are, every mode a note
+sorted by frequency, with the phase and the burst: the fit puts a cluster
+at a harmonic — a pair, a thump, a double decay — whose phases partly
+cancel, and the corpus's one-mode-a-harmonic slot keeps only the loudest of
+them, which on the Wurlitzer's C4 was a third harmonic at 2.7 where the
+record's cluster sums to a fraction of that. Slot k is then the kth partial
+by frequency, which the runtime interpolates between recorded notes; about
+right when clusters are absent and approximate when not. `shaped` is the
+same for a fitvel set, with the stage and a burst a take. `corpus` takes a
+pitched family out of the aligned corpus, slot k harmonic k, which is the
+bake's representation and not the sound's. form 0 is no stage, 1 the bell,
+2 the gap.
 """
 import math
 import os
@@ -56,20 +71,45 @@ def phase8(ph):
 
 
 def write(path, N, points, form=0, body=0):
-    """points: [(param, modes, stage)] with stage = (h, w, K, fc, Q, swing_soft, swing_hard) or None"""
+    """points: [(param, modes, stage[, bursts])] with stage = (h, w, K, fc, Q, swing_soft, swing_hard) or None,
+    bursts = [(swing, samples_at_48k)]"""
     params = [p[0] for p in points]
-    out = b'KYKM' + struct.pack('<HHHBB', 2, N, len(points), form, body)
+    out = b'KYKM' + struct.pack('<HHHBB', 3, N, len(points), form, body)
     out += struct.pack('<ff', min(params), max(params))
-    for p, modes, stage in points:
+    for pt in points:
+        p, modes, stage = pt[0], pt[1], pt[2]
+        bursts = pt[3] if len(pt) > 3 else []
         out += struct.pack('<f', p)
         loudest = max((abs(m[2]) for m in modes), default=1.0)
         out += struct.pack('<8f', *(stage or (0, 1, 1, 0, 1, 1, 1)), loudest)
         rows = [tuple(m) + (0.0,) * (4 - len(m)) for m in list(modes)[:N]] + [(20.0, 1.0, 0.0, 0.0)] * max(0, N - len(modes))
         for hz, zeta, g, ph in rows:
             out += struct.pack('<HBBB', cents(hz), decay8(zeta), level8(g, loudest), phase8(ph))
+        out += struct.pack('<H', len(bursts))
+        for swing, samples in bursts:
+            scale = float(np.max(np.abs(samples))) if len(samples) else 1.0
+            q = np.clip(np.round(samples / (scale or 1.0) * 32767), -32768, 32767).astype('<i2')
+            out += struct.pack('<ffH', swing, scale, len(q)) + q.tobytes()
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     open(path, 'wb').write(out)
     print('%s: %d points x %d modes, form %d, %d bytes' % (path, len(points), N, form, len(out)))
+
+
+def bursts_of(recdir, rid, swings=None):
+    """[(swing, samples at 48 kHz)] from a record's burst lines. A pitched
+    record has one burst at swing 1; a shaped record one a take at the take's swing."""
+    import soundfile as sf
+    from scipy.signal import resample_poly
+    out = []
+    for w in (l.split() for l in open(os.path.join(recdir, rid + '.mmr'))):
+        if not w or w[0] != 'burst':
+            continue
+        take, fname = (w[1], w[2]) if len(w) > 2 else (None, w[1])
+        x, sr = sf.read(os.path.join(recdir, fname))
+        if sr != 48000:
+            x = resample_poly(x, 48000, sr)
+        out.append(((swings or {}).get(take, 1.0), x.astype(np.float32)))
+    return out
 
 
 def read_corpus(path):
@@ -103,15 +143,20 @@ def main():
                     continue
                 rp = os.path.join(recdir, r[0] + '.mmr')
                 if os.path.exists(rp):
-                    for w in (l.split() for l in open(rp)):
-                        if w and w[0] == 'mode' and 'phase' in w:
-                            phases[(r[0], round(float(w[3]), 3))] = float(w[w.index('phase') + 1])
-        pts = sorted([(r[3], [(h, z, g, phases.get((r[0], round(h, 3)), 0.0)) for h, z, g in zip(r[5], r[6], r[7])], None)
+                    phases[r[0]] = [(float(w[3]), float(w[w.index('phase') + 1])) for w in (l.split() for l in open(rp)) if w and w[0] == 'mode' and 'phase' in w]
+
+        def phase_of(rid, hz):
+            # the corpus holds float32 frequencies: the nearest record mode within 0.01%
+            best = min(((abs(f / hz - 1), ph) for f, ph in phases.get(rid, [])), default=(1.0, 0.0))
+            return best[1] if best[0] < 1e-4 else 0.0
+
+        pts = sorted([(r[3], [(h, z, g, phase_of(r[0], h)) for h, z, g in zip(r[5], r[6], r[7])], None,
+                       bursts_of(recdir, r[0]) if os.path.exists(os.path.join(recdir, r[0] + '.mmr')) else [])
                       for r in rows if r[1] == fam], key=lambda p: p[0])
         if not pts:
             print('no family', fam); return 1
         write(sys.argv[4], N, pts)
-    elif kind == 'shaped':
+    elif kind in ('shaped', 'records'):
         d = sys.argv[2]
         pts, form = [], 0
         for line in open(os.path.join(d, 'fits.tsv')).read().splitlines()[1:]:
@@ -128,9 +173,16 @@ def main():
                     shaper = tuple(float(v) for v in w[2:7])
                 elif w[0] == 'take':
                     swings[0] = min(swings[0], float(w[3])); swings[1] = max(swings[1], float(w[3]))
-            pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings)))
+            takes = {}
+            for l in open(os.path.join(d, c[0] + '.mmr')):
+                w = l.split()
+                if w and w[0] == 'take':
+                    takes[w[1]] = float(w[3])
+            if swings[1] <= 0:
+                swings = [1.0, 1.0]
+            pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes)))
         pts.sort(key=lambda p: p[0])
-        N = max(len(m) for _, m, _ in pts)
+        N = max(len(pt[1]) for pt in pts)
         write(sys.argv[3], N, pts, form, 0)
     return 0
 
