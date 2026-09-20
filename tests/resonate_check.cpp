@@ -14,8 +14,8 @@
  *
  * Vacuity was checked the way CLAUDE.md asks: multiply the gain by sin w
  * twice instead of once and the decay test does not care, but the level
- * test (a unit-gain mode at 440 Hz must peak within 3% of the record's
- * amplitude) does; put the resonator's coefficient sign wrong and the
+ * test (a mode at 440 Hz must peak within 3% of the record's amplitude at
+ * the envelope's value there) does; put the resonator's coefficient sign wrong and the
  * frequency test fails at once; take the pickup out and the bark test
  * fails.
  */
@@ -95,10 +95,13 @@ int main()
         for(int i = 19200; i < 19200 + 110; i++) p2 = std::fmax(p2, std::fabs(y[i]));
         const double measured_t60 = 60.0 * 0.3 / (20 * std::log10(p1 / p2));
         CHECK(std::fabs(measured_t60 / t60 - 1) < 0.02, "T60 0.5 s measured as %.3f s", measured_t60);
-        /* level: the record's amplitude is what rings */
-        float pk = 0;
-        for(int i = 0; i < 480; i++) pk = std::fmax(pk, std::fabs(y[i]));
-        CHECK(std::fabs(pk / gain - 1) < 0.03, "unit-gain mode of amplitude %.3f peaks at %.3f", gain, pk);
+        /* level: the record's amplitude is what rings — judged at the peak's
+           own instant against the envelope there, since the strike ramps in
+           over 3 ms and a 0.5 s T60 has already lost 4% by then */
+        float pk = 0; int at = 0;
+        for(int i = 0; i < 480; i++) if(std::fabs(y[i]) > pk) { pk = std::fabs(y[i]); at = i; }
+        const float expect = gain * std::exp(-zeta * 6.2831853f * hz / sr * at);
+        CHECK(std::fabs(pk / expect - 1) < 0.03, "mode of amplitude %.3f peaks at %.3f at sample %d, envelope there %.3f", gain, pk, at, expect);
         printf("  mode: %.3f Hz (%.2f cents), T60 %.3f s, peak %.3f of %.3f\n", f, cents, measured_t60, pk, gain);
     }
 
