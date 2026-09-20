@@ -60,7 +60,10 @@ struct ModalBank
        two samples before n = 0, which is where the fitted phase — the
        hammer's timing per mode — goes in. From zero phase every partial
        rises together and the onset is a spike the recording never had */
-    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr)
+    /* keep: retune the coefficients and leave the state ringing — a pitch
+       change under a sounding note, which follows it as the oscillator's
+       does; the strike bank's state is left too, mid-ramp */
+    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr, bool keep = false)
     {
         n = count > kMax ? kMax : count;
         for(int i = 0; i < n; i++)
@@ -72,10 +75,10 @@ struct ModalBank
             c2[i] = -r * r;
             p1[i] = gain[i] * std::sin(ph - w) / r;
             p2[i] = gain[i] * std::sin(ph - 2.0f * w) / (r * r);
-            y1[i] = y2[i] = s1[i] = s2[i] = 0.0f;
+            if(!keep) y1[i] = y2[i] = s1[i] = s2[i] = 0.0f;
         }
         ramp_len = 0.003f * sr;
-        ramping = false;
+        if(!keep) ramping = false;
     }
 
     /* the hammer: the strike bank set to the given swing at every mode's
@@ -268,7 +271,9 @@ struct ModalVoice
 
     void Strike(float velocity01)
     {
-        const float s = swing_soft * std::pow(swing_hard / swing_soft, velocity01);
+        /* between the softest and hardest take in log; a world fitted from
+           one take (swing_soft == swing_hard) scales linearly with velocity */
+        const float s = swing_hard > swing_soft ? swing_soft * std::pow(swing_hard / swing_soft, velocity01) : swing_soft * velocity01;
         bank.Strike(s);
         burst.Strike(bursts, s);
     }
