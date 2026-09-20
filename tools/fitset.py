@@ -116,6 +116,9 @@ def main():
     ap.add_argument('--keep-ids', action='store_true', help='name records after their files rather than family+index')
     ap.add_argument('--first-id', type=int, default=0, help='number records from here, for a set fitted in parts')
     ap.add_argument('--body', type=int, default=0, help='fit this many broad modes to the residual after the partials: the body')
+    ap.add_argument('--t60-cap', type=float, default=8.0,
+                    help='a fitted T60 is capped at this many times the analysed length. It was 3, and a Wurlitzer C3 whose '
+                         'fundamental sits flat for 2.5 s was held to 7.6 s where the recording says over ten')
     a = ap.parse_args()
     if a.polish < 0:
         a.polish = a.steps // 2
@@ -143,7 +146,7 @@ def main():
                 print('  %-10s %s: no partials found' % (mid, f))
                 continue
             fr, r, amp, y, loss, ph = modalfit.fit(x, sr, init, a.steps, device, verbose=False)
-            cap = 3.0 * secs
+            cap = a.t60_cap * secs
             r = np.maximum(r, 6.91 / cap)
             keep = modalfit.audible(amp, r) & modalfit.validate(fr, r, amp, x, sr)
             fr, r, amp, ph = fr[keep], r[keep], amp[keep], ph[keep]
