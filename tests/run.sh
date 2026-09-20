@@ -122,6 +122,7 @@ for script in tests/scripts/*.txt; do
         m3_pulse*) args="--gen --seed 1 --world 19";;
         m3_edge*) args="--gen --seed 1 --world 20";;
         m3_grit*) args="--gen --seed 1 --world 21";;
+        m4_resonate*) args="--gen --seed 1 --resonate tests/data/wurli.kykm";;
     esac
     build/host/kykdesk $args --script "$script" --out "$OUT/$name.wav" --telemetry "$OUT/$name.csv" || { fail=1; continue; }
     if [ $update = 1 ] || [ ! -f "tests/golden/$name.wav" ]; then

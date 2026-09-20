@@ -40,6 +40,7 @@ int main(int argc, char** argv)
     double      dur_override = -1;
     float       sharp = 0.f, deadband = 5e-4f;
     int         world_sel = -1;   /* --world N: use a built-in world instead of a lattice */
+    std::string resonate_path;    /* --resonate f.kykm: a fitted world (ModalBake), struck by the script */
     for(int i = 1; i < argc; i++)
     {
         std::string a = argv[i];
@@ -54,6 +55,7 @@ int main(int argc, char** argv)
         else if(a == "--P") gp.p = atoi(next());
         else if(a == "--wrap") { int ax = atoi(next()); if(ax >= 0 && ax < kMaxN) gp.topo[ax] = (uint8_t)Topo::Wrap; }
         else if(a == "--world") world_sel = atoi(next());
+        else if(a == "--resonate") resonate_path = next();
         else if(a == "--family")
         {
             const std::string f = next();
@@ -79,9 +81,10 @@ int main(int argc, char** argv)
         else if(a == "--loop") loop = true;
         else { fprintf(stderr, "unknown arg %s\n", a.c_str()); return 2; }
     }
+    if(!resonate_path.empty() && space_path.empty()) gen = true;   /* a resonate world needs no lattice; --gen gives the engine one to hold */
     if((!serve && (script_path.empty() || out_path.empty())) || (space_path.empty() && !gen))
     {
-        fprintf(stderr, "usage: kykdesk (--space f.kyk | --gen) --script s.txt --out o.wav [options]\n"
+        fprintf(stderr, "usage: kykdesk (--space f.kyk | --gen | --resonate f.kykm) --script s.txt --out o.wav [options]\n"
                         "       kykdesk --serve (--space f.kyk | --gen) [--script s.txt] [--loop]\n");
         return 2;
     }
@@ -125,6 +128,18 @@ int main(int argc, char** argv)
             const size_t n = worlds::Expand((uint8_t)world_sel, gp.n, gp.side, gp.k, gp.p, blob.data(), blob.size());
             if(n && space.Attach(blob.data(), n) == SpaceError::Ok) world.UseLattice(&space);
         }
+    }
+    static std::vector<uint8_t> resonate_blob;
+    if(!resonate_path.empty())
+    {
+        FILE* rf = fopen(resonate_path.c_str(), "rb");
+        if(!rf) { fprintf(stderr, "cannot read %s\n", resonate_path.c_str()); return 1; }
+        fseek(rf, 0, SEEK_END); const long n = ftell(rf); fseek(rf, 0, SEEK_SET);
+        resonate_blob.resize((size_t)n);
+        if(fread(resonate_blob.data(), 1, (size_t)n, rf) != (size_t)n) { fclose(rf); return 1; }
+        fclose(rf);
+        world.UseResonate(resonate_blob.data(), (uint32_t)resonate_blob.size());
+        if(!world.Ready()) { fprintf(stderr, "%s is not a resonate world\n", resonate_path.c_str()); return 1; }
     }
     eng.Init(&world, (float)sr);
     eng.SetGain(gain);

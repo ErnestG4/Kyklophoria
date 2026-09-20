@@ -1,0 +1,32 @@
+# a resonate world (the Wurlitzer, tests/data/wurli.kykm) through the real
+# engine: a keyboard of strikes, then a retune under a ringing note, then a
+# soft-to-hard run on one note. Rendered by kykdesk --resonate.
+9.0  dur
+0.0  f0 65.41
+0.05 strike 0.8
+0.6  f0 98.0
+0.65 strike 0.8
+1.2  f0 130.81
+1.25 strike 0.8
+1.8  f0 196.0
+1.85 strike 0.8
+2.4  f0 261.63
+2.45 strike 0.8
+3.0  f0 392.0
+3.05 strike 0.8
+3.6  f0 523.25
+3.65 strike 0.8
+4.2  f0 783.99
+4.25 strike 0.8
+4.8  f0 1046.5
+4.85 strike 0.8
+# a retune under the ringing note: the pitch moves, the note follows
+5.6  glide f0 1567.98 0.4
+# one note, soft to hard
+6.4  f0 261.63
+6.45 strike 0.15
+6.85 strike 0.3
+7.25 strike 0.5
+7.65 strike 0.7
+8.05 strike 0.85
+8.45 strike 1.0
