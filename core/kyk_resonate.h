@@ -226,23 +226,94 @@ struct Pickup
     }
 };
 
+/* The attack the modes are not: a stored burst a point (tools/bursts.py,
+ * the recording's first 40 ms minus the model's), played at strike time
+ * after the pickup, scaled by the strike's swing over the burst's own. A
+ * shaped world has a burst a take and crossfades the two that bracket the
+ * strike's swing — hammer noise that follows velocity. The samples are
+ * 16-bit in the world blob and read from there; nothing is copied. Two
+ * bursts at once at most (the crossfade), each a pointer, a position, a
+ * gain. */
+struct BurstPlayer
+{
+    struct Slot { const int16_t* s; uint32_t n, pos; float gain; };
+    Slot slot[2];
+    int  active;
+
+    void Init() { active = 0; for(auto& q : slot) { q.s = nullptr; q.n = q.pos = 0; q.gain = 0.f; } }
+
+    /* bursts: pointer to the point's burst block in the world (nbursts,
+       then per burst swing, scale, len, samples), and the strike's swing */
+    void Strike(const uint8_t* block, float swing)
+    {
+        active = 0;
+        if(!block) return;
+        uint16_t nb; std::memcpy(&nb, block, 2);
+        const uint8_t* q = block + 2;
+        /* find the two bursts bracketing the swing (bursts are in ascending swing) */
+        const uint8_t* lo = nullptr; const uint8_t* hi = nullptr;
+        float slo = 0.f, shi = 0.f;
+        for(uint16_t i = 0; i < nb; i++)
+        {
+            float sw, sc; uint16_t n;
+            std::memcpy(&sw, q, 4); std::memcpy(&sc, q + 4, 4); std::memcpy(&n, q + 8, 2);
+            if(!lo || sw <= swing) { lo = q; slo = sw; }
+            if(sw >= swing) { hi = q; shi = sw; break; }
+            q += 10 + 2u * n;
+        }
+        if(!lo) return;
+        if(!hi) { hi = lo; shi = slo; }
+        const float t = (hi != lo && shi > slo) ? (swing - slo) / (shi - slo) : 0.f;
+        const uint8_t* pick[2] = { lo, hi };
+        const float wgt[2] = { 1.f - t, t };
+        const float ref[2] = { slo, shi };
+        for(int i = 0; i < 2; i++)
+        {
+            if(wgt[i] <= 0.f || (i == 1 && hi == lo)) continue;
+            float sw, sc; uint16_t n;
+            std::memcpy(&sw, pick[i], 4); std::memcpy(&sc, pick[i] + 4, 4); std::memcpy(&n, pick[i] + 8, 2);
+            Slot& q2 = slot[active++];
+            q2.s = (const int16_t*)(pick[i] + 10);
+            q2.n = n; q2.pos = 0;
+            q2.gain = wgt[i] * sc / 32767.f * (ref[i] > 0.f ? swing / ref[i] : 1.f);
+        }
+    }
+
+    void Process(float* io, int frames)
+    {
+        for(int a = 0; a < active; a++)
+        {
+            Slot& q = slot[a];
+            for(int k = 0; k < frames && q.pos < q.n; k++, q.pos++)
+            {
+                int16_t v; std::memcpy(&v, q.s + q.pos, 2);   /* the blob may be unaligned */
+                io[k] += q.gain * v;
+            }
+        }
+    }
+};
+
 struct ResonatorVoice
 {
-    ResonatorBank bank;
-    Pickup        pickup;
-    float         swing_soft, swing_hard;
+    ResonatorBank  bank;
+    Pickup         pickup;
+    BurstPlayer    burst;
+    const uint8_t* bursts;            /* the point's burst block in the world, or null */
+    float          swing_soft, swing_hard;
 
-    void Init() { bank.Init(); pickup.Init(); swing_soft = swing_hard = 1.f; }
+    void Init() { bank.Init(); pickup.Init(); burst.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; }
 
     void Strike(float velocity01)
     {
         const float s = swing_soft * std::pow(swing_hard / swing_soft, velocity01);
         bank.Strike(s);
+        burst.Strike(bursts, s);
     }
     void Process(float* out, int frames)
     {
         bank.Process(out, frames);
         pickup.Process(out, frames);
+        burst.Process(out, frames);
     }
 };
 
@@ -256,7 +327,24 @@ struct ResonatorWorld
     float    lo, hi;
 
     static constexpr uint32_t kHeader = 4 + 8 + 8;
-    uint32_t PointBytes() const { return 4 + 8 * 4 + 5u * N; }
+    uint32_t FixedBytes() const { return 4 + 8 * 4 + 5u * N; }
+
+    /* a point is fixed bytes then its burst block, so the points are walked
+       — at note-on, over a couple of hundred at most */
+    const uint8_t* Point(int i) const
+    {
+        const uint8_t* q = blob + kHeader;
+        for(int j = 0; j < i; j++) q = BurstEnd(q + FixedBytes());
+        return q;
+    }
+    const uint8_t* Bursts(int i) const { return Point(i) + FixedBytes(); }
+    static const uint8_t* BurstEnd(const uint8_t* b)
+    {
+        uint16_t nb; std::memcpy(&nb, b, 2);
+        const uint8_t* q = b + 2;
+        for(uint16_t k = 0; k < nb; k++) { uint16_t n; std::memcpy(&n, q + 8, 2); q += 10 + 2u * n; }
+        return q;
+    }
 
     void Init() { blob = nullptr; size = 0; N = P = 0; form = body = 0; lo = hi = 0.f; }
 
@@ -268,12 +356,12 @@ struct ResonatorWorld
         std::memcpy(&N, blob + 6, 2); std::memcpy(&P, blob + 8, 2);
         form = blob[10]; body = blob[11];
         std::memcpy(&lo, blob + 12, 4); std::memcpy(&hi, blob + 16, 4);
-        return ver == 2 && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * PointBytes();
+        return ver == 3 && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
     }
 
-    float Param(int i) const { float p; std::memcpy(&p, blob + kHeader + i * PointBytes(), 4); return p; }
-    const uint8_t* Stage(int i) const { return blob + kHeader + i * PointBytes() + 4; }
-    const uint8_t* Modes(int i) const { return blob + kHeader + i * PointBytes() + 4 + 32; }
+    float Param(int i) const { float p; std::memcpy(&p, Point(i), 4); return p; }
+    const uint8_t* Stage(int i) const { return Point(i) + 4; }
+    const uint8_t* Modes(int i) const { return Point(i) + 4 + 32; }
 
     void Decode(int i, float* hz, float* zeta, float* gain, float* phase) const
     {
@@ -321,6 +409,7 @@ struct ResonatorWorld
            the bank takes them */
         for(int k = 0; k < N; k++) ga[k] *= st[7];
         v.bank.Set(ha, za, ga, N, sr, fa);
+        v.bursts = Bursts(t < 0.5f ? a : b);      /* a burst is not interpolated: the nearer point's */
         v.swing_soft = st[5]; v.swing_hard = st[6];
         if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
         else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);

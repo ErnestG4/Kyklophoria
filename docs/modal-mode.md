@@ -18,6 +18,11 @@ second-order resonators struck by a short pulse and read through the pickup:
               second bank and folded into the first
     pickup    u → phi = 1/(1 + ((u−h)/w)²)  (magnetic)  or  1/(1 − u/g)  (electrostatic)
               → first difference (Faraday) → the coil's second-order low-pass
+    burst     the attack the modes are not: the recording's first 40 ms minus the
+              model's, stored 16-bit in the world, played once at the strike after
+              the pickup, scaled by the strike's swing; a shaped world crossfades the
+              two takes' bursts that bracket the swing (the MT-32's idea: a stored
+              attack under a synthesised sustain, here measured from the note it sits under)
 
 The metal of a tine or reed piano is one sine; every harmonic and all of the
 velocity behaviour is the pickup's (ModalBake, from Muenster & Pfeifle's
@@ -25,9 +30,11 @@ velocity behaviour is the pickup's (ModalBake, from Muenster & Pfeifle's
 a handful of modes and five numbers a note, and velocity comes out of the
 physics rather than out of a sample layer.
 
-Worlds arrive as `.kykm` blobs (ModalBake `tools/export.py`, version 2): five
+Worlds arrive as `.kykm` blobs (ModalBake `tools/export.py`, version 3): five
 bytes a mode — cents, decay, level, phase — the stage and the loudest mode's
-absolute gain per point. The EP is
+absolute gain per point, then the point's bursts (~4 KB each; the EP with two
+a note is 650 KB, the Wurlitzer 45 KB). Points are variable-length and walked
+at note-on. The EP is
 38 KB as 48 harmonic slots, 7 KB as metal plus pickup; the Wurlitzer with
 eleven recorded notes is 2.5 KB and the runtime interpolates between them by
 slot. They attach where they lie in SDRAM; nothing is copied.
