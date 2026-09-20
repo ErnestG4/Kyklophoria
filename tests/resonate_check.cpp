@@ -103,6 +103,29 @@ int main()
         const float expect = gain * std::exp(-zeta * 6.2831853f * hz / sr * at);
         CHECK(std::fabs(pk / expect - 1) < 0.03, "mode of amplitude %.3f peaks at %.3f at sample %d, envelope there %.3f", gain, pk, at, expect);
         printf("  mode: %.3f Hz (%.2f cents), T60 %.3f s, peak %.3f of %.3f\n", f, cents, measured_t60, pk, gain);
+        /* phase: the same mode set at pi/2 starts at its peak (a cosine), at
+           zero it starts at zero — the state-from-phase strike, and the
+           reason the onset is the recording's and not a spike */
+        ResonatorVoice c; c.Init();
+        const float half_pi = 1.5707963f;
+        c.bank.Set(&hz, &zeta, &gain, 1, sr, &half_pi);
+        c.swing_soft = c.swing_hard = 1.f;
+        c.Strike(1.f);
+        float yc[4];
+        c.Process(yc, 4);
+        /* the strike bank is ramped over 3 ms, so the first sample is the
+           ramp's first step times the cosine's start; compare against the
+           zero-phase voice's first sample, which is the ramp times sin(0) */
+        ResonatorVoice z; z.Init();
+        z.bank.Set(&hz, &zeta, &gain, 1, sr);
+        z.swing_soft = z.swing_hard = 1.f;
+        z.Strike(1.f);
+        float yz[4];
+        z.Process(yz, 4);
+        /* both open at zero (the ramp's first sample is zero); at sample 1
+           the cosine stands at cos w against the sine's sin w, seventeen
+           times more at 440 Hz */
+        CHECK(yc[1] > 5.f * std::fabs(yz[1]) && yc[1] > 0.f, "phase: zero-phase sample 1 %.6f, pi/2 sample 1 %.6f", yz[1], yc[1]);
     }
 
     /* 2. the EP world: attach, decode, bark grows with velocity */
@@ -112,8 +135,8 @@ int main()
         ResonatorWorld w; w.Init();
         CHECK(w.Attach(blob.data(), (uint32_t)blob.size()), "ep-vel.kykm did not attach");
         CHECK(w.form == 1, "ep-vel is a magnetic world (form 1), got %d", w.form);
-        float hz[ResonatorBank::kMax], z[ResonatorBank::kMax], g[ResonatorBank::kMax];
-        w.Decode(0, hz, z, g);
+        float hz[ResonatorBank::kMax], z[ResonatorBank::kMax], g[ResonatorBank::kMax], ph[ResonatorBank::kMax];
+        w.Decode(0, hz, z, g, ph);
         /* the export wrote C2's metal at 64.26 Hz (out/fit/ep-vel/epv000.mmr) */
         CHECK(std::fabs(1200 * std::log2(hz[0] / 64.262f)) < 1.0, "point 0 decodes to %.2f Hz, record says 64.262", hz[0]);
         /* C3 (param 48): six strikes rendered alone, h2 re h1 must rise monotonically */
@@ -163,8 +186,8 @@ int main()
             CHECK(!nan && pk > 0.f, "wurli point %d: nan %d peak %g", i, nan, pk);
         }
         /* halfway between C2 (36) and G2 (43): the first slot's frequency sits between the two in log */
-        float ha[48], za[48], ga[48], hb[48], zb[48], gb[48];
-        w.Decode(0, ha, za, ga); w.Decode(1, hb, zb, gb);
+        float ha[48], za[48], ga[48], fa[48], hb[48], zb[48], gb[48], fb[48];
+        w.Decode(0, ha, za, ga, fa); w.Decode(1, hb, zb, gb, fb);
         ResonatorVoice v; v.Init();
         w.At(0.5f * (w.Param(0) + w.Param(1)), v, sr);
         const float mid = std::sqrt(ha[0] * hb[0]);

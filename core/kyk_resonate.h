@@ -15,16 +15,19 @@
  * have been.
  *
  * The bank. One resonator a mode,
- *     y[n] = 2 r cos w · y[n-1] − r² · y[n-2] + x[n],   r = exp(−ζ w),
- * whose impulse response is r^n sin((n+1)w) / sin w: a decaying sine at the
- * mode's frequency and decay, so the gain is multiplied by sin w once at
- * Set() and the loop is three multiply-adds a mode a sample. A strike is an
- * impulse of the strike's swing into a second bank of the same modes, whose
- * output rises under a 3 ms raised cosine — the envelope the fit's model
- * had and the gains were fitted under — and whose state is then added into
- * the main bank's, which a linear bank allows exactly. Two banks for 144
- * samples, then one. An impulse into the main bank was a click the fit
- * never heard; a 3 ms pulse would have starved the high modes.
+ *     y[n] = 2 r cos w · y[n-1] − r² · y[n-2],   r = exp(−ζ w),
+ * a decaying sine at the mode's frequency and decay, three multiply-adds a mode
+ * a sample. A strike is a *state*, not an impulse: a decaying sine obeys the
+ * recursion from any two consecutive samples, so a strike bank of the same
+ * modes is set to the two samples before n = 0 at the strike's swing and
+ * every mode's fitted phase, its output rises under a 3 ms raised cosine —
+ * the envelope the fit's model had and the gains were fitted under — and
+ * its state is then added into the main bank's, which a linear bank allows
+ * exactly. Two banks for 144 samples, then one. The phase is where the
+ * hammer's timing per mode lives: from zero phase every partial rises
+ * together and the onset is a spike the recording never had (ModalBake
+ * measured 1.7x the target's energy in the first 40 ms from zero phase,
+ * 1.0x from the fitted phases).
  *
  * The pickup. The stage a shaped world carries per point: the bank's sum is
  * the tine's displacement u; a magnetic pole sees phi = 1/(1 + ((u−h)/w)²)
@@ -37,9 +40,9 @@
  * findings). Velocity is a swing, log-interpolated between the softest and
  * hardest take the fit saw, and past them.
  *
- * The world. A `.kykm` blob attached where it lies: four bytes a mode
+ * The world. A `.kykm` blob attached where it lies: five bytes a mode
  * (cents from 20 Hz, a log-decay byte, a quarter-dB byte under the point's
- * loudest), and per point the stage and the loudest mode's absolute gain,
+ * loudest, a phase byte), and per point the stage and the loudest mode's absolute gain,
  * because the swing into the field is absolute and the level bytes are not
  * — without it the pickup was driven 2.4x too hard and barked 15 dB early. A point is decoded at note-on, never a sample, and a parameter
  * between two points interpolates them by slot in log frequency, log decay
@@ -67,7 +70,8 @@ struct ResonatorBank
     static constexpr int kMax = 48;
 
     int   n;
-    float c1[kMax], c2[kMax], g[kMax];   /* 2 r cos w, −r², gain · sin w */
+    float c1[kMax], c2[kMax];            /* 2 r cos w, -r^2 */
+    float p1[kMax], p2[kMax];            /* the state a unit strike starts from: A sin(phi-w)/r, A sin(phi-2w)/r^2 */
     float y1[kMax], y2[kMax];
     /* the strike bank: a new hit rings here under a 3 ms raised-cosine ramp
        — the envelope the fit's model had, and the gains were fitted under —
@@ -82,33 +86,42 @@ struct ResonatorBank
     {
         n = 0;
         ramp_n = 0.f; ramp_len = 144.f; ramping = false;
-        for(int i = 0; i < kMax; i++) c1[i] = c2[i] = g[i] = y1[i] = y2[i] = s1[i] = s2[i] = 0.f;
+        for(int i = 0; i < kMax; i++) c1[i] = c2[i] = p1[i] = p2[i] = y1[i] = y2[i] = s1[i] = s2[i] = 0.f;
     }
 
-    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr)
+    /* modes: frequency, decay, amplitude, and the phase at the strike. A
+       decaying sine A r^n sin(n w + phi) obeys the recursion from any two
+       consecutive samples, so a strike is not an impulse but a state: the
+       two samples before n = 0, which is where the fitted phase — the
+       hammer's timing per mode — goes in. From zero phase every partial
+       rises together and the onset is a spike the recording never had */
+    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr)
     {
         n = count > kMax ? kMax : count;
         for(int i = 0; i < n; i++)
         {
             const float w = 6.2831853f * hz[i] / sr;
             const float r = std::exp(-zeta[i] * w);
-            c1[i] = 2.f * r * std::cos(w);
+            const float ph = phase ? phase[i] : 0.f;
+            c1[i] = 2.0f * r * std::cos(w);
             c2[i] = -r * r;
-            g[i]  = gain[i] * std::sin(w);
+            p1[i] = gain[i] * std::sin(ph - w) / r;
+            p2[i] = gain[i] * std::sin(ph - 2.0f * w) / (r * r);
             y1[i] = y2[i] = s1[i] = s2[i] = 0.f;
         }
         ramp_len = 0.003f * sr;
         ramping = false;
     }
 
-    /* the hammer: an impulse of the given swing into the strike bank. A
+    /* the hammer: the strike bank set to the given swing at every mode's
+       fitted phase. A
        strike while a strike is still ramping folds the earlier one into the
        main state first, un-ramped from there on — 3 ms of envelope is
        inaudible against a second hit that close */
     void Strike(float swing)
     {
         if(ramping) Fold();
-        for(int i = 0; i < n; i++) { s1[i] = swing * g[i]; s2[i] = 0.f; }
+        for(int i = 0; i < n; i++) { s1[i] = swing * p1[i]; s2[i] = swing * p2[i]; }
         ramp_n = 0.f;
         ramping = true;
     }
@@ -243,7 +256,7 @@ struct ResonatorWorld
     float    lo, hi;
 
     static constexpr uint32_t kHeader = 4 + 8 + 8;
-    uint32_t PointBytes() const { return 4 + 8 * 4 + 4u * N; }
+    uint32_t PointBytes() const { return 4 + 8 * 4 + 5u * N; }
 
     void Init() { blob = nullptr; size = 0; N = P = 0; form = body = 0; lo = hi = 0.f; }
 
@@ -255,22 +268,23 @@ struct ResonatorWorld
         std::memcpy(&N, blob + 6, 2); std::memcpy(&P, blob + 8, 2);
         form = blob[10]; body = blob[11];
         std::memcpy(&lo, blob + 12, 4); std::memcpy(&hi, blob + 16, 4);
-        return ver == 1 && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * PointBytes();
+        return ver == 2 && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * PointBytes();
     }
 
     float Param(int i) const { float p; std::memcpy(&p, blob + kHeader + i * PointBytes(), 4); return p; }
     const uint8_t* Stage(int i) const { return blob + kHeader + i * PointBytes() + 4; }
     const uint8_t* Modes(int i) const { return blob + kHeader + i * PointBytes() + 4 + 32; }
 
-    void Decode(int i, float* hz, float* zeta, float* gain) const
+    void Decode(int i, float* hz, float* zeta, float* gain, float* phase) const
     {
         const uint8_t* m = Modes(i);
         for(int k = 0; k < N; k++)
         {
-            uint16_t c; std::memcpy(&c, m + 4 * k, 2);
-            hz[k]   = 20.f * std::exp2(c / 1200.f);
-            zeta[k] = std::exp(-0.1f * m[4 * k + 2]);
-            gain[k] = std::exp(-0.25f * m[4 * k + 3] * 0.1151293f);   /* dB → linear */
+            uint16_t c; std::memcpy(&c, m + 5 * k, 2);
+            hz[k]    = 20.0f * std::exp2(c / 1200.0f);
+            zeta[k]  = std::exp(-0.1f * m[5 * k + 2]);
+            gain[k]  = std::exp(-0.25f * m[5 * k + 3] * 0.1151293f);   /* dB -> linear */
+            phase[k] = m[5 * k + 4] * (6.2831853f / 256.0f);
         }
     }
 
@@ -284,25 +298,29 @@ struct ResonatorWorld
         const int b = a + 1 < P ? a + 1 : a;
         const float pa = Param(a), pb = Param(b);
         const float t = pb > pa ? std::fmin(1.f, std::fmax(0.f, (param - pa) / (pb - pa))) : 0.f;
-        float ha[ResonatorBank::kMax], za[ResonatorBank::kMax], ga[ResonatorBank::kMax];
-        float hb[ResonatorBank::kMax], zb[ResonatorBank::kMax], gb[ResonatorBank::kMax];
-        Decode(a, ha, za, ga);
-        Decode(b, hb, zb, gb);
+        float ha[ResonatorBank::kMax], za[ResonatorBank::kMax], ga[ResonatorBank::kMax], fa[ResonatorBank::kMax];
+        float hb[ResonatorBank::kMax], zb[ResonatorBank::kMax], gb[ResonatorBank::kMax], fb[ResonatorBank::kMax];
+        Decode(a, ha, za, ga, fa);
+        Decode(b, hb, zb, gb, fb);
         for(int k = 0; k < N; k++)
         {
             ha[k] = ha[k] * std::pow(hb[k] / ha[k], t);
             za[k] = za[k] * std::pow(zb[k] / za[k], t);
             ga[k] = ga[k] * std::pow((gb[k] + 1e-9f) / (ga[k] + 1e-9f), t);
+            float d = fb[k] - fa[k];                 /* phase: the short way round */
+            if(d > 3.1415927f) d -= 6.2831853f;
+            if(d < -3.1415927f) d += 6.2831853f;
+            fa[k] += t * d;
         }
         float st[8], sb[8];
         std::memcpy(st, Stage(a), 32);
         std::memcpy(sb, Stage(b), 32);
         for(int k = 0; k < 8; k++) st[k] += t * (sb[k] - st[k]);
-        /* the level bytes are relative to the point's loudest mode; the swing
-           into the field is absolute, so the gains get the loudest back —
-           before the bank takes them, which is where this once went wrong */
+        /* the level bytes are relative to the point's loudest mode; the
+           swing into the field is absolute, so the gains get it back before
+           the bank takes them */
         for(int k = 0; k < N; k++) ga[k] *= st[7];
-        v.bank.Set(ha, za, ga, N, sr);
+        v.bank.Set(ha, za, ga, N, sr, fa);
         v.swing_soft = st[5]; v.swing_hard = st[6];
         if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
         else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);
