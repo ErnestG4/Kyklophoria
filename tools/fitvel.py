@@ -115,9 +115,18 @@ def main():
             xs = [xs[i] for i in keep]
             used = [dirs[i] for i in keep]
             loud = int(np.argmax([rms[i] for i in keep]))
-            init = modalfit.initialise(xs[loud] / (np.abs(xs[loud]).max() or 1.0), sr, a.modes)
+            # a bar metal is found among many more candidates than it keeps:
+            # on the loudest take the sixteen loudest peaks are all the
+            # pickup's harmonics and the fundamental sits 20 dB under h2,
+            # so it must be looked for wider, and put in by hand if it is
+            # still not there — a tine without its fundamental is nothing
+            init = modalfit.initialise(xs[loud] / (np.abs(xs[loud]).max() or 1.0), sr, 4 * a.modes if a.bar else a.modes)
             if a.bar:
                 init = modalfit.bar_metal(init, f0)
+                if not any(abs(m[0] / f0 - 1) < 0.03 for m in init):
+                    top = max((m[2] for m in init), default=0.1)
+                    init.append((f0, 1.0, 0.3 * top, 0.0))
+                init = sorted(init, key=lambda m: -m[2])[:a.modes]
             if not init:
                 print('  %-6s no partials' % key)
                 continue

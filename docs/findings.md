@@ -540,6 +540,22 @@ attack is the recording's at last. The runtime strikes by setting each
 resonator's state from amplitude and phase — a decaying sine obeys its
 recursion from any two samples — with no impulse at all.
 
+Every set refitted with the phases kept (pass 7): loss down on all five,
+the whistle metric halved on the Wurlitzer (0.064 → 0.032 dB) and down a
+quarter on the mandolin (0.139 → 0.102), decay unchanged — the attack
+being the recording's is worth that much on its own.
+
+*A world with two physical axes.* Epi's tine at four metals × three
+voicings, 13 notes each, one velocity. The fitted voicing reads the same in
+every metal (h/w 0.01 at the centreline, ~0.21 at −0.45, 0.22–0.36 at
+−0.85), so the screw is the screw whatever the tine is made of; and the
+metal reads as *decay*, in the order of Epi's loss-factor table — bronze
+(η 5·10⁻⁴) 13.8 s at E3 against music wire's (1.5·10⁻⁴) 21.8, tungsten
+(3·10⁻⁴) between, titanium (2·10⁻⁴) with music wire — since the metal is
+one sine and a material can only change how long it rings. A material ×
+voicing world is a decay × voicing world for a tine, which is modest as a
+manifold and honest as physics (`out/fit/tine-mh/`).
+
 *Decay, measured honestly.* `decay_ratio` is now energy-weighted, because a
 thump at a three-hundredth of the fundamental's energy judged against a
 track that is the room's had a vote equal to the fundamental's and read the

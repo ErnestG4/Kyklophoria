@@ -1,96 +1,96 @@
 bake — variant diagonal with decay, K=4, extent 2.20, reference mandolin017, D=144 over 39 models (mandolin only), blocks weighted by total variance
 
-map round trip (log then exp, no PCA): worst 1.96e+00 over cents and relative gain
+map round trip (log then exp, no PCA): worst 1.94e+00 over cents and relative gain
 
-held out 2 models, fitted on 37. variance explained by the 4 components: 54.1% 8.9% 6.5% 4.9%  (cumulative 74.4%)
+held out 2 models, fitted on 37. variance explained by the 4 components: 53.0% 8.4% 6.7% 5.3%  (cumulative 73.3%)
 
 reconstruction from each model's own coordinates:
   model    family   param       cents  gain err    min hz     frame   neg   coords (whitened)
-  mandolin004 mandolin  58.000        98.9     1.374     245.6  0.00e+00     0    -1.21   0.14  -0.06   1.51  held out
-  mandolin019 mandolin  63.000        32.4     1.058     315.9  0.00e+00     0    -0.85  -0.40  -0.68   0.97  held out
-  mandolin031 mandolin  55.000        42.3     1.504     189.0  0.00e+00     0    -1.58   1.44   0.22   1.30  
-  mandolin035 mandolin  56.000        66.8     1.249     214.5  0.00e+00     0    -1.58   1.06  -0.34  -0.49  
-  mandolin000 mandolin  57.000        15.2     1.215     219.6  0.00e+00     0    -1.47   2.11  -1.20  -1.50  
-  mandolin007 mandolin  59.000       145.4     1.284     225.3  0.00e+00     0    -1.36   0.81  -0.07   0.96  
-  mandolin010 mandolin  60.000        59.6     1.132     269.4  0.00e+00     0    -1.22   0.22   0.78   1.24  
-  mandolin013 mandolin  61.000        68.9     1.374     265.5  0.00e+00     0    -1.36   0.87   0.55  -0.22  
-  mandolin016 mandolin  62.000        32.7     1.012     298.0  0.00e+00     0    -1.09  -0.29   0.57   1.16  
-  mandolin022 mandolin  64.000       155.7     1.284     359.7  0.00e+00     0    -0.59  -0.54  -0.74   1.38  
-  mandolin025 mandolin  65.000        26.9     1.010     354.1  0.00e+00     0    -0.65  -0.03  -1.09   0.46  
-  mandolin028 mandolin  66.000        46.3     0.909     380.4  0.00e+00     0    -0.60  -0.95  -1.16   0.45  
-  mandolin032 mandolin  67.000        10.2     1.085     394.6  0.00e+00     0    -0.34  -1.11  -1.60   1.52  
-  mandolin036 mandolin  68.000        88.4     0.940     395.7  0.00e+00     0    -0.48  -0.93  -1.37   0.61  
-  mandolin001 mandolin  69.000        81.0     1.377     462.3  0.00e+00     0    -0.70   0.61  -0.53  -2.80  
-  mandolin005 mandolin  70.000        71.9     2.479     450.6  0.00e+00     0    -0.89   0.68   0.67  -2.63  
-  mandolin008 mandolin  71.000        19.7     0.874     501.2  0.00e+00     0    -0.45  -0.69   0.98   0.52  
-  mandolin011 mandolin  72.000        51.3     0.599     514.2  0.00e+00     0    -0.31  -1.39  -0.52   0.07  
-  mandolin014 mandolin  73.000        19.8     0.657     560.9  0.00e+00     0    -0.30  -1.02   0.20  -0.30  
-  mandolin017 mandolin  74.000        83.6     0.837     621.3  0.00e+00     0    -0.10  -0.45  -0.27  -0.89  
-  mandolin020 mandolin  75.000        38.5     0.765     638.9  0.00e+00     0     0.07  -0.58  -0.81  -0.45  
-  mandolin023 mandolin  76.000        68.5     1.028     687.0  0.00e+00     0    -0.20  -0.15   2.74   0.31  
-  mandolin026 mandolin  77.000        59.4     0.979     678.5  0.00e+00     0    -0.17  -0.34   1.93  -0.08  
-  mandolin029 mandolin  78.000        21.1     2.205     734.2  0.00e+00     0    -0.11  -0.23   3.02   0.53  
-  mandolin033 mandolin  79.000        81.6     1.835     756.7  0.00e+00     0     0.21  -1.78  -0.34  -0.12  
-  mandolin037 mandolin  80.000        87.1     0.870     867.7  0.00e+00     0     0.79   0.66  -0.70   0.58  
-  mandolin002 mandolin  81.000        77.3     1.271     851.6  0.00e+00     0     0.38  -1.46  -0.30  -0.37  
-  mandolin006 mandolin  82.000        34.4     1.620     925.9  0.00e+00     0     0.42  -1.47  -0.11  -0.84  
-  mandolin009 mandolin  83.000        61.8     1.788     966.1  0.00e+00     0     0.45  -1.60  -0.11  -1.01  
-  mandolin012 mandolin  84.000        16.8     0.673    1030.4  0.00e+00     0     1.12   1.15  -0.74   0.65  
-  mandolin015 mandolin  85.000        76.8     0.667    1051.2  0.00e+00     0     1.08   1.27  -0.51   0.34  
-  mandolin018 mandolin  86.000        41.0     0.560    1134.8  0.00e+00     0     1.30   1.47  -0.68   0.74  
-  mandolin021 mandolin  87.000        59.8     0.345    1295.0  0.00e+00     0     1.04  -0.15   0.07  -0.82  
-  mandolin024 mandolin  88.000        87.0     1.687    1390.7  0.00e+00     0     1.22  -0.08   0.39  -0.04  
-  mandolin027 mandolin  89.000        20.1     0.561    1391.6  0.00e+00     0     1.07  -0.22   0.13  -1.35  
-  mandolin030 mandolin  90.000        62.6     1.310    1531.4  0.00e+00     0     1.50   0.65   0.30   0.30  
-  mandolin034 mandolin  91.000       109.5     1.928    1674.0  0.00e+00     0     1.50   0.29   0.54  -0.17  
-  mandolin038 mandolin  92.000        58.4     1.341    1597.1  0.00e+00     0     1.69   1.11   0.06   0.64  
-  mandolin003 mandolin  93.000       100.9     0.884    1652.0  0.00e+00     0     1.69   1.07   0.03   0.31  
+  mandolin004 mandolin  58.000       126.3     1.299     250.4  0.00e+00     0    -1.25  -0.18  -0.31  -1.00  held out
+  mandolin019 mandolin  63.000        55.3     1.026     320.5  0.00e+00     0    -0.84   0.35   0.45  -1.10  held out
+  mandolin031 mandolin  55.000        19.6     1.580     195.9  0.00e+00     0    -1.59  -1.38  -0.62  -0.73  
+  mandolin035 mandolin  56.000        68.4     1.309     214.0  0.00e+00     0    -1.60  -1.14   0.76   0.69  
+  mandolin000 mandolin  57.000        69.9     1.086     207.5  0.00e+00     0    -1.48  -2.09   1.33   0.54  
+  mandolin007 mandolin  59.000       134.9     1.310     227.2  0.00e+00     0    -1.37  -0.82  -0.63  -0.98  
+  mandolin010 mandolin  60.000        96.2     1.208     276.8  0.00e+00     0    -1.22  -0.20  -1.23  -0.69  
+  mandolin013 mandolin  61.000        24.1     1.463     273.1  0.00e+00     0    -1.35  -0.87  -0.43   0.78  
+  mandolin016 mandolin  62.000       171.9     0.973     323.9  0.00e+00     0    -1.08   0.22   0.11   0.39  
+  mandolin022 mandolin  64.000        94.9     1.259     348.0  0.00e+00     0    -0.60   0.49  -0.09  -2.12  
+  mandolin025 mandolin  65.000        71.2     0.982     362.0  0.00e+00     0    -0.68  -0.03   1.57  -0.15  
+  mandolin028 mandolin  66.000        61.3     0.978     384.1  0.00e+00     0    -0.52   0.91   0.23  -1.79  
+  mandolin032 mandolin  67.000        85.1     1.095     374.2  0.00e+00     0    -0.44   0.87  -0.02  -2.59  
+  mandolin036 mandolin  68.000        26.4     0.910     421.0  0.00e+00     0    -0.51   0.80   1.73  -0.15  
+  mandolin001 mandolin  69.000       182.7     1.099     393.5  0.00e+00     0    -0.68  -0.57   0.27   0.36  
+  mandolin005 mandolin  70.000       234.8     1.884     407.6  0.00e+00     0    -0.87  -0.59  -0.39   1.60  
+  mandolin008 mandolin  71.000        27.9     0.870     491.7  0.00e+00     0    -0.46   0.77  -1.03  -0.29  
+  mandolin011 mandolin  72.000        21.9     0.542     533.2  0.00e+00     0    -0.33   1.35   1.13   0.39  
+  mandolin014 mandolin  73.000        43.4     0.602     569.6  0.00e+00     0    -0.29   1.13   0.32   0.58  
+  mandolin017 mandolin  74.000       128.4     0.686     633.8  0.00e+00     0    -0.07   0.34   0.81   0.97  
+  mandolin020 mandolin  75.000        21.6     0.729     624.9  0.00e+00     0     0.10   0.53   0.60  -0.42  
+  mandolin023 mandolin  76.000       163.0     1.371     730.7  0.00e+00     0    -0.20   0.42  -2.21   1.59  
+  mandolin026 mandolin  77.000        76.5     0.939     674.0  0.00e+00     0    -0.14   0.46  -1.89   0.60  
+  mandolin029 mandolin  78.000        52.2     1.942     771.4  0.00e+00     0    -0.08   0.40  -2.78   1.13  
+  mandolin033 mandolin  79.000       129.5     1.639     734.9  0.00e+00     0     0.21   1.77   0.24  -0.48  
+  mandolin037 mandolin  80.000       133.0     0.878     887.3  0.00e+00     0     0.84  -0.75   0.15  -1.01  
+  mandolin002 mandolin  81.000        83.2     0.977     845.4  0.00e+00     0     0.40   1.31   0.50   0.13  
+  mandolin006 mandolin  82.000        66.6     1.342     905.6  0.00e+00     0     0.42   1.52   0.57   0.58  
+  mandolin009 mandolin  83.000        88.8     1.937     948.0  0.00e+00     0     0.47   1.70   0.36   0.48  
+  mandolin012 mandolin  84.000        81.3     0.486    1080.1  0.00e+00     0     1.11  -1.17   0.61  -0.31  
+  mandolin015 mandolin  85.000        24.6     0.315    1106.7  0.00e+00     0     1.02  -1.23   1.16   0.81  
+  mandolin018 mandolin  86.000        23.3     0.377    1169.4  0.00e+00     0     1.30  -1.53   0.50  -0.50  
+  mandolin021 mandolin  87.000        34.6     0.303    1268.4  0.00e+00     0     1.09   0.18  -0.00   0.25  
+  mandolin024 mandolin  88.000        20.5     0.868    1334.3  0.00e+00     0     1.20   0.14  -0.64  -0.22  
+  mandolin027 mandolin  89.000        33.5     0.124    1422.9  0.00e+00     0     1.02   0.24   1.15   2.30  
+  mandolin030 mandolin  90.000        15.7     0.884    1459.0  0.00e+00     0     1.49  -0.67  -0.61  -0.60  
+  mandolin034 mandolin  91.000        25.7     0.980    1588.3  0.00e+00     0     1.47  -0.23  -0.63   0.04  
+  mandolin038 mandolin  92.000        71.5     0.969    1577.2  0.00e+00     0     1.72  -1.19  -0.69  -0.95  
+  mandolin003 mandolin  93.000       101.9     0.860    1641.0  0.00e+00     0     1.69  -1.13  -0.20  -0.23  
 
-  held out, worst: 98.9 cents, gain error 1.374, frame 0.00e+00, 0 non-positive frequencies
-  in sample, worst: 155.7 cents, gain error 2.479, frame 0.00e+00, 0 non-positive frequencies
+  held out, worst: 126.3 cents, gain error 1.299, frame 0.00e+00, 0 non-positive frequencies
+  in sample, worst: 234.8 cents, gain error 1.942, frame 0.00e+00, 0 non-positive frequencies
 
-fitted on all 39. variance explained: 53.9% 8.7% 6.4% 5.2%  (cumulative 74.1%)
-block scales: 4.5 11.32 7.993
-component sdevs: 1.288 0.5162 0.4436 0.4006
+fitted on all 39. variance explained: 52.8% 8.2% 6.5% 5.4%  (cumulative 73.0%)
+block scales: 4.499 11.46 7.953
+component sdevs: 1.275 0.5032 0.4475 0.4095
 
 where every model sits in the cube (whitened coordinate / extent, so inside is |x| < 1):
-  mandolin000  -0.63  -0.98  -0.52  -0.79
-  mandolin001  -0.29  -0.30  -0.19  -1.05   outside
-  mandolin002   0.20   0.67  -0.08  -0.22
-  mandolin003   0.79  -0.49  -0.03   0.20
-  mandolin004  -0.53  -0.07  -0.06   0.80
-  mandolin005  -0.37  -0.35   0.38  -1.20   outside
-  mandolin006   0.22   0.67   0.02  -0.43
-  mandolin007  -0.60  -0.39  -0.05   0.50
-  mandolin008  -0.19   0.29   0.47   0.40
-  mandolin009   0.23   0.73   0.03  -0.51
-  mandolin010  -0.53  -0.12   0.34   0.59
-  mandolin011  -0.12   0.65  -0.21  -0.07
-  mandolin012   0.53  -0.52  -0.37   0.26
-  mandolin013  -0.59  -0.43   0.28  -0.17
-  mandolin014  -0.11   0.47   0.11  -0.17
-  mandolin015   0.52  -0.58  -0.27   0.10
-  mandolin016  -0.47   0.13   0.26   0.39
-  mandolin017  -0.02   0.21  -0.08  -0.55
-  mandolin018   0.62  -0.67  -0.36   0.33
-  mandolin019  -0.36   0.21  -0.35   0.39
-  mandolin020   0.06   0.28  -0.35  -0.26
-  mandolin021   0.50   0.07   0.06  -0.37
-  mandolin022  -0.24   0.27  -0.36   0.56
-  mandolin023  -0.07   0.04   1.28   0.09   outside
-  mandolin024   0.58   0.03   0.19   0.01
-  mandolin025  -0.27   0.04  -0.53   0.16
-  mandolin026  -0.06   0.12   0.90   0.22
-  mandolin027   0.51   0.09   0.11  -0.62
-  mandolin028  -0.25   0.46  -0.52   0.07
-  mandolin029  -0.03   0.07   1.39   0.21   outside
-  mandolin030   0.70  -0.30   0.11   0.19
-  mandolin031  -0.69  -0.68   0.09   0.31
-  mandolin032  -0.13   0.53  -0.73   0.56
-  mandolin033   0.12   0.83  -0.10  -0.13
-  mandolin034   0.71  -0.14   0.25   0.01
-  mandolin035  -0.69  -0.50  -0.12  -0.46
-  mandolin036  -0.20   0.45  -0.62   0.13
-  mandolin037   0.38  -0.29  -0.34   0.21
-  mandolin038   0.79  -0.51  -0.02   0.34
-  4 of 39 outside the cube at extent 2.20
+  mandolin000  -0.64  -0.97  -0.65  -0.40
+  mandolin001  -0.28  -0.28  -0.13  -0.34
+  mandolin002   0.20   0.61  -0.20  -0.13
+  mandolin003   0.79  -0.52   0.07   0.17
+  mandolin004  -0.55  -0.09   0.16   0.55
+  mandolin005  -0.37  -0.30   0.17  -0.95
+  mandolin006   0.21   0.70  -0.23  -0.34
+  mandolin007  -0.60  -0.39   0.29   0.43
+  mandolin008  -0.19   0.33   0.51   0.14
+  mandolin009   0.24   0.79  -0.13  -0.32
+  mandolin010  -0.53  -0.11   0.57   0.34
+  mandolin011  -0.12   0.64  -0.50  -0.20
+  mandolin012   0.53  -0.54  -0.28   0.21
+  mandolin013  -0.59  -0.43   0.20  -0.39
+  mandolin014  -0.11   0.53  -0.14  -0.26
+  mandolin015   0.49  -0.56  -0.55  -0.26
+  mandolin016  -0.47   0.10  -0.05  -0.11
+  mandolin017  -0.01   0.16  -0.37  -0.48
+  mandolin018   0.61  -0.70  -0.25   0.32
+  mandolin019  -0.36   0.19  -0.22   0.53
+  mandolin020   0.07   0.26  -0.28   0.11
+  mandolin021   0.52   0.08   0.01  -0.15
+  mandolin022  -0.25   0.25   0.03   0.87
+  mandolin023  -0.07   0.16   1.04  -0.67   outside
+  mandolin024   0.57   0.06   0.30   0.02
+  mandolin025  -0.28   0.01  -0.73   0.14
+  mandolin026  -0.05   0.17   0.91  -0.21
+  mandolin027   0.49   0.10  -0.51  -0.98
+  mandolin028  -0.21   0.44  -0.10   0.71
+  mandolin029  -0.01   0.15   1.29  -0.48   outside
+  mandolin030   0.70  -0.31   0.27   0.25
+  mandolin031  -0.69  -0.65   0.25   0.19
+  mandolin032  -0.18   0.42   0.02   1.04   outside
+  mandolin033   0.12   0.83  -0.09   0.09
+  mandolin034   0.69  -0.11   0.29  -0.05
+  mandolin035  -0.69  -0.53  -0.38  -0.40
+  mandolin036  -0.21   0.39  -0.79   0.09
+  mandolin037   0.41  -0.34  -0.09   0.46
+  mandolin038   0.80  -0.55   0.29   0.46
+  3 of 39 outside the cube at extent 2.20

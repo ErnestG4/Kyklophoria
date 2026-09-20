@@ -1,0 +1,10 @@
+# modalfit shaped record via fitvel: e4 at 1 velocities, loss 0.7224
+source v070/e4.wav
+fitted 1
+shaped 1
+loss 0.72244
+positions 12
+modes 1
+mode 0 hz 329.666263 zeta 0.000261238257 phase 0.10342 gains 1.1388437 1.1388437 1.1388437 1.1388437 1.1388437 1.1388437 1.1388437 1.1388437 1.1388437 1.1388437 1.1388437 1.1388437
+shaper bell 0.841704 7.34013 132.932 435.712 11.347
+take v070 swing 1.74992 level 0.30995

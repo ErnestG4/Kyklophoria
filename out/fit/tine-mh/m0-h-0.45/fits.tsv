@@ -1,0 +1,11 @@
+id	family	param	value	dynamic	source	modes	loss	h_over_w	coil_hz	coil_q	swings	bark_target	bark_model
+tine-m0-h-0.45003	tine-m0-h-0.45	midi	46	all	v070/a#2.wav	1	0.6085	0.247	401	1.18	2.68	+7/+0/-6	+8/+1/-5
+tine-m0-h-0.45004	tine-m0-h-0.45	midi	52	all	v070/e3.wav	1	0.6144	0.189	604	2.51	2.19	+5/-4/-13	+5/-4/-13
+tine-m0-h-0.45005	tine-m0-h-0.45	midi	58	all	v070/a#3.wav	1	0.6613	0.147	753	5.96	1.77	+1/-8/-19	+1/-8/-29
+tine-m0-h-0.45006	tine-m0-h-0.45	midi	64	all	v070/e4.wav	1	0.6724	0.358	782	3.88	1.91	-3/-15/-29	-2/-15/-65
+tine-m0-h-0.45007	tine-m0-h-0.45	midi	70	all	v070/a#4.wav	1	0.4340	0.092	514	1.49	2.25	-7/-26/-43	-10/-41/-51
+tine-m0-h-0.45008	tine-m0-h-0.45	midi	76	all	v070/e5.wav	1	0.2205	0.088	744	1.69	1.74	-16/-40/-64	-16/-54/-72
+tine-m0-h-0.45009	tine-m0-h-0.45	midi	82	all	v070/a#5.wav	1	0.2785	0.201	1097	0.82	1.28	-29/-63/-59	-29/-65/-99
+tine-m0-h-0.45010	tine-m0-h-0.45	midi	88	all	v070/e6.wav	2	0.3276	0.260	820	2.53	1.29	-37/-71/-82	-37/-69/-108
+tine-m0-h-0.45011	tine-m0-h-0.45	midi	94	all	v070/a#6.wav	2	0.7735	0.424	2070	0.82	0.86	-53/-100/-100	-49/-83/-118
+tine-m0-h-0.45012	tine-m0-h-0.45	midi	100	all	v070/e7.wav	12	1.7871	0.565	11316	1.01	0.90	-74/-81/-94	-66/-71/-94
