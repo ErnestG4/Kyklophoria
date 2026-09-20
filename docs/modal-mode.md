@@ -39,8 +39,10 @@ slot. They attach where they lie in SDRAM; nothing is copied.
   within a cent of the log midpoint. The check found a real bug on its first
   run (the export's level scale applied after the bank had taken the gains:
   the pickup driven 2.4× too hard, barking 15 dB early).
-- `make armcost`: `c_resonate` 68 instructions for the whole function, about
-  fifteen a mode a sample in the loop; `c_pickup` 121 with the electrostatic
+- `make armcost`: `c_resonate` 123 instructions for the whole function with
+  the strike bank in it (68 without), about fifteen a mode a sample in the
+  main loop and the same again in the strike loop for the 3 ms a strike
+  ramps in; `c_pickup` 121 with the electrostatic
   form's `tanh` as an inline clamped Padé (it was 93 with libm's `tanh`,
   which the count saw as one instruction — a `bl` — and which cost about a
   hundred cycles a sample: the count misleads on a call). Forty-eight modes at 48 kHz is
