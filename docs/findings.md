@@ -691,6 +691,29 @@ notes E1–G3 from the Philharmonia's single-note files (loss 1.1–1.8; the
 `phrase` files under the same articulation are runs of notes and are now
 skipped), as `bass.kykm`.
 
+*The seam, anchored; the ringers, capped.* Combust, on the second
+morning: the bass rings high, the Wurlitzer has dead notes, "some things
+are being over resonated and others under". Measured: the fits are within
+their metrics — ringers (a mode ringing over three times longer than the
+recording at its frequency) are 4 of the bass's 193 modes, 2 of the
+Wurlitzer's 346, 9 of the piano's 1283, and the decay ratios sit 0.7 to
+1.6. The bass's ringers were quiet modes at 403–445 Hz the loss could
+not pin, running 1–3 s where the recording says 0.3–0.5; `ringers.py
+--fix` caps a quiet isolated ringer at the recording's own decay. The
+Wurlitzer's dead notes were the seam: each partial of the C3 tracked
+against the recording sits within a decibel everywhere except
+mid-crossfade, where three partials dipped 6–9 dB — the fitted phases,
+which an STFT loss leaves arbitrary, cancelling the recording as the one
+hands to the other. `bursts.py` now anchors every isolated mode to the
+recording at the seam: a 4096-point window there reads the mode's
+complex value, the phase is set so the model has that phase there and
+the level so it has that level, carried back to the strike along the
+fitted decay (a factor of ten either way is another mode under the
+window and is left alone; pairs are left as fitted). The 455 Hz dip went
+from −6.4 to −0.5 dB; 8,280 modes anchored across the sets. What is left
+on the Wurlitzer's C3 is −2 dB on the fundamental after a second — the
+fit's decay a little fast — which is the refit's.
+
 *The holistic pass, and format v6.* An agent was pointed at the maths as
 one system — where one stage assumes the next reproduces it exactly — and
 `docs/holistic-math.md` is what it measured. Three of its findings changed

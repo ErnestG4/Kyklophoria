@@ -161,6 +161,44 @@ def trim(x, sr, modes):
     return x[d:], out, d
 
 
+def anchor(x, modes, sr, t_s, tol=0.01):
+    """Every isolated mode set to what the recording says at the seam. The
+    burst is the recording faded over its last part and the modes come in
+    under that fade, so at the seam the two must agree in phase and level
+    or the crossfade dips — measured on the Wurlitzer's C3 at -6 to -9 dB
+    on three partials mid-fade, the fit's phases being what an STFT loss
+    leaves them. A 4096-point Hann window centred on the seam reads each
+    mode's complex value in the recording; the mode's phase is set so the
+    model has that phase there, and its amplitude so it has that level
+    there, carried back to the strike along its own decay. Pairs (two
+    modes within 1%) are left as fitted, since one window cannot read
+    them apart. Returns the modes rewritten."""
+    n = 4096
+    c = int(t_s * sr)
+    if c - n // 2 < 0 or c + n // 2 > len(x):
+        return modes, 0
+    seg = x[c - n // 2:c + n // 2] * np.hanning(n)
+    parsed = [parse(m) for m in modes]
+    out = []; done = 0
+    for m, (hz, zeta, g, ph) in zip(modes, parsed):
+        if any(q is not m and abs(parse(q)[0] / hz - 1) < tol for q in modes):
+            out.append(m); continue
+        k = np.arange(n) - n // 2
+        X = np.sum(seg * np.exp(-2j * np.pi * hz * k / sr))
+        amp = 2 * np.abs(X) / np.sum(np.hanning(n))
+        if amp <= 0:
+            out.append(m); continue
+        om = 2 * np.pi * hz
+        phase_s = np.angle(X)                     # of a sine A sin(om t + phi): the DFT of sin gives -j/2 e^{j phi}, so phi = angle + pi/2
+        phi = (phase_s + np.pi / 2 - om * t_s) % (2 * np.pi)
+        a0 = amp * math.exp(zeta * om * t_s)     # back to the strike along the fitted decay
+        if not (0.1 < a0 / abs(g) < 10):        # a factor of ten either way is another mode under the window, not this one
+            out.append(m); continue
+        w = m.split(); w[w.index('gains') + 1] = '%.6g' % a0; w[w.index('phase') + 1] = '%.5f' % phi
+        out.append(' '.join(w)); done += 1
+    return out, done
+
+
 def fade_in(e, sr):
     """a stored attack starts from silence: the analysed window of a fast
     note can begin mid-attack (the EP's G4 at 0.85 on its first sample), and
@@ -186,7 +224,7 @@ def main():
     a = ap.parse_args()
     rows = [l.split('\t') for l in open(os.path.join(a.recdir, 'fits.tsv')).read().splitlines()[1:]]
     done = 0
-    flips = 0
+    flips = 0; anchors = 0
     for r in rows:
         rid = r[0]
         rp = os.path.join(a.recdir, rid + '.mmr')
@@ -254,6 +292,10 @@ def main():
             else:
                 lines.append([l.rstrip('\n') for l in open(rp) if l.startswith('trimmed')][0])
             e, keep, flipped, fk = burst(x / 0.5, modes, sr, None if a.ms == 'auto' else float(a.ms), a.thump, a.fade, signed)   # the target wav is the analysed excerpt at half scale
+            # the modes anchored to the recording at the seam, where the
+            # crossfade hands over: the middle of the fade
+            keep, anchored = anchor(x / 0.5, keep, sr, (len(e) - fk / 2) / sr)
+            anchors += anchored
             flips += flipped
             bp = rid + '-burst.wav'
             sf.write(os.path.join(a.recdir, bp), e, sr, subtype='FLOAT')   # at the record's scale, not the target wav's half
@@ -263,7 +305,7 @@ def main():
         out += tail + lines
         open(rp, 'w').write('\n'.join(out) + '\n')
         done += 1
-    print('  %s: %d records with a burst of %s ms, %d sign-flipped%s' % (a.recdir, done, a.ms, flips, '' if a.shaped else ', thumps under %.0f ms removed' % (1000 * a.thump)))
+    print('  %s: %d records with a burst of %s ms, %d sign-flipped%s%s' % (a.recdir, done, a.ms, flips, '' if a.shaped else ', thumps under %.0f ms removed' % (1000 * a.thump), '' if a.shaped else ', %d modes anchored at the seam' % anchors))
 
 
 if __name__ == '__main__':

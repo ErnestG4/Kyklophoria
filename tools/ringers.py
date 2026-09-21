@@ -39,6 +39,7 @@ def track_t60(x, sr, hz, start=0.05):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('recdir'); ap.add_argument('--ratio', type=float, default=3.0)
+    ap.add_argument('--fix', action='store_true', help='cap a ringer\'s T60 at the recording\'s, for modes under a tenth of the loudest with no neighbour within 1%%; writes the records')
     a = ap.parse_args()
     rows = [l.split('\t') for l in open(os.path.join(a.recdir, 'fits.tsv')).read().splitlines()[1:]]
     tot = ring = 0; energy_ring = []
@@ -46,10 +47,12 @@ def main():
         rid = r[0]; rp = os.path.join(a.recdir, rid + '.mmr'); tp = os.path.join(a.recdir, rid + '-target.wav')
         if not (os.path.exists(rp) and os.path.exists(tp)):
             continue
-        modes = [(float(w[3]), float(w[5]), float(w[w.index('gains') + 1])) for w in (l.split() for l in open(rp)) if w and w[0] == 'mode']
+        lines = open(rp).read().splitlines()
+        modes = [(float(w[3]), float(w[5]), float(w[w.index('gains') + 1]), i) for i, w in ((i, l.split()) for i, l in enumerate(lines)) if w and w[0] == 'mode']
+        loud = max((abs(m[2]) for m in modes), default=0.0)
         x, sr = sf.read(tp)
-        worst = []
-        for hz, zeta, g in modes:
+        worst = []; fixed = 0
+        for hz, zeta, g, li in modes:
             t60 = 6.91 / (zeta * 2 * math.pi * hz)
             m = track_t60(x, sr, hz)
             tot += 1
@@ -58,9 +61,17 @@ def main():
             if t60 > a.ratio * m and t60 > 0.3:
                 ring += 1
                 worst.append((t60 / m, hz, t60, m, g))
+                # a quiet ringer with no neighbour: the loss could not pin
+                # its decay and the cap let it run; the recording's own is
+                # the better number. The bass rang at 445 Hz for 3.4 s where
+                # the recording says half a second
+                if a.fix and abs(g) < 0.1 * loud and not any(abs(q[0] / hz - 1) < 0.01 for q in modes if q[3] != li):
+                    w = lines[li].split(); w[5] = '%.6g' % (6.91 / (m * 2 * math.pi * hz)); lines[li] = ' '.join(w); fixed += 1
+        if a.fix and fixed:
+            open(rp, 'w').write('\n'.join(lines) + '\n')
         worst.sort(reverse=True)
         if worst:
-            print('  %-12s %2d ringers: %s' % (rid, len(worst), '  '.join('%.0fHz fit %.1fs rec %.2fs (x%.0f, gain %.3f)' % (h, t, m, q, g) for q, h, t, m, g in worst[:3])))
+            print('  %-12s %2d ringers%s: %s' % (rid, len(worst), ' (%d capped)' % fixed if fixed else '', '  '.join('%.0fHz fit %.1fs rec %.2fs (x%.0f, gain %.3f)' % (h, t, m, q, g) for q, h, t, m, g in worst[:3])))
     print('%s: %d of %d modes ring more than x%.0f longer than the recording at their frequency' % (a.recdir, ring, tot, a.ratio))
 
 
