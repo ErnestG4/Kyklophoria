@@ -228,15 +228,33 @@ struct Pickup
 {
     bool  on, gap;
     float h, inv_w, K;
+    float h_t, inv_w_t, K_t;      /* where the field and the gain are going: a retune slews them over 10 ms */
     float b0, b1, b2, a1, a2;     /* the coil */
+    /* the coil it is leaving: on a retune the old coil runs on beside the
+       new for 10 ms and the output crosses from one to the other — a
+       biquad's state under new coefficients is a step, and the EP's points
+       each carry a coil of their own (Q 0.02 to 55; the C2 to G2 jump
+       clicked at 7x the signal's slope with the state simply kept) */
+    float ob0, ob1, ob2, oa1, oa2, oz1, oz2;
+    float xfade_n, xfade_len;
     float prev, rest, z1, z2;     /* the last flux, and the flux at rest for this pole */
     float u_last;                 /* the last displacement in, for a retune: the flux under the new pole at the tine's actual place */
 
-    void Init() { on = gap = false; h = 0.f; inv_w = K = 1.f; b0 = 1.f; b1 = b2 = a1 = a2 = 0.f; prev = rest = z1 = z2 = 0.f; u_last = 0.f; }
+    void Init()
+    {
+        on = gap = false; h = h_t = 0.f; inv_w = K = inv_w_t = K_t = 1.f; b0 = 1.f; b1 = b2 = a1 = a2 = 0.f; prev = rest = z1 = z2 = 0.f; u_last = 0.f;
+        ob0 = 1.f; ob1 = ob2 = oa1 = oa2 = oz1 = oz2 = 0.f; xfade_n = xfade_len = 0.f;
+    }
+    /* keep the coil that is playing, so a Set can be crossed into */
+    void Leave(float sr)
+    {
+        ob0 = b0; ob1 = b1; ob2 = b2; oa1 = a1; oa2 = a2; oz1 = z1; oz2 = z2;
+        xfade_n = 0.f; xfade_len = 0.01f * sr;
+    }
 
     void Set(float h_, float w_, float K_, float fc, float Q, float sr)
     {
-        on = true; gap = false; h = h_; inv_w = 1.f / w_; K = K_;
+        on = true; gap = false; h = h_t = h_; inv_w = inv_w_t = 1.f / w_; K = K_t = K_;
         const float w0 = 6.2831853f * fc / sr;
         const float alpha = std::sin(w0) / (2.f * Q);
         const float cw = std::cos(w0), a0 = 1.f + alpha;
@@ -275,14 +293,29 @@ struct Pickup
         if(!on) return;
         for(int k = 0; k < frames; k++)
         {
+            /* the field and the gain slew to a retune's values over about
+               10 ms: the EP's points carry a coil gain K and a pole h of
+               their own, and a note world takes the nearest point's whole
+               — a C2 to G2 jump stepped K in one sample, a click 30x the
+               signal's own slope */
+            h += (h_t - h) * 0.002f; inv_w += (inv_w_t - inv_w) * 0.002f; K += (K_t - K) * 0.002f;
             u_last = io[k];
             const float u   = (io[k] - h) * inv_w;
             const float phi = gap ? 1.f / (1.f - 0.9f * Tanh(u / 0.9f)) : 1.f / (1.f + u * u);
             const float d   = phi - prev;
             prev = phi;
-            const float y = b0 * d + z1;          /* transposed direct form II */
+            float y = b0 * d + z1;                /* transposed direct form II */
             z1 = b1 * d - a1 * y + z2;
             z2 = b2 * d - a2 * y;
+            if(xfade_n < xfade_len)
+            {
+                const float yo = ob0 * d + oz1;
+                oz1 = ob1 * d - oa1 * yo + oz2;
+                oz2 = ob2 * d - oa2 * yo;
+                const float t = xfade_n / xfade_len;
+                y = yo + t * (y - yo);
+                xfade_n += 1.f;
+            }
             io[k] = K * y;
         }
     }
@@ -684,13 +717,22 @@ struct ResonatorWorld
             else v.wash.Set(la, ta, sr);
         }
         v.swing_soft = st[5]; v.swing_hard = st[6];
-        if(keep && v.pickup.on)
+        /* a voice at rest has nothing to carry: built fresh, so arriving at
+           a world is the same as starting in it */
+        bool ringing = false;
+        for(int k = 0; k < v.bank.n && !ringing; k++) ringing = std::fabs(v.bank.y1[k]) + std::fabs(v.bank.s1[k]) > 1e-7f;
+        if(keep && v.pickup.on && ringing)
         {
             /* the pickup retunes without a click: its filter state and its
                last flux stay, only the field and the coil move */
-            const float u_last = v.pickup.u_last, z1 = v.pickup.z1, z2 = v.pickup.z2;
+            const float u_last = v.pickup.u_last;
+            const float h0 = v.pickup.h, iw0 = v.pickup.inv_w, K0 = v.pickup.K;
+            v.pickup.Leave(sr);
             if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
             else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);
+            /* the new field and gain are targets; the pickup slews from
+               where it was, so a point change is a glide and not a step */
+            v.pickup.h = h0; v.pickup.inv_w = iw0; v.pickup.K = K0;
             /* the last flux re-read under the new pole at the tine's actual
                displacement: the pole moved, so the flux the same tine
                makes has too, and carrying the old value — or its distance
@@ -703,7 +745,9 @@ struct ResonatorWorld
                 v.pickup.prev = v.pickup.gap ? 1.f / (1.f - 0.9f * Pickup::Tanh(u / 0.9f)) : 1.f / (1.f + u * u);
                 v.pickup.u_last = u_last;
             }
-            v.pickup.z1 = z1; v.pickup.z2 = z2;
+            /* the new coil starts from rest and is crossed into; the old one
+               keeps its state and plays out */
+            v.pickup.z1 = v.pickup.z2 = 0.f;
         }
         else if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
         else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);
