@@ -268,11 +268,10 @@ what it is). Concretely:
   beside the strike chips (double-click recentres). `resonate_engine_check`:
   the centre is the fitted world bit for bit, decay ×4 rings 5.7× at
   0.9 s, voicing and coil move the EP's spectrum with the ring kept.
-- ACTION 17 `strike u8 velocity`: the hand on a resonator until the module
-  has a trigger. On the module it is a flag the audio callback consumes
+- ACTION 17 `strike u8 velocity`: the page's hand on a resonator (J4 is
+  the module's). On the module it is a flag the audio callback consumes
   after `SetF0`, so the strike retunes to the pitch it is struck at; the
-  page shows soft / mid / hard chips on the MOTION row while a 1-D user
-  world is playing. BAD_STATE on anything else.
+  page's pads are on the model tab. BAD_STATE on anything else.
 - `link_check.py` (card: list, refuse a truncated file, load, play as 1-D,
   refuse target/snapshot/free-while-live, free after a built-in takes
   over) and the node selftest (the same through `link.js`).
@@ -288,12 +287,75 @@ what it is). Concretely:
   jitter does not spend `At()`; the module sets it, the desktop does not,
   so the page's sliders still work against `kykdesk`. Unrun on hardware.
 
-Still the bench's: everything since the evening of 20 September — the jack
-remap, the polyphony, the strum on a note jump, the exciter, format v6 and
-the level convention — is built, host-tested and unplayed. What the first
-evening settled: the card path works, the worlds load and play, and it
-"sounds amazing"; what it found — the overrun, the two clicks, the loads
-past slot 03 — is fixed above.
+- **The pitch lock, the Model page and the model tab** (21 Sept, the
+  second bench: "still popping on note open and jankily sliding around /
+  not properly pinning v/oct... I almost want to keep separate modes with
+  their own web control interface that you must click between... we need
+  to find the relevant controls on our tool and make them planes. We need
+  to be able to lock the pitch/tuning bend dimension by default and allow
+  unlock if people want to play random notes").
+  - *The slide, found.* It was not the CV: the SDK's CV input is built
+    with `slew = 0` (`cv_jack.cpp`), so J3 is the raw ADC each 1 ms poll
+    and the 7 ms one-pole the note filter was written against does not
+    exist. What slid was the **ring**: the voice that follows the pitch
+    retuned every block, so a piano tail bent up to the next note in the
+    milliseconds between the sequencer's CV moving and its trigger — the
+    ring arriving, drunk, at the note the strike then took. A struck
+    string does not do that.
+  - *The pitch lock* (`Engine::SetPitchLock`, ACTION 20, on by default):
+    locked, a strike takes the pitch to the **nearest semitone** and the
+    ring keeps the note it was struck at — the next pitch waits for the
+    next strike; a bank driven by the exciter with no strikes follows by
+    the semitone, with a tenth of a semitone of hysteresis so a CV on a
+    boundary does not chatter. Free, the ring follows the pitch by the
+    cent, which is a bend. The two sweep scripts unlock for their glides
+    (`lock 0`) and the goldens were re-pinned: the old ones had the tail
+    bending up before every strike. `resonate_engine_check`: 131.8 Hz
+    strikes C3, holds it under a G3 pitch, takes the G3 at the strike;
+    free, 131.8 then 196.
+  - *The pop, one of them.* A strike past the voice count built its voice
+    fresh, which zeroed the ring it carried — a step at every strike once
+    the round came back — and a turn of the voice count silenced every
+    voice. A voice taken again now carries what rings in it to the new
+    note, as Rings' filters do; a voice past a lowered count rings out
+    and is then skipped (`ResonatorVoice::Active`). `resonate_engine_check`
+    measures both as a sample step against the ring's own, and fails with
+    the cut put back. The note sweep plays four voices past the count.
+  - *The Model page* (`shell/alchemy/main.cpp`, page 7 of the SDK's
+    eight): a resonate world's own six pots — Body, Velocity, Decay,
+    Coil, Voices, Exciter — read by the callback instead of the Play
+    page's position pots, the World page's third and the Stereo page's
+    sixth, so the Play page is the wavetable's again and the panel mirror
+    stops renaming its pots. J5–J8 add to the first four. B2 taps a
+    strike at the Velocity pot, B3 flips the lock, both on the 1 ms poll
+    (Settings reads the pair held together itself; the lock flips on the
+    release of a short press so the first button down on the way into
+    Settings does not flip it). `docs/io-map.md`.
+  - *The model tab* (`web/index.html`): a fourth tab, the resonator's own
+    view, so the play tab stays the wavetable's. The instruments the
+    module holds and the card's resonators along the top; the axis (a pad:
+    a press strikes at the velocity the height says, and over the bridge
+    first puts the pitch where the press is) and the modes on the left;
+    the planes on the right, one a row — PITCH (locked / free, and the
+    pitch against what is built), STRIKE (soft, mid, hard, and a pad at a
+    velocity slider), BODY (a family's members, a row's position, or the
+    voicing), RING (decay, coil), VOICES (1, 2, 4), EXCITER (a note, since
+    it is a pot). On the module the pots own body, decay and coil and the
+    page says so; the chips follow the readout (0x6F now ends with the
+    voice count and the lock) when it changes, so a pot on the module is
+    seen on the page and the page's own send is not undone by a readout
+    from before it. `pagecheck`: 22 checks of the tab's planes on a
+    family, a note world, a body row, the module and the bridge.
+
+Still the bench's: the lock, the Model page, the model tab and the reuse
+fix are built, host-tested and unplayed; so is everything from the night
+before that the second bench did not reach — the strum on a note jump, the
+exciter, families. What the second bench also reported and is not yet
+found: octave errors ("mistakes even with which octave a note belongs
+to") — the intune-refused points in the manifests (piano 37 +162 c and 80
+−140 c, guitar 57 and 75, bass 45) are the first suspects, and a v/oct
+calibration check against the wavetable is the second — and whether a pop
+remains at note-on with one voice.
 
 ## Playing it: the bench steps
 

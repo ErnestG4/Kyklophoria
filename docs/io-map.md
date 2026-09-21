@@ -5,10 +5,13 @@ needs CV and trigger in modal and accurate CV in wavetable. This is a modular
 rack instrument." So: **J4 is the trigger in** under a resonate world and **CV
 out A** under a wavetable one (the DG411 switches with the world), and
 **J5–J8 are the four control CVs** in both modes — positions 0–3 on a
-wavetable world; on a resonate one the voicing (the body, on a row of them),
-the velocity a trigger strikes with, the decay and the coil, each summed
-with the Play page pot on its axis (P3–P6). The table below is the map as it
-was; the jack rows are updated, the rest of the history stands.
+wavetable world; on a resonate one the body (the instrument of a family, the
+body on a row, the voicing on a single note world), the velocity a trigger
+strikes with, the decay and the coil, each summed with the **Model page** pot
+on its axis (P1–P4) — the Play page's position pots stay the wavetable's, so
+switching worlds does not hand the spin to wherever four pots happened to be.
+The table below is the map as it was; the jack rows are updated, the rest of
+the history stands.
 
 Source of truth for the panel: `../alchemy-sdk/hardware/alchemy-lab/v2/include/alchemy/hw/alchemy_lab_v2_layout.h`
 and the SDK README's jack reference. What the design wants versus what the
@@ -30,10 +33,10 @@ panel has:
 | J2 | audio in | **Sync / clock** | rising edges advance the **world tour** through its division (`core/kyk_tour.h`). Schmitt-triggered with a 5 ms refractory count, because the jack is AC-coupled: a gate arrives as a step that decays and its release dips below zero, so one comparison would count both ends. Resetting the oscillator phase was the original plan for this jack and is still unimplemented — if both ever land they have to be selectable, since resetting the cycle on every clock edge is hard sync and nobody asked for that *and* a world loop |
 | J3 | CV in | **v/oct** | 16-bit at audio rate, calibrated `Volts()`; read once per block |
 | J4 | trig in *or* CV out | **Trigger** (resonate world) / **CV out A** (wavetable world) | As the trigger: a rising edge past 1 V strikes at the velocity axis 1 holds, 0.5 V hysteresis, 2 ms refractory, read once a block. As CV out A: MCP4728 12-bit via I²C, latched once a control frame; payload lane with depth. The DG411 switches on the world change, on the control thread |
-| J5 | CV in | **CV 0**: position 0 / voicing (or the body, on a row) | ±5 V → −1..+1, summed with P3 |
-| J6 | CV in | **CV 1**: position 1 / velocity | summed with P4; the velocity a J4 trigger strikes with, 0..1 |
-| J7 | CV in | **CV 2**: position 2 / decay | summed with P5; 0.5 the world as fitted, a quarter to four times |
-| J8 | CV in | **CV 3**: position 3 / coil | summed with P6; 0.5 as fitted, half to double. (Was CV out A on the STM DAC; the option of Rotate in stands) |
+| J5 | CV in | **CV 0**: position 0 / body | ±5 V → −1..+1, summed with Play P3 on a wavetable world, Model P1 on a resonate one |
+| J6 | CV in | **CV 1**: position 1 / velocity | summed with Play P4 / Model P2; the velocity a J4 trigger strikes with, 0..1 |
+| J7 | CV in | **CV 2**: position 2 / decay | summed with Play P5 / Model P3; 0.5 the world as fitted, a quarter to four times |
+| J8 | CV in | **CV 3**: position 3 / coil | summed with Play P6 / Model P4; 0.5 as fitted, half to double. (Was CV out A on the STM DAC; the option of Rotate in stands) |
 | J9 | audio out | **Out L** | |
 | J10 | audio out | **Out R** | |
 
@@ -52,8 +55,20 @@ and the stereo plane are P1/P2 of the Stereo page.
 
 ## Pots and pages (B1 taps through the pages)
 
-Seven pages ship: Play, Rotate, Stereo, Orbit, Kepler, Couple and World. Lanes
-arrives with M3.
+Eight pages ship — the SDK's limit: Play, Rotate, Stereo, Orbit, Kepler,
+Couple, World and Model. Lanes would have to take a page from one of them.
+
+**Page Model** is a resonate world's own six (`docs/modal-mode.md`), one plane
+each after the way Rings lays a resonator out: P1 **Body** (the instrument of
+a family, the body on a row, the voicing on a note world), P2 **Velocity**
+(what J4's trigger and B2's tap strike with), P3 **Decay** (every T60, a
+quarter to four times), P4 **Coil** (the pickup resonance, half to double), P5
+**Voices** (1, 2, 4, round-robin), P6 **Exciter** (how much of J1's audio is
+driven into the bank). J5–J8 add to the first four. Under a resonate world
+**B2** taps a strike at the Velocity pot and **B3** flips the pitch lock
+(locked, the default: the nearest semitone, taken at the strike, and a ring
+keeps its note; free: the ring follows the pitch by the cent). Under a
+wavetable world the page's pots do nothing.
 
 **Page World** is five knobs. P1 and P2 are the offsets for axes 4 and 5; P3 to
 P5 are the world tour's division, glide and free-run rate (`core/kyk_tour.h`),
@@ -85,8 +100,9 @@ planes and position axes get a second Rotate/Orbit page each.
 
 Buttons: **B1** tap: next page (ring tints per page). **B2** tap: ratio lock
 on/off · hold + turn an Orbit pot: pick the rational — superseded by the
-Couple page, where lock is emergent rather than chosen. **B3** tap: next
-space on the card · hold: reload / reset phases (M4). **B2+B3** 2 s: Settings
+Couple page, where lock is emergent rather than chosen; under a resonate
+world, a strike. **B3** tap: next space on the card · hold: reload / reset
+phases (M4) — under a resonate world, the pitch lock. **B2+B3** 2 s: Settings
 (SDK). Param locks (SDK, B1 hold + turn) come for free on every pot.
 
 ## Rings

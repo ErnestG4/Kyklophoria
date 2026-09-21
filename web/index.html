@@ -88,7 +88,7 @@
      two declarations and removes the question. */
   header { grid-row: 1; }
   nav#worldbar { grid-row: 2; }
-  main, #buildMain, #libMain { grid-row: 3; }
+  main, #buildMain, #libMain, #modelMain { grid-row: 3; }
   #drawer { grid-row: 4; }
   footer { grid-row: 5; }
   #libMain { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; }
@@ -132,11 +132,32 @@
      panes collapsed or overgrown until the window was resized. Combust:
      "some parts require resizing on the build page". */
   #buildMain { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; min-height: 0; }
-  #buildMain .brow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  #buildMain .brow, #modelMain .brow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
                      padding: 5px 12px; border-bottom: 1px solid var(--line);
                      font-size: 11px; color: var(--dim); }
-  #buildMain .brow .cap { letter-spacing: .1em; flex: none; }
-  #buildMain .brow .sp { flex: 1; }
+  #buildMain .brow .cap, #modelMain .brow .cap { letter-spacing: .1em; flex: none; }
+  #buildMain .brow .sp, #modelMain .brow .sp { flex: 1; }
+  /* The model tab: a resonate world's own view. The instrument bar, then the
+     axis you play on and the modes it rings with, and beside them the
+     planes — pitch, strike, body, ring, voices, exciter — each a row, after
+     the way Rings and Elements lay a resonator out: one plane per row, not
+     six pots that mean something else on the next world. Three rows placed
+     explicitly for the reason the build tab's are. */
+  #modelMain { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
+  #modelMain .mmid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 36%);
+                     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; }
+  #modelMain .mmid .pane { border-bottom: 1px solid var(--line); }
+  #modelMain .mmid .pane.axis { grid-column: 1; grid-row: 1; cursor: crosshair; }
+  #modelMain .mmid .pane.modes { grid-column: 1; grid-row: 2; border-bottom: 0; }
+  #planes { grid-column: 2; grid-row: 1 / 3; overflow: auto; min-height: 0; padding: 4px 0; }
+  .plane { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 7px 12px;
+           border-bottom: 1px solid var(--line); font-size: 11px; color: var(--dim); }
+  .plane .cap { letter-spacing: .1em; flex: 0 0 62px; }
+  .plane .note { flex: 1 1 100%; font-style: italic; line-height: 1.4; }
+  .plane input[type=range] { width: 88px; vertical-align: middle; accent-color: var(--hot); height: 14px; margin: 0; }
+  .plane .pad { padding: 6px 14px; }
+  #modelMain select { background: #0f141a; color: var(--ink); border: 1px solid #263039;
+                      border-radius: 3px; padding: 1px 4px; font: inherit; max-width: 200px; }
   #buildMain .bmid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 32%); min-height: 0; }
   #buildMain input[type=text] { background: #0f141a; color: var(--ink); border: 1px solid #263039;
                      border-radius: 3px; padding: 1px 4px; font: inherit; width: 9em; }
@@ -189,6 +210,7 @@
 <header>
   <span class="name">Kyklophoria</span>
   <button class="tab on" id="tabPlay">play</button>
+  <button class="tab" id="tabModel">model</button>
   <button class="tab" id="tabBuild">build</button>
   <button class="tab" id="tabLib">worlds</button>
   <span id="modinfo" style="color:var(--dim)">not connected</span>
@@ -230,7 +252,7 @@
   <div class="wrow">
     <span class="cap">MOTION</span>
     <span id="muteChips"></span>
-    <span id="strikeChips"></span>
+    <span id="motionNote" style="color: var(--dim)"></span>
   </div>
 </nav>
 <main id="playMain">
@@ -244,6 +266,30 @@
     <div class="label">SOUND</div>
   </div>
 </main>
+<section id="modelMain" hidden>
+  <div class="brow">
+    <span class="cap">INSTRUMENT</span>
+    <span id="instChips"></span>
+    <span class="sp"></span>
+    <span class="cap">CARD</span>
+    <select id="modelCardSel"></select>
+    <button class="chip" id="modelCardLoad">load</button>
+    <span id="modelCardState"></span>
+  </div>
+  <div class="mmid">
+    <div class="pane axis"><canvas id="maxis"></canvas><div class="label">AXIS · press to strike</div></div>
+    <div class="pane modes"><canvas id="mmodes"></canvas><div class="label">MODES</div></div>
+    <div id="planes">
+      <div class="plane"><span class="cap">PITCH</span><span id="lockChips"></span><span id="pitchNote" class="note"></span></div>
+      <div class="plane"><span class="cap">STRIKE</span><span id="strikeChips"></span></div>
+      <div class="plane"><span class="cap">BODY</span><span id="bodyChips"></span></div>
+      <div class="plane"><span class="cap">RING</span><span id="ringChips"></span></div>
+      <div class="plane"><span class="cap">VOICES</span><span id="voiceChips"></span></div>
+      <div class="plane"><span class="cap">EXCITER</span><span id="exciterNote" class="note"></span></div>
+    </div>
+  </div>
+  <div class="brow"><span id="modelHint"></span></div>
+</section>
 <section id="buildMain" hidden>
   <div class="brow">
     <span class="cap">WAVES</span>
@@ -544,7 +590,8 @@ async function connect(transport) {
   say('');
   /* the resonator's knobs as last sent belong to the module that was
      answering; a fresh module is at its fitted centre and one voice */
-  reso = null; poly = 1; tune[0] = tune[1] = tune[2] = 128; lastStrikeN = -1;
+  reso = null; poly = 1; lock = true; tune[0] = tune[1] = tune[2] = 128; lastStrikeN = -1;
+  renderModelChips();
   polling = true; pollTelemetry(); pollStats(); pollResonate();
 }
 async function disconnect() {
@@ -552,6 +599,7 @@ async function disconnect() {
   const l = link; link = null; tel = null; stats = null; info = null; panel = null;
   reso = null; lastStrikeN = -1;
   worlds = null; basis = null; basisWorld = -1; switching = -1; terrain.key = '';
+  renderModelChips(); setText('motionNote', '');
   heldLost();              /* whatever it was holding, it is not holding it now */
   seenWorld = -2;          /* and the next module to answer is a fresh question */
   renderWorldBar();
@@ -1335,73 +1383,202 @@ function renderMuteChips() {
   add('kepler', 0x8000, 'the falling body');
 }
 
-/* A resonator is struck, not scanned: three velocities, shown only while a
-   1-D user world — which is what a resonator is on the wire — is playing.
-   The module has no trigger of its own yet, so this is the hand on it. */
-let lastStrikeN = -1;
-function renderStrikeChips() {
-  const box = $('strikeChips'); box.innerHTML = '';
-  if (!tel || tel.n !== 1) return;
-  const sep = document.createElement('span');
-  sep.textContent = '· strike'; sep.style.color = 'var(--dim)'; sep.style.padding = '0 4px';
-  box.appendChild(sep);
-  for (const [label, v] of [['soft', 77], ['mid', 153], ['hard', 230]]) {
-    const b = document.createElement('button');
-    b.className = 'chip'; b.textContent = label; b.title = `strike at ${(v / 255).toFixed(2)}`;
-    b.disabled = !link;
-    b.onclick = async () => {
-      if (!link) return;
-      try { await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.strike, [v]), { urgent: true }); }
-      catch (e) { say('strike: ' + e.message, true); }
-    };
-    box.appendChild(b);
-  }
-  /* polyphony, the way Rings does it: 1, 2 or 4 voices round-robin */
-  const psep = document.createElement('span');
-  psep.textContent = ' · voices'; psep.style.color = 'var(--dim)'; psep.style.padding = '0 4px';
-  box.appendChild(psep);
-  for (const n of [1, 2, 4]) {
-    const b = document.createElement('button');
-    b.className = 'chip' + (poly === n ? ' on' : ''); b.textContent = String(n); b.title = `${n} voice${n > 1 ? 's' : ''}: a strike takes the next, the ones before ring on`;
-    b.disabled = !link;
-    b.onclick = async () => {
-      if (!link) return;
-      try { await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.polyphony, [n]), { urgent: true }); poly = n; renderStrikeChips(); }
-      catch (e) { say('voices: ' + e.message, true); }
-    };
-    box.appendChild(b);
-  }
-  /* and the spin: voicing, decay, coil — 128 is the world as fitted. The
-     page keeps the values (telemetry does not carry them) and sends each
-     move; the module applies it on its next block with the ring kept. A
-     double-click puts a knob back to centre. */
-  for (const [i, label, title] of [[0, 'voice', 'the pickup pole off its fitted centre, ±2 widths'],
-                                   [1, 'decay', 'every mode\'s T60, ×¼ to ×4'],
-                                   [2, 'coil', 'the coil resonance, ×½ to ×2']]) {
-    const lab = document.createElement('span');
-    lab.textContent = ' ' + label; lab.style.color = 'var(--dim)'; lab.style.paddingLeft = '6px';
-    const r = document.createElement('input');
-    r.type = 'range'; r.min = 0; r.max = 255; r.value = tune[i]; r.title = title;
-    r.style.width = '64px'; r.style.verticalAlign = 'middle';
-    /* on the module the pots and CVs own the spin, read every block, and a
-       slider sent from here would be overwritten at the next one; the
-       desktop shell has no panel, and there the sliders are the only hand */
-    const moduleOwns = !!(panel && panel.pots);
-    r.disabled = !link || moduleOwns;
-    if (moduleOwns) r.title = title + ' — on the module the Play page pots and CV 0..3 own this';
-    const send = async () => {
-      tune[i] = r.value | 0;
-      if (!link) return;
-      try { await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.tune, [i, tune[i]]), { urgent: true }); }
-      catch (e) { say('tune: ' + e.message, true); }
-    };
-    r.oninput = send;
-    r.ondblclick = () => { r.value = 128; send(); };
-    box.appendChild(lab); box.appendChild(r);
-  }
-}
+/* ── the model tab ───────────────────────────────────────────────────────
+ * A resonate world's own view (docs/modal-mode.md). The play tab is the
+ * wavetable's and stays that way — Combust, after a night with the spin on
+ * the Play page's pots: "wavetable already works very well... it may be
+ * worth building a more fun UX specifically for modeling and letting the
+ * current UX be great for the wavetable." So the resonator's hands live
+ * here, one plane a row after the way Rings and Elements lay a resonator
+ * out — pitch, strike, body, ring, voices, exciter — and the play tab only
+ * reads it out.
+ *
+ * Everything here is a readout of the module or a hand on it. The module
+ * says what it is playing (0x6F) and the chips send actions. On the module
+ * the Model page's pots own body, decay and coil, read every block, so a
+ * slider sent from here would be overwritten at the next one: those are
+ * greyed there and live over the bridge, where they are the only hand. */
 const tune = [128, 128, 128];    /* the spin as last sent; the fitted world is 128 */
-let poly = 1;                    /* voices, as last sent */
+let poly = 1, lock = true;       /* voices and the pitch lock, as last sent or read */
+let vel = 200;                   /* the strike pad's velocity, 0..255 */
+const moduleOwns = () => !!(panel && panel.pots);
+const chip = (label, on, title, fn) => {
+  const b = document.createElement('button');
+  b.className = 'chip' + (on ? ' on' : ''); b.textContent = label; if (title) b.title = title;
+  b.disabled = !link; b.onclick = fn; return b;
+};
+const dimText = (t, pad = '0 4px') => { const e = document.createElement('span'); e.textContent = t; e.style.color = 'var(--dim)'; e.style.padding = pad; return e; };
+async function act(op, args, what) {
+  if (!link) return false;
+  try { await link.request(MVL.CMD.action, MVL.actionReq(op, args), { urgent: true }); return true; }
+  catch (e) { say(what + ': ' + e.message, true); return false; }
+}
+const strikeAt = v => act(MVL.ACT.strike, [Math.max(0, Math.min(255, v | 0))], 'strike');
+/* a slider that sends on input and goes back to its centre on a double
+   click; greyed where the module's pots own it */
+function spinSlider(i, label, title) {
+  const lab = dimText(label, '0 0 0 6px');
+  const r = document.createElement('input');
+  r.type = 'range'; r.min = 0; r.max = 255; r.value = tune[i]; r.title = title;
+  const owned = moduleOwns();
+  r.disabled = !link || owned;
+  if (owned) r.title = title + ' — the Model page\'s pot owns this on the module';
+  const send = () => { tune[i] = r.value | 0; act(MVL.ACT.tune, [i, tune[i]], 'tune'); };
+  r.oninput = send;
+  r.ondblclick = () => { r.value = 128; send(); };
+  return [lab, r];
+}
+/* a position axis over the bridge, which has no pots: 0x6E SET_CONTROL */
+function positionSlider(a, label, title, steps) {
+  const lab = dimText(label, '0 0 0 6px');
+  const r = document.createElement('input');
+  r.type = 'range'; r.min = 0; r.max = 1000; r.step = steps ? Math.round(1000 / steps) : 1; r.title = title;
+  r.value = Math.round(1000 * (tel && tel.ctl ? tel.ctl[a] : 0.5));
+  const owned = moduleOwns();
+  r.disabled = !link || owned || (link && link.kind !== 'bridge');
+  if (owned) r.title = title + ' — the Model page\'s pot and J5 own this on the module';
+  r.oninput = () => { ctl.c[a] = r.value / 1000; sendControl(); };
+  return [lab, r];
+}
+let modelSig = '', readSig = '';
+function renderModelChips() {
+  const r = reso, live = !!(tel && tel.n === 1);
+  /* what the module says, when it says something new: a pot on the module
+     or a button moves these too, and the readout is how the page hears of
+     it. Taken only when the readout changes, so the page's own record of
+     what it just sent is not undone by a readout from before the send.
+     Firmware before the readout's last two bytes leaves the record alone. */
+  if (r && r.voices != null) {
+    const sig = `${r.voices}|${r.lock}`;
+    if (sig !== readSig) { readSig = sig; poly = r.voices; lock = r.lock; }
+  }
+  /* the instruments the module holds: every slot with something in it,
+     the live one lit. The page cannot tell a resonator's slot from a
+     wavetable's by name alone — a card file's name is what is left of its
+     file name — so all of them are offered and the tab says which it got */
+  {
+    const box = $('instChips'); box.innerHTML = '';
+    let any = false;
+    if (slots) for (let i = 0; i < slots.count; i++) {
+      if (!slots.names[i]) continue;
+      any = true;
+      const on = slots.live === i;
+      box.appendChild(chip(slots.names[i], on, `slot ${i}: play it`, () => slotAction(MVL.ACT.slotLive, i)));
+    }
+    if (!any) box.appendChild(dimText(link ? 'nothing in the slots — load a resonator from the card' : 'not connected'));
+    if (r && r.name && live) box.appendChild(dimText('· ' + r.name));
+  }
+  /* the card, resonators only */
+  {
+    const sel = $('modelCardSel'); sel.innerHTML = '';
+    const names = cardList.names.map((nm, i) => [nm, i]).filter(([nm]) => isResonator(nm));
+    if (!names.length) { const o = document.createElement('option'); o.value = ''; o.textContent = link ? 'no resonators on the card' : '—'; sel.appendChild(o); }
+    else for (const [nm, i] of names) { const o = document.createElement('option'); o.value = String(i); o.textContent = cardLabel(nm).replace(/ · resonator$/, ''); sel.appendChild(o); }
+    sel.disabled = !link || !names.length;
+    $('modelCardLoad').disabled = !link || !names.length;
+    $('modelCardState').textContent = '';
+  }
+  /* pitch: the lock, and what the pitch is against what is built */
+  {
+    const box = $('lockChips'); box.innerHTML = '';
+    const set = async on => { if (await act(MVL.ACT.pitchLock, [on ? 1 : 0], 'pitch lock')) { lock = on; renderModelChips(); } };
+    box.appendChild(chip('locked', lock, 'the semitone nearest the pitch, taken at the strike; a ring keeps its note', () => set(true)));
+    box.appendChild(chip('free', !lock, 'the ring follows the pitch by the cent: a bend', () => set(false)));
+    for (const b of box.children) b.disabled = !link || !live;
+  }
+  /* strike: three pads, and one at the slider */
+  {
+    const box = $('strikeChips'); box.innerHTML = '';
+    for (const [label, v] of [['soft', 77], ['mid', 153], ['hard', 230]]) {
+      const b = chip(label, false, `strike at ${(v / 255).toFixed(2)}`, () => strikeAt(v)); b.classList.add('pad'); b.disabled = !link || !live; box.appendChild(b);
+    }
+    const lab = dimText('velocity', '0 0 0 8px');
+    const s = document.createElement('input'); s.type = 'range'; s.min = 0; s.max = 255; s.value = vel; s.title = 'the pad\'s velocity; on the module the Model page\'s second pot and J6';
+    s.oninput = () => { vel = s.value | 0; };
+    const pad = chip('strike', false, 'strike at the slider', () => strikeAt(vel)); pad.classList.add('pad'); pad.disabled = !link || !live;
+    box.appendChild(lab); box.appendChild(s); box.appendChild(pad);
+  }
+  /* body: the instrument of a family, the row of bodies, or the voicing */
+  {
+    const box = $('bodyChips'); box.innerHTML = '';
+    if (!live || !r) box.appendChild(dimText('—'));
+    else if (r.members && r.members.length > 1) {
+      for (let i = 0; i < r.members.length; i++) {
+        const b = chip(r.members[i], i === r.member, `position 0 at ${(i / (r.members.length - 1)).toFixed(2)}`, () => { ctl.c[0] = i / (r.members.length - 1); sendControl(); });
+        b.disabled = !link || moduleOwns() || link.kind !== 'bridge';
+        if (moduleOwns()) b.title = 'the Model page\'s first pot and J5 choose the instrument on the module';
+        box.appendChild(b);
+      }
+    }
+    else if (r.kind === 1) { for (const e of positionSlider(0, `body 0..${r.P - 1}`, 'which body of the row, position 0', r.P - 1)) box.appendChild(e); }
+    else { for (const e of spinSlider(0, 'voicing', 'the pickup pole off its fitted centre, ±2 widths')) box.appendChild(e); }
+  }
+  /* ring: decay and coil */
+  {
+    const box = $('ringChips'); box.innerHTML = '';
+    for (const e of spinSlider(1, 'decay', 'every mode\'s T60, ×¼ to ×4')) box.appendChild(e);
+    for (const e of spinSlider(2, 'coil', 'the coil resonance, ×½ to ×2')) box.appendChild(e);
+    for (const e of box.children) if (e.tagName === 'INPUT') e.disabled = e.disabled || !live;
+  }
+  /* voices, the way Rings does it */
+  {
+    const box = $('voiceChips'); box.innerHTML = '';
+    for (const n of [1, 2, 4]) {
+      const b = chip(String(n), poly === n, `${n} voice${n > 1 ? 's' : ''}: a strike takes the next, the ones before ring on`, async () => { if (await act(MVL.ACT.polyphony, [n], 'voices')) { poly = n; renderModelChips(); } });
+      b.disabled = !link || !live; box.appendChild(b);
+    }
+    if (moduleOwns()) $('voiceChips').appendChild(dimText('· the Model page\'s fifth pot too'));
+  }
+  $('exciterNote').textContent = moduleOwns()
+    ? 'J1\'s audio driven into the bank, as much as the Model page\'s sixth pot says — the world as a filter bank for whatever is patched in'
+    : 'on the module: J1 in, the Model page\'s sixth pot';
+  $('modelHint').textContent = !link ? 'connect to a module or the bridge'
+    : !live ? 'no resonator is playing — pick one above, or load a .kykm from the card'
+    : moduleOwns() ? 'Model page  P1 body · P2 velocity · P3 decay · P4 coil · P5 voices · P6 exciter  ·  B2 taps a strike, B3 flips the lock  ·  J3 v/oct · J4 trigger · J5–J8 CV into the first four'
+    : 'over the bridge the pitch is the drawer\'s f0 or a press on the axis';
+}
+let lastStrikeN = -1;
+function pitchNoteText() {
+  const r = reso;
+  if (!tel || tel.n !== 1) return '';
+  const here = `${MVL.noteName(tel.f0)} · ${tel.f0.toFixed(1)} Hz`;
+  if (!r || r.kind !== 0) return here;
+  const built = r.param < 1e8 ? MVL.noteName(440 * Math.pow(2, (r.param - 69) / 12)) : '—';
+  const between = r.points.length && !r.points.some(p => Math.abs(p - r.param) < 1e-3);
+  return `${here} → built at ${built}${between ? ', between points' : ''}${lock ? '' : ' (free: follows the cent)'}`;
+}
+/* the axis is a pad: a press strikes at the velocity the height says, and
+   over the bridge first puts the pitch where the press is on the axis */
+function pressAxis(e) {
+  if (!link || !tel || tel.n !== 1 || !reso) return;
+  const rect = ma.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const v = Math.round(255 * (1 - Math.min(1, Math.max(0, (y - 10) / Math.max(1, rect.height - 20)))));
+  if (link.kind === 'bridge' && reso.kind === 0 && reso.hi > reso.lo) {
+    const m = 30, note = reso.lo + (reso.hi - reso.lo) * Math.min(1, Math.max(0, (x - m) / Math.max(1, rect.width - 2 * m)));
+    ctl.f0 = 440 * Math.pow(2, (Math.round(note) - 69) / 12); sendControl();
+  }
+  strikeAt(v);
+}
+$('modelCardLoad').onclick = async () => {
+  if (!link) return;
+  const v = $('modelCardSel').value;
+  if (v === '') return;
+  const i = parseInt(v, 10);
+  if (!(i >= 0) || !cardList.names[i] || !isResonator(cardList.names[i])) return;
+  try {
+    const slot = freeSlot();
+    if (slot < 0) { say('every slot is full — forget one on the worlds tab', true); return; }
+    await requestUntilFree(MVL.actionReq(MVL.ACT.cardToSlot, [i & 0xff, slot & 0xff]));
+    delete slotNodes[slot]; slotKind[slot] = 'resonator';
+    heldLost();
+    $('modelCardState').textContent = `loading ${cardLabel(cardList.names[i])}…`;
+    if (!await waitForSlots(s => !!s.names[slot], 8000, `load: slot ${slot} never filled`)) return;
+    await slotAction(MVL.ACT.slotLive, slot);
+    $('modelCardState').textContent = `playing from slot ${slot}`;
+    setTimeout(() => { refreshWorlds(); refreshSlots(); }, 250);
+  } catch (e) { say('load: ' + e.message, true); }
+};
 
 function renderTrailChips() {
   const box = $('trailChips'); box.innerHTML = '';
@@ -1755,7 +1932,8 @@ document.addEventListener('keydown', e => {
 /* ── drawing ────────────────────────────────────────────────────────── */
 const cs = $('space'), cx = cs.getContext('2d'), cn = $('sound'), cnx = cn.getContext('2d');
 const cp = $('plane'), cpx = cp.getContext('2d'), ci = $('inspect'), cix = ci.getContext('2d');
-const CANVASES = [cs, cn, cp, ci];
+const ma = $('maxis'), max = ma.getContext('2d'), mm = $('mmodes'), mmx = mm.getContext('2d');
+const CANVASES = [cs, cn, cp, ci, ma, mm];
 /* The CSS box of each canvas, measured when it changes rather than every frame.
  *
  * drawSpace and drawSound each read clientWidth and clientHeight and then call
@@ -2060,7 +2238,7 @@ function fit(c) {
    made along it, and where the voice is built now — a note on a keyboard,
    or a body in a row. The wavetable's map has no meaning for it, and
    drew a dot at the centre of nothing. */
-function drawResonateSpace(W, H) {
+function drawResonateSpace(W, H, cx) {   /* cx: the pane it draws on, the play tab's or the model tab's */
   const m = 30, y = H * 0.5, x0 = m, x1 = W - m;
   const r = reso;
   cx.font = '11px ui-monospace, monospace';
@@ -2109,7 +2287,7 @@ function drawResonateSpace(W, H) {
 function drawSpace() {
   const { w: W, h: H } = boxOf(cs);
   fit(cs);
-  if (tel && tel.n === 1) { drawResonateSpace(W, H); return; }
+  if (tel && tel.n === 1) { drawResonateSpace(W, H, cx); return; }
   const n = tel ? tel.n : (space ? space.n : 4), side = space ? space.side : 4, planes = MVL.planeCount(n);
   const arcRow = 34, m = 30;
   const S = Math.max(40, Math.min(W - 2 * m, H - 2 * m - arcRow));
@@ -3170,9 +3348,11 @@ let viewMode = 'play';
 function setView(m) {
   viewMode = m;
   $('tabPlay').classList.toggle('on', m === 'play');
+  $('tabModel').classList.toggle('on', m === 'model');
   $('tabBuild').classList.toggle('on', m === 'build');
   $('tabLib').classList.toggle('on', m === 'worlds');
   $('playMain').hidden = m !== 'play';
+  $('modelMain').hidden = m !== 'model';
   $('buildMain').hidden = m !== 'build';
   $('libMain').hidden = m !== 'worlds';
   /* The world bar is all play-side — which world, how it is shaded, what is
@@ -3186,6 +3366,9 @@ function setView(m) {
   /* Ask the module what it is holding when the tab opens, rather than polling
      a list that only changes when somebody changes it. */
   if (m === 'worlds') { refreshSlots(); refreshCard().then(renderLib); renderLib(); readTour(); }
+  /* the model tab asks the same two questions, and its chips are built
+     from the answers */
+  if (m === 'model') { renderModelChips(); refreshSlots().then(renderModelChips); refreshCard().then(renderModelChips); }
 }
 
 /* ── dragging a node, in the build view only ──────────────────────────────
@@ -3224,7 +3407,9 @@ for (const ev of ['pointerup', 'pointercancel']) cp.addEventListener(ev, () => {
   syncPlacement();
 });
 $('tabPlay').onclick = () => setView('play');
+$('tabModel').onclick = () => setView('model');
 $('tabBuild').onclick = () => setView('build');
+ma.addEventListener('pointerdown', e => { pressAxis(e); e.preventDefault(); });
 $('tabLib').onclick = () => setView('worlds');
 
 /* How far past the edge the hand is pushing.
@@ -3483,6 +3668,45 @@ function stereoWidth(t) {
   }
   return { geo, tim, onScreen };
 }
+/* a resonator's modes — the ones the voice was built from, on a log
+   frequency axis, height the level under the loudest (60 dB), brightness
+   the ring (T60, 20 ms dim to 4 s bright) — and its burst. Drawn on the
+   play tab's sound pane and on the model tab's own */
+function drawModes(g, x, top, w, bot) {
+  const r = reso, hh = Math.max(20, bot - top);
+  g.font = '11px ui-monospace, monospace';
+  g.fillStyle = '#6b819d'; g.fillText('modes', x, top - 8);
+  if (!r) { g.fillText('waiting for the module', x, top + 14); return; }
+  const fx = hz => x + w * Math.min(1, Math.max(0, Math.log2(Math.max(20, hz) / 20) / 10));
+  g.strokeStyle = '#141b23'; g.lineWidth = 1;
+  for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) { g.beginPath(); g.moveTo(fx(f), top); g.lineTo(fx(f), bot); g.stroke(); }
+  for (const f of [100, 1000, 10000]) g.fillText(f >= 1000 ? (f / 1000) + 'k' : String(f), fx(f) + 3, bot + 11);
+  const loud = Math.max(1e-9, ...r.modes.map(q => Math.abs(q.gain)));
+  for (const q of r.modes) {
+    if (!(q.hz > 0) || !(Math.abs(q.gain) > 0)) continue;
+    const db = Math.max(-60, 20 * Math.log10(Math.abs(q.gain) / loud));
+    const t60 = 6.91 / (q.zeta * 2 * Math.PI * q.hz);
+    const ring = Math.min(1, Math.max(0, Math.log(t60 / 0.02) / Math.log(200)));
+    const c = Math.round(90 + 150 * ring);
+    g.strokeStyle = `rgb(${c},${c + 10},${c + 20})`; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(fx(q.hz), bot); g.lineTo(fx(q.hz), bot - hh * (1 + db / 60)); g.stroke();
+  }
+  g.lineWidth = 1; g.fillStyle = '#6b819d';
+  const nlive = r.modes.filter(q => Math.abs(q.gain) > 0).length;
+  const t = `${nlive} modes · burst ${r.burst ? Math.round(1000 * r.burst / 48000) + ' ms' : 'none'}`;
+  g.fillText(t, x + w - g.measureText(t).width, top - 8);
+}
+/* the model tab's two canvases: the axis, which is also a pad, and the modes */
+function drawModel() {
+  { const { w: W, h: H } = boxOf(ma); fit(ma); drawResonateSpace(W, H, max); }
+  { const { w: W, h: H } = boxOf(mm); fit(mm); drawModes(mmx, 30, 26, W - 60, H - 26); }
+  setText('pitchNote', pitchNoteText());
+  /* what the module says about the voices and the lock, and which member
+     it plays, can change under a pot: the chips follow */
+  const r = reso;
+  const sig = r ? `${r.name}|${r.member}|${r.voices}|${r.lock}|${r.members && r.members.length}|${slots && slots.live}` : `-|${slots && slots.live}`;
+  if (sig !== modelSig) { modelSig = sig; renderModelChips(); }
+}
 function drawSound() {
   const { w: W, h: H } = boxOf(cn);
   fit(cn);
@@ -3497,30 +3721,9 @@ function drawSound() {
   const specTop = specCap + 8, base = H - m - 12 - panelH, h = Math.max(20, base - specTop);
   cnx.font = font;
   if (tel && tel.n === 1) {
-    /* a resonator: its modes, not a frame — the ones the voice was built
-       from, on a log frequency axis, height the level under the loudest
-       (60 dB), brightness the ring (T60, 20 ms dim to 4 s bright) — and
-       its burst. The panel mirror keeps its place below. */
-    const r = reso, top = 26, bot = base - 4, hh = Math.max(20, bot - top);
-    cnx.fillStyle = '#6b819d'; cnx.fillText('modes', m, 18);
-    if (!r) { cnx.fillText('waiting for the module', m, top + 14); if (panelH) drawPanel(m, H - m - panelH + 6, W - 2 * m, panelH - 6); return; }
-    const fx = hz => m + (W - 2 * m) * Math.min(1, Math.max(0, Math.log2(Math.max(20, hz) / 20) / 10));
-    cnx.strokeStyle = '#141b23';
-    for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) { cnx.beginPath(); cnx.moveTo(fx(f), top); cnx.lineTo(fx(f), bot); cnx.stroke(); }
-    for (const f of [100, 1000, 10000]) cnx.fillText(f >= 1000 ? (f / 1000) + 'k' : String(f), fx(f) + 3, bot + 11);
-    const loud = Math.max(1e-9, ...r.modes.map(q => Math.abs(q.gain)));
-    for (const q of r.modes) {
-      if (!(q.hz > 0) || !(Math.abs(q.gain) > 0)) continue;
-      const db = Math.max(-60, 20 * Math.log10(Math.abs(q.gain) / loud));
-      const t60 = 6.91 / (q.zeta * 2 * Math.PI * q.hz);
-      const ring = Math.min(1, Math.max(0, Math.log(t60 / 0.02) / Math.log(200)));
-      const g = Math.round(90 + 150 * ring);
-      cnx.strokeStyle = `rgb(${g},${g + 10},${g + 20})`; cnx.lineWidth = 2;
-      cnx.beginPath(); cnx.moveTo(fx(q.hz), bot); cnx.lineTo(fx(q.hz), bot - hh * (1 + db / 60)); cnx.stroke();
-    }
-    cnx.lineWidth = 1; cnx.fillStyle = '#6b819d';
-    const nlive = r.modes.filter(q => Math.abs(q.gain) > 0).length;
-    cnx.fillText(`${nlive} modes · burst ${r.burst ? Math.round(1000 * r.burst / 48000) + ' ms' : 'none'}`, W - m - 150, 18);
+    /* a resonator: its modes, not a frame. The panel mirror keeps its
+       place below. */
+    drawModes(cnx, m, 26, W - 2 * m, base - 4);
     if (panelH) drawPanel(m, H - m - panelH + 6, W - 2 * m, panelH - 6);
     return;
   }
@@ -3579,7 +3782,6 @@ const fmtVec = v => Array.from(v).map(x => x.toFixed(2)).join(' ');
  * page are comes from the descriptor. Neither alone is enough — the descriptor
  * describes all six pages and cannot say which one you are holding, and the
  * page index alone is a number with no meaning. */
-const RESO_KNOBS = { 0: { 2: 'Voicing / body', 3: 'Velocity', 4: 'Decay', 5: 'Coil' }, 2: { 5: 'Exciter (J1 in)' }, 6: { 2: 'Voices 1 · 2 · 4' } };
 function drawPanel(x0, y0, W, H) {
   if (!panel || !panel.pots) return;
   const pg = tel && tel.page < panel.pages ? tel.page : 0;
@@ -3701,11 +3903,9 @@ function drawPanel(x0, y0, W, H) {
        previous knob's label than its own. */
     cnx.fillText('P' + (i + 1), kx - r, cy0 + 8);
     cnx.fillStyle = k ? '#9aa7b3' : '#607a97'; cnx.font = '10px ui-monospace, monospace';
-    /* under a resonate world the Play page's four position pots are the
-       spin and the velocity (docs/io-map.md), and the World page's third
-       is the polyphony: the descriptor names them for the wavetable, so
-       the mirror renames them here rather than lie */
-    const label = (tel && tel.n === 1 && RESO_KNOBS[pg] && RESO_KNOBS[pg][i]) ? RESO_KNOBS[pg][i] : (k ? k.name : '—');
+    /* a resonate world's controls are the Model page's own pots, named
+       in the descriptor like any other (docs/io-map.md) */
+    const label = k ? k.name : '—';
     let txt = label; const avail = cw - (2 * r + 10);
     while (txt.length > 3 && cnx.measureText(txt).width > avail) txt = txt.slice(0, -1);
     cnx.fillText(txt + (txt !== label ? '…' : ''), cx0 + 2 * r + 6, cy0 + r + 5);
@@ -3726,7 +3926,7 @@ function drawStatus() {
   setText('sF0', tel.f0.toFixed(1) + ' Hz ' + MVL.noteName(tel.f0));
   setText('sKcut', tel.kcut + '/' + tel.k);
   if (tel.mute !== lastMute) { lastMute = tel.mute; renderMuteChips(); }
-  if (tel.n !== lastStrikeN) { lastStrikeN = tel.n; renderStrikeChips(); }
+  if (tel.n !== lastStrikeN) { lastStrikeN = tel.n; renderModelChips(); setText('motionNote', tel.n === 1 ? 'a resonator is playing — its hands are on the model tab' : ''); }
   /* What the Morph knob is actually doing. A knob whose effect is invisible is
      a knob nobody trusts, and this one does nothing at all unless a target is
      set — which is worth saying rather than leaving to be discovered. */
@@ -3775,6 +3975,7 @@ let lastDrawError = '';
 function frame() {
   try {
     if (viewMode === 'build') { drawPlane(); drawInspect(); }
+    else if (viewMode === 'model') drawModel();
     else { drawSpace(); drawSound(); }
     drawStatus();
   }
