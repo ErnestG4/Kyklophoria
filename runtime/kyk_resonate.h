@@ -177,7 +177,10 @@ struct ResonatorBank
        hundreds of modes a note. The strike bank's ramp is a table of
        weights for the run; a run is cut where the ramp ends so the fold
        lands on the same sample it always did. */
-    void Process(float* out, int frames)
+    /* drive: an audio signal into every mode, g x[k] a sample — Rings'
+       external exciter: the bank as a resonant filter bank for whatever
+       is patched into it. Null for a struck bank. */
+    void Process(float* out, int frames, const float* drive = nullptr, float g = 0.f)
     {
         while(frames > 0)
         {
@@ -188,7 +191,23 @@ struct ResonatorBank
                 if(left > 0 && left < m) m = left;
             }
             for(int k = 0; k < m; k++) out[k] = 0.f;
-            for(int i = 0; i < n; i++)
+            if(drive)
+            {
+                for(int i = 0; i < n; i++)
+                {
+                    const float a = c1[i], b = c2[i];
+                    float u1 = y1[i], u2 = y2[i];
+                    for(int k = 0; k < m; k++)
+                    {
+                        const float y = a * u1 + b * u2 + g * drive[k];
+                        u2 = u1; u1 = y;
+                        out[k] += y;
+                    }
+                    y1[i] = u1; y2[i] = u2;
+                }
+                drive += m;
+            }
+            else for(int i = 0; i < n; i++)
             {
                 const float a = c1[i], b = c2[i];
                 float u1 = y1[i], u2 = y2[i];
@@ -551,9 +570,9 @@ struct ResonatorVoice
         burst.Strike(bursts, s, burst_rate, lp, burst_head);
         wash.Strike(s, lead + ramp);
     }
-    void Process(float* out, int frames)
+    void Process(float* out, int frames, const float* drive = nullptr, float g = 0.f)
     {
-        bank.Process(out, frames);
+        bank.Process(out, frames, drive, g);
         pickup.Process(out, frames);
         burst.Process(out, frames);
         wash.Process(out, frames);
