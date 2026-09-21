@@ -621,6 +621,39 @@ ignores and the runtime will read. What the world then needs at runtime is
 not 48 harmonics a note but a handful of metal modes and five numbers, and
 velocity comes out of the physics instead of out of a layer.
 
+## More bodies, and the engine
+
+*Strings, again.* Violin pizzicato, 49 notes (loss 0.93, decay ×0.89), and
+viola, 31, from the Philharmonia set: plucked strings are where the
+modes-plus-burst model does its best work, and Combust said so of the
+guitar first.
+
+*Nine percussion bodies as one world.* Cowbell, tom, agogo and djembe fit
+well; the Thai gong, the tam-tam and the suspended cymbal sit at loss ~3
+with decays at ×0.3–0.6, because a tam-tam has hundreds of modes and a
+bank of 48 with a burst is a coarse one. Said here so nobody reads more
+into `perc.kykm` than is there. The world's axis is an index, and the
+runtime interpolates its points slot by slot, so walking the axis morphs
+gong to woodblock through everything between (`out/wav/perc-morph.wav`) —
+the brief's "spin them" in its first form, and the honest one: a morph
+between bodies is a morph between their modes, and it sounds like that.
+
+*The spin, otherwise.* For an electric world the axes to spin are the
+stage's own — voicing (the screw, in widths off the fitted centre), decay
+(every mode's T60 × k), the coil — and the runtime has them as `Tune` on a
+loaded point; `out/wav/ep-vel-C3-voicing-sweep.wav` walks the pole through
+centre (h2 peaks there, the octave-up) and out the other side.
+
+*The engine.* On Kyklophoria's `modal` branch the resonate world is in the
+engine: a kind, a voice after the oscillator built in `SetWorld` and only
+there, a strike that retunes a ringing note with its state and adds. The
+check says the engine path is the standalone voice bit for bit, that Saw's
+frame is unchanged by the path's existence, that arriving equals starting,
+and that a strike at a new pitch is the new note; the twenty-one wavetable
+goldens are byte-identical and the Wurlitzer through `kykdesk` is the
+twenty-second. The bench's list is the hardware trigger, three pots on
+the spin, velocity, SDRAM and the page.
+
 ## Where the roadmap ended, 19-20 September
 
 Every step of `docs/roadmap.md` has been taken to the line where it needs
