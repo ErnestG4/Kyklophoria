@@ -16,7 +16,10 @@ noise through eight second-order band-passes under those envelopes, ~64
 instructions a sample, scaled by the strike. Written into the record as
 `noise L0 T0 L1 T1 ...`; bands the residual does not have (level under the
 burst's floor or a T60 under 50 ms) are written as zero. Run after
-bursts.py.
+bursts.py, on acoustic bodies: an electric world has no body, its deficit
+is fit error, and a wash on the Wurlitzer measured worse (2.4 -> 3.0 dB).
+Acoustic sets measured: guitar 4.5 -> 3.4 dB of sustain band error, viola
+6.7 -> 5.9, mandolin 3.2 -> 2.8, banjo and violin slightly.
 """
 import argparse
 import math

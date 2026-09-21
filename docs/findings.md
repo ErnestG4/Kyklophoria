@@ -652,7 +652,12 @@ as itself, and the first version put 13 dB of noise on a cowbell that had
 none. Sustain band error, 0.3–1.3 s: gong 10.5 → 4.2 dB, cymbal 21.6 →
 5.7; the cowbell, agogo and djembe within half a dB of where they were
 (their washes are small because their modes fit); the tam-tam unmoved,
-its errors being modes with too much, which a wash cannot subtract.
+its errors being modes with too much, which a wash cannot subtract. On
+the acoustic pitched sets, where the residue was the body and the
+sympathetic strings all along: guitar 4.5 → 3.4 dB, viola 6.7 → 5.9,
+mandolin 3.2 → 2.8, banjo and violin slightly; on the Wurlitzer 2.4 →
+3.0, because an electric instrument has no body and its deficit is fit
+error, so the electric worlds carry no wash.
 
 *The spin, otherwise.* For an electric world the axes to spin are the
 stage's own — voicing (the screw, in widths off the fitted centre), decay
