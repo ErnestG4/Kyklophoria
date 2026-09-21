@@ -200,9 +200,11 @@ linear in swing.
 And the newest one. `export.intune` now pulls each point's modes onto its
 nominal note — MEASURED by running the export: Wurlitzer 7 of 11 points,
 median 3 cents, max 9.3; piano 31 of 34, median 13.4 cents, max 109.9, one
-refused at +162. The burst is not pulled; it plays at the recording's
-pitch. On the piano's worst point the burst's partials sit 110 cents from
-the modes they are supposed to hand over to, for 160–390 ms. REASONED: the
+refused at +162; guitar 36 of 38, median 15.5, max 105.8, one refused at
++135; violin 24 of 25, median 29.1 cents, max 76.2. The burst is
+not pulled; it plays at the recording's pitch. On the piano's worst point
+the burst's partials sit 110 cents from the modes they are supposed to hand
+over to, for 160–390 ms; on the violin's median note, 29 cents for 60 ms. REASONED: the
 same factor k that scales the modes should resample the burst at export,
 or ride in `burst_rate`.
 
@@ -406,7 +408,8 @@ for the index world where a morph between bodies is the point.
    Wurlitzer's at one cent; 5.5× of the field unused). 0.18 cent, a
    format bump, no more bytes.
 5. **`intune` pulls the burst too** (MEASURED: up to 110 cents on the
-   piano, 9 on the Wurlitzer). Resample by the same k at export.
+   piano, a median 29 on the violin, 9 on the Wurlitzer). Resample by the
+   same k at export.
 6. **Carry u across a pickup retune, not the flux's distance from rest**
    (MEASURED: −23 dB peaks per deadband step, −28 dB RMS under a one-width
    LFO). One float in `Pickup`, one evaluation in the keep branch.
@@ -440,3 +443,22 @@ the table — because they are the three places where one stage assumes the
 next will reproduce it exactly (a pair that cancels, a resynthesis to the
 sample, a flux under a pole that has moved), and exactness is the one
 thing a byte, a slot and a pot never deliver.
+
+## Taken (21 September, the same night)
+
+Of the fifteen: **2** (a note world plays the nearest point transposed;
+`align` pads, it no longer aligns), **3** (the burst is x·fade and the
+strike bank comes in under 1 − fade over the burst's own fade, the wash
+with it), **4** (fifths of a cent), **5** (`intune` resamples the burst by
+the same k — the paragraph above that says it does not was written before
+this), **6** (the pickup carries u; and then, from a sweep, slews its
+field and gain and crosses coils only when the point changes), **7** as an
+export rule (`monotonic()`: swings assigned to takes in the takes' order),
+**8** (a body row pads with the neighbour's frequency at zero gain), **11**
+as a convention (`headroom()`: the loudest note peaks at 4 through the
+model; a pickup world scaled by K), **12** (the wash rises over the burst's
+window), **13** (the onset trimmed with the phases carried), **14** (level
+255 is silence). **1** is moot for note worlds and done for index worlds
+(absolute gains before the lerp). Left for the refit, on the roadmap: **9**
+(the cluster penalty), **10** (one coil per set), and 7's prior in the fit.
+**15** stands as the hunch it is.
