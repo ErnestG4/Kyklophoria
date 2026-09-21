@@ -1352,6 +1352,21 @@ function renderStrikeChips() {
     };
     box.appendChild(b);
   }
+  /* polyphony, the way Rings does it: 1, 2 or 4 voices round-robin */
+  const psep = document.createElement('span');
+  psep.textContent = ' · voices'; psep.style.color = 'var(--dim)'; psep.style.padding = '0 4px';
+  box.appendChild(psep);
+  for (const n of [1, 2, 4]) {
+    const b = document.createElement('button');
+    b.className = 'chip' + (poly === n ? ' on' : ''); b.textContent = String(n); b.title = `${n} voice${n > 1 ? 's' : ''}: a strike takes the next, the ones before ring on`;
+    b.disabled = !link;
+    b.onclick = async () => {
+      if (!link) return;
+      try { await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.polyphony, [n]), { urgent: true }); poly = n; renderStrikeChips(); }
+      catch (e) { say('voices: ' + e.message, true); }
+    };
+    box.appendChild(b);
+  }
   /* and the spin: voicing, decay, coil — 128 is the world as fitted. The
      page keeps the values (telemetry does not carry them) and sends each
      move; the module applies it on its next block with the ring kept. A
@@ -1377,6 +1392,7 @@ function renderStrikeChips() {
   }
 }
 const tune = [128, 128, 128];    /* the spin as last sent; the fitted world is 128 */
+let poly = 1;                    /* voices, as last sent */
 
 function renderTrailChips() {
   const box = $('trailChips'); box.innerHTML = '';
