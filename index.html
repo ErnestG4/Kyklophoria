@@ -224,6 +224,7 @@
   <div class="wrow">
     <span class="cap">MOTION</span>
     <span id="muteChips"></span>
+    <span id="strikeChips"></span>
   </div>
 </nav>
 <main id="playMain">
@@ -1322,6 +1323,29 @@ function renderMuteChips() {
   sep.textContent = '·'; sep.style.color = 'var(--dim)'; sep.style.padding = '0 2px';
   box.appendChild(sep);
   add('kepler', 0x8000, 'the falling body');
+}
+
+/* A resonator is struck, not scanned: three velocities, shown only while a
+   1-D user world — which is what a resonator is on the wire — is playing.
+   The module has no trigger of its own yet, so this is the hand on it. */
+let lastStrikeN = -1;
+function renderStrikeChips() {
+  const box = $('strikeChips'); box.innerHTML = '';
+  if (!tel || tel.n !== 1) return;
+  const sep = document.createElement('span');
+  sep.textContent = '· strike'; sep.style.color = 'var(--dim)'; sep.style.padding = '0 4px';
+  box.appendChild(sep);
+  for (const [label, v] of [['soft', 77], ['mid', 153], ['hard', 230]]) {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.textContent = label; b.title = `strike at ${(v / 255).toFixed(2)}`;
+    b.disabled = !link;
+    b.onclick = async () => {
+      if (!link) return;
+      try { await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.strike, [v]), { urgent: true }); }
+      catch (e) { say('strike: ' + e.message, true); }
+    };
+    box.appendChild(b);
+  }
 }
 
 function renderTrailChips() {
@@ -3514,6 +3538,7 @@ function drawStatus() {
   setText('sF0', tel.f0.toFixed(1) + ' Hz ' + MVL.noteName(tel.f0));
   setText('sKcut', tel.kcut + '/' + tel.k);
   if (tel.mute !== lastMute) { lastMute = tel.mute; renderMuteChips(); }
+  if (tel.n !== lastStrikeN) { lastStrikeN = tel.n; renderStrikeChips(); }
   /* What the Morph knob is actually doing. A knob whose effect is invisible is
      a knob nobody trusts, and this one does nothing at all unless a target is
      set — which is worth saying rather than leaving to be discovered. */
