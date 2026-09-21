@@ -151,9 +151,12 @@ function tel(over = {}) {
     kepler: { running: false, plane: 0, x: 0, y: 0, rush: 0 },
     couple: 0, lock: 0, sharp: 0, bodies: 1, kepXY: [], page: 0,
     morph: 0, morphWorld: 0xFF, mute: 0, aimed: false, world: 0xFF, knobs: null,
-    pots: [0.1, 0.3, 0.5, 0.7, 0.9, 1.0], bytes: 512,
-  }, over);
+    pots: [0.1, 0.3, 0.5, 0.7, 0.9, 1.0], bytes: 512, kind: 1, resonate: false,
+  }, over, over.kind === 11 ? { resonate: true } : {});
 }
+/* a resonate world as telemetry reports it: four axes (body, velocity,
+   decay, coil) like any world's, and the kind that says what it is */
+const RES = { n: 4, kind: 11, world: 0xFF, mags: null, frame: null, flags: 4 };
 const CASES = [
   ['no telemetry at all', null],
   ['mono, centred', tel()],
@@ -182,21 +185,22 @@ const CASES = [
   ['every motion muted', tel({ mute: 0xFFFF })],
   /* a resonate world — a .kykm loaded from the card — is one-dimensional and
      has no rotation plane at all; the page had never drawn N=1 before it */
-  ['a resonate world live: N=1, no planes', tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4 })],
+  ['a resonate world live: four axes, its kind said', tel(RES)],
+  ['a resonator on firmware that says no kind: a plain 4-axis user world', tel({ n: 4, world: 0xFF, mags: null, frame: null, flags: 4, kind: null })],
   /* the same with the module's readout in hand: an axis of points and the
      voice between two of them, modes on a log axis (one at zero gain, one
      at zero frequency, which the drawing must skip rather than take the
      log of), a burst */
-  ['a resonate world with its readout', tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4 }), {
+  ['a resonate world with its readout', tel(RES), {
     kind: 0, lo: 36, hi: 96, param: 61.5, P: 11, burst: 3360,
     points: [36, 43, 48, 55, 60, 67, 72, 79, 84, 91, 96],
     modes: [{ hz: 261.6, zeta: 0.001, gain: 0.5 }, { hz: 523.2, zeta: 0.002, gain: 0.2 }, { hz: 2093, zeta: 0.03, gain: 0.001 },
             { hz: 0, zeta: 1, gain: 0 }, { hz: 8000, zeta: 0.5, gain: 0.00001 }] }],
-  ['a family with its readout', tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4 }), {
+  ['a family with its readout', tel(RES), {
     kind: 0, lo: 55, hi: 93, param: 62.0, P: 25, burst: 3360, points: [55, 56, 58, 61, 62, 64, 67, 69, 70, 72, 74, 76, 79, 81, 82, 84, 86, 88, 91, 93],
     modes: [{ hz: 293.7, zeta: 0.001, gain: 0.5 }, { hz: 587.3, zeta: 0.002, gain: 0.2 }],
     members: ['violin', 'viola', 'bass', 'guitar', 'banjo', 'mandolin'], member: 1, name: 'viola' }],
-  ['an index world with its readout', tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4 }), {
+  ['an index world with its readout', tel(RES), {
     kind: 1, lo: 0, hi: 18, param: 7.2, P: 19, burst: 0, points: Array.from({ length: 19 }, (_, i) => i),
     modes: [{ hz: 488, zeta: 0.0009, gain: 0.24 }, { hz: 975, zeta: 0.001, gain: 0.1 }] }],
 ];
@@ -1195,7 +1199,7 @@ const parsed = P.parsePanel(DESC);
                 members: ['violin', 'viola', 'bass'], member: 1, name: 'viola', voices: 2, lock: false };
   P.setSlots({ count: 32, live: 3, target: 0xFF, names: Array.from({ length: 32 }, (_, i) => (i === 3 ? 'strings' : i === 7 ? 'wurli' : null)) });
   P.setCardList({ count: 3, names: ['a.kykw', 'pianos.kykm', 'perc.kykm'] });
-  P.setTel(tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4, f0: 130.8 }));
+  P.setTel(tel({ ...RES, f0: 130.8 }));
   P.setReso(fam);
   P.setView('model');
   P.renderModelChips();
@@ -1230,7 +1234,7 @@ const parsed = P.parsePanel(DESC);
   T(els.bodyChips.children.every(c => c.disabled), 'on the module the members are its pot\'s');
   T(els.ringChips.children.filter(c => c.tagName === 'input').every(c => c.disabled), 'and so are decay and coil');
   T(els.strikeChips.children.filter(c => c.tagName === 'button').every(c => !c.disabled), 'while the pads still strike');
-  T(/Model page/.test(els.modelHint.textContent), 'and the hint names the Model page');
+  T(/Play P3/.test(els.modelHint.textContent), 'and the hint names the Play page pots');
   /* the axis is a pad: a press strikes, and over the bridge sets the pitch first */
   P.setPanel(null); sent.length = 0;
   P.pressAxis({ clientX: 150, clientY: 20 });

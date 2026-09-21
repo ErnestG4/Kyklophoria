@@ -335,31 +335,44 @@ what it is). Concretely:
     and is then skipped (`ResonatorVoice::Active`). `resonate_engine_check`
     measures both as a sample step against the ring's own, and fails with
     the cut put back. The note sweep plays four voices past the count.
-  - *The Model page* (`shell/alchemy/main.cpp`, page 7 of the SDK's
-    eight): a resonate world's own six pots — Body, Velocity, Decay,
-    Coil, Voices, Exciter — read by the callback instead of the Play
-    page's position pots, the World page's third and the Stereo page's
-    sixth, so the Play page is the wavetable's again and the panel mirror
-    stops renaming its pots. J5–J8 add to the first four. B2 taps a
-    strike at the Velocity pot, B3 flips the lock, both on the 1 ms poll
-    (Settings reads the pair held together itself; the lock flips on the
-    release of a short press so the first button down on the way into
-    Settings does not flip it). `docs/io-map.md`.
+  - *The same interface as a wavetable.* Combust, the same afternoon: "I
+    really don't understand why we can't make it the same interface as
+    wavetable with decay etc as axes." A Model page with six pots of its
+    own had been built that morning (from "make them planes", read as
+    panels; the planes are the rotation planes). Taken out. A resonate
+    world is now a **four-axis world** — `World::N()` is 4: body,
+    velocity, decay, coil — under the Play page's P3–P6 and J5–J8 like
+    any other, and the whole control path is the same: the slew, Kepler,
+    the rotations and the couple move those axes and the engine reads the
+    spin from where they land (`TuneFromControl` on both shells), so an
+    orbit through the decay–coil plane is a motion of the instrument and
+    an orbit through the velocity plane is a pattern of hits (J4 strikes
+    at axis 1 where the engine has it). Found on the way: with `N() == 1`
+    the stereo engine had only ever handed the engine axis 0, so on the
+    module decay and coil had never reached it — "voice/coil don't seem
+    to do anything" on the first evening was this, not only the form-0
+    worlds. The stereo spread keeps the mono branch for a resonator (its
+    voices are L's). Telemetry ends with the world's kind (11 a
+    resonator), so the page no longer reads the axis count as the kind.
+    The World page's third pot is the voice count and the Stereo page's
+    sixth the exciter, as before; B2 taps a strike, B3 flips the lock.
   - *The model tab* (`web/index.html`): a fourth tab, the resonator's own
-    view, so the play tab stays the wavetable's. The instruments the
-    module holds and the card's resonators along the top; the axis (a pad:
-    a press strikes at the velocity the height says, and over the bridge
-    first puts the pitch where the press is) and the modes on the left;
-    the planes on the right, one a row — PITCH (locked / free, and the
-    pitch against what is built), STRIKE (soft, mid, hard, and a pad at a
-    velocity slider), BODY (a family's members, a row's position, or the
-    voicing), RING (decay, coil), VOICES (1, 2, 4), EXCITER (a note, since
-    it is a pot). On the module the pots own body, decay and coil and the
-    page says so; the chips follow the readout (0x6F now ends with the
-    voice count and the lock) when it changes, so a pot on the module is
-    seen on the page and the page's own send is not undone by a readout
-    from before it. `pagecheck`: 22 checks of the tab's planes on a
-    family, a note world, a body row, the module and the bridge.
+    view — the play tab draws a resonator as the four-axis world it is,
+    with its axes named. The instruments the module holds and the card's
+    resonators along the top; the note axis (a pad: a press strikes at
+    the velocity the height says, and over the bridge first puts the
+    pitch where the press is) and the modes on the left; the planes on
+    the right, one a row — PITCH (locked / free, and the pitch against
+    what is built), STRIKE (soft, mid, hard, and a pad at a velocity
+    slider), BODY (a family's members, a row's position, or the voicing:
+    axis 0), RING (decay and coil: axes 2 and 3), VOICES (1, 2, 4),
+    EXCITER (a note, since it is a pot). The axis sliders are the axes —
+    on the module they show where the pots have them and over the bridge
+    they set them (0x6E). The chips follow the readout (0x6F ends with
+    the voice count and the lock) when it changes, so a pot on the module
+    is seen on the page and the page's own send is not undone by a
+    readout from before it. `pagecheck`: 22 checks of the tab's planes on
+    a family, a note world, a body row, the module and the bridge.
 
 Still the bench's: the lock, the Model page, the model tab and the reuse
 fix are built, host-tested and unplayed; so is everything from the night

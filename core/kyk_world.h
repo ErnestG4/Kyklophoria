@@ -292,7 +292,7 @@ public:
             case Kind::Modal:    return modal_.n;
             case Kind::Bend:     return bend_.n;
             case Kind::Analytic: return basis_.n;
-            case Kind::Resonate: return 1;          /* one axis: the note */
+            case Kind::Resonate: return 4;          /* body, velocity, decay, coil: axes like any world's, so the pots, the CVs and every motion are the same hands (docs/modal-mode.md) */
             default:             return 0;
         }
     }

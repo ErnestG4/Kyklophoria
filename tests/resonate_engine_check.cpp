@@ -54,7 +54,7 @@ int main()
     World rw; rw.UseResonate(blob.data(), (uint32_t)blob.size());
     auto wblob = slurp("tests/data/wurli.kykm");
     World wurli; wurli.UseResonate(wblob.data(), (uint32_t)wblob.size());
-    CHECK(rw.Ready() && rw.IsResonate() && rw.N() == 1, "the world did not attach as Resonate");
+    CHECK(rw.Ready() && rw.IsResonate() && rw.N() == 4, "the world did not attach as Resonate with its four axes");
 
     /* 1. engine == voice */
     {

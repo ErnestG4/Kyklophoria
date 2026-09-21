@@ -142,6 +142,11 @@ int main(int argc, char** argv)
         if(!world.Ready()) { fprintf(stderr, "%s is not a resonate world\n", resonate_path.c_str()); return 1; }
     }
     eng.Init(&world, (float)sr);
+    /* a resonate world's axes — body, velocity, decay, coil — are its
+       spin here as on the module, so a script's `pos` and the bridge's
+       control frame are the same hands; ACTION 18 still sets the spin
+       directly for a block, which is what the wire check needs of it */
+    eng.TuneFromControl(true);
     eng.SetGain(gain);
     eng.SetRenderDiv(render_div);
     eng.SetRolloff(rolloff);

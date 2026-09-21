@@ -171,7 +171,10 @@ public:
         if(rot.IsIdentity()) for(int a = 0; a < N; a++) pc_[a] = kc_[a];
         else rot.Apply(kc_, pc_, pivot);
 
-        const bool stereo = spread != 0.f && N >= 2;
+        /* a resonate world's voices are L's and R copies, whatever the
+           spread: a second set of voices would be twice the cost for a
+           stereo image the pickup does not have */
+        const bool stereo = spread != 0.f && N >= 2 && !world_->IsResonate();
         if(!stereo)
         {
             L.sharp = sharp;

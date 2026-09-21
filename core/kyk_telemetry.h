@@ -13,6 +13,9 @@
  *             f32 kep_rush · f32 couple · f32 lock · u8 sharp
  *             u8 kep_bodies · f32 x,y for bodies 1..kep_bodies-1
  *             u8 page — which pager page the panel is showing
+ *             ... u8 kind — the live world's World::Kind (11 a resonator), last,
+ *                        so a page can tell a resonate world from a wavetable
+ *                        without guessing from its axis count
  *             u8 morph · u8 morph_world — how far towards another world, and
  *                        which one (0xFF: none, so the knob does nothing)
  *             u16 mute — which motions are switched off (see kActMotionMute)
@@ -218,6 +221,10 @@ inline int EncodeTelemetry(const StereoEngine& e, uint8_t flags, uint8_t* out, i
         w.U8(tour_len);
         w.U8(tour_at);
         w.U8(tour_blend);
+        /* what kind of world: a resonate world has four axes like a
+           wavetable's and is played by a strike rather than scanned, and a
+           page that read the axis count as the kind drew the wrong panes */
+        w.U8((uint8_t)s->Which());
     }
     return w.ok ? w.n : 0;
 }
@@ -229,7 +236,7 @@ inline int TelemetrySize(int n, int k, int p, uint8_t flags)
     int       sz     = 4 + 4 + 6 + 2 + 4 + 4 * (4 * n + planes + p);
     if(flags & kTelSpectrum) sz += k;
     if(flags & kTelFrame) sz += kTelFramePts;
-    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1 + 3;
+    if(flags & kTelMotion) sz += 2 + 20 + 1 + 1 + 8 * (kKeplerBodies - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1 + 3 + 1;
     return sz;
 }
 

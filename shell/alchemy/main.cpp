@@ -9,7 +9,8 @@
  *   Page Kepler  P1 gravity (bottom = off) P2 eccentricity P3 orbit plane
  *                P4 softening P5 damping P6 radius
  *   Page Stereo  P1 spread  P2 stereo plane  P3 morph sharpness  P4 render div  P5 level  P6 CV out A depth
- *   Page Model   P1 body  P2 velocity  P3 decay  P4 coil  P5 voices  P6 exciter — a resonate world's
+ *   A resonate world: P3–P6 and J5–J8 are body · velocity · decay · coil (its axes), World P3 the
+ *   voice count, Stereo P6 the exciter, J4 the trigger
  *   B1 taps through the pages · B2+B3 held: Settings (SDK) · under a resonate
  *   world B2 taps a strike and B3 flips the pitch lock
  *
@@ -59,7 +60,7 @@ using namespace kyk;
 
 static AlchemyLab  hw;
 static ControlLoop loop(hw);
-static Pager       pager(hw.buttons[kButtonB1], 8, kNumPots);
+static Pager       pager(hw.buttons[kButtonB1], 7, kNumPots);
 static Presets     presets(hw.seed.qspi);
 static Settings    settings(hw, &pager);
 
@@ -71,7 +72,6 @@ static constexpr LedPanel::Rgb kOrbit  = {0xFD, 0xE0, 0x68};
 static constexpr LedPanel::Rgb kCouple = {0xF0, 0xA0, 0xD8};
 static constexpr LedPanel::Rgb kKepler = {0x9A, 0xE6, 0xB4};
 static constexpr LedPanel::Rgb kWorld  = {0xF7, 0xC0, 0x8A};
-static constexpr LedPanel::Rgb kModel  = {0x5E, 0xEA, 0xD4};
 
 static VirtualKnob k_coarse = VirtualKnob(0, "Coarse").Linear(-3.f, 3.f).Unit("oct").Ident("pitch.coarse").Ring(Level(kPlay));
 static VirtualKnob k_fine   = VirtualKnob(1, "Fine").Linear(-1.f, 1.f).Unit("st").Ident("pitch.fine").Ring(Level(kPlay));
@@ -176,33 +176,17 @@ static VirtualKnob k_tglide = VirtualKnob(3, "Tour glide").Ident("tour.glide").R
 static VirtualKnob k_trate  = VirtualKnob(4, "Tour free-run").Unit("s").Ident("tour.rate").Ring(Level(kWorld));
 static Page page_world  = Page(6).Name("World").Color("#f7c08a").Knobs(k_pos4, k_pos5, k_tdiv, k_tglide, k_trate);
 
-/* ── Model page ───────────────────────────────────────────────────────
- * A resonate world's own six, so the Play page stays the wavetable's.
- * Combust, after an evening with the spin on the Play page's position
- * pots: "wavetable already works very well... I'm scared of messing up how
- * well the wavetable feels... we need to find the relevant controls on our
- * tool and make them planes." These are the planes, after Rings' panel —
- * structure, brightness, damping, position, a voice count — in this
- * instrument's words. Each pot is the centre and J5..J8 add to the first
- * four (±1 over ±5 V), so a CV is an offset from where the hand left it.
- *
- * Body: the instrument of a family, the position along a row of bodies, or
- * the pickup's voicing on a single note world. Velocity: what J4's trigger
- * and B2's tap strike with. Decay: every T60, a quarter to four times. Coil:
- * the pickup resonance, half to double. Voices: 1, 2 or 4, round-robin.
- * Exciter: how much of J1's audio is driven into the bank — the world as a
- * resonant filter bank for anything patched in.
- *
- * B2 taps a strike at the Velocity pot; B3 turns the pitch lock off and on.
- * Both live on the control thread's 1 ms poll. */
-static const char* kVoiceNames[3] = {"1", "2", "4"};
-static VirtualKnob k_mbody   = VirtualKnob(0, "Body").Ident("model.body").Ring(Level(kModel));
-static VirtualKnob k_mvel    = VirtualKnob(1, "Velocity").Ident("model.vel").Ring(Level(kModel));
-static VirtualKnob k_mdecay  = VirtualKnob(2, "Decay").Ident("model.decay").Ring(Level(kModel));
-static VirtualKnob k_mcoil   = VirtualKnob(3, "Coil").Ident("model.coil").Ring(Level(kModel));
-static VirtualKnob k_mvoices = VirtualKnob(4, "Voices").Selector(3).Labels(kVoiceNames, 3).Ident("model.voices").Ring(Level(kModel));
-static VirtualKnob k_mexcite = VirtualKnob(5, "Exciter").Ident("model.excite").Ring(Level(kModel));
-static Page page_model  = Page(7).Name("Model").Color("#5eead4").Knobs(k_mbody, k_mvel, k_mdecay, k_mcoil, k_mvoices, k_mexcite);
+/* A resonate world has no page of its own, on purpose. Combust: "I really
+ * don't understand why we can't make it the same interface as wavetable
+ * with decay etc as axes." So it is: a resonate world is a four-axis
+ * world — body, velocity, decay, coil — under the Play page's position
+ * pots and J5..J8 like any other, and the Rotate, Orbit, Kepler and Couple
+ * pages move those axes as they move a wavetable's. (A Model page with six
+ * pots of its own was built and taken out again the same day: it was a
+ * second paradigm, and "make them planes" meant the rotation planes.) What
+ * a wavetable has no use for lends its pot: the World page's tour division
+ * is the voice count, the Stereo page's CV out A depth the exciter, since
+ * J4 is the trigger. B2 taps a strike at axis 1, B3 flips the pitch lock. */
 
 static Page page_play   = Page(0).Name("Play").Color("#67e8f9").Knobs(k_coarse, k_fine, k_pos0, k_pos1, k_pos2, k_pos3);
 static Page page_rotate = Page(1).Name("Rotate").Color("#fca5a5").Knobs(k_ang[0], k_ang[1], k_ang[2], k_ang[3], k_ang[4], k_ang[5]);
@@ -620,6 +604,14 @@ static volatile int16_t  gStrike     = -1;     /* velocity 0-255 to strike with,
 static volatile uint8_t  gJ4Out      = 1u;     /* J4's DG411: 1 CV out A (a wavetable world), 0 the trigger in (a resonate one) */
 static volatile uint8_t  gPolyReq    = 0u;     /* a polyphony asked for over the wire, 0 = none */
 static bool              gStrikeFromJack = false;   /* the pending strike came from J4, not the page or a note jump */
+/* what a strike hits with: axis 1 where the engine has it — the pot and J6
+   through the slew and the rotations — so a motion through the velocity
+   plane is a pattern of hits, as a motion through any axis is a pattern */
+static float Velocity01()
+{
+    const float v = gEng.L.ControlAt(1);
+    return v < 0.f ? 0.f : v > 1.f ? 1.f : v;
+}
 static bool              gStrikeHeld = false;       /* the pending strike waits for the pitch to settle */
 static bool              gKepOn      = false;
 static float             gKepRadius  = 0.f;
@@ -676,22 +668,19 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
      * Engine::SetControl writes the whole frame and the slew only follows
      * World::N() of it — so this costs the built-ins nothing. */
     float c[kMaxN];
-    /* under a resonate world the Model page's pots are the centres — body,
-       velocity, decay, coil — and the Play page's position pots are left
-       to the wavetable, so switching worlds does not hand the spin to
-       wherever four pots happened to be */
-    const bool modal = gEng.L.WorldPtr() && gEng.L.WorldPtr()->IsResonate();
-    c[0] = (modal ? k_mbody.Norm()  : k_pos0.Norm()) + hw.cv[2].Volts() * 0.2f;    /* J5 */
-    c[1] = (modal ? k_mvel.Norm()   : k_pos1.Norm()) + hw.cv[3].Volts() * 0.2f;    /* J6 */
-    c[2] = (modal ? k_mdecay.Norm() : k_pos2.Norm()) + hw.cv[4].Volts() * 0.2f;    /* J7 */
-    c[3] = (modal ? k_mcoil.Norm()  : k_pos3.Norm()) + hw.cv[5].Volts() * 0.2f;    /* J8 */
+    c[0] = k_pos0.Norm() + hw.cv[2].Volts() * 0.2f;    /* J5 — a resonator's body */
+    c[1] = k_pos1.Norm() + hw.cv[3].Volts() * 0.2f;    /* J6 — its velocity */
+    c[2] = k_pos2.Norm() + hw.cv[4].Volts() * 0.2f;    /* J7 — its decay */
+    c[3] = k_pos3.Norm() + hw.cv[5].Volts() * 0.2f;    /* J8 — its coil */
     c[4] = k_pos4.Norm();
     c[5] = k_pos5.Norm();
     /* J4 as the trigger, while a resonate world plays: a rising edge past
-       1 V strikes at the velocity axis 1 holds — the pot and CV 1 — with
-       0.5 V of hysteresis and 2 ms of refractory, read once a block, which
-       is the latency of everything else here. The same flag the page's
-       strike raises, taken after SetF0 below. */
+       1 V strikes at the velocity axis 1 holds — where the engine has it,
+       after the slew and the rotations, so an orbit through the velocity
+       plane is a pattern of hits — with 0.5 V of hysteresis and 2 ms of
+       refractory, read once a block, which is the latency of everything
+       else here. The same flag the page's strike raises, taken after SetF0
+       below. */
     {
         static bool     armed = false;
         static uint32_t since = 0u;
@@ -700,7 +689,7 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
         {
             const float v = hw.cv[1].Volts();
             if(since < 0xFFFFu) since++;
-            if(!armed && v > 1.0f && since > 4u) { armed = true; since = 0u; gStrike = (int16_t)(255.f * (c[1] < 0.f ? 0.f : c[1] > 1.f ? 1.f : c[1])); gStrikeFromJack = true; }
+            if(!armed && v > 1.0f && since > 4u) { armed = true; since = 0u; gStrike = (int16_t)(255.f * Velocity01()); gStrikeFromJack = true; }
             else if(armed && v < 0.5f) armed = false;
         }
     }
@@ -788,16 +777,17 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     if(gResetPhase) { gEng.L.ResetPhase(); gEng.R.ResetPhase(); gResetPhase = 0; }
 
     gEng.SetF0(f0);
-    /* a resonate world's polyphony: the Model page's Voices pot, or what
-       the wire asked for */
+    /* a resonate world's polyphony: the World page's third pot — the tour
+       division, which a resonate world has no use for — 1 for its bottom
+       third, 2 for the middle, 4 for the top; or what the wire asked for */
     {
         const World* lw = gEng.L.WorldPtr();
         if(lw && lw->IsResonate())
         {
             static float lastDiv = -1.f;
-            const float dv = k_mvoices.Value();
+            const float dv = k_tdiv.Value();
             if(gPolyReq) { gEng.SetPolyphony(gPolyReq); gPolyReq = 0u; lastDiv = dv; }
-            else if(dv != lastDiv) { lastDiv = dv; gEng.SetPolyphony(dv < 0.5f ? 1 : dv < 1.5f ? 2 : 4); }
+            else if(dv != lastDiv) { lastDiv = dv; gEng.SetPolyphony(dv < 2.5f ? 1 : dv < 5.5f ? 2 : 4); }
             /* and Rings' rule for a trigger jack nobody has patched: a note
                that jumps — 0.4 semitone in one block, which a sequencer does
                and a hand on a pot cannot — strikes on its own, unless a
@@ -811,7 +801,7 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
             if(gStrike >= 0 && gStrikeFromJack) sinceTrig = 0u;
             const bool jumped = std::fabs(note - lastNote) > 0.4f;
             if(jumped && sinceTrig > 4000u && sinceStrum > 20u && gStrike < 0)
-            { gStrike = (int16_t)(255.f * (c[1] < 0.f ? 0.f : c[1] > 1.f ? 1.f : c[1])); sinceStrum = 0u; }
+            { gStrike = (int16_t)(255.f * Velocity01()); sinceStrum = 0u; }
             /* Rings' note filter, the part of it this needs: a strike waits
                for the pitch to settle. The CV input is a one-pole that
                takes about 7 ms to a step, so a sequencer's trigger — or
@@ -834,12 +824,13 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     /* after SetF0: a strike retunes the bank to the pitch it is struck at */
     if(gStrike >= 0 && !gStrikeHeld) { gEng.Strike((float)gStrike / 255.0f); gStrike = -1; gStrikeFromJack = false; }
     /* Rings' external exciter: J1's audio driven into the resonate world's
-       bank, the amount on the Model page's Exciter pot. 0.02 of the
-       codec's unit for a pot at full; the level is a bench question,
-       since a driven mode's gain is its Q */
+       bank, the amount on the Stereo page's sixth pot, which under a
+       resonator has no CV out A to be the depth of (J4 is the trigger).
+       0.02 of the codec's unit for a pot at full; the level is a bench
+       question, since a driven mode's gain is its Q */
     {
         const World* lw = gEng.L.WorldPtr();
-        if(lw && lw->IsResonate()) gEng.SetExciter(in[0], 0.02f * k_mexcite.Norm());
+        if(lw && lw->IsResonate()) gEng.SetExciter(in[0], 0.02f * k_cvdep.Norm());
     }
     gEng.SetControl(c, kMaxN);
     gEng.Process(out[0], out[1], (int)size);
@@ -1782,7 +1773,7 @@ static void TourService()
 }
 
 /* B2 and B3 under a resonate world, on the 1 ms poll: B2 taps a strike at
-   the Velocity pot (a hand on the instrument with no trigger patched), B3
+   the velocity axis (a hand on the instrument with no trigger patched), B3
    turns the pitch lock off and on. Settings takes both held together and
    reads them itself, so a tap here fires only while the other is up. The
    lock flips on the release of a short press, so the first button down on
@@ -1794,8 +1785,7 @@ static void OnPoll(uint32_t t_ms)
     auto& b2 = hw.buttons[kButtonB2]; auto& b3 = hw.buttons[kButtonB3];
     if(b2.RisingEdge() && !b3.Pressed() && gStrike < 0)
     {
-        const float v = k_mvel.Norm();
-        gStrike = (int16_t)(255.f * (v < 0.f ? 0.f : v > 1.f ? 1.f : v));
+        gStrike = (int16_t)(255.f * Velocity01());
         gStrikeFromJack = false;
     }
     static uint32_t b3_down = 0u; static bool b3_alone = false;
@@ -1855,11 +1845,11 @@ int main()
     host.Extend(gExt);
     /* Without this the descriptor carries the jacks and nothing about the
      * panel, so the web page cannot say what any knob does — the names, idents
-     * and units are all declared above and were simply never published. Eight
-     * pages, which is the SDK's limit. */
-    host.Pages(page_play, page_rotate, page_stereo, page_orbit, page_kepler, page_couple, page_world, page_model);
+     * and units are all declared above and were simply never published. Seven
+     * pages against the SDK's limit of eight. */
+    host.Pages(page_play, page_rotate, page_stereo, page_orbit, page_kepler, page_couple, page_world);
 
-    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(page_couple).Use(page_world).Use(page_model).Use(host).OnFrame(OnFrame).OnPoll(OnPoll);
+    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(page_couple).Use(page_world).Use(host).OnFrame(OnFrame).OnPoll(OnPoll);
 
     /* The Rate multiplier is centred on 1x, so a stored zero would silently
      * run every orbit at an eighth speed on a fresh boot — which reads as

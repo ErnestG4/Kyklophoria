@@ -709,7 +709,13 @@ function parseTelemetry(b) {
        moved on from. */
     t.tour = b.length >= at + 3 ? { len: b[at], at: b[at + 1], blend: b[at + 2] / 255 } : null;
     at += b.length >= at + 3 ? 3 : 0;
+    /* what kind of world is live (World::Kind; 11 a resonator). Null from
+       firmware that predates it; a resonator then shows as the 4-axis user
+       world it also is */
+    t.kind = b.length > at ? b[at] : null;
+    at += b.length > at ? 1 : 0;
   }
+  t.resonate = t.kind === 11;
   t.bytes = b.length;
   return t;
 }

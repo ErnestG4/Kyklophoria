@@ -859,7 +859,8 @@ console.log('\n== the card: write, list, read back, and refuse to clobber');
 
   /* and the other kind of card world: a resonator (.kykm, from ModalBake),
      which the page cannot send and never parses — it lists it, loads it by
-     index, and plays it the same way; the world that arrives is 1-D */
+     index, and plays it the same way; the world that arrives has four axes
+     like any other and says what kind it is */
   fs.copyFileSync(path.join(here, '..', 'tests/data/wurli.kykm'), path.join(dir, 'wurli.kykm'));
   await act(KYK.ACT.scanCard);
   const both = await KYK.fetchCardWorlds(link);
@@ -868,7 +869,7 @@ console.log('\n== the card: write, list, read back, and refuse to clobber');
   check((await KYK.fetchSlots(link)).names[10] === 'wurli', 'named by its file');
   check((await act(KYK.ACT.slotLive, 10))[0] === 0, 'and plays');
   const tr = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
-  check(tr.n === 1 && tr.world === 0xFF, `as a 1-D user world (N=${tr.n}, world ${tr.world})`);
+  check(tr.n === 4 && tr.world === 0xFF && tr.resonate, `as a 4-axis resonate user world (N=${tr.n}, world ${tr.world}, kind ${tr.kind})`);
   /* and says what it is playing: the Wurlitzer's eleven points C2 to C7,
      the voice built at the pitch (110 Hz at boot: A2, 45), its modes */
   const rs = await KYK.fetchResonate(link);

@@ -142,6 +142,10 @@ def telemetry(link, flags):
             t['tour'] = (b[at], b[at + 1], b[at + 2] / 255.0); at += 3
         else:
             t['tour'] = None
+        # what kind of world is live (World::Kind; 11 a resonator), so a
+        # host does not read the axis count as the kind
+        t['kind'] = b[at] if len(b) > at else None
+        at += 1 if len(b) > at else 0
     t['size'] = len(b)
     check(at == len(b), f'telemetry body consumed exactly ({at} of {len(b)})')
     return t
@@ -174,8 +178,9 @@ def stdio_tests():
     # 23 for the original block, 1 for the body count, 8 per perturber, then
     # page, morph+target, mute, aimed, six pots, the knob values behind a
     # validity byte, the live world index, and three for the world tour
-    want = 460 + 23 + 1 + 8 * (t7['bodies'] - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1 + 3
+    want = 460 + 23 + 1 + 8 * (t7['bodies'] - 1) + 1 + 2 + 2 + 1 + 6 + 7 + 1 + 3 + 1
     check(t7['size'] == want, f"motion block appends {want - 460} bytes (size {t7['size']}, {t7['bodies']} bodies)")
+    check(t7['kind'] == 1, f"and ends with the world's kind (a lattice = 1): {t7['kind']}")
     # Which world is playing, in every frame. Without it a host only learns
     # this by asking for the list, and nothing asks unprompted — so a world
     # changed from the module's own panel stayed invisible.
@@ -433,7 +438,7 @@ def card_tests():
     ty, seq, r, ok = link.request(0x64, bytes([11, 3]))
     check(r[0] == 0, 'slot-live builds a resonate world from it')
     t = telemetry(link, 7)
-    check(t['n'] == 1 and t['world'] == 0xFF, f"telemetry: a 1-D user world is live ({t['n']}-D, world {t['world']:#x})")
+    check(t['n'] == 4 and t['world'] == 0xFF and t['kind'] == 11, f"telemetry: a 4-axis resonate user world is live ({t['n']}-D, world {t['world']:#x}, kind {t['kind']})")
     ty, seq, r, ok = link.request(0x64, bytes([0]))
     check(r[0] == 0, 'reset-phase strikes it')
     ty, seq, r, ok = link.request(0x64, bytes([17, 200]))
