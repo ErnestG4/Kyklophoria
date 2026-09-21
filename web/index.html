@@ -3555,6 +3555,7 @@ const fmtVec = v => Array.from(v).map(x => x.toFixed(2)).join(' ');
  * page are comes from the descriptor. Neither alone is enough — the descriptor
  * describes all six pages and cannot say which one you are holding, and the
  * page index alone is a number with no meaning. */
+const RESO_KNOBS = { 0: { 2: 'Voicing / body', 3: 'Velocity', 4: 'Decay', 5: 'Coil' }, 6: { 2: 'Voices 1 · 2 · 4' } };
 function drawPanel(x0, y0, W, H) {
   if (!panel || !panel.pots) return;
   const pg = tel && tel.page < panel.pages ? tel.page : 0;
@@ -3676,7 +3677,11 @@ function drawPanel(x0, y0, W, H) {
        previous knob's label than its own. */
     cnx.fillText('P' + (i + 1), kx - r, cy0 + 8);
     cnx.fillStyle = k ? '#9aa7b3' : '#607a97'; cnx.font = '10px ui-monospace, monospace';
-    const label = k ? k.name : '—';
+    /* under a resonate world the Play page's four position pots are the
+       spin and the velocity (docs/io-map.md), and the World page's third
+       is the polyphony: the descriptor names them for the wavetable, so
+       the mirror renames them here rather than lie */
+    const label = (tel && tel.n === 1 && RESO_KNOBS[pg] && RESO_KNOBS[pg][i]) ? RESO_KNOBS[pg][i] : (k ? k.name : '—');
     let txt = label; const avail = cw - (2 * r + 10);
     while (txt.length > 3 && cnx.measureText(txt).width > avail) txt = txt.slice(0, -1);
     cnx.fillText(txt + (txt !== label ? '…' : ''), cx0 + 2 * r + 6, cy0 + r + 5);
