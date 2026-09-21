@@ -574,6 +574,7 @@ static volatile uint32_t gCycLast = 0, gCycMax = 0, gCycSum = 0, gCycN = 0;
 static volatile uint16_t gOverruns = 0, gDropped = 0;
 static volatile float    gPayloadA = 0.f;
 static volatile uint8_t  gResetPhase = 0;
+static volatile int16_t  gStrike     = -1;     /* velocity 0-255 to strike with, -1 = none */
 static bool              gKepOn      = false;
 static float             gKepRadius  = 0.f;
 static constexpr uint32_t kCpuHz     = 480000000u;
@@ -709,6 +710,8 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     if(gResetPhase) { gEng.L.ResetPhase(); gEng.R.ResetPhase(); gResetPhase = 0; }
 
     gEng.SetF0(f0);
+    /* after SetF0: a strike retunes the bank to the pitch it is struck at */
+    if(gStrike >= 0) { gEng.Strike((float)gStrike / 255.0f); gStrike = -1; }
     gEng.SetControl(c, kMaxN);
     gEng.Process(out[0], out[1], (int)size);
     gPayloadA = gEng.Payload()[4];
@@ -873,6 +876,13 @@ struct ModuleSource : ExtSource
         switch(op)
         {
             case kActResetPhase: gResetPhase = 1; return 0u;
+            case kActStrike:
+            {
+                const World* w = gEng.L.WorldPtr();
+                if(!w || !w->IsResonate()) return 3u;
+                gStrike = (int16_t)(len >= 1 ? args[0] : 204u);
+                return 0u;
+            }
             case kActRenderDiv: (void)args; (void)len; return 1u;   /* the pot owns it on the module */
             case kActSelectWorld:
                 if(len < 1 || args[0] >= worlds::kCount) return 2u;

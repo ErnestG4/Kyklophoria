@@ -174,13 +174,18 @@ what it is). Concretely:
   not have (a resonator has one axis, the projection is a pair) sits at the
   centre — `pagecheck` has an N=1 case, and before the fix it drew 22 marks
   at NaN.
+- ACTION 17 `strike u8 velocity`: the hand on a resonator until the module
+  has a trigger. On the module it is a flag the audio callback consumes
+  after `SetF0`, so the strike retunes to the pitch it is struck at; the
+  page shows soft / mid / hard chips on the MOTION row while a 1-D user
+  world is playing. BAD_STATE on anything else.
 - `link_check.py` (card: list, refuse a truncated file, load, play as 1-D,
   refuse target/snapshot/free-while-live, free after a built-in takes
   over) and the node selftest (the same through `link.js`).
 
 Still the bench's: the hardware trigger (J2's edge, or the oscillator into
 the bank), the three pots on `ResonatorWorld::voicing / decay / coil`, the
-velocity, the cycle budget, and the module's card path above, which is
+cycle budget, and the module's card path above, which is
 built and untested. A retune re-reads the old state at the new frequency,
 which lifts or drops the ringing note's amplitude by the frequency ratio at
 low frequencies (a tone up: about 1 dB; an octave: 6 dB); if that is heard,

@@ -509,6 +509,10 @@ public:
                velocity until the page has a control for it: the one host
                action that means "now" */
             case kyk::kActResetPhase: eng->L.ResetPhase(); eng->R.ResetPhase(); eng->Strike(0.8f); return 0u;
+            case kyk::kActStrike:
+                if(!world || !world->IsResonate()) return 3u;
+                eng->Strike((len >= 1 ? args[0] : 204u) / 255.0f);
+                return 0u;
             case kyk::kActRenderDiv: if(len < 1 || args[0] < 1) return 2u; eng->SetRenderDiv(args[0]); return 0u;
             case kyk::kActAimMorph:
             {

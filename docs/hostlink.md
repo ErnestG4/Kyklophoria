@@ -130,6 +130,7 @@ Request: `u8 op [, args]`. Reply: status only.
 | 16 | `u8 slot` | sample the *live* world at the 24-cell vertices and write it into that slot as a world somebody can edit. For a built-in this is the only thing there is — a formula cannot be handed over as nodes — and it is honestly a snapshot: rendered at sine phase, so a phase-blind world will not sound like its original. For a world that came from a slot, read that slot with 0x6C instead and get it exactly |
 | 15 | `u8 card, u8 slot` | load a card file into a slot, rather than straight to the live world as op 7 does. Deferred to the control loop, because a card read is slow; parsed before it is kept, so a slot never holds something that would be refused later |
 | 14 | `u8 a, u8 b` | exchange two slots, contents and names, with `live` and `target` following the contents rather than the numbers. Here rather than on the host because a host does not have the blob for a slot it did not store. Safe in the handler: what is playing is an expanded World and the morph target is another, so neither reads a blob except when loading one |
+| 17 | `u8 velocity` | strike the resonate world that is playing, velocity 0–255 (204 if absent). A resonate world — a `.kykm` from ModalBake, a fitted body of resonators — is struck, not scanned, and until the module has a trigger of its own this is the only hand on it. BAD_STATE when what is playing is not one. |
 | 10 | — | aim the morph: search the target world for the position whose spectrum is nearest the one playing, and read it there. Refused with status 1 when no target is set |
 
 ### 0x65 GET_WORLDS
@@ -220,7 +221,14 @@ thread is reading.
 
 ### 0x68 CARD_WORLDS
 Request: empty. Reply: status, `u8 count`, then `count` entries of
-`u8 len, name` — the `.kykw` files in `/kyklophoria` on the card.
+`u8 len, name` — the `.kykw` and `.kykm` files in `/kyklophoria` on the card.
+
+A `.kykm` is a resonate world (`docs/modal-mode.md`): a sample library's size,
+so it is a card world only — never sent over the wire, never parsed by the
+host. It loads into a slot with ACTION 15 and plays with ACTION 11 like any
+slot; ACTION 7 refuses it (BAD_STATE), as do 12 (a morph target), 16 (a
+snapshot of it), a tour stop naming its slot, and freeing or overwriting the
+slot while it is playing, because the module reads it where it lies.
 
 The count comes before the names so a host can size its list even when the body
 ran out before the names did. Like the world list, the reply stops before it

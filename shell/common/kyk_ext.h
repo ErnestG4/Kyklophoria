@@ -136,7 +136,14 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              is the only way to get one as a set of spectra; a
                              world that came from a slot should be read back
                              with 0x6C instead and arrives exactly. */
-                          kActSnapshot   = 16 };
+                          kActSnapshot   = 16,
+                          /* u8 velocity (0-255), 204 if absent: strike the
+                             resonate world that is playing — a fitted body
+                             (kyk_resonate.h) is struck, not scanned, and until
+                             the module has a trigger of its own this is the
+                             only hand on it. BAD_STATE when what is playing
+                             has nothing to strike. */
+                          kActStrike     = 17 };
 /* Slots, matching the card's own list size so the two stay one to one. A u8
    index then still has room for the two sentinels below. */
 constexpr int     kSlotCount   = 32;
