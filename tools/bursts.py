@@ -189,11 +189,18 @@ def anchor(x, modes, sr, t_s, tol=0.01):
         if amp <= 0:
             out.append(m); continue
         om = 2 * np.pi * hz
+        # only the modes that sustain to the seam: a mode more than 15 dB
+        # down by then is the strike's, its level at the seam is another
+        # mode's or the floor's, and carrying that back along a fast decay
+        # multiplied it — the percussion row's loudest note came out 5x
+        if zeta * om * t_s > 1.73:
+            out.append(m); continue
         phase_s = np.angle(X)                     # of a sine A sin(om t + phi): the DFT of sin gives -j/2 e^{j phi}, so phi = angle + pi/2
         phi = (phase_s + np.pi / 2 - om * t_s) % (2 * np.pi)
         a0 = amp * math.exp(zeta * om * t_s)     # back to the strike along the fitted decay
-        if not (0.1 < a0 / abs(g) < 10):        # a factor of ten either way is another mode under the window, not this one
-            out.append(m); continue
+        if not (0.5 < a0 / abs(g) < 2):          # twice either way is another mode under the window, not this one: the phase is taken, the level left
+            w = m.split(); w[w.index('phase') + 1] = '%.5f' % phi
+            out.append(' '.join(w)); done += 1; continue
         w = m.split(); w[w.index('gains') + 1] = '%.6g' % a0; w[w.index('phase') + 1] = '%.5f' % phi
         out.append(' '.join(w)); done += 1
     return out, done
