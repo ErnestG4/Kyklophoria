@@ -72,6 +72,7 @@ struct ResonatorBank
     int   n;
     float c1[kMax], c2[kMax];            /* 2 r cos w, -r^2 */
     float p1[kMax], p2[kMax];            /* the state a unit strike starts from: A sin(phi-w)/r, A sin(phi-2w)/r^2 */
+    float g[kMax];                       /* each mode's gain at a unit strike, for the carry's level */
     float y1[kMax], y2[kMax];
     /* the strike bank: a new hit rings here under a 3 ms raised-cosine ramp
        — the envelope the fit's model had, and the gains were fitted under —
@@ -87,12 +88,32 @@ struct ResonatorBank
     float s1[kStrikes][kMax], s2[kStrikes][kMax];
     float ramp_n[kStrikes], ramp_len[kStrikes], ramp_lead[kStrikes];
     bool  ramping[kStrikes];
+    /* the choke: for damp_left samples every mode decays by damp_c a
+       sample more than its own pole says — the main state and the strike
+       banks marked damp_bank, not a strike that arrives meanwhile */
+    int   damp_left;
+    float damp_c;
+    bool  damp_bank[kStrikes];
+    /* the old note choked: down 60 dB over ms, as a damper falling on
+       the string a new note is struck on. One voice is one string; a
+       strike at another note on it is a new note, not the old one
+       carried on louder — a fast run carried its ring from strike to
+       strike, a C3 27 dB over the C2 before it, until the pickup railed.
+       A strike at the same note is a hammer on a ringing tine and adds. */
+    void Choke(float ms, float sr)
+    {
+        damp_left = (int)(ms * 0.001f * sr);
+        if(damp_left < 1) damp_left = 1;
+        damp_c = std::pow(1e-3f, 1.f / (float)damp_left);
+        for(int k = 0; k < kStrikes; k++) damp_bank[k] = true;
+    }
 
     void Init()
     {
         n = 0;
-        for(int q = 0; q < kStrikes; q++) { ramp_n[q] = 0.f; ramp_len[q] = 144.f; ramp_lead[q] = 0.f; ramping[q] = false; }
-        for(int i = 0; i < kMax; i++) { c1[i] = c2[i] = p1[i] = p2[i] = y1[i] = y2[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; }
+        for(int q = 0; q < kStrikes; q++) { ramp_n[q] = 0.f; ramp_len[q] = 144.f; ramp_lead[q] = 0.f; ramping[q] = false; damp_bank[q] = false; }
+        for(int i = 0; i < kMax; i++) { c1[i] = c2[i] = p1[i] = p2[i] = g[i] = y1[i] = y2[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; }
+        damp_left = 0; damp_c = 1.f;
     }
     bool Ringing() const
     {
@@ -109,42 +130,101 @@ struct ResonatorBank
     /* keep: retune the coefficients and leave the state ringing — a pitch
        change under a sounding note, which follows it as the oscillator's
        does; the strike bank's state is left too, mid-ramp */
-    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr, bool keep = false)
+    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr, bool keep = false, float ratio = 1.f)
     {
+        const int n0 = n;
         n = count > kMax ? kMax : count;
+        /* the state carried across a retune as what it is — an amplitude
+           and a phase — and not as two samples. Two samples of a slow
+           oscillation read under a fast pole are a small amplitude; of a
+           fast one under a slow pole, a huge one ((y1 - y2) / sin w): a
+           gong's modes retuned to a tom's came back 28 dB louder. The old
+           pole gives the old w and r; the pair is solved for A sin(phi)
+           and A cos(phi) and rewritten under the new pole. Both the
+           ringing state and the strike still ramping in.
+
+           And carried to the new mode NEAREST IN FREQUENCY, not to the
+           same index: the modes of a point are in frequency order, so the
+           k-th of one point is roughly the k-th of the next, but across a
+           family's members — a Wurlitzer's sparse partials into a grand's
+           dense ones — mode k is a different note, and a note world's
+           ghosts (silent slots at the fundamental) took a real mode's ring
+           and played it at the fundamental. `ratio` is the pitch change
+           the retune is (new note over old, 1 for a body row or another
+           member at the same note): the old frequencies are compared
+           transposed by it, so the same instrument's k-th partial still
+           follows its k-th partial up a fifth, and only a different set of
+           partials is rematched. Each new mode takes the unclaimed old
+           mode nearest by ratio, one to one, within a fifth; what nothing
+           claims is let go. 48 x 48 ratios at a retune, nothing per
+           sample.
+
+           And carried at the level the new mode would have: the ring's
+           amplitude scaled by the new mode's unit-strike gain over the
+           old's, so the retuned note is the new note as far along in its
+           decay as the old one was. A point's displacement units are its
+           own — a pickup world's fit puts the tine's motion at whatever
+           scale its coil and K then undo — and a Wurlitzer C3's tine
+           carried as it stood into the next point's pickup came out at
+           3.7 where a strike there peaks at 0.6. At most 12 dB up. */
+        float sp[1 + kStrikes][kMax], cp[1 + kStrikes][kMax], w0[kMax], g0[kMax];
+        bool  has[kMax], claimed[kMax];
+        if(keep)
+        {
+            float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
+            for(int i = 0; i < n0; i++)
+            {
+                has[i] = false; claimed[i] = false; g0[i] = g[i];
+                if(!(c2[i] < 0.f)) continue;
+                const float r0 = std::sqrt(-c2[i]);
+                float cw = c1[i] / (2.0f * r0); cw = cw > 1.0f ? 1.0f : cw < -1.0f ? -1.0f : cw;
+                w0[i] = std::acos(cw);
+                const float sw0 = std::sin(w0[i]) > 1e-6f ? std::sin(w0[i]) : 1e-6f;
+                float e = 0.f;
+                for(int q = 0; q < 1 + kStrikes; q++)
+                {
+                    sp[q][i] = a[q][i]; cp[q][i] = (a[q][i] * cw - b[q][i] * r0) / sw0;   /* A sin phi, A cos phi */
+                    e += sp[q][i] * sp[q][i] + cp[q][i] * cp[q][i];
+                }
+                has[i] = e > 1e-20f;
+            }
+        }
         for(int i = 0; i < n; i++)
         {
             const float w = 6.2831853f * hz[i] / sr;
             const float r = std::exp(-zeta[i] * w);
             const float ph = phase ? phase[i] : 0.f;
-            if(keep && c2[i] < 0.f)
+            int from = -1;
+            if(keep)
             {
-                /* the state carried across a retune as what it is — an
-                   amplitude and a phase — and not as two samples. Two
-                   samples of a slow oscillation read under a fast pole
-                   are a small amplitude; of a fast one under a slow pole,
-                   a huge one ((y1 - y2) / sin w): a gong's modes retuned
-                   to a tom's came back 28 dB louder. The old pole gives the
-                   old w and r; the pair is solved for A sin(phi) and
-                   A cos(phi) and rewritten under the new pole. Both the
-                   ringing state and the strike still ramping in */
-                const float r0 = std::sqrt(-c2[i]);
-                float cw = c1[i] / (2.0f * r0); cw = cw > 1.0f ? 1.0f : cw < -1.0f ? -1.0f : cw;
-                const float w0 = std::acos(cw), sw0 = std::sin(w0) > 1e-6f ? std::sin(w0) : 1e-6f;
-                const float cwn = std::cos(w), swn = std::sin(w);
-                float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
-                for(int q = 0; q < 1 + kStrikes; q++)
+                float best = 1.4f;                      /* within a fifth either way */
+                for(int j = 0; j < n0; j++)
                 {
-                    const float sp = a[q][i], cp = (a[q][i] * cw - b[q][i] * r0) / sw0;   /* A sin phi, A cos phi */
-                    a[q][i] = sp;
-                    b[q][i] = (sp * cwn - cp * swn) / r;                                    /* A sin(phi - w) / r */
+                    if(!has[j] || claimed[j]) continue;
+                    const float wj = w0[j] * ratio;
+                    const float q = wj > w ? wj / w : w / wj;
+                    if(q < best) { best = q; from = j; }
                 }
             }
             c1[i] = 2.0f * r * std::cos(w);
             c2[i] = -r * r;
             p1[i] = gain[i] * std::sin(ph - w) / r;
             p2[i] = gain[i] * std::sin(ph - 2.0f * w) / (r * r);
-            if(!keep) { y1[i] = y2[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; }
+            if(from >= 0)
+            {
+                claimed[from] = true;
+                const float cwn = std::cos(w), swn = std::sin(w);
+                const float go = std::fabs(g0[from]), gn = std::fabs(gain[i]);
+                const float lv = go > 1e-9f ? (gn / go > 4.f ? 4.f : gn / go) : 1.f;
+                float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
+                for(int q = 0; q < 1 + kStrikes; q++)
+                {
+                    a[q][i] = lv * sp[q][from];
+                    b[q][i] = lv * (sp[q][from] * cwn - cp[q][from] * swn) / r;             /* A sin(phi - w) / r */
+                }
+            }
+            else { y1[i] = y2[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; }
+            g[i] = gain[i];
         }
         /* the ramp is the strike's business (its length is the burst's
            fade): Set used to reset it to 3 ms on every call, so a retune
@@ -174,6 +254,7 @@ struct ResonatorBank
             Fold(q);
         }
         for(int i = 0; i < n; i++) { s1[q][i] = swing * p1[i]; s2[q][i] = swing * p2[i]; }
+        damp_bank[q] = false;                  /* a choke under way is the old note's, not this strike's */
         ramp_n[q] = 0.f;
         ramp_lead[q] = lead;
         if(ramp > 0.f) ramp_len[q] = ramp;
@@ -215,12 +296,39 @@ struct ResonatorBank
                 const int left = (int)(ramp_lead[q] + ramp_len[q] - ramp_n[q]);
                 if(left > 0 && left < m) m = left;
             }
+            if(damp_left > 0 && damp_left < m) m = damp_left;
+            /* the hammer's absorption for this run: every mode's pole
+               pulled in by dc a sample (a = dc a, b = dc^2 b is the
+               recurrence of the state scaled by dc^n), the strike that is
+               arriving excepted */
+            const float dc = damp_left > 0 ? damp_c : 1.f, dc2 = dc * dc;
             for(int k = 0; k < m; k++) out[k] = 0.f;
             if(drive)
             {
-                for(int i = 0; i < n; i++)
+                /* in pairs, as the free-ringing loop below: a continuous
+                   exciter is this loop on every voice, so its cost is
+                   what an Exciter page can afford */
+                int i = 0;
+                for(; i + 1 < n; i += 2)
                 {
-                    const float a = c1[i], b = c2[i];
+                    const float a0 = c1[i] * dc, b0 = c2[i] * dc2, a1 = c1[i + 1] * dc, b1 = c2[i + 1] * dc2;
+                    float p1_ = y1[i], p2_ = y2[i], q1 = y1[i + 1], q2 = y2[i + 1];
+                    for(int k = 0; k < m; k++)
+                    {
+                        const float d = g * drive[k];
+                        const float yp = a0 * p1_ + b0 * p2_ + d;
+                        const float yq = a1 * q1 + b1 * q2 + d;
+                        p2_ = p1_; p1_ = yp;
+                        q2 = q1; q1 = yq;
+                        float o = out[k];
+                        o += yp; o += yq;
+                        out[k] = o;
+                    }
+                    y1[i] = p1_; y2[i] = p2_; y1[i + 1] = q1; y2[i + 1] = q2;
+                }
+                for(; i < n; i++)
+                {
+                    const float a = c1[i] * dc, b = c2[i] * dc2;
                     float u1 = y1[i], u2 = y2[i];
                     for(int k = 0; k < m; k++)
                     {
@@ -244,7 +352,7 @@ struct ResonatorBank
                 int i = 0;
                 for(; i + 1 < n; i += 2)
                 {
-                    const float a0 = c1[i], b0 = c2[i], a1 = c1[i + 1], b1 = c2[i + 1];
+                    const float a0 = c1[i] * dc, b0 = c2[i] * dc2, a1 = c1[i + 1] * dc, b1 = c2[i + 1] * dc2;
                     float p1 = y1[i], p2 = y2[i], q1 = y1[i + 1], q2 = y2[i + 1];
                     for(int k = 0; k < m; k++)
                     {
@@ -260,7 +368,7 @@ struct ResonatorBank
                 }
                 for(; i < n; i++)
                 {
-                    const float a = c1[i], b = c2[i];
+                    const float a = c1[i] * dc, b = c2[i] * dc2;
                     float u1 = y1[i], u2 = y2[i];
                     for(int k = 0; k < m; k++)
                     {
@@ -279,10 +387,11 @@ struct ResonatorBank
                     const float u = ramp_n[q] + (float)k - ramp_lead[q];
                     w[k] = u <= 0.f ? 0.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len[q]);
                 }
+                const float sc = damp_left > 0 && damp_bank[q] ? dc : 1.f, sc2 = sc * sc;
                 int i = 0;
                 for(; i + 1 < n; i += 2)      /* in pairs, as above */
                 {
-                    const float a0 = c1[i], b0 = c2[i], a1 = c1[i + 1], b1 = c2[i + 1];
+                    const float a0 = c1[i] * sc, b0 = c2[i] * sc2, a1 = c1[i + 1] * sc, b1 = c2[i + 1] * sc2;
                     float p1 = s1[q][i], p2 = s2[q][i], r1 = s1[q][i + 1], r2 = s2[q][i + 1];
                     for(int k = 0; k < m; k++)
                     {
@@ -298,7 +407,7 @@ struct ResonatorBank
                 }
                 for(; i < n; i++)
                 {
-                    const float a = c1[i], b = c2[i];
+                    const float a = c1[i] * sc, b = c2[i] * sc2;
                     float u1 = s1[q][i], u2 = s2[q][i];
                     for(int k = 0; k < m; k++)
                     {
@@ -311,6 +420,7 @@ struct ResonatorBank
                 ramp_n[q] += (float)m;
                 if(ramp_n[q] >= ramp_lead[q] + ramp_len[q]) Fold(q);
             }
+            if(damp_left > 0) damp_left -= m;
             out += m; frames -= m;
         }
     }
@@ -619,6 +729,7 @@ struct ResonatorVoice
     const uint8_t* bursts;            /* the point's burst block in the world, or null */
     float          swing_soft, swing_hard;
     float          burst_rate;        /* the burst's read step: the played note over the burst's own, 1 on an index world */
+    float          param;             /* what the voice was built at: a note, or a position on a row; 1e9 for not yet */
     float          sr;
     uint32_t       burst_head;        /* bytes before a burst's samples in this world's version */
     uint32_t       burst_fade;        /* samples the modes come in over, under the burst's fade; 0 for no burst */
@@ -630,7 +741,7 @@ struct ResonatorVoice
 
     void Init()
     {
-        bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0; burst_head = 10; burst_fade = 0;
+        bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0; burst_head = 10; burst_fade = 0; param = 1e9f;
         for(int k = 0; k < ResonatorBank::kMax; k++) hz[k] = zeta[k] = gain[k] = 0.f;
     }
 
@@ -797,7 +908,7 @@ struct ResonatorWorld
        body row (kind 1) is still interpolated along the row — the glide
        from gong to woodblock is the point of it — on absolute gains, so a
        quiet slot is not lifted by the neighbour's louder loudest. */
-    void At(float param, ResonatorVoice& v, float sr, bool keep = false) const
+    void At(float param, ResonatorVoice& v, float sr, bool keep = false, bool strike = false) const
     {
         if(P == 0) return;
         int a = 0;
@@ -838,7 +949,15 @@ struct ResonatorWorld
         }
         for(int k = 0; k < N; k++) za[k] /= decay;            /* T60 x decay */
         for(int k = 0; k < N; k++) { v.hz[k] = ha[k]; v.zeta[k] = za[k]; v.gain[k] = ga[k]; }
-        v.bank.Set(ha, za, ga, N, sr, fa, keep);
+        /* the pitch change this retune is, for the carry: a note world's
+           notes, a body row's none; a first build has nothing to carry */
+        const float ratio = (keep && kind != 1 && v.param < 1e8f) ? std::exp2((param - v.param) / 12.f) : 1.f;
+        v.bank.Set(ha, za, ga, N, sr, fa, keep, ratio);
+        /* a strike at another note on this voice: the old note choked
+           over 5 ms (ResonatorBank::Choke); a glide or a tune change
+           carries it on */
+        if(keep && strike && v.param < 1e8f && std::fabs(param - v.param) > 1e-4f) v.bank.Choke(5.f, sr);
+        v.param = param;
         st[0] += voicing * st[1];                                /* h moves by widths */
         st[3] *= coil;
         {
