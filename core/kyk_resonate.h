@@ -159,33 +159,57 @@ struct ResonatorBank
     }
 
     /* the displacement, summed over the modes, into out (overwrite) */
+    /* Mode-outer, sample-inner, in runs of up to 64 samples: each mode's
+       two coefficients and two states stay in registers for the run and
+       the loop is FMA-bound, where sample-outer loaded and stored every
+       mode's state every sample and was load-store-bound — Bank, Zambon and
+       Fontana's arrangement (TASLP 2010), which is how their piano runs
+       hundreds of modes a note. The strike bank's ramp is a table of
+       weights for the run; a run is cut where the ramp ends so the fold
+       lands on the same sample it always did. */
     void Process(float* out, int frames)
     {
-        for(int k = 0; k < frames; k++)
+        while(frames > 0)
         {
-            float acc = 0.f;
+            int m = frames < 64 ? frames : 64;
+            if(ramping)
+            {
+                const int left = (int)(ramp_len - ramp_n);
+                if(left > 0 && left < m) m = left;
+            }
+            for(int k = 0; k < m; k++) out[k] = 0.f;
             for(int i = 0; i < n; i++)
             {
-                const float y = c1[i] * y1[i] + c2[i] * y2[i];
-                y2[i] = y1[i];
-                y1[i] = y;
-                acc += y;
+                const float a = c1[i], b = c2[i];
+                float u1 = y1[i], u2 = y2[i];
+                for(int k = 0; k < m; k++)
+                {
+                    const float y = a * u1 + b * u2;
+                    u2 = u1; u1 = y;
+                    out[k] += y;
+                }
+                y1[i] = u1; y2[i] = u2;
             }
             if(ramping)
             {
-                const float r = 0.5f - 0.5f * std::cos(3.1415927f * ramp_n / ramp_len);
-                float sacc = 0.f;
+                float w[64];
+                for(int k = 0; k < m; k++) w[k] = 0.5f - 0.5f * std::cos(3.1415927f * (ramp_n + (float)k) / ramp_len);
                 for(int i = 0; i < n; i++)
                 {
-                    const float y = c1[i] * s1[i] + c2[i] * s2[i];
-                    s2[i] = s1[i];
-                    s1[i] = y;
-                    sacc += y;
+                    const float a = c1[i], b = c2[i];
+                    float u1 = s1[i], u2 = s2[i];
+                    for(int k = 0; k < m; k++)
+                    {
+                        const float y = a * u1 + b * u2;
+                        u2 = u1; u1 = y;
+                        out[k] += w[k] * y;
+                    }
+                    s1[i] = u1; s2[i] = u2;
                 }
-                acc += r * sacc;
-                if(++ramp_n >= ramp_len) Fold();
+                ramp_n += (float)m;
+                if(ramp_n >= ramp_len) Fold();
             }
-            out[k] = acc;
+            out += m; frames -= m;
         }
     }
 };
