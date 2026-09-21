@@ -195,9 +195,9 @@ struct Pickup
     bool  on, gap;
     float h, inv_w, K;
     float b0, b1, b2, a1, a2;     /* the coil */
-    float prev, z1, z2;
+    float prev, rest, z1, z2;     /* the last flux, and the flux at rest for this pole */
 
-    void Init() { on = gap = false; h = 0.f; inv_w = K = 1.f; b0 = 1.f; b1 = b2 = a1 = a2 = 0.f; prev = z1 = z2 = 0.f; }
+    void Init() { on = gap = false; h = 0.f; inv_w = K = 1.f; b0 = 1.f; b1 = b2 = a1 = a2 = 0.f; prev = rest = z1 = z2 = 0.f; }
 
     void Set(float h_, float w_, float K_, float fc, float Q, float sr)
     {
@@ -208,7 +208,7 @@ struct Pickup
         b0 = (1.f - cw) * 0.5f / a0; b1 = (1.f - cw) / a0; b2 = b0;
         a1 = -2.f * cw / a0; a2 = (1.f - alpha) / a0;
         const float u0 = (0.f - h) * inv_w;
-        prev = 1.f / (1.f + u0 * u0);            /* the field at rest: no click at power-on */
+        rest = prev = 1.f / (1.f + u0 * u0);     /* the field at rest: no click at power-on */
         z1 = z2 = 0.f;
     }
 
@@ -218,7 +218,7 @@ struct Pickup
     {
         Set(0.f, g_, K_, fc, Q, sr);
         gap = true;
-        prev = 1.f;
+        rest = prev = 1.f;
     }
 
     /* tanh without libm: a (3,2) Pade clamped at |x| = 3, within 0.024 of
@@ -334,13 +334,14 @@ struct NoiseLayer
     float b0[kBands], a1[kBands], a2[kBands];     /* band-pass: b0 x[n] - b0 x[n-2] */
     float x1[kBands], x2[kBands], y1[kBands], y2[kBands];
     float env[kBands], fall[kBands], level[kBands];
+    float gain[kBands], gain_sr;   /* each band-pass's noise gain, measured once per sample rate */
     uint32_t rng;
     bool  on;
 
     void Init()
     {
-        on = false; rng = 0x9E3779B9u;
-        for(int k = 0; k < kBands; k++) { b0[k] = a1[k] = a2[k] = x1[k] = x2[k] = y1[k] = y2[k] = env[k] = fall[k] = level[k] = 0.f; }
+        on = false; rng = 0x9E3779B9u; gain_sr = 0.f;
+        for(int k = 0; k < kBands; k++) { b0[k] = a1[k] = a2[k] = x1[k] = x2[k] = y1[k] = y2[k] = env[k] = fall[k] = level[k] = gain[k] = 0.f; }
     }
 
     /* levels and T60s per band, sr; a band with no level is off */
@@ -361,15 +362,22 @@ struct NoiseLayer
                wall and its width warps towards Nyquist. 2048 samples holds
                the whole ring at band 0 (2Q / w0 = 5 ms); 8 x 2048 MACs at
                note-on, on the control thread */
-            float g = 0.f, u1 = 0.f, u2 = 0.f, v1 = 0.f, v2 = 0.f;
-            for(int i = 0; i < 2048; i++)
+            if(gain_sr != sr)
             {
-                const float u = i == 0 ? 1.f : 0.f;
-                const float v = b0[k] * (u - u2) - a1[k] * v1 - a2[k] * v2;
-                u2 = u1; u1 = u; v2 = v1; v1 = v;
-                g += v * v;
+                /* once per sample rate, not per Set: 8 x 2048 MACs is 35 us
+                   on the M7, and Set runs on the audio thread at a retune */
+                float g = 0.f, u1 = 0.f, u2 = 0.f, v1 = 0.f, v2 = 0.f;
+                for(int i = 0; i < 2048; i++)
+                {
+                    const float u = i == 0 ? 1.f : 0.f;
+                    const float v = b0[k] * (u - u2) - a1[k] * v1 - a2[k] * v2;
+                    u2 = u1; u1 = u; v2 = v1; v1 = v;
+                    g += v * v;
+                }
+                gain[k] = std::sqrt(g);
+                if(k == kBands - 1) gain_sr = sr;
             }
-            const float share = std::sqrt(g);
+            const float share = gain[k];
             level[k] = lvl[k] > 0.f && t60[k] > 0.f ? lvl[k] / (share > 1e-6f ? share : 1e-6f) : 0.f;
             fall[k]  = t60[k] > 0.f ? std::exp(-6.91f / (t60[k] * sr)) : 0.f;
             env[k]   = 0.f;
@@ -555,10 +563,16 @@ struct ResonatorWorld
         {
             /* the pickup retunes without a click: its filter state and its
                last flux stay, only the field and the coil move */
-            const float prev = v.pickup.prev, z1 = v.pickup.z1, z2 = v.pickup.z2;
+            const float prev = v.pickup.prev, rest = v.pickup.rest, z1 = v.pickup.z1, z2 = v.pickup.z2;
             if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
             else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);
-            v.pickup.prev = prev; v.pickup.z1 = z1; v.pickup.z2 = z2;
+            /* the last flux kept as its distance from rest, not as a value:
+               the pole has moved, so rest has too, and carrying the old
+               value put a step of (old rest - new rest) through d/dt — a
+               click on every retune of a pickup world, and a voice at rest
+               retuned before its first strike differing from one built
+               there by a tenth of its peak */
+            v.pickup.prev = prev - rest + v.pickup.rest; v.pickup.z1 = z1; v.pickup.z2 = z2;
         }
         else if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
         else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);

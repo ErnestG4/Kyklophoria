@@ -53,6 +53,8 @@ public:
         dirty_ = true;
         rvoice_.Init();
         rnote_ = 1e9f;
+        rframe_ = false;
+        if(world && world->IsResonate()) { rnote_ = ResParam(); Tuned().At(rnote_, rvoice_, sr_); }
     }
 
     /* ── the resonate path ───────────────────────────────────────────────
@@ -65,7 +67,7 @@ public:
     void Strike(float velocity01)
     {
         if(!world_ || !world_->IsResonate()) return;
-        Retune();
+        Retune();          /* only if the pitch moved past the deadband since the last block */
         rvoice_.Strike(velocity01);
     }
     static float NoteOf(float hz) { return 69.f + 12.f * std::log2(hz > 1.f ? hz / 440.f : 1.f / 440.f); }
@@ -82,8 +84,17 @@ public:
        world follows the pot every block, a note world its pitch */
     void Retune()
     {
+        /* At() is 48 modes of exp2, exp, pow, cos and sin — some 60 us on
+           the M7, an eighth of a 24-sample block — so it runs on a move the
+           ear can hear, two cents or a two-hundredth of a body row, and not
+           on a pot's jitter, which used to run it every block until the
+           module overran. A sweep pays it per block, as the wavetable pays
+           its render */
         const float p = ResParam();
-        if(std::fabs(p - rnote_) > 0.01f) { Tuned().At(p, rvoice_, sr_, true); rnote_ = p; }
+        const ResonatorWorld& r = world_->Res();
+        const float eps = r.kind == 1 ? 0.005f * (r.hi - r.lo) : 0.02f;
+        if(rnote_ != 1e9f && std::fabs(p - rnote_) <= eps) return;
+        Tuned().At(p, rvoice_, sr_, true); rnote_ = p;
     }
     /* The spin on a resonator: voicing (the pickup's pole off its fitted
      * centre, in widths), decay (every mode's T60, x) and coil (the coil's
@@ -158,6 +169,11 @@ public:
 
     void Process(float* out, int n)
     {
+        /* a resonate world's frame is silence whatever the position, so it
+           is rendered once at SetWorld and never again: the render was
+           running on every pot jitter for nothing, and on the module that
+           was the wavetable's whole cost under a voice it does not need */
+        if(world_ && world_->IsResonate() && rframe_) dirty_ = false;
         const uint32_t period = (uint32_t)(render_div < 1 ? 1 : render_div);
         const bool     due    = ((block_ + (uint32_t)render_phase) % period) == 0u;
         const bool render = due && dirty_ && world_ && world_->Ready();
@@ -220,12 +236,13 @@ public:
             else RenderFrame(mags_bl_, cph_, sph_, kcut_, osc_.Back(), sc_);
             dirty_ = false;
             renders_++;
+            rframe_ = true;
         }
         osc_.SetFreq(f0_, sr_);
         osc_.Process(out, n, render);
         if(world_ && world_->IsResonate())
         {
-            if(world_->Res().kind == 1 || rnote_ == 1e9f) Retune();
+            Retune();
             float tmp[48];
             for(int i = 0; i < n; i += 48)
             {
@@ -371,6 +388,7 @@ public:
          * is the same as starting in it */
         rvoice_.Init();
         rnote_ = 1e9f;
+        rframe_ = false;
         if(w && w->IsResonate()) { rnote_ = ResParam(); Tuned().At(rnote_, rvoice_, sr_); }
     }
 
@@ -553,6 +571,7 @@ private:
     ResonatorVoice rvoice_;         /* the resonate path; idle for every other kind */
     float          rnote_ = 1e9f;   /* the note the voice was built at */
     float          rtune_[3] = {0.f, 1.f, 1.f};   /* voicing (widths), decay (x), coil (x) */
+    bool           rframe_ = false;  /* a resonate world's one silent frame has been rendered */
 
     const World*   morph_world_ = nullptr;
 
