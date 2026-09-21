@@ -691,6 +691,26 @@ notes E1–G3 from the Philharmonia's single-note files (loss 1.1–1.8; the
 `phrase` files under the same articulation are runs of notes and are now
 skipped), as `bass.kykm`.
 
+*The chain on the snare.* Combust heard a high resonance like a snare's
+chain under some notes of the piano and of the other acoustic sets. It
+was the wash: on a pitched instrument the deficit above the highest fitted
+partial is the partials the bank's 48 did not reach (a piano E1's stop at
+1.7 kHz; its 2–4 kHz deficit is harmonics at 55 Hz, in doublets 6 Hz
+apart, the three strings a note), and a deficit that is harmonics played
+as noise is a hiss at the pitch — and a band that has reached the
+sampler's floor is a flat line whose slope is a T60 of forever (a guitar's
+2–4 kHz at 25 s, a piano bass note's at 22 s). Four rules in `noise.py`
+now: a note world's wash stops at its highest partial (an index world, a
+row of bodies, is washed wherever the deficit is, which is what the wash
+was made for); a band that neither falls 10 dB nor falls with the note is
+floor; no band rings longer than the note or than the fitted partials in
+it; and a prior of two seconds above 2 kHz, eight below. Telling
+harmonics from noise by their spacing was tried first and does not
+survive a piano's doublets; peakiness threw the tam-tam's wash out with
+the piano's. The band-error numbers drop (guitar 2.5 → 5.0 dB with the
+wash, against 5.8 without) because the metric counted a hiss at the
+harmonics' energy as the harmonics; the ear does not.
+
 *A grand piano.* Thirty-four notes E1–C8 from a sampler library with no
 note names (`tools/pitchman.py` pitched 32 of them; two were set by hand),
 at 50 kHz stereo, 1.3–6.5 s a note. Loss 0.4–0.9 across the keyboard,
