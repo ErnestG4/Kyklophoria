@@ -217,6 +217,35 @@ def layer(recdir, pts):
     return out
 
 
+TAKE_RANK = {'MIN': 0, 'SOFT': 0, 'MED': 1, 'MID': 1, 'MAX': 2, 'HARD': 2}
+
+
+def monotonic(takes, rid):
+    """A harder hit is a bigger swing. The fit did not always say so: on 39
+    of the EP's 84 notes, every one from midi 81 up, the MAX take's fitted
+    swing came out below MED's — at the top of the keyboard the tine barely
+    moves, the field is nearly linear there and the swing is whatever the
+    optimiser landed on — and the runtime, which brackets the burst by
+    swing and scales the bank by it, played MED's attack at full velocity.
+    So the swings are assigned to the takes in the takes' own order (MIN,
+    MED, MAX; v015 .. v100), sorted ascending: the fit's numbers, the
+    library's order. The fitter's own fix is a monotonic prior on the
+    swings at the next refit (docs/holistic-math.md, item 7)."""
+    if len(takes) < 2:
+        return takes
+    def rank(name):
+        if name.upper() in TAKE_RANK:
+            return TAKE_RANK[name.upper()]
+        digits = ''.join(ch for ch in name if ch.isdigit())
+        return int(digits) if digits else 0
+    names = sorted(takes, key=rank)
+    sw = sorted(takes[n] for n in names)
+    fixed = dict(zip(names, sw))
+    if fixed != takes:
+        print('  %s: takes %s reordered to a rising swing' % (rid, ' '.join('%s@%.2f' % (n, takes[n]) for n in names)))
+    return fixed
+
+
 def intune(pts, kind, max_cents=120.0):
     """Each point pulled to its nominal note. A point played at the pitch
     the recording had — the Philharmonia's within a few cents, a sampler's
@@ -381,6 +410,7 @@ def main():
                 w = l.split()
                 if w and w[0] == 'take':
                     takes[w[1]] = float(w[3])
+            takes = monotonic(takes, c[0])
             if swings[1] <= 0:
                 swings = [1.0, 1.0]
             pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes), noise_of(d, c[0]), c[0]))
