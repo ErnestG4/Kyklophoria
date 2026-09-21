@@ -253,7 +253,13 @@ fitted-renders: $(foreach f,$(FITTED),out/wav/$(f)-keyboard.wav out/wav/walk-$(f
 	@$(PYFIT) tools/earcheck.py $^
 
 # ── the runtime prototype, and what it costs on the M7 ───────────────────────
-build/modaltest: tools/modaltest/main.cpp runtime/modal_bank.h runtime/world.h
+# the runtime is Kyklophoria's core/kyk_resonate.h, verbatim; this says so
+.PHONY: check-runtime
+check-runtime:
+	@if [ -f ../Kyklophoria/core/kyk_resonate.h ]; then \
+	  cmp -s runtime/kyk_resonate.h ../Kyklophoria/core/kyk_resonate.h && echo "runtime/kyk_resonate.h is Kyklophoria's" \
+	  || { echo "runtime/kyk_resonate.h differs from ../Kyklophoria/core/kyk_resonate.h — copy the newer over the older"; exit 1; }; fi
+build/modaltest: tools/modaltest/main.cpp runtime/modal_bank.h runtime/world.h runtime/kyk_resonate.h
 	@mkdir -p build
 	$(CXX) -std=c++17 -O2 -Wall tools/modaltest/main.cpp -o $@
 

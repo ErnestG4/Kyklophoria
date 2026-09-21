@@ -691,6 +691,39 @@ notes E1–G3 from the Philharmonia's single-note files (loss 1.1–1.8; the
 `phrase` files under the same articulation are runs of notes and are now
 skipped), as `bass.kykm`.
 
+*The holistic pass, and format v6.* An agent was pointed at the maths as
+one system — where one stage assumes the next reproduces it exactly — and
+`docs/holistic-math.md` is what it measured. Three of its findings changed
+the format. The interpolated bank at a midpoint between two points was up
+to +11.8 dB (Wurlitzer), +13.4 (piano), +18.8 (mandolin) louder than
+either point: the fitter builds non-exponential attacks out of large
+antiphase pairs (a Wurlitzer C4's loudest mode, 7.7, is half of a pair
+that sums to 1.1) that cancel only as fitted, and a slot-wise lerp of two
+such pairs stops them cancelling. So a note world now plays the *nearest
+point transposed* and no slot interpolation at all — a sampler's key
+zones, honestly — and the slot alignment by ratio of the day before is in
+the history. The burst stored the recording minus the model and needed
+the runtime to reproduce the model to the sample so the −y would cancel;
+bytes, slots, layers and a transposed read do not, and the term that
+failed to cancel was +1.6 dB median at the piano's own points and +9 dB
+between the Wurlitzer's. The burst is the recording faded now, and the
+strike bank comes in under (1 − fade) over the burst's own fade; the seam
+measures within a decibel per band on the piano's E1 through 0.3 s. And
+the cents field: a whole cent used 5.5× less of its u16 than it had and
+moved a beat pair's rate by more than a quarter on a third of the piano's
+pairs; fifths of a cent now. Smaller: level 255 is silence, a body row's
+padding is the neighbour's frequency at zero gain, the wash rises over
+the burst's window (it was +32 dB inside a tam-tam's), the acoustic
+sets' 9–19 ms of window before the strike is cut with the phases carried,
+the pickup carries the tine's displacement across a retune, and the
+`intune` pull is applied to the burst as well. Deferred to a refit, since
+they are the fitter's: a penalty on antiphase clusters, one coil per set
+(Q ran 0.02–55 note to note on the EP), and the EP's inverted velocity
+layers (39 of 84 notes, every one from midi 81 up). The runtime is one
+file now — `runtime/kyk_resonate.h` is Kyklophoria's, verbatim, and
+`make check-runtime` says so — because two copies of it drifted at every
+fix.
+
 *A slot is a ratio, not a rank.* The runtime interpolates a note between
 two points slot by slot, and a slot was a mode's rank in its point's
 sorted list. A point with a body mode under its fundamental put every

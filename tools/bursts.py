@@ -40,7 +40,7 @@ def read(path):
         w = line.split()
         if w and w[0] == 'mode':
             modes.append(line.rstrip('\n'))
-        elif w and w[0] in ('burst', 'signed'):
+        elif w and w[0] in ('burst', 'signed', 'trimmed'):
             continue
         elif modes:
             tail.append(line.rstrip('\n'))
@@ -98,11 +98,67 @@ def burst(x, modes, sr, ms, thump_s, fade_ms=30.0, signed=False):
         y = -y
         flipped = True
         keep = [flip(m) for m in keep]
-    e = x[:n] - y
+    # The burst is the recording, faded — x times a raised cosine over its
+    # last third — and the runtime brings the modes in under (1 - fade)
+    # over the same samples. It was x - y, the recording minus the model,
+    # which asked the runtime to reproduce y to the sample so the -y in
+    # the burst would cancel it; bytes, slots, layers and a transposed
+    # read do not, and the holistic pass measured the term that failed to
+    # cancel at +1.6 dB median at the piano's own points and +9 dB between
+    # the Wurlitzer's (docs/holistic-math.md). Nothing to cancel now: a
+    # crossfade between two things that are meant to be the same. The
+    # sign still matters, at the seam — y at -x would dip there — so the
+    # phases are still turned to the sign that fits.
     k = min(n, int(fade_ms * sr / 1000))
-    e[-k:] *= 0.5 + 0.5 * np.cos(np.pi * np.arange(k) / k)
+    fade = np.ones(n); fade[-k:] = 0.5 + 0.5 * np.cos(np.pi * np.arange(k) / k)
+    # band-wise (lit-runtime.md, the SY99 lineage): the crossfade hands the
+    # burst to the modes, and the modes have nothing above the bank's
+    # highest partial to be handed to — so only the part of the burst the
+    # bank can take over is faded; what is above it runs to the burst's
+    # end on its own decay, with 10 ms off the very end. The cliff on a
+    # piano's bass notes was the burst's top fading out with its bottom
+    xb = x[:n].copy()
+    if len(f) and f.max() * 1.05 < 0.45 * sr:
+        from scipy import signal as sg
+        sos = sg.butter(4, f.max() * 1.05, 'highpass', fs=sr, output='sos')
+        hi = sg.sosfiltfilt(sos, xb)
+        lo = xb - hi
+        k2 = min(n, int(0.01 * sr))
+        end = np.ones(n); end[-k2:] = 0.5 + 0.5 * np.cos(np.pi * np.arange(k2) / k2)
+        e = lo * fade + hi * end
+    else:
+        e = xb * fade
     fade_in(e, sr)
-    return e, keep, flipped
+    return e, keep, flipped, k
+
+
+def trim(x, sr, modes):
+    """The analysed window puts the strike 9-12 ms after its start on the
+    acoustic sets (the onset finder's margin), and a strike that arrives
+    late is latency in a trigger's answer. The window is cut to 1 ms before
+    the first sample within 34 dB of the peak, and every mode's phase and
+    amplitude are carried to the new start — phi + w d, A e^(-zeta w d) —
+    so the model still meets the recording at the seam. The target wav is
+    rewritten at the new start so every tool reads the same time axis; the
+    record says `trimmed` so a second run does not cut again."""
+    pk = float(np.max(np.abs(x)) + 1e-12)
+    above = np.where(np.abs(x[:int(0.2 * sr)]) > pk * 0.02)[0]
+    if not len(above):
+        return x, modes, 0
+    d = max(0, int(above[0]) - int(0.001 * sr))
+    if d <= 0:
+        return x, modes, 0
+    out = []
+    for m in modes:
+        w = m.split()
+        f, z = float(w[3]), float(w[5])
+        gi, pi = w.index('gains') + 1, (w.index('phase') + 1) if 'phase' in w else -1
+        om = 2 * math.pi * f
+        w[gi] = '%.6g' % (float(w[gi]) * math.exp(-z * om * d / sr))
+        if pi > 0:
+            w[pi] = '%.5f' % ((float(w[pi]) + om * d / sr) % (2 * math.pi))
+        out.append(' '.join(w))
+    return x[d:], out, d
 
 
 def fade_in(e, sr):
@@ -163,7 +219,7 @@ def main():
                 x, sr = sf.read(tp)
                 swing = float(t[3])
                 y = playvel.note(pm, sh, swing, 0.2, sr)
-                n = min(len(x), int(a.ms * sr / 1000))
+                n = min(len(x), int((60.0 if a.ms == 'auto' else float(a.ms)) * sr / 1000))
                 m = min(len(x), int(0.1 * sr))
                 g = float(np.dot(np.abs(x[:m]), np.abs(y[:m])) / (np.dot(np.abs(x[:m]), np.abs(x[:m])) + 1e-12))   # level, sign-blind
                 pairs.append((t[1], g * x[:n], y[:n], sr))
@@ -177,23 +233,31 @@ def main():
             keep = [flip(m) for m in modes] if sign < 0 else modes
             flips += sign < 0
             for t, x, y, sr in pairs:
-                e = x - sign * y
+                e = x.copy()                  # the recording, faded; the modes come in under (1 - fade)
                 k = min(len(e), int(a.fade * sr / 1000))
                 e[-k:] *= 0.5 + 0.5 * np.cos(np.pi * np.arange(k) / k)
                 fade_in(e, sr)
                 bp = '%s-%s-burst.wav' % (rid, t)
                 sf.write(os.path.join(a.recdir, bp), e, sr, subtype='FLOAT')
-                lines.append('burst %s %s' % (t, bp))
+                lines.append('burst %s %s %d' % (t, bp, k))
         else:
             tp = os.path.join(a.recdir, rid + '-target.wav')
             if not os.path.exists(tp):
                 continue
             x, sr = sf.read(tp)
-            e, keep, flipped = burst(x / 0.5, modes, sr, None if a.ms == 'auto' else float(a.ms), a.thump, a.fade, signed)   # the target wav is the analysed excerpt at half scale
+            trimmed = any(l.startswith('trimmed') for l in open(rp))
+            if not trimmed:
+                x, modes, d = trim(x, sr, modes)
+                if d:
+                    sf.write(tp, x, sr)
+                lines.append('trimmed %d' % d)
+            else:
+                lines.append([l.rstrip('\n') for l in open(rp) if l.startswith('trimmed')][0])
+            e, keep, flipped, fk = burst(x / 0.5, modes, sr, None if a.ms == 'auto' else float(a.ms), a.thump, a.fade, signed)   # the target wav is the analysed excerpt at half scale
             flips += flipped
             bp = rid + '-burst.wav'
             sf.write(os.path.join(a.recdir, bp), e, sr, subtype='FLOAT')   # at the record's scale, not the target wav's half
-            lines.append('burst %s' % bp)
+            lines.append('burst %s %d' % (bp, fk))
         out = [h if not h.startswith('modes ') else 'modes %d' % len(keep) for h in head]
         out += ['mode %d %s' % (i, ' '.join(m.split()[2:])) for i, m in enumerate(keep)]
         out += tail + lines

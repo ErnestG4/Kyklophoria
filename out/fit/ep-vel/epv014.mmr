@@ -17,5 +17,5 @@ shaper bell 0.260386 1.22185 127.864 1228.68 1.61275
 take MED swing 1.71426 level 0.222796
 take MAX swing 3.45236 level 0.164826
 signed 1
-burst MED epv014-MED-burst.wav
-burst MAX epv014-MAX-burst.wav
+burst MED epv014-MED-burst.wav 1440
+burst MAX epv014-MAX-burst.wav 1440

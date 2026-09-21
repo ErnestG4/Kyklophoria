@@ -7,7 +7,7 @@
 
 One file a world, small enough to sit in SDRAM beside the wavetables:
 
-    'KYKM' u16 version=5  u16 N  u16 P  u8 form  u8 kind
+    'KYKM' u16 version=6  u16 N  u16 P  u8 form  u8 kind
     f32 param_lo  f32 param_hi
     kind: what the parameter is. 0 = a note (MIDI), which the runtime takes
     from the pitch it is played at; 1 = an index, a row of bodies, which it
@@ -60,7 +60,11 @@ import numpy as np
 
 
 def cents(hz):
-    return int(np.clip(round(1200 * math.log2(max(hz, 20.0) / 20.0)), 0, 65535))
+    # fifths of a cent from 20 Hz (version 6; a whole cent before, which
+    # used 5.5x less of the field than it has and moved a beat pair's rate
+    # by more than a quarter on a third of the piano's pairs). 65535 is
+    # 13107 cents: 38.8 kHz
+    return int(np.clip(round(5 * 1200 * math.log2(max(hz, 20.0) / 20.0)), 0, 65535))
 
 
 def decay8(zeta):
@@ -68,8 +72,12 @@ def decay8(zeta):
 
 
 def level8(gain, loudest):
-    db = 20 * math.log10(max(abs(gain), 1e-12) / loudest) if loudest > 0 else -60
-    return int(np.clip(round(-db * 4), 0, 255))
+    # 255 is silence — a ghost, a slot with no mode — and not -63.75 dB,
+    # which a third of the Wurlitzer's slots rang at
+    if gain == 0.0 or loudest <= 0:
+        return 255
+    db = 20 * math.log10(max(abs(gain), 1e-12) / loudest)
+    return int(np.clip(round(-db * 4), 0, 254))
 
 
 def phase8(ph):
@@ -80,7 +88,7 @@ def write(path, N, points, form=0, kind=0):
     """points: [(param, modes, stage[, bursts])] with stage = (h, w, K, fc, Q, swing_soft, swing_hard) or None,
     bursts = [(swing, samples_at_48k)]"""
     params = [p[0] for p in points]
-    out = b'KYKM' + struct.pack('<HHHBB', 5, N, len(points), form, kind)
+    out = b'KYKM' + struct.pack('<HHHBB', 6, N, len(points), form, kind)
     out += struct.pack('<ff', min(params), max(params))
     for pt in points:
         p, modes, stage = pt[0], pt[1], pt[2]
@@ -102,10 +110,12 @@ def write(path, N, points, form=0, kind=0):
         for level, t60 in noise:
             out += struct.pack('<ff', level, t60)
         out += struct.pack('<H', len(bursts))
-        for swing, samples in bursts:
+        for b in bursts:
+            swing, samples = b[0], b[1]
+            fade = int(b[2]) if len(b) > 2 else len(samples) // 3      # samples at 48 kHz the modes come in over
             scale = float(np.max(np.abs(samples))) if len(samples) else 1.0
             q = np.clip(np.round(samples / (scale or 1.0) * 32767), -32768, 32767).astype('<i2')
-            out += struct.pack('<ffH', swing, scale, len(q)) + q.tobytes()
+            out += struct.pack('<ffHH', swing, scale, len(q), min(fade, len(q))) + q.tobytes()
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     open(path, 'wb').write(out)
     print('%s: %d points x %d modes, form %d, %d bytes' % (path, len(points), N, form, len(out)))
@@ -121,19 +131,27 @@ def noise_of(recdir, rid):
 
 
 def bursts_of(recdir, rid, swings=None):
-    """[(swing, samples at 48 kHz)] from a record's burst lines. A pitched
-    record has one burst at swing 1; a shaped record one a take at the take's swing."""
+    """[(swing, samples at 48 kHz, fade samples at 48 kHz)] from a record's
+    burst lines — `burst <file> <fade>` on a pitched record, one at swing 1;
+    `burst <take> <file> <fade>` on a shaped record, one a take at the
+    take's swing. The fade is how many samples the modes come in over."""
     import soundfile as sf
     from scipy.signal import resample_poly
     out = []
     for w in (l.split() for l in open(os.path.join(recdir, rid + '.mmr'))):
         if not w or w[0] != 'burst':
             continue
-        take, fname = (w[1], w[2]) if len(w) > 2 else (None, w[1])
+        toks = w[1:]
+        fade = None
+        if toks and toks[-1].isdigit():
+            fade = int(toks[-1]); toks = toks[:-1]
+        take, fname = (toks[0], toks[1]) if len(toks) > 1 else (None, toks[0])
         x, sr = sf.read(os.path.join(recdir, fname))
+        if fade is None:
+            fade = len(x) // 3
         if sr != 48000:
-            x = resample_poly(x, 48000, sr)
-        out.append(((swings or {}).get(take, 1.0), x.astype(np.float32)))
+            x = resample_poly(x, 48000, sr); fade = int(fade * 48000 / sr)
+        out.append(((swings or {}).get(take, 1.0), x.astype(np.float32), fade))
     return out
 
 
@@ -152,7 +170,11 @@ def source_rms(recdir, rid):
     n = int(0.5 * sr)
     if len(x) <= n:
         return float(np.sqrt(np.mean(x ** 2)) + 1e-9)
-    e = np.convolve(x ** 2, np.ones(n) / n, mode='valid')
+    # a running mean by cumulative sum: np.convolve with a 22050-point
+    # kernel over a 3.5 s file was 3e9 multiplies a file, and the banjo's
+    # export ran for an hour at five cores
+    c = np.concatenate([[0.0], np.cumsum(x.astype(np.float64) ** 2)])
+    e = (c[n:] - c[:-n]) / n
     return float(np.sqrt(e.max()) + 1e-9)
 
 
@@ -186,8 +208,8 @@ def layer(recdir, pts):
         bursts = []
         for l, pt in lv:
             sw = l / top
-            for _, samples in pt[3]:
-                bursts.append((sw, samples * sw))
+            for b in pt[3]:
+                bursts.append((sw, b[1] * sw, b[2] if len(b) > 2 else len(b[1]) // 3))
         bursts.sort(key=lambda b: b[0])
         stage = tuple(carrier[2][:5]) + (bursts[0][0] if bursts else 1.0, 1.0)
         print('  %s: param %g, %d takes as layers: %s' % (recdir, param, len(g), ' '.join('%s@%.2f' % (pt[5], l / top) for l, pt in lv)))
@@ -195,88 +217,99 @@ def layer(recdir, pts):
     return out
 
 
-def align(pts, kind, cap=48, tol=0.015):
-    """Slots that mean the same thing between neighbouring points. The
-    runtime interpolates a note between two points slot by slot, and a slot
-    was a mode's rank in its point's list: a point with a body mode under
-    its fundamental put every harmonic one rank off its neighbour's, and a
-    Wurlitzer A2 — between the G2 and C3 points — came out with modes at
-    167, 281 and 417 Hz and no fundamental at all; where one point had
-    fewer modes than the other, its 20 Hz padding was interpolated against
-    real modes into 128 Hz junk.
-
-    The runtime only ever interpolates adjacent points, so the slots need
-    agree only pairwise, along the chain: each point's modes take the slot
-    of the previous point's mode at the same ratio to the note (within
-    1.5%; the parameter is the note, so the ratio is known), a mode with no
-    partner takes a slot the previous point left free — with a ghost put
-    there in the previous point, its ratio at that pitch at zero gain, so it
-    fades in rather than sliding from somewhere else — and a previous mode
-    with no partner gets a ghost in this point, and fades out. A slot only
-    ever holds one ghost, so when a slot must serve a fade-out on one side
-    and a fade-in on the other the ghost's pitch is one of the two; with no
-    free slot at all, the quietest unmatched mode is dropped and counted.
-    A global slot table was tried first and threw a third of the modes out:
-    eleven points of a keyboard share few ratios end to end, and they do
-    not have to. Index worlds, rows of bodies, have no ratio to share and
-    keep their rank order."""
-    if kind != 0 or len(pts) < 2:
+def intune(pts, kind, max_cents=120.0):
+    """Each point pulled to its nominal note. A point played at the pitch
+    the recording had — the Philharmonia's within a few cents, a sampler's
+    top octave 40 cents out and two files 67 cents apart — so a world was in
+    tune with itself and not with A440 along the keyboard, and a v/oct that
+    asked for a C4 got the C4 file's idea of one. The fundamental is the
+    fitted mode nearest ratio 1 with a fifth of the loudest gain (a
+    Wurlitzer's bass fundamental is weak, so a strong second harmonic at
+    ratio 2 is checked as well); every mode is scaled by nominal over
+    measured, so the inharmonicity stays and the note lands on the note.
+    Corrections past 120 cents are an octave error in a manifest, not a
+    tuning, and are refused and reported. Index worlds have no note."""
+    if kind != 0:
         return pts
-    f0 = lambda param: 440.0 * 2 ** ((param - 69) / 12)
-    rows = [[None] * cap for _ in pts]            # rows[i][s] = (hz, zeta, g, ph) or None
-    dropped = slid = 0
-    first = sorted(pts[0][1])[:cap]
-    for s_, m in enumerate(first):
-        rows[0][s_] = m
-    dropped += max(0, len(pts[0][1]) - cap)
-    for i in range(1, len(pts)):
-        fp, fc = f0(pts[i - 1][0]), f0(pts[i][0])
-        prev = rows[i - 1]
-        taken = set()
-        unmatched = []
-        for m in sorted(pts[i][1], key=lambda m: -(m[2] ** 2 / max(m[1] * m[0], 1e-9))):
-            r = m[0] / fc
-            best, bs = None, -1
-            for s_ in range(cap):
-                q = prev[s_]
-                if q is None or q[2] == 0.0 or s_ in taken:
-                    continue
-                d = abs((q[0] / fp) / r - 1)
-                if d < tol and (best is None or d < best):
-                    best, bs = d, s_
-            if bs >= 0:
-                rows[i][bs] = m; taken.add(bs)
-            else:
-                unmatched.append(m)
-        for m in unmatched:
-            free = [s_ for s_ in range(cap) if s_ not in taken and (prev[s_] is None or prev[s_][2] == 0.0)]
-            if free:
-                s_ = free[0]; taken.add(s_)
-                rows[i][s_] = m
-                if prev[s_] is None:
-                    prev[s_] = (m[0] / fc * fp, m[1], 0.0, 0.0)    # a ghost behind it: fades in
-                continue
-            # no free slot: the slot of a previous mode that has no partner
-            # here, and the mode slides between the two along the axis —
-            # what every mode did before, kept for the few, because dropping
-            # a mode loses it at the point itself and sliding only between
-            slid_from = [s_ for s_ in range(cap) if s_ not in taken and prev[s_] is not None]
-            if not slid_from:
-                dropped += 1
-                continue
-            s_ = slid_from[0]; taken.add(s_); rows[i][s_] = m; slid += 1
-        for s_ in range(cap):
-            if rows[i][s_] is None and prev[s_] is not None:
-                q = prev[s_]
-                rows[i][s_] = (q[0] / fp * fc, q[1], 0.0, 0.0)    # a ghost ahead of it: fades out
-    # only as many slots as are used somewhere: a shaped world's sixteen
-    # metal modes must not become forty-eight resonators on the module
-    used = max(s_ + 1 for row in rows for s_ in range(cap) if row[s_] is not None)
     out = []
-    for (param, modes, *rest), row in zip(pts, rows):
-        f = f0(param)
-        out.append((param, [m if m is not None else (f, 0.01, 0.0, 0.0) for m in row[:used]], *rest))
-    print('  slots aligned by ratio to the note along %d points; %d modes slide between neighbours, %d dropped' % (len(pts), slid, dropped))
+    corr = []
+    for param, modes, *rest in pts:
+        f = 440.0 * 2 ** ((param - 69) / 12)
+        loud = max((abs(m[2]) for m in modes), default=0.0)
+        cands = [m for m in modes if abs(m[2]) > 0.2 * loud and 0.9 < m[0] / f < 1.1]
+        ratio = 1.0
+        if not cands:
+            cands = [m for m in modes if abs(m[2]) > 0.2 * loud and 1.8 < m[0] / f < 2.2]
+            ratio = 2.0
+        if not cands:
+            corr.append((param, None)); out.append((param, modes, *rest)); continue
+        # the fundamental's frequency is the energy-weighted centre of the
+        # modes within 6% of the loudest candidate, not the loudest alone: a
+        # pizzicato's pitch settles after the pluck and the fit spends two
+        # or three modes on it, and the loudest is any one of them
+        top = max(cands, key=lambda m: abs(m[2]))[0]
+        clus = [m for m in cands if abs(m[0] / top - 1) < 0.06]
+        fm = sum(m[0] * m[2] ** 2 for m in clus) / sum(m[2] ** 2 for m in clus) / ratio
+        cents = 1200 * math.log2(f / fm)
+        if abs(cents) > max_cents:
+            corr.append((param, cents)); out.append((param, modes, *rest)); continue
+        k = f / fm
+        rest = list(rest)                 # stage, bursts, noise[, id]
+        if len(rest) > 1 and rest[1]:
+            # the burst pulled by the same k, or it plays at the recorded
+            # pitch under modes at the note (up to 110 cents apart on the
+            # piano): a linear read at step k, as the runtime's own
+            nb = []
+            for b in rest[1]:
+                x = b[1]; m = int(len(x) / k)
+                nb.append((b[0], np.interp(np.arange(m) * k, np.arange(len(x)), x).astype(np.float32), int(b[2] / k) if len(b) > 2 else m // 3))
+            rest[1] = nb
+        out.append((param, [(m[0] * k, m[1], m[2], m[3]) for m in modes], *rest))
+        corr.append((param, cents))
+    fixed = [c for _, c in corr if c is not None and abs(c) <= max_cents]
+    refused = [(p, c) for p, c in corr if c is not None and abs(c) > max_cents]
+    print('  in tune: %d of %d points pulled to their note, |cents| median %.1f max %.1f%s' % (
+        len(fixed), len(pts), np.median(np.abs(fixed)) if fixed else 0, max(np.abs(fixed)) if fixed else 0,
+        ''.join('; %g refused at %+.0f cents (an octave error?)' % (p, c) for p, c in refused)))
+    return out
+
+
+def align(pts, kind, cap=48):
+    """The points padded to one width, with ghosts that mean something.
+
+    A note world (kind 0) is no longer interpolated slot by slot: the
+    runtime plays the nearest point transposed to the note (docs/
+    holistic-math.md, its item 2 — the interpolated bank at a midpoint
+    was up to 12-19 dB louder than either point, the fitter's antiphase
+    pairs un-cancelling), so its slots need no alignment, only a common
+    width: each point's modes in frequency order, and silence — the note
+    at zero gain, level byte 255 — where it has fewer than the widest.
+    The chain alignment by ratio that was here is in the history (d33fb45)
+    should slot interpolation of a note world ever come back.
+
+    An index world (kind 1), a row of bodies, is still interpolated along
+    the row — the glide from gong to woodblock is the point of it — and a
+    body with fewer modes than its neighbour used to be padded with 20 Hz,
+    which a real mode was interpolated against on the way: a 12.6 kHz mode
+    through 502 Hz at -1 dB between two bodies. A body's missing slot now
+    holds its nearest neighbour's frequency in that rank at zero gain, so
+    the neighbour's mode fades out on the way rather than diving."""
+    N = min(cap, max(len(pt[1]) for pt in pts))
+    out = []
+    for i, (param, modes, *rest) in enumerate(pts):
+        ms = sorted(modes)
+        if len(ms) > N:
+            ms = sorted(sorted(ms, key=lambda m: -(m[2] ** 2 / max(m[1] * m[0], 1e-9)))[:N])
+        while len(ms) < N:
+            s_ = len(ms)
+            if kind == 1:
+                near = min((pts[j] for j in range(len(pts)) if j != i and len(pts[j][1]) > s_),
+                           key=lambda pt: abs(pt[0] - param), default=None)
+                hz = sorted(near[1])[s_][0] if near else (ms[-1][0] if ms else 440.0)
+                ms.append((hz, ms[-1][1] if ms else 0.01, 0.0, 0.0))
+            else:
+                ms.append((440.0 * 2 ** ((param - 69) / 12), 0.01, 0.0, 0.0))
+        out.append((param, ms, *rest))
     return out
 
 
@@ -353,6 +386,7 @@ def main():
             pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes), noise_of(d, c[0]), c[0]))
         pts = layer(d, pts)
         pts.sort(key=lambda p: p[0])
+        pts = intune(pts, kind)
         pts = align(pts, kind)
         N = max(len(pt[1]) for pt in pts)
         write(sys.argv[3], N, pts, form, kind)
