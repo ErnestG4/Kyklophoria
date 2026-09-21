@@ -1,4 +1,14 @@
-# I/O map — agreed with Will 2026-09-08 (stereo out; CV out on J8)
+# I/O map — agreed with Will 2026-09-08 (stereo out); remapped 2026-09-21 for the resonate mode
+
+**2026-09-21, Combust on the bench with the first resonate worlds:** "everything
+needs CV and trigger in modal and accurate CV in wavetable. This is a modular
+rack instrument." So: **J4 is the trigger in** under a resonate world and **CV
+out A** under a wavetable one (the DG411 switches with the world), and
+**J5–J8 are the four control CVs** in both modes — positions 0–3 on a
+wavetable world; on a resonate one the voicing (the body, on a row of them),
+the velocity a trigger strikes with, the decay and the coil, each summed
+with the Play page pot on its axis (P3–P6). The table below is the map as it
+was; the jack rows are updated, the rest of the history stands.
 
 Source of truth for the panel: `../alchemy-sdk/hardware/alchemy-lab/v2/include/alchemy/hw/alchemy_lab_v2_layout.h`
 and the SDK README's jack reference. What the design wants versus what the
@@ -19,11 +29,11 @@ panel has:
 | J1 | audio in | **FM in** | AC-coupled codec input; linear TZ FM into the phase accumulator (M3). Index from the payload lane × FM depth |
 | J2 | audio in | **Sync / clock** | rising edges advance the **world tour** through its division (`core/kyk_tour.h`). Schmitt-triggered with a 5 ms refractory count, because the jack is AC-coupled: a gate arrives as a step that decays and its release dips below zero, so one comparison would count both ends. Resetting the oscillator phase was the original plan for this jack and is still unimplemented — if both ever land they have to be selectable, since resetting the cycle on every clock edge is hard sync and nobody asked for that *and* a world loop |
 | J3 | CV in | **v/oct** | 16-bit at audio rate, calibrated `Volts()`; read once per block |
-| J4 | CV in | **Position 0** | ±5 V → −1..+1, summed with the offset pot, then rotation and fold |
-| J5 | CV in | **Position 1** | |
-| J6 | CV in | **Position 2** | |
-| J7 | CV in | **Position 3** | |
-| J8 | CV out *or* in | **CV out A** (default) / Rotate in (option) | STM DAC, 12-bit, <1 µs; payload lane with curve/slew/depth. As Rotate: drives the plane picked on the rotation page |
+| J4 | trig in *or* CV out | **Trigger** (resonate world) / **CV out A** (wavetable world) | As the trigger: a rising edge past 1 V strikes at the velocity axis 1 holds, 0.5 V hysteresis, 2 ms refractory, read once a block. As CV out A: MCP4728 12-bit via I²C, latched once a control frame; payload lane with depth. The DG411 switches on the world change, on the control thread |
+| J5 | CV in | **CV 0**: position 0 / voicing (or the body, on a row) | ±5 V → −1..+1, summed with P3 |
+| J6 | CV in | **CV 1**: position 1 / velocity | summed with P4; the velocity a J4 trigger strikes with, 0..1 |
+| J7 | CV in | **CV 2**: position 2 / decay | summed with P5; 0.5 the world as fitted, a quarter to four times |
+| J8 | CV in | **CV 3**: position 3 / coil | summed with P6; 0.5 as fitted, half to double. (Was CV out A on the STM DAC; the option of Rotate in stands) |
 | J9 | audio out | **Out L** | |
 | J10 | audio out | **Out R** | |
 

@@ -106,13 +106,31 @@ public:
     void SetTune(Tune which, float v)
     {
         float& t = rtune_[(int)which];
-        if(t == v) return;
+        /* a deadband, since on the module this is a pot read every block:
+           two hundredths of a width, one per cent of a ratio — under the
+           ear, over the jitter, and At() is 60 us it must not spend on
+           jitter */
+        const float eps = which == Tune::Voicing ? 0.02f : 0.01f * (t > 1.f ? t : 1.f);
+        if(std::fabs(t - v) <= eps) return;
         t = v;
         rnote_ = 1e9f;                            /* re-read at the next block or strike */
     }
     float GetTune(Tune which) const { return rtune_[(int)which]; }
     const ResonatorVoice& Voice() const { return rvoice_; }
     float ResParamNow() const { return rnote_; }
+    float ControlAt(int a) const { return a >= 0 && a < kMaxN ? c_[a] : 0.f; }
+    /* On a modular the spin is jacks and pots, not a page: with this set
+       (the module sets it; the desktop does not, so the page's sliders
+       work there) the control frame is read every block as the spin —
+       axis 0 the voicing on a note world (the body on an index world,
+       which At() reads itself), 2 the decay, 3 the coil, each 0.5 the
+       world as fitted — and axis 1 is the velocity a trigger strikes with.
+       The frame is pot plus CV, the same numbers a wavetable world reads
+       as positions, so the panel needs no second map to remember. */
+    void TuneFromControl(bool on) { tune_from_control_ = on; }
+    static float DecayOf(float c) { return std::exp2((c - 0.5f) * 4.f); }     /* a quarter to four times */
+    static float CoilOf(float c)  { return std::exp2((c - 0.5f) * 2.f); }     /* half to double */
+    static float VoicingOf(float c) { return (c - 0.5f) * 4.f; }              /* +-2 widths */
     ResonatorWorld Tuned() const
     {
         ResonatorWorld r = world_->Res();
@@ -244,6 +262,12 @@ public:
         osc_.Process(out, n, render);
         if(world_ && world_->IsResonate())
         {
+            if(tune_from_control_)
+            {
+                if(world_->Res().kind != 1) SetTune(Tune::Voicing, VoicingOf(c_[0]));
+                SetTune(Tune::Decay, DecayOf(c_[2]));
+                SetTune(Tune::Coil, CoilOf(c_[3]));
+            }
             Retune();
             float tmp[48];
             for(int i = 0; i < n; i += 48)
@@ -574,6 +598,7 @@ private:
     float          rnote_ = 1e9f;   /* the note the voice was built at */
     float          rtune_[3] = {0.f, 1.f, 1.f};   /* voicing (widths), decay (x), coil (x) */
     bool           rframe_ = false;  /* a resonate world's one silent frame has been rendered */
+    bool           tune_from_control_ = false;
 
     const World*   morph_world_ = nullptr;
 

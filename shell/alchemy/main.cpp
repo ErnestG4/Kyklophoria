@@ -208,12 +208,20 @@ static Page page_couple = Page(5).Name("Couple").Color("#f0a0d8").Knobs(k_couple
 static Page page_stereo = Page(2).Name("Stereo").Color("#c4b5fd").Knobs(k_spread, k_plane, k_sharp, k_rdiv, k_level, k_cvdep);
 
 /* ── jacks (descriptor metadata; the web panel mirror reads these) ───────── */
+/* Combust, on the bench with the first resonate worlds: "everything needs
+ * CV and trigger in modal and accurate CV in wavetable. This is a modular
+ * rack instrument." So J4 is the trigger in for a resonate world and CV
+ * out A for a wavetable one — the DG411 switches with the world — and
+ * J5..J8 are the four control CVs for both: positions 0..3 on a wavetable
+ * world; on a resonate one the voicing (or the body, on a row of them),
+ * the velocity a trigger strikes with, the decay and the coil, each with
+ * the Play page pot that shares its axis (docs/io-map.md). */
 static const Jack kJacks[10] = {
-    Jack("fm", "FM In", JackSig::AudioIn),      Jack("sync", "Sync", JackSig::Trig),
-    Jack("voct", "V/Oct", JackSig::Voct),       Jack("pos0", "Position 0", JackSig::CvBi),
-    Jack("pos1", "Position 1", JackSig::CvBi),  Jack("pos2", "Position 2", JackSig::CvBi),
-    Jack("pos3", "Position 3", JackSig::CvBi),  Jack("cv_a", "CV Out A", JackSig::CvUni),
-    Jack("out_l", "Out L", JackSig::AudioOut),  Jack("out_r", "Out R", JackSig::AudioOut),
+    Jack("fm", "FM In", JackSig::AudioIn),        Jack("sync", "Sync", JackSig::Trig),
+    Jack("voct", "V/Oct", JackSig::Voct),         Jack("trig_cv", "Trig / CV Out A", JackSig::Trig),
+    Jack("cv0", "CV 0 · pos / voicing", JackSig::CvBi), Jack("cv1", "CV 1 · pos / velocity", JackSig::CvBi),
+    Jack("cv2", "CV 2 · pos / decay", JackSig::CvBi),   Jack("cv3", "CV 3 · pos / coil", JackSig::CvBi),
+    Jack("out_l", "Out L", JackSig::AudioOut),    Jack("out_r", "Out R", JackSig::AudioOut),
 };
 
 /* ── the space and the engine ────────────────────────────────────────────── */
@@ -578,6 +586,7 @@ static volatile uint16_t gOverruns = 0, gDropped = 0;
 static volatile float    gPayloadA = 0.f;
 static volatile uint8_t  gResetPhase = 0;
 static volatile int16_t  gStrike     = -1;     /* velocity 0-255 to strike with, -1 = none */
+static volatile uint8_t  gJ4Out      = 1u;     /* J4's DG411: 1 CV out A (a wavetable world), 0 the trigger in (a resonate one) */
 static bool              gKepOn      = false;
 static float             gKepRadius  = 0.f;
 static constexpr uint32_t kCpuHz     = 480000000u;
@@ -623,12 +632,29 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
      * Engine::SetControl writes the whole frame and the slew only follows
      * World::N() of it — so this costs the built-ins nothing. */
     float c[kMaxN];
-    c[0] = k_pos0.Norm() + hw.cv[1].Volts() * 0.2f;
-    c[1] = k_pos1.Norm() + hw.cv[2].Volts() * 0.2f;
-    c[2] = k_pos2.Norm() + hw.cv[3].Volts() * 0.2f;
-    c[3] = k_pos3.Norm() + hw.cv[4].Volts() * 0.2f;
+    c[0] = k_pos0.Norm() + hw.cv[2].Volts() * 0.2f;    /* J5 */
+    c[1] = k_pos1.Norm() + hw.cv[3].Volts() * 0.2f;    /* J6 */
+    c[2] = k_pos2.Norm() + hw.cv[4].Volts() * 0.2f;    /* J7 */
+    c[3] = k_pos3.Norm() + hw.cv[5].Volts() * 0.2f;    /* J8 */
     c[4] = k_pos4.Norm();
     c[5] = k_pos5.Norm();
+    /* J4 as the trigger, while a resonate world plays: a rising edge past
+       1 V strikes at the velocity axis 1 holds — the pot and CV 1 — with
+       0.5 V of hysteresis and 2 ms of refractory, read once a block, which
+       is the latency of everything else here. The same flag the page's
+       strike raises, taken after SetF0 below. */
+    {
+        static bool     armed = false;
+        static uint32_t since = 0u;
+        const World*    lw = gEng.L.WorldPtr();
+        if(lw && lw->IsResonate() && !gJ4Out)
+        {
+            const float v = hw.cv[1].Volts();
+            if(since < 0xFFFFu) since++;
+            if(!armed && v > 1.0f && since > 4u) { armed = true; since = 0u; gStrike = (int16_t)(255.f * (c[1] < 0.f ? 0.f : c[1] > 1.f ? 1.f : c[1])); }
+            else if(armed && v < 0.5f) armed = false;
+        }
+    }
 
     /* One multiplier over all six rate knobs, three octaves either side of
      * unity, with a detent at the centre so 1.0 is reachable by hand. */
@@ -1651,7 +1677,15 @@ static void OnFrame()
         gCycSum = 0; gCycN = 0; gCycMax = 0;
         win_t = now_ms;
     }
-    hw.j8.SetVolts(gPayloadA * 5.f * k_cvdep.Norm());
+    /* J4 follows the world: CV out A under a wavetable world, the trigger
+       in under a resonate one. Switched here, on the control thread, the
+       DG411 being an I2C expander's business; the callback reads the flag. */
+    {
+        const World* lw = gEng.L.WorldPtr();
+        const uint8_t want = (lw && lw->IsResonate()) ? 0u : 1u;
+        if(want != gJ4Out) { if(want) hw.j4.EnableCvOutput(); else hw.j4.DisableCvOutput(); gJ4Out = want; }
+    }
+    if(gJ4Out) hw.j4.SetVolts(gPayloadA * 5.f * k_cvdep.Norm());
     TourService();
     ServeWorldRequest();
 }
@@ -1668,7 +1702,8 @@ int main()
     worlds::Point(worlds::kCrop, gWorlds[0], kBootP, nullptr, &gVertTable[0]);
     gEng.Init(&gWorlds[0], hw.SampleRate());
 
-    hw.j8.EnableCvOutput();
+    hw.j4.EnableCvOutput();                 /* CV out A, until a resonate world takes the jack as its trigger */
+    gEng.TuneFromControl(true);             /* the spin is jacks and pots here, not the page */
 
     settings.UseBrightness();
     settings.UsePresets(presets);

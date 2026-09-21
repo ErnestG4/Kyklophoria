@@ -206,9 +206,18 @@ what it is). Concretely:
   refuse target/snapshot/free-while-live, free after a built-in takes
   over) and the node selftest (the same through `link.js`).
 
-Still the bench's: the hardware trigger (J2's edge, or the oscillator into
-the bank), which pots carry the spin (the action exists; a page is the
-one hand on it so far), the cycle budget, and the module's card path above, which is
+- **The jacks** (2026-09-21, docs/io-map.md): J4 is the trigger under a
+  resonate world — a rising edge past 1 V strikes at the velocity axis 1
+  holds — and CV out A under a wavetable one, the DG411 switching with
+  the world on the control thread; J5–J8 are CV 0–3: on a resonate world
+  the voicing (or the body on a row), the velocity, the decay and the
+  coil, each with the Play page pot on its axis, 0.5 the world as fitted.
+  `Engine::TuneFromControl` reads the frame as the spin every block with
+  a deadband (two hundredths of a width, one per cent of a ratio) so pot
+  jitter does not spend `At()`; the module sets it, the desktop does not,
+  so the page's sliders still work against `kykdesk`. Unrun on hardware.
+
+Still the bench's: the cycle budget, and the module's card path above, which is
 built and untested. The pot that plays an index world is position 0, which on the
 module is the Play page's third pot; whether a body row wants its own
 page is a bench question.
