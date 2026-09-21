@@ -52,10 +52,12 @@ static int sweep(const char* path, const char* out_path, float vel, float param,
     {
         const float x = lo + (hi - lo) * (strikes > 1 ? (float)i / (strikes - 1) : 0.f);
         mb::World wi = w;
+        float p = param;
         if(!strcmp(which, "voicing")) wi.voicing = x;
         else if(!strcmp(which, "decay")) wi.decay = x;
         else if(!strcmp(which, "coil")) wi.coil = x;
-        wi.At(param, voices[i], (float)sr);
+        else if(!strcmp(which, "param")) p = x;      /* walk the world's own axis: between its points */
+        wi.At(p, voices[i], (float)sr);
     }
     const int block = 48;
     for(size_t pos = 0; pos < out.size(); pos += block)
