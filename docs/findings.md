@@ -907,6 +907,52 @@ What is measured, reasoned and hunch, so nobody reads more than is there:
   and the oscillator the exciter a sustained one wants; that one pot on the
   voicing is the knob a player reaches for. Neither has been played.
 
+## The note a record cannot be without, 21 September
+
+Combust, with the Wurlitzer on the module: "wurli's notes are OFF badly.
+A2 to B2 and C2 in particular is an octave wrong... oh I see you're using
+the same modes for several notes together. Stop that... Why can't we
+actually make this accurate?"
+
+*Measured.* Three causes, all in the records. (1) The manifest had
+`wurlz001` as the C3; the audio is a C2 (`tools/pitchcheck.py`, which reads
+every record's source by `pitchman`'s detector — the lowest line with a
+harmonic series over it — against its label). The CNCD set is C and G in
+every octave, several takes a note, and the first manifest was an ear that
+took a weak fundamental's second harmonic for the note. B2 played that file
+a semitone down: an octave low. (2) The C2 and G2 fits had no fundamental
+(`tools/fundcheck.py`): the 65 Hz sits at the bottom of the six loudest
+lines and the initialiser's gates and budget dropped it; the model of C2
+was a C3 and a G3. (3) A2's nearest point was the G2 without its note.
+
+*Fixed, and checked.* The fitter now knows the note it is labelled
+(`modalfit.initialise(f0=)`): the line nearest it is the first candidate,
+not gated, keeps its place in the budget and stays through `audible()` and
+`validate()` (`keep_fundamental`). Thirteen more records across the sets
+had lost theirs and were refitted in place (`fitset --only`, `fitvel
+--only`); every loss fell. The manifests that ship live in `manifests/`
+(samples/ is not in the repo). `tools/notecheck.py` strikes every semitone
+in isolation through Kyklophoria's own `kykdesk` and reads the pitch back:
+the Wurlitzer is 61 of 61 from C2 to C7, and was 10 of 25 off between C2
+and C4 before. The EP's G2–A2 came out a fifth low (the tine's mode gone
+from the shaped fit) and were refitted the same way.
+
+*Reasoned, for the question.* Accurate to what? To the recordings, yes,
+and the three checks make the two ways the records were wrong impossible
+to ship. To every note: only where every note was recorded. The Wurlitzer
+set has eleven pitches — C and G in each octave — so the notes between are
+the nearest point transposed by up to three semitones, which is what a
+sampler does with the same set and is the "same modes for several notes"
+heard. The EP set is chromatic (84 notes, two velocities) and the
+Philharmonia sets nearly so; the piano is 34 of 88. What would make the
+Wurlitzer accurate at every note is a chromatic Wurlitzer set, or the reed
+model (`--form gap`, `geofit`) fitted to the eleven and asked for the
+others — the second is real work and the first is a download. The
+detector's own errors are worth knowing when reading `notecheck` on the
+strings: on a pizzicato high note it hears the open A string ringing in
+sympathy, and on a bass E1 the second harmonic; `pitchcheck` is advisory
+there and exact on a sampler set.
+
 ## Reproducing it
 
     make -j8 all-stages                 # ~10 minutes: 36 FEMs in parallel, then seconds
