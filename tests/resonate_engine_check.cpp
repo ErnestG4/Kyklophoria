@@ -143,6 +143,49 @@ int main()
         printf("  a C4 strike is a C4 (C3 fundamental %.0f dB under its series); a retune keeps the ring (%.3g -> %.3g); a re-strike adds (%.3g -> %.3g over 20 ms)\n", top - l131, e_before, e_after, e_on, e_re);
     }
 
+    /* 5. an index world — a row of bodies — is played by position 0, not by
+       pitch: the same position at two pitches is the same sound, bit for
+       bit, and equal to the standalone voice built at that index; two
+       positions are two bodies; and the position moving under a ringing
+       body retunes it rather than cutting it */
+    {
+        auto pblob = slurp("tests/data/perc.kykm");
+        CHECK(!pblob.empty(), "tests/data/perc.kykm missing");
+        World perc; perc.UseResonate(pblob.data(), (uint32_t)pblob.size());
+        CHECK(perc.IsResonate() && perc.Res().kind == 1 && perc.Res().lo == 0.f && perc.Res().hi == 18.f,
+              "perc.kykm did not attach as an index world (kind %d, %g..%g)", perc.Res().kind, perc.Res().lo, perc.Res().hi);
+        const float at0[kMaxN] = {0.f}, at1[kMaxN] = {1.f}, mid[kMaxN] = {0.5f};
+        Engine a; a.Init(&perc, sr); a.gain = 1.f; a.SetPosition(at0, 1); a.SetF0(261.63f); a.Strike(0.7f);
+        Engine b; b.Init(&perc, sr); b.gain = 1.f; b.SetPosition(at0, 1); b.SetF0(130.81f); b.Strike(0.7f);
+        Engine c; c.Init(&perc, sr); c.gain = 1.f; c.SetPosition(at1, 1); c.SetF0(261.63f); c.Strike(0.7f);
+        std::vector<float> ya, yb, yc; Run(a, ya, 100); Run(b, yb, 100); Run(c, yc, 100);
+        ResonatorVoice v; v.Init(); perc.Res().At(0.f, v, sr); v.Strike(0.7f);
+        std::vector<float> yv(4800); for(int k = 0; k < 100; k++) v.Process(yv.data() + k * 48, 48);
+        double dab = 0, dav = 0, dac = 0, en = 0;
+        for(int i = 0; i < 4800; i++)
+        {
+            dab += (ya[i] - yb[i]) * (ya[i] - yb[i]);
+            dav += (ya[i] / a.PhaseTrim() - yv[i]) * (ya[i] / a.PhaseTrim() - yv[i]);
+            dac += (ya[i] - yc[i]) * (ya[i] - yc[i]);
+            en += ya[i] * ya[i];
+        }
+        CHECK(en > 0 && dab == 0.0, "an index world changed with the pitch: %.3g of the energy", dab / en);
+        CHECK(dav < 1e-10 * en, "an index world at position 0 differs from the voice at index 0: %.3g of the energy", dav / en);
+        CHECK(dac > 0.1 * en, "position 0 and position 1 are the same body: %.3g of the energy apart", dac / en);
+        /* the pot moves under the ring: the sound goes on, and it is now the
+           body at the new position (the same as one struck there, in
+           frequency content, not in phase — so compared on a spectrum) */
+        Engine g; g.Init(&perc, sr); g.gain = 1.f; g.SetPosition(at0, 1); g.SetF0(261.63f); g.Strike(0.7f);
+        std::vector<float> g1; Run(g, g1, 100);
+        g.SetPosition(mid, 1);
+        std::vector<float> g2; Run(g, g2, 5);
+        double e_before = 0, e_after = 0;
+        for(int i = 4560; i < 4800; i++) e_before += g1[i] * g1[i];
+        for(int i = 0; i < 240; i++) e_after += g2[i] * g2[i];
+        CHECK(e_after > 0.1 * e_before, "moving the position cut the ringing body: %.3g before, %.3g after", e_before, e_after);
+        printf("  an index world: position, not pitch (0 apart at two pitches; %.3g of the energy apart at two positions); the pot moving keeps the ring (%.3g -> %.3g)\n", dac / en, e_before, e_after);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }

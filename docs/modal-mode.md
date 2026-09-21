@@ -174,6 +174,22 @@ what it is). Concretely:
   not have (a resonator has one axis, the projection is a pair) sits at the
   centre — `pagecheck` has an N=1 case, and before the fix it drew 22 marks
   at NaN.
+- An **index world** (`.kykm` v5, `kind` byte 1: a row of bodies, the
+  nineteen percussion instruments gong to woodblock) is played by
+  position 0, lo to hi, not by pitch — the world's one axis doing what a
+  position does everywhere else here, choosing the timbre — and follows
+  the pot every block with its state ringing on. A note world (kind 0,
+  and every v4 file) follows the pitch as before. `tests/data/perc.kykm`;
+  `resonate_engine_check` asks that two pitches at one position are one
+  sound bit for bit, that two positions are two bodies, and that the pot
+  moving under a ring keeps it.
+- The retune carries each mode's state across as an amplitude and a
+  phase, solved from the two samples under the old pole and rewritten
+  under the new. Two samples of a fast oscillation read under a slow
+  pole are a huge amplitude, (y1 − y2) / sin w: a gong's modes retuned to
+  a tom's came back 28 dB louder before this. The Wurlitzer's retune,
+  which used to lift or drop by the frequency ratio, is now transparent
+  (the golden `m4_resonate` re-pinned for it).
 - ACTION 17 `strike u8 velocity`: the hand on a resonator until the module
   has a trigger. On the module it is a flag the audio callback consumes
   after `SetF0`, so the strike retunes to the pitch it is struck at; the
@@ -186,10 +202,9 @@ what it is). Concretely:
 Still the bench's: the hardware trigger (J2's edge, or the oscillator into
 the bank), the three pots on `ResonatorWorld::voicing / decay / coil`, the
 cycle budget, and the module's card path above, which is
-built and untested. A retune re-reads the old state at the new frequency,
-which lifts or drops the ringing note's amplitude by the frequency ratio at
-low frequencies (a tone up: about 1 dB; an octave: 6 dB); if that is heard,
-the state can be rescaled at retune.
+built and untested. The pot that plays an index world is position 0, which on the
+module is the Play page's third pot; whether a body row wants its own
+page is a bench question.
 
 ## What is not done, and why
 

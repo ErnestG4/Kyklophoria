@@ -106,6 +106,29 @@ struct ResonatorBank
             const float w = 6.2831853f * hz[i] / sr;
             const float r = std::exp(-zeta[i] * w);
             const float ph = phase ? phase[i] : 0.f;
+            if(keep && c2[i] < 0.f)
+            {
+                /* the state carried across a retune as what it is — an
+                   amplitude and a phase — and not as two samples. Two
+                   samples of a slow oscillation read under a fast pole
+                   are a small amplitude; of a fast one under a slow pole,
+                   a huge one ((y1 - y2) / sin w): a gong's modes retuned
+                   to a tom's came back 28 dB louder. The old pole gives the
+                   old w and r; the pair is solved for A sin(phi) and
+                   A cos(phi) and rewritten under the new pole. Both the
+                   ringing state and the strike still ramping in */
+                const float r0 = std::sqrt(-c2[i]);
+                float cw = c1[i] / (2.0f * r0); cw = cw > 1.0f ? 1.0f : cw < -1.0f ? -1.0f : cw;
+                const float w0 = std::acos(cw), sw0 = std::sin(w0) > 1e-6f ? std::sin(w0) : 1e-6f;
+                const float cwn = std::cos(w), swn = std::sin(w);
+                float* a[2] = {y1, s1}; float* b[2] = {y2, s2};
+                for(int q = 0; q < 2; q++)
+                {
+                    const float sp = a[q][i], cp = (a[q][i] * cw - b[q][i] * r0) / sw0;   /* A sin phi, A cos phi */
+                    a[q][i] = sp;
+                    b[q][i] = (sp * cwn - cp * swn) / r;                                    /* A sin(phi - w) / r */
+                }
+            }
             c1[i] = 2.0f * r * std::cos(w);
             c2[i] = -r * r;
             p1[i] = gain[i] * std::sin(ph - w) / r;
@@ -413,7 +436,7 @@ struct ResonatorWorld
     const uint8_t* blob;
     uint32_t size;
     uint16_t N, P;
-    uint8_t  form, body;
+    uint8_t  form, kind;   /* kind: 0 the param is a note, taken from the pitch; 1 an index into a row of bodies, taken from a position */
     float    lo, hi;
     /* the spin: what a pot does to a loaded point. voicing moves the pole
        off centre by that many widths on top of the fitted h; decay
@@ -444,7 +467,7 @@ struct ResonatorWorld
         return q;
     }
 
-    void Init() { blob = nullptr; size = 0; N = P = 0; form = body = 0; lo = hi = 0.f; voicing = 0.f; decay = coil = 1.f; }
+    void Init() { blob = nullptr; size = 0; N = P = 0; form = kind = 0; lo = hi = 0.f; voicing = 0.f; decay = coil = 1.f; }
 
     bool Attach(const void* data, uint32_t bytes)
     {
@@ -452,9 +475,9 @@ struct ResonatorWorld
         if(bytes < kHeader || std::memcmp(blob, "KYKM", 4) != 0) return false;
         uint16_t ver; std::memcpy(&ver, blob + 4, 2);
         std::memcpy(&N, blob + 6, 2); std::memcpy(&P, blob + 8, 2);
-        form = blob[10]; body = blob[11];
+        form = blob[10]; kind = blob[11];      /* version 4 wrote an unread body count here, always 0: a note */
         std::memcpy(&lo, blob + 12, 4); std::memcpy(&hi, blob + 16, 4);
-        return ver == 4 && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
+        return (ver == 4 || ver == 5) && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
     }
 
     float Param(int i) const { float p; std::memcpy(&p, Point(i), 4); return p; }
