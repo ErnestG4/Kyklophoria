@@ -1,56 +1,56 @@
 bake — variant diagonal with decay, K=4, extent 2.20, reference woodblock, D=144 over 19 models (perc only), blocks weighted by total variance
 
-map round trip (log then exp, no PCA): worst 2.00e+00 over cents and relative gain
+map round trip (log then exp, no PCA): worst 1.66e+00 over cents and relative gain
 
-held out 2 models, fitted on 17. variance explained by the 4 components: 30.3% 25.5% 14.0% 9.4%  (cumulative 79.2%)
+held out 2 models, fitted on 17. variance explained by the 4 components: 29.8% 26.1% 14.1% 9.1%  (cumulative 79.1%)
 
 reconstruction from each model's own coordinates:
   model    family   param       cents  gain err    min hz     frame   neg   coords (whitened)
-  cowbell  perc     3.000       625.9     0.910     491.9  0.00e+00     0     0.75  -0.38   0.51   0.15  held out
-  triangle perc     8.000       647.8     0.967     994.2  0.00e+00     0     0.25   1.88  -1.49  -0.70  held out
-  Thai-gong perc     0.000       596.6     1.037     321.8  0.00e+00     0     0.36  -0.50  -0.44  -0.85  
-  agogo-bells perc     1.000       332.3     0.994     332.8  0.00e+00     0     0.35  -0.25  -0.20   0.42  
-  bell-tree perc     2.000       477.0     0.984    1003.0  0.00e+00     0     1.62   0.05  -0.60   0.77  
-  djembe   perc     4.000       400.7     0.778      78.9  0.00e+00     0    -0.87  -1.21   0.51   0.41  
-  suspended-cymbal perc     5.000       337.9     1.022     229.9  0.00e+00     0    -0.64   0.73  -1.85  -0.63  
-  tam-tam  perc     6.000       461.3     1.032      89.8  0.00e+00     0    -1.48  -0.08  -1.05  -1.39  
-  tom-toms perc     7.000       638.9     0.853     204.0  0.00e+00     0    -0.23  -0.58   1.00   0.50  
-  woodblock perc     9.000       362.2     1.884     943.0  0.00e+00     0    -0.74   2.88   1.19   1.69  
-  bass-drum perc    10.000       519.2     1.067      91.4  0.00e+00     0    -0.61  -1.28   1.02   0.42  
-  surdo    perc    11.000       400.4     1.215      58.3  0.00e+00     0    -1.60  -0.42  -0.55   0.45  
-  djundjun perc    12.000       542.0     0.923     136.0  0.00e+00     0    -1.00  -0.04   0.06   0.17  
-  snare-drum perc    13.000       279.2     1.291     320.4  0.00e+00     0     0.46  -0.57   0.26   0.57  
-  clash-cymbals perc    14.000       852.8     1.156     630.8  0.00e+00     0     1.23  -0.34  -0.16   0.67  
-  spring-coil perc    15.000       469.9     0.964    1523.9  0.00e+00     0     1.59   0.23   0.24  -1.00  
-  tambourine perc    16.000       707.5     1.156     763.2  0.00e+00     0     0.60   1.14  -1.64   0.09  
-  castanets perc    17.000       242.5     1.333    1147.2  0.00e+00     0     0.18   0.96   1.98  -2.57  
-  Chinese-cymbal perc    18.000       474.1     1.170     384.7  0.00e+00     0     0.77  -0.72   0.21   0.28  
+  cowbell  perc     3.000       631.3     0.895     490.4  0.00e+00     0     0.71  -0.47   0.49  -0.17  held out
+  triangle perc     8.000       639.5     0.968     983.3  0.00e+00     0     0.49   1.75  -1.62   0.61  held out
+  Thai-gong perc     0.000       601.0     1.004     315.1  0.00e+00     0     0.32  -0.62  -0.55   0.71  
+  agogo-bells perc     1.000       328.8     0.952     339.3  0.00e+00     0     0.31  -0.26  -0.14  -0.42  
+  bell-tree perc     2.000       476.9     0.917    1000.3  0.00e+00     0     1.54  -0.09  -0.50  -0.72  
+  djembe   perc     4.000       392.9     0.724      77.4  0.00e+00     0    -1.00  -1.10   0.54  -0.44  
+  suspended-cymbal perc     5.000       323.9     1.019     222.7  0.00e+00     0    -0.57   0.73  -1.91   0.55  
+  tam-tam  perc     6.000       465.3     0.978      91.6  0.00e+00     0    -1.49   0.10  -1.07   1.41  
+  tom-toms perc     7.000       646.0     0.844     209.1  0.00e+00     0    -0.32  -0.44   1.13  -0.35  
+  woodblock perc     9.000       412.6     0.371     959.9  0.00e+00     0    -0.32   2.97   1.15  -1.65  
+  bass-drum perc    10.000       522.1     1.031      89.9  0.00e+00     0    -0.75  -1.20   1.04  -0.42  
+  surdo    perc    11.000       400.4     0.982      57.0  0.00e+00     0    -1.67  -0.21  -0.51  -0.46  
+  djundjun perc    12.000       545.6     0.886     141.9  0.00e+00     0    -1.01   0.16   0.19  -0.08  
+  snare-drum perc    13.000       287.8     0.951     321.0  0.00e+00     0     0.36  -0.58   0.33  -0.54  
+  clash-cymbals perc    14.000       842.3     0.963     610.2  0.00e+00     0     1.15  -0.50  -0.17  -0.71  
+  spring-coil perc    15.000       485.2     0.937    1498.5  0.00e+00     0     1.66  -0.07   0.07   0.89  
+  tambourine perc    16.000       723.4     0.940     754.8  0.00e+00     0     0.70   1.02  -1.63  -0.13  
+  castanets perc    17.000       216.7     0.909    1277.4  0.00e+00     0     0.39   0.95   1.88   2.72  
+  Chinese-cymbal perc    18.000       478.3     1.035     366.8  0.00e+00     0     0.68  -0.87   0.15  -0.38  
 
-  held out, worst: 647.8 cents, gain error 0.967, frame 0.00e+00, 0 non-positive frequencies
-  in sample, worst: 852.8 cents, gain error 1.884, frame 0.00e+00, 0 non-positive frequencies
+  held out, worst: 639.5 cents, gain error 0.968, frame 0.00e+00, 0 non-positive frequencies
+  in sample, worst: 842.3 cents, gain error 1.035, frame 0.00e+00, 0 non-positive frequencies
 
-fitted on all 19. variance explained: 29.0% 27.4% 13.6% 8.2%  (cumulative 78.1%)
-block scales: 6.157 13.98 15.68
-component sdevs: 0.9582 0.9309 0.6552 0.5097
+fitted on all 19. variance explained: 29.6% 26.7% 13.9% 8.0%  (cumulative 78.1%)
+block scales: 6.157 13.34 15.68
+component sdevs: 0.9677 0.919 0.6631 0.5027
 
 where every model sits in the cube (whitened coordinate / extent, so inside is |x| < 1):
-  Thai-gong   0.14  -0.20  -0.28  -0.38
-  agogo-bells   0.08  -0.18  -0.09   0.22
-  bell-tree  -0.27  -0.69  -0.21   0.41
-  cowbell    0.11  -0.42   0.21   0.05
-  djembe     0.69   0.19   0.06   0.11
-  suspended-cymbal  -0.27   0.46  -0.74  -0.17
-  tam-tam    0.26   0.68  -0.47  -0.56
-  tom-toms   0.37  -0.01   0.37   0.14
-  triangle  -0.91   0.26  -0.48  -0.23
-  woodblock  -0.81   0.73   1.03   0.87   outside
-  bass-drum   0.70   0.06   0.26   0.07
-  surdo      0.47   0.65  -0.26   0.26
-  djundjun   0.26   0.44   0.06   0.10
-  snare-drum   0.20  -0.29   0.05   0.23
-  clash-cymbals  -0.04  -0.59  -0.09   0.32
-  spring-coil  -0.31  -0.66   0.14  -0.45
-  tambourine  -0.59  -0.04  -0.52   0.21
-  castanets  -0.27   0.06   0.95  -1.29   outside
-  Chinese-cymbal   0.21  -0.45   0.01   0.10
+  Thai-gong   0.15  -0.23  -0.32  -0.32
+  agogo-bells   0.07  -0.17  -0.06   0.21
+  bell-tree  -0.29  -0.64  -0.16   0.38
+  cowbell    0.09  -0.43   0.20   0.06
+  djembe     0.70   0.17   0.06   0.13
+  suspended-cymbal  -0.24   0.47  -0.76  -0.15
+  tam-tam    0.28   0.68  -0.46  -0.57
+  tom-toms   0.35   0.01   0.42   0.07
+  triangle  -0.89   0.27  -0.53  -0.20
+  woodblock  -0.82   0.73   1.02   0.84   outside
+  bass-drum   0.70   0.03   0.26   0.08
+  surdo      0.49   0.65  -0.24   0.26
+  djundjun   0.25   0.45   0.13   0.05
+  snare-drum   0.19  -0.28   0.08   0.21
+  clash-cymbals  -0.05  -0.57  -0.10   0.34
+  spring-coil  -0.31  -0.69   0.06  -0.40
+  tambourine  -0.58  -0.01  -0.50   0.21
+  castanets  -0.29   0.04   0.92  -1.36   outside
+  Chinese-cymbal   0.22  -0.47  -0.03   0.14
   2 of 19 outside the cube at extent 2.20

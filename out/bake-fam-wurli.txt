@@ -1,40 +1,40 @@
 bake — variant diagonal with decay, K=4, extent 2.20, reference wurlz010, D=144 over 11 models (wurli only), blocks weighted by total variance
 
-map round trip (log then exp, no PCA): worst 1.99e+00 over cents and relative gain
+map round trip (log then exp, no PCA): worst 1.98e+00 over cents and relative gain
 
-held out 2 models, fitted on 9. variance explained by the 4 components: 70.6% 11.1% 7.0% 3.8%  (cumulative 92.5%)
+held out 2 models, fitted on 9. variance explained by the 4 components: 71.7% 11.0% 6.3% 4.1%  (cumulative 93.0%)
 
 reconstruction from each model's own coordinates:
   model    family   param       cents  gain err    min hz     frame   neg   coords (whitened)
-  wurlz007 wurli   55.000       665.1     0.954     285.0  0.00e+00     0     0.05   0.80   0.23  -1.34  held out
-  wurlz014 wurli   84.000       235.4     0.807     908.5  0.00e+00     0     0.75  -0.04   0.71  -0.15  held out
-  wurlz002 wurli   36.000       235.1     1.333      56.7  0.00e+00     0    -1.54  -0.88   0.39  -1.40  
-  wurlz003 wurli   43.000       242.4     1.339     113.4  0.00e+00     0    -1.30  -1.19  -0.16   1.43  
-  wurlz001 wurli   48.000        72.1     2.163     125.5  0.00e+00     0    -0.60   1.42  -2.07  -0.00  
-  wurlz008 wurli   60.000       192.1     1.439     288.9  0.00e+00     0    -0.04   1.00   1.30  -0.77  
-  wurlz010 wurli   67.000       170.8     2.082     353.3  0.00e+00     0    -0.11   1.18   1.15   1.52  
-  wurlz012 wurli   72.000       265.6     0.312     607.5  0.00e+00     0     0.57   0.11  -0.45  -0.85  
-  wurlz013 wurli   79.000        24.8     0.729     769.0  0.00e+00     0     0.66  -0.01   0.39  -0.45  
-  wurlz016 wurli   91.000        86.1     0.467    1492.4  0.00e+00     0     1.10  -0.62  -0.17   0.14  
-  wurlz017 wurli   96.000       111.3     0.211    1968.0  0.00e+00     0     1.26  -1.00  -0.39   0.38  
+  wurlz007 wurli   55.000       332.4     0.866     233.8  0.00e+00     0     0.06   0.83   0.21  -2.09  held out
+  wurlz014 wurli   84.000       141.3     0.827     961.3  0.00e+00     0     0.75  -0.12   0.62   0.14  held out
+  wurlz002 wurli   36.000       106.7     1.539      61.2  0.00e+00     0    -1.53  -0.97   0.30  -0.80  
+  wurlz003 wurli   43.000       114.5     1.167     105.3  0.00e+00     0    -1.32  -1.10  -0.20   0.79  
+  wurlz001 wurli   48.000        28.0     2.135     128.7  0.00e+00     0    -0.61   1.58  -1.95   0.37  
+  wurlz008 wurli   60.000        33.7     1.146     263.1  0.00e+00     0     0.02   0.84   0.96  -1.44  
+  wurlz010 wurli   67.000        15.0     1.984     388.2  0.00e+00     0    -0.12   1.11   1.60   1.60  
+  wurlz012 wurli   72.000        63.7     0.233     538.2  0.00e+00     0     0.56   0.19  -0.37  -1.18  
+  wurlz013 wurli   79.000         4.4     0.764     778.5  0.00e+00     0     0.66  -0.04   0.37  -0.27  
+  wurlz016 wurli   91.000        43.7     0.368    1529.9  0.00e+00     0     1.09  -0.64  -0.20   0.25  
+  wurlz017 wurli   96.000        14.2     0.217    2084.9  0.00e+00     0     1.25  -0.98  -0.52   0.68  
 
-  held out, worst: 665.1 cents, gain error 0.954, frame 0.00e+00, 0 non-positive frequencies
-  in sample, worst: 265.6 cents, gain error 2.163, frame 0.00e+00, 0 non-positive frequencies
+  held out, worst: 332.4 cents, gain error 0.866, frame 0.00e+00, 0 non-positive frequencies
+  in sample, worst: 114.5 cents, gain error 2.135, frame 0.00e+00, 0 non-positive frequencies
 
-fitted on all 11. variance explained: 67.2% 11.2% 6.8% 5.8%  (cumulative 91.0%)
-block scales: 7.596 13.5 11.47
-component sdevs: 1.489 0.6093 0.472 0.4368
+fitted on all 11. variance explained: 68.2% 11.3% 6.2% 5.9%  (cumulative 91.6%)
+block scales: 7.596 13.34 11.52
+component sdevs: 1.5 0.6117 0.4506 0.4426
 
 where every model sits in the cube (whitened coordinate / extent, so inside is |x| < 1):
-  wurlz002  -0.79  -0.47   0.23   0.05
-  wurlz003  -0.68  -0.59  -0.09   0.19
-  wurlz001  -0.34   0.55  -1.02  -0.49   outside
-  wurlz007  -0.02   0.58   0.04   0.85
-  wurlz008  -0.05   0.51   0.60   0.22
-  wurlz010  -0.09   0.38   0.48  -0.84
-  wurlz012   0.24   0.12  -0.32   0.47
-  wurlz013   0.30  -0.07   0.17  -0.10
-  wurlz014   0.34  -0.13   0.38  -0.29
-  wurlz016   0.50  -0.34  -0.19   0.00
-  wurlz017   0.59  -0.54  -0.27  -0.05
-  1 of 11 outside the cube at extent 2.20
+  wurlz002  -0.79  -0.49  -0.19  -0.18
+  wurlz003  -0.69  -0.55  -0.11   0.13
+  wurlz001  -0.34   0.59   0.63   0.95
+  wurlz007  -0.01   0.62  -0.79  -0.03
+  wurlz008  -0.02   0.48  -0.34  -0.43
+  wurlz010  -0.09   0.32   0.81  -0.73
+  wurlz012   0.24   0.17  -0.39   0.28
+  wurlz013   0.29  -0.09   0.09  -0.18
+  wurlz014   0.34  -0.17   0.25  -0.35
+  wurlz016   0.50  -0.35  -0.01   0.21
+  wurlz017   0.58  -0.52   0.04   0.34
+  0 of 11 outside the cube at extent 2.20
