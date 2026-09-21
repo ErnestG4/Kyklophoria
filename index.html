@@ -542,11 +542,15 @@ async function connect(transport) {
   renderImport();
   trail.n = 0; trail.head = 0; trail.at = -1; lastBlock = -1;
   say('');
+  /* the resonator's knobs as last sent belong to the module that was
+     answering; a fresh module is at its fitted centre and one voice */
+  reso = null; poly = 1; tune[0] = tune[1] = tune[2] = 128; lastStrikeN = -1;
   polling = true; pollTelemetry(); pollStats(); pollResonate();
 }
 async function disconnect() {
   polling = false;
   const l = link; link = null; tel = null; stats = null; info = null; panel = null;
+  reso = null; lastStrikeN = -1;
   worlds = null; basis = null; basisWorld = -1; switching = -1; terrain.key = '';
   heldLost();              /* whatever it was holding, it is not holding it now */
   seenWorld = -2;          /* and the next module to answer is a fresh question */
