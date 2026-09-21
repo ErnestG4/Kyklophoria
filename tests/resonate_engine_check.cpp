@@ -219,6 +219,32 @@ int main()
                late4 / late1, dv / ea, dc / ea);
     }
 
+    /* 7. polyphony: at two voices a C3 struck and then a G3 struck leaves
+       both ringing, the C3 at its own pitch; at one voice the G3 strike
+       retunes the C3 away, so only the G3 series is left. Measured on the
+       spectrum 100 ms after the second strike. */
+    {
+        auto level_at = [](const std::vector<float>& y, float hz) {
+            double best = 0; const int n = (int)y.size();
+            for(float f = hz * 0.99f; f <= hz * 1.01f; f += hz * 0.001f)
+            { double re = 0, im = 0; for(int i = 0; i < n; i++) { const double ph = 6.2831853 * f * i / 48000.0; re += y[i] * std::cos(ph); im -= y[i] * std::sin(ph); } best = std::fmax(best, std::sqrt(re * re + im * im) / n); }
+            return 20 * std::log10(best + 1e-12);
+        };
+        auto two = [&](int poly) {
+            Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetPolyphony(poly);
+            e.SetF0(130.81f); e.Strike(0.7f);
+            std::vector<float> a; Run(e, a, 50);
+            e.SetF0(196.f); e.Strike(0.7f);
+            std::vector<float> b; Run(e, b, 200);
+            std::vector<float> tail(b.begin() + 4800, b.end());
+            return std::make_pair(level_at(tail, 130.81f), level_at(tail, 196.f));
+        };
+        const auto p2 = two(2), p1 = two(1);
+        CHECK(p2.first > p2.second - 12.0 && p2.first > -60.0, "at two voices the C3 did not ring on under the G3: C3 %.1f dB, G3 %.1f", p2.first, p2.second);
+        CHECK(p1.first < p2.first - 15.0, "at one voice the C3 was not retuned away: %.1f dB against %.1f at two", p1.first, p2.first);
+        printf("  polyphony: two voices hold C3 at %.1f dB under a G3 at %.1f; one voice leaves the C3 at %.1f\n", p2.first, p2.second, p1.first);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }

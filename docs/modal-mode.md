@@ -190,6 +190,25 @@ what it is). Concretely:
   a tom's came back 28 dB louder before this. The Wurlitzer's retune,
   which used to lift or drop by the frequency ratio, is now transparent
   (the golden `m4_resonate` re-pinned for it).
+- **Controls, learned from Rings and Elements** (Combust: "think of all
+  the modes available to Mutable Elements and Rings"; the code is at
+  `~/Mutable/Streams/eurorack/{rings,elements}`). Taken so far:
+  *polyphony* the way Rings does it — 1, 2 or 4 voices, a strike takes
+  the next round-robin, the ones before ring on at the notes they were
+  struck at, only the newest follows the pitch (`Engine::SetPolyphony`,
+  ACTION 19, the World page's third pot on the module since a resonate
+  world has no tour, chips on the page); and Rings' *strum without a
+  trigger*: a note that jumps 0.4 semitone in one block — a sequencer
+  does, a hand on a pot cannot — strikes on its own unless J4 has seen a
+  trigger in the last two seconds, 10 ms between. Rings knows what is
+  patched by normalisation probes; this hardware does not, so the jump
+  and the two seconds stand in. Not taken yet, and worth it: Rings'
+  *external exciter* — the audio input driving the resonator instead of
+  a strike, which is a resonant filter bank on J1 for the cost of one
+  add a mode a sample; Elements' exciter section (bow / blow / strike
+  with contour and timbre) as a way to strike a world with something
+  other than its own burst; Rings' chord/structure axis, which for a
+  body row is the row itself.
 - ACTION 18 `tune u8 which, u8 value`: the spin — voicing (widths off the
   fitted pole), decay (×¼–×4) and coil (×½–×2), 128 the world as fitted —
   on the engine as a knob's value, applied through a copy of the world's

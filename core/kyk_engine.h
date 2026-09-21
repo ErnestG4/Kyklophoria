@@ -51,10 +51,11 @@ public:
         DerivePhases();
         phase_dirty_ = false;
         dirty_ = true;
-        rvoice_.Init();
+        for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
+        ractive_ = 0; rpoly_ = 1;
         rnote_ = 1e9f;
         rframe_ = false;
-        if(world && world->IsResonate()) { rnote_ = ResParam(); Tuned().At(rnote_, rvoice_, sr_); }
+        if(world && world->IsResonate()) { rnote_ = ResParam(); Tuned().At(rnote_, rvoices_[0], sr_); }
     }
 
     /* ── the resonate path ───────────────────────────────────────────────
@@ -67,9 +68,31 @@ public:
     void Strike(float velocity01)
     {
         if(!world_ || !world_->IsResonate()) return;
+        if(rpoly_ > 1)
+        {
+            /* polyphony the way Rings does it: a strike takes the next voice
+               round-robin and the ones before ring on at the notes they
+               were struck at; only the newest follows the pitch. The next
+               voice is built fresh at the pitch — At() at a strike, not per
+               block — so the ring it carries from last time is cut, which
+               is what a voice being reused means */
+            ractive_ = (ractive_ + 1) % rpoly_;
+            rnote_ = 1e9f; rfresh_ = true;
+        }
         Retune();          /* only if the pitch moved past the deadband since the last block */
-        rvoice_.Strike(velocity01);
+        rvoices_[ractive_].Strike(velocity01);
     }
+    /* 1, 2 or 4 voices. Changing it silences the voices past the count and
+       starts the round from the first, which is a world change's kind of
+       discontinuity and is done where one is */
+    void SetPolyphony(int n)
+    {
+        n = n < 1 ? 1 : n > kPoly ? kPoly : n;
+        if(n == rpoly_) return;
+        for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
+        rpoly_ = n; ractive_ = 0; rnote_ = 1e9f;
+    }
+    int Polyphony() const { return rpoly_; }
     static float NoteOf(float hz) { return 69.f + 12.f * std::log2(hz > 1.f ? hz / 440.f : 1.f / 440.f); }
     /* Where on its axis the world is played: a note world at the pitch, an
      * index world — a row of bodies, gong to woodblock — where position 0
@@ -94,7 +117,7 @@ public:
         const ResonatorWorld& r = world_->Res();
         const float eps = r.kind == 1 ? 0.005f * (r.hi - r.lo) : 0.02f;
         if(rnote_ != 1e9f && std::fabs(p - rnote_) <= eps) return;
-        Tuned().At(p, rvoice_, sr_, true); rnote_ = p;
+        Tuned().At(p, rvoices_[ractive_], sr_, !rfresh_); rnote_ = p; rfresh_ = false;
     }
     /* The spin on a resonator: voicing (the pickup's pole off its fitted
      * centre, in widths), decay (every mode's T60, x) and coil (the coil's
@@ -116,7 +139,7 @@ public:
         rnote_ = 1e9f;                            /* re-read at the next block or strike */
     }
     float GetTune(Tune which) const { return rtune_[(int)which]; }
-    const ResonatorVoice& Voice() const { return rvoice_; }
+    const ResonatorVoice& Voice() const { return rvoices_[ractive_]; }
     float ResParamNow() const { return rnote_; }
     float ControlAt(int a) const { return a >= 0 && a < kMaxN ? c_[a] : 0.f; }
     /* On a modular the spin is jacks and pots, not a page: with this set
@@ -270,12 +293,13 @@ public:
             }
             Retune();
             float tmp[48];
-            for(int i = 0; i < n; i += 48)
-            {
-                const int m = n - i < 48 ? n - i : 48;
-                rvoice_.Process(tmp, m);
-                for(int k = 0; k < m; k++) out[i + k] += tmp[k];
-            }
+            for(int v = 0; v < rpoly_; v++)
+                for(int i = 0; i < n; i += 48)
+                {
+                    const int m = n - i < 48 ? n - i : 48;
+                    rvoices_[v].Process(tmp, m);
+                    for(int k = 0; k < m; k++) out[i + k] += tmp[k];
+                }
         }
         /* Cells are normalised to unit RMS, so peak depends on how the
          * harmonics happen to line up. Measured crest factor across a baked
@@ -412,10 +436,11 @@ public:
         /* the voice is state derived from the world: rebuilt here and only
          * here, silent, at the current pitch — arriving at a resonate world
          * is the same as starting in it */
-        rvoice_.Init();
+        for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
+        ractive_ = 0;
         rnote_ = 1e9f;
         rframe_ = false;
-        if(w && w->IsResonate()) { rnote_ = ResParam(); Tuned().At(rnote_, rvoice_, sr_); }
+        if(w && w->IsResonate()) { rnote_ = ResParam(); Tuned().At(rnote_, rvoices_[0], sr_); }
     }
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
@@ -594,7 +619,11 @@ private:
     }
 
     const World* world_ = nullptr;
-    ResonatorVoice rvoice_;         /* the resonate path; idle for every other kind */
+    static constexpr int kPoly = 4;
+    ResonatorVoice rvoices_[kPoly]; /* the resonate path; idle for every other kind */
+    int            ractive_ = 0;    /* the voice the last strike took, which follows the pitch */
+    bool           rfresh_ = false; /* the next retune builds the voice fresh (a reused voice), not with its ring kept */
+    int            rpoly_ = 1;
     float          rnote_ = 1e9f;   /* the note the voice was built at */
     float          rtune_[3] = {0.f, 1.f, 1.f};   /* voicing (widths), decay (x), coil (x) */
     bool           rframe_ = false;  /* a resonate world's one silent frame has been rendered */

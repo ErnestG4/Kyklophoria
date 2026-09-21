@@ -587,6 +587,8 @@ static volatile float    gPayloadA = 0.f;
 static volatile uint8_t  gResetPhase = 0;
 static volatile int16_t  gStrike     = -1;     /* velocity 0-255 to strike with, -1 = none */
 static volatile uint8_t  gJ4Out      = 1u;     /* J4's DG411: 1 CV out A (a wavetable world), 0 the trigger in (a resonate one) */
+static volatile uint8_t  gPolyReq    = 0u;     /* a polyphony asked for over the wire, 0 = none */
+static bool              gStrikeFromJack = false;   /* the pending strike came from J4, not the page or a note jump */
 static bool              gKepOn      = false;
 static float             gKepRadius  = 0.f;
 static constexpr uint32_t kCpuHz     = 480000000u;
@@ -651,7 +653,7 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
         {
             const float v = hw.cv[1].Volts();
             if(since < 0xFFFFu) since++;
-            if(!armed && v > 1.0f && since > 4u) { armed = true; since = 0u; gStrike = (int16_t)(255.f * (c[1] < 0.f ? 0.f : c[1] > 1.f ? 1.f : c[1])); }
+            if(!armed && v > 1.0f && since > 4u) { armed = true; since = 0u; gStrike = (int16_t)(255.f * (c[1] < 0.f ? 0.f : c[1] > 1.f ? 1.f : c[1])); gStrikeFromJack = true; }
             else if(armed && v < 0.5f) armed = false;
         }
     }
@@ -739,8 +741,35 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     if(gResetPhase) { gEng.L.ResetPhase(); gEng.R.ResetPhase(); gResetPhase = 0; }
 
     gEng.SetF0(f0);
+    /* a resonate world's polyphony: the World page's third pot — the tour
+       division, which a resonate world has no use for — 1 for its bottom
+       third, 2 for the middle, 4 for the top; or what the wire asked for */
+    {
+        const World* lw = gEng.L.WorldPtr();
+        if(lw && lw->IsResonate())
+        {
+            static float lastDiv = -1.f;
+            const float dv = k_tdiv.Value();
+            if(gPolyReq) { gEng.SetPolyphony(gPolyReq); gPolyReq = 0u; lastDiv = dv; }
+            else if(dv != lastDiv) { lastDiv = dv; gEng.SetPolyphony(dv < 2.5f ? 1 : dv < 5.5f ? 2 : 4); }
+            /* and Rings' rule for a trigger jack nobody has patched: a note
+               that jumps — 0.4 semitone in one block, which a sequencer does
+               and a hand on a pot cannot — strikes on its own, unless a
+               trigger has been seen in the last two seconds, in which case
+               the trigger owns the strikes. 10 ms between, as Rings has */
+            static float    lastNote = 0.f;
+            static uint32_t sinceTrig = 0xFFFFFFu, sinceStrum = 0xFFFFu;
+            const float note = Engine::NoteOf(f0);
+            if(sinceTrig < 0xFFFFFFu) sinceTrig++;
+            if(sinceStrum < 0xFFFFu) sinceStrum++;
+            if(gStrike >= 0 && gStrikeFromJack) sinceTrig = 0u;
+            if(std::fabs(note - lastNote) > 0.4f && sinceTrig > 4000u && sinceStrum > 20u && gStrike < 0)
+            { gStrike = (int16_t)(255.f * (c[1] < 0.f ? 0.f : c[1] > 1.f ? 1.f : c[1])); sinceStrum = 0u; }
+            lastNote = note;
+        }
+    }
     /* after SetF0: a strike retunes the bank to the pitch it is struck at */
-    if(gStrike >= 0) { gEng.Strike((float)gStrike / 255.0f); gStrike = -1; }
+    if(gStrike >= 0) { gEng.Strike((float)gStrike / 255.0f); gStrike = -1; gStrikeFromJack = false; }
     gEng.SetControl(c, kMaxN);
     gEng.Process(out[0], out[1], (int)size);
     gPayloadA = gEng.Payload()[4];
@@ -923,6 +952,14 @@ struct ModuleSource : ExtSource
                 /* three floats and a flag the audio thread reads at its
                    next block: the same shape as the morph amount */
                 gEng.SetTune((Engine::Tune)args[0], TuneValue(args[0], args[1]));
+                return 0u;
+            }
+            case kActPolyphony:
+            {
+                if(len < 1 || (args[0] != 1 && args[0] != 2 && args[0] != 4)) return 2u;
+                const World* w = gEng.L.WorldPtr();
+                if(!w || !w->IsResonate()) return 3u;
+                gPolyReq = args[0];            /* taken by the audio callback, which owns the voices */
                 return 0u;
             }
             case kActRenderDiv: (void)args; (void)len; return 1u;   /* the pot owns it on the module */

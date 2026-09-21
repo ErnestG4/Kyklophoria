@@ -162,7 +162,16 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              the world as fitted. Takes effect on the next
                              block with the state ringing on. BAD_STATE when
                              what is playing is not a resonator. */
-                          kActTune       = 18 };
+                          kActTune       = 18,
+                          /* u8 voices, 1, 2 or 4: a resonate world's
+                             polyphony, the way Rings does it — a strike takes
+                             the next voice round-robin, the ones before ring
+                             on at the notes they were struck at, the newest
+                             follows the pitch. On the module the World page's
+                             third pot (the tour division, which a resonate
+                             world has no use for) sets it as well. BAD_STATE
+                             when what is playing is not a resonator. */
+                          kActPolyphony  = 19 };
 /* the tune byte to its value, shared by the host and the module so a page
    sees one mapping */
 inline float TuneValue(uint8_t which, uint8_t v)

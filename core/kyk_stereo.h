@@ -77,6 +77,7 @@ public:
     void Strike(float velocity01) { L.Strike(velocity01); R.Strike(velocity01); }
     void SetTune(Engine::Tune which, float v) { L.SetTune(which, v); R.SetTune(which, v); }
     void TuneFromControl(bool on) { L.TuneFromControl(on); R.TuneFromControl(on); }
+    void SetPolyphony(int n) { L.SetPolyphony(n); R.SetPolyphony(n); }
 
     /* Change worlds under a running voice. Build the World fully first. */
     void SetWorld(const World* w)
