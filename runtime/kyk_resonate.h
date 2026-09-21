@@ -135,8 +135,12 @@ struct ResonatorBank
             p2[i] = gain[i] * std::sin(ph - 2.0f * w) / (r * r);
             if(!keep) y1[i] = y2[i] = s1[i] = s2[i] = 0.f;
         }
-        ramp_len = 0.003f * sr;
-        if(!keep) ramping = false;
+        /* the ramp is the strike's business (its length is the burst's
+           fade): Set used to reset it to 3 ms on every call, so a retune
+           under a playing burst — a glide starting 50 ms after a strike —
+           snapped the strike bank from a third of its way in to full,
+           a step the ear-check caught on four worlds */
+        if(!keep) { ramp_len = 0.003f * sr; ramp_lead = 0.f; ramping = false; }
     }
 
     /* the hammer: the strike bank set to the given swing at every mode's
@@ -723,31 +727,42 @@ struct ResonatorWorld
         for(int k = 0; k < v.bank.n && !ringing; k++) ringing = std::fabs(v.bank.y1[k]) + std::fabs(v.bank.s1[k]) > 1e-7f;
         if(keep && v.pickup.on && ringing)
         {
-            /* the pickup retunes without a click: its filter state and its
-               last flux stay, only the field and the coil move */
+            /* the pickup retunes without a click. The new point's stage is
+               built beside the old one and compared: if the coil is the
+               same coil (a glide within one point, transposed, is the
+               common case — every 2.5 ms under a sweep) nothing but the
+               targets move; if the coil changed (a new point) the old one
+               runs on and the output crosses to the new over 10 ms, since a
+               biquad's state under new coefficients is a step. Restarting
+               the crossfade on every retune was twenty clicks in a
+               two-octave glide on the EP. */
             const float u_last = v.pickup.u_last;
-            const float h0 = v.pickup.h, iw0 = v.pickup.inv_w, K0 = v.pickup.K;
-            v.pickup.Leave(sr);
-            if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
-            else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);
-            /* the new field and gain are targets; the pickup slews from
-               where it was, so a point change is a glide and not a step */
-            v.pickup.h = h0; v.pickup.inv_w = iw0; v.pickup.K = K0;
-            /* the last flux re-read under the new pole at the tine's actual
-               displacement: the pole moved, so the flux the same tine
-               makes has too, and carrying the old value — or its distance
-               from rest, which was the first fix — put a step through
-               d/dt: −23 dB peaks per deadband step under a voicing sweep
-               (docs/holistic-math.md). The displacement is the thing that
-               did not move. */
+            Pickup fresh = v.pickup;
+            if(form == 1) fresh.Set(st[0], st[1], st[2], st[3], st[4], sr);
+            else if(form == 2) fresh.SetGap(st[1], st[2], st[3], st[4], sr);
+            const bool coil_moved = fresh.b0 != v.pickup.b0 || fresh.a1 != v.pickup.a1 || fresh.a2 != v.pickup.a2;
+            if(coil_moved)
+            {
+                v.pickup.Leave(sr);
+                v.pickup.b0 = fresh.b0; v.pickup.b1 = fresh.b1; v.pickup.b2 = fresh.b2; v.pickup.a1 = fresh.a1; v.pickup.a2 = fresh.a2;
+                v.pickup.z1 = v.pickup.z2 = 0.f;      /* the new coil starts from rest and is crossed into */
+            }
+            /* the field and the gain are targets; the pickup slews from
+               where it is, so a point change is a glide and not a step */
+            v.pickup.h_t = fresh.h_t; v.pickup.inv_w_t = fresh.inv_w_t; v.pickup.K_t = fresh.K_t;
+            v.pickup.rest = fresh.rest; v.pickup.gap = fresh.gap; v.pickup.on = true;
+            /* the last flux re-read under the pole as it stands at the
+               tine's actual displacement: the pole moved, so the flux the
+               same tine makes has too, and carrying the old value — or its
+               distance from rest, which was the first fix — put a step
+               through d/dt: −23 dB peaks per deadband step under a voicing
+               sweep (docs/holistic-math.md). The displacement is the thing
+               that did not move. */
             {
                 const float u = (u_last - v.pickup.h) * v.pickup.inv_w;
                 v.pickup.prev = v.pickup.gap ? 1.f / (1.f - 0.9f * Pickup::Tanh(u / 0.9f)) : 1.f / (1.f + u * u);
                 v.pickup.u_last = u_last;
             }
-            /* the new coil starts from rest and is crossed into; the old one
-               keeps its state and plays out */
-            v.pickup.z1 = v.pickup.z2 = 0.f;
         }
         else if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
         else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);

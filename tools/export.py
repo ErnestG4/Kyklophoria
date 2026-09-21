@@ -246,6 +246,51 @@ def monotonic(takes, rid):
     return fixed
 
 
+def headroom(pts, form, target=4.0):
+    """A world's loudest note at full velocity peaks at 4 through the
+    runtime's own model — modes with their phases through the pickup where
+    there is one, plus the burst — which is where a wavetable cell's peaks
+    sit (unit RMS, a crest of up to 4.3), so that behind the engine's 0.23
+    of output gain a resonator at full level peaks where the wavetable
+    does, just under full scale. There was no convention: the EP came out
+    16 dB above the Wurlitzer through the same engine and railed 13,000
+    samples of a sweep on the desktop (the holistic pass: -10 to -18 dB re
+    a wavetable cell, 20 dB note to note). Every point's `loudest` and
+    every burst are scaled by one number, so the world keeps its own
+    balance note to note and sits where the other worlds sit."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import playvel
+    peak = 0.0
+    for param, modes, stage, bursts, *rest in pts:
+        sh = ({0: 'none', 1: 'bell', 2: 'gap'}[form],) + tuple(stage[:5])
+        swing = stage[6] if len(stage) > 6 else 1.0
+        lit = [m for m in modes if m[2] != 0.0]
+        if lit:
+            y = playvel.note(lit, sh, swing, 0.15, 48000)
+            b = bursts[-1][1] if bursts else np.zeros(1)
+            n = min(len(y), len(b))
+            y = y.copy(); y[:n] += b[:n]
+            peak = max(peak, float(np.max(np.abs(y))))
+    if peak <= 0:
+        return pts
+    k = target / peak
+    out = []
+    for param, modes, stage, bursts, *rest in pts:
+        if form == 0:
+            modes = [(m[0], m[1], m[2] * k, m[3]) for m in modes]
+        else:
+            # a pickup world's modes are the tine's displacement into the
+            # field, and the field's nonlinearity — the bark that is the
+            # instrument — is set by that displacement over the pole's
+            # width; scaling the modes would scale the physics (the EP's
+            # C3 lost 11 dB of its h2 that way). The coil's gain K is the
+            # output level, so that is what scales
+            stage = tuple(stage[:2]) + (stage[2] * k,) + tuple(stage[3:])
+        out.append((param, modes, stage, [(b[0], b[1] * k) + tuple(b[2:]) for b in bursts], *rest))
+    print('  headroom: the loudest note at full velocity peaked at %.2f through the model; every point scaled by %.3f (%+.1f dB)' % (peak, k, 20 * math.log10(k)))
+    return out
+
+
 def intune(pts, kind, max_cents=120.0):
     """Each point pulled to its nominal note. A point played at the pitch
     the recording had — the Philharmonia's within a few cents, a sampler's
@@ -418,6 +463,7 @@ def main():
         pts.sort(key=lambda p: p[0])
         pts = intune(pts, kind)
         pts = align(pts, kind)
+        pts = headroom(pts, form)
         N = max(len(pt[1]) for pt in pts)
         write(sys.argv[3], N, pts, form, kind)
     return 0
