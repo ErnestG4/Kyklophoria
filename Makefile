@@ -228,9 +228,7 @@ out/wav/tine-sweep.wav: build/render out/space-fam-tine.msp
 GLIDES += out/wav/walk-tine.wav out/wav/tine-sweep.wav
 out/wav/wurli-glide.wav: build/render out/space-fam-wurli.msp
 	build/render out/space-fam-wurli.msp out/corpus.mdb out/align.bin $@ --from wurlz002 --to wurlz017 --mode glide --strikes 12 --interval 1.0
-out/wav/walk-wurli.wav: build/render out/space-fam-wurli.msp
-	build/render out/space-fam-wurli.msp out/corpus.mdb out/align.bin $@ --walk 7 --seconds 16 --mode glide --interval 0.5
-GLIDES += out/wav/wurli-glide.wav out/wav/walk-wurli.wav
+GLIDES += out/wav/wurli-glide.wav
 
 # ── renders of every fitted world: the keyboard as strikes, and a walk ───────
 # the keyboard comes from the records through the runtime (a .kykm world:
