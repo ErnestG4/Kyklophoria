@@ -391,6 +391,35 @@ int main()
         printf("  nothing cuts: a reused voice steps %.3g, the count turned down %.3g, the ring itself %.3g\n", at_reuse, at_turn, ringing);
     }
 
+    /* 12. a tune change reaches every voice, one a block, and does not
+       move a locked ring's pitch. Four voices struck at four notes; decay
+       x4; within four blocks every voice's zeta has quartered. And a ring
+       locked at C3 with the pitch since moved to G3 stays at C3 through
+       the tune change (it used to be re-read at the pitch, which under
+       the lock is the one thing a tune change must not do). */
+    {
+        Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetPolyphony(4);
+        std::vector<float> y;
+        const float notes[4] = {130.81f, 164.81f, 196.f, 261.63f};
+        for(int v = 0; v < 4; v++) { e.SetF0(notes[v]); e.Strike(0.7f); Run(e, y, 5); }
+        float z0[4]; for(int v = 0; v < 4; v++) z0[v] = e.VoiceAt(v).zeta[0];
+        e.SetTune(Engine::Tune::Decay, 4.f);
+        Run(e, y, 1);
+        int after1 = 0; for(int v = 0; v < 4; v++) if(std::fabs(e.VoiceAt(v).zeta[0] / z0[v] - 0.25f) < 0.01f) after1++;
+        Run(e, y, 4);
+        int after5 = 0; for(int v = 0; v < 4; v++) if(std::fabs(e.VoiceAt(v).zeta[0] / z0[v] - 0.25f) < 0.01f) after5++;
+        CHECK(after1 >= 1 && after1 <= 2, "after one block %d voices had the new decay (one or two: the active one, and one more)", after1);
+        CHECK(after5 == 4, "after five blocks %d of 4 voices had the new decay", after5);
+        Engine l; l.Init(&wurli, sr); l.gain = 1.f;
+        l.SetF0(130.81f); l.Strike(0.7f); Run(l, y, 50);
+        l.SetF0(196.f); Run(l, y, 10);
+        const float before = l.Voice().hz[0];
+        l.SetTune(Engine::Tune::Decay, 2.f); Run(l, y, 2);
+        const float after = l.Voice().hz[0];
+        CHECK(std::fabs(after - before) < 0.01f, "a tune change moved a locked ring from %.2f to %.2f Hz", before, after);
+        printf("  a tune reaches the voices one a block (%d after one, %d after five) and leaves a locked ring at %.1f Hz\n", after1, after5, after);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }

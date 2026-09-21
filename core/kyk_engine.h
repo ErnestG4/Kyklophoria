@@ -53,7 +53,7 @@ public:
         dirty_ = true;
         for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
         ractive_ = 0; rpoly_ = 1; rmember_ = 0;
-        for(int v = 0; v < kPoly; v++) rvnote_[v] = 1e9f;
+        for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; }
         rframe_ = false;
         if(world && world->IsResonate()) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
     }
@@ -129,7 +129,7 @@ public:
        second"). A bank driven by the exciter with no strikes follows the
        pitch by the semitone, which is a quantiser. Unlocked, the ring
        follows the pitch by the cent: a bend, for whoever wants one. */
-    void SetPitchLock(bool on) { if(pitch_lock_ != on) { pitch_lock_ = on; rvnote_[ractive_] = 1e9f; } }
+    void SetPitchLock(bool on) { if(pitch_lock_ != on) { pitch_lock_ = on; rvnote_[ractive_] = 1e9f; } }   /* re-read: locked, the nearest semitone; free, the cent */
     bool PitchLock() const { return pitch_lock_; }
     /* the voice follows its parameter with its state ringing on; an index
        world follows the pot every block, a note world its pitch */
@@ -146,18 +146,42 @@ public:
         const float eps = r.kind == 1 ? 0.005f * (r.hi - r.lo) : 0.02f;
         const int m = ResMemberOf(c_[0]);
         float& note = rvnote_[ractive_];
-        if(m != rmember_) { rmember_ = m; for(int v = 0; v < kPoly; v++) rvnote_[v] = 1e9f; }   /* another instrument: rebuilt, the ring carried */
-        if(note != 1e9f && std::fabs(p - note) <= eps) return;
-        /* locked, and not a strike: the ring keeps the note it was struck
-           at and the new pitch waits for the next strike — unless the bank
-           is being driven, when the pitch is the only thing playing it, or
-           the pitch jumps a semitone or more within 30 ms of the strike,
-           which is a sequencer whose CV lands after its gate: the note
-           belongs to the strike it followed, and a strike that held the
-           old note would be the wrong note for as long as it rang */
-        const bool late = rsince_ < 0.03f * sr_ && std::fabs(p - note) > 0.4f;
-        if(pitch_lock_ && r.kind != 1 && note != 1e9f && !rstriking_ && !late && !(exciter_ && exgain_ > 0.f)) return;
-        Tuned().At(p, rvoices_[ractive_], sr_, true); note = p;
+        if(m != rmember_) { rmember_ = m; for(int v = 0; v < kPoly; v++) rvdirty_[v] = true; }   /* another instrument: every voice rebuilt, its ring carried */
+        /* does the active voice take the pitch? Not within the deadband;
+           and locked, not at all unless this is the strike, the bank is
+           being driven (the pitch is then the only thing playing it), or
+           the pitch jumps a semitone or more within 30 ms of the strike —
+           a sequencer whose CV lands after its gate: the note belongs to
+           the strike it followed, and a strike that held the old note
+           would be the wrong note for as long as it rang */
+        bool move;
+        if(note == 1e9f) move = true;
+        else if(std::fabs(p - note) <= eps) move = false;
+        else
+        {
+            const bool late = rsince_ < 0.03f * sr_ && std::fabs(p - note) > 0.4f;
+            move = !(pitch_lock_ && r.kind != 1 && !rstriking_ && !late && !(exciter_ && exgain_ > 0.f));
+        }
+        if(move || rvdirty_[ractive_])
+        {
+            /* a tune change under the lock rebuilds the voice at the note
+               it holds, not at wherever the pitch has gone since */
+            Tuned().At(move ? p : note, rvoices_[ractive_], sr_, true, rstriking_);
+            if(move) note = p;
+            rvdirty_[ractive_] = false;
+            return;
+        }
+        /* the other voices follow a tune or a member change one per
+           block, round-robin, so a decay or coil that an orbit keeps
+           moving costs one At() a block whatever the voice count, and a
+           voice lags by a few blocks, which nobody can hear decay do */
+        for(int k = 1; k < kPoly; k++)
+        {
+            const int v = (ractive_ + k) % kPoly;
+            if(!rvdirty_[v]) continue;
+            if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { Tuned().At(rvnote_[v], rvoices_[v], sr_, true); rvdirty_[v] = false; return; }
+            rvdirty_[v] = false;              /* silent, or never built: its next strike builds it */
+        }
     }
     /* The spin on a resonator: voicing (the pickup's pole off its fitted
      * centre, in widths), decay (every mode's T60, x) and coil (the coil's
@@ -176,10 +200,11 @@ public:
         const float eps = which == Tune::Voicing ? 0.02f : 0.01f * (t > 1.f ? t : 1.f);
         if(std::fabs(t - v) <= eps) return;
         t = v;
-        for(int i = 0; i < kPoly; i++) rvnote_[i] = 1e9f;   /* re-read at the next block, or at each voice's next strike */
+        for(int i = 0; i < kPoly; i++) rvdirty_[i] = true;   /* every voice rebuilt at the note it holds, one a block */
     }
     float GetTune(Tune which) const { return rtune_[(int)which]; }
     const ResonatorVoice& Voice() const { return rvoices_[ractive_]; }
+    const ResonatorVoice& VoiceAt(int v) const { return rvoices_[v < 0 ? 0 : v >= kPoly ? kPoly - 1 : v]; }
     float ResParamNow() const { return rvnote_[ractive_]; }
     float ControlAt(int a) const { return a >= 0 && a < kMaxN ? c_[a] : 0.f; }
     /* On a modular the spin is jacks and pots, not a page: with this set
@@ -500,7 +525,7 @@ public:
          * is the same as starting in it */
         for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
         ractive_ = 0; rmember_ = 0;
-        for(int v = 0; v < kPoly; v++) rvnote_[v] = 1e9f;
+        for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; }
         rframe_ = false;
         if(w && w->IsResonate()) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
     }
@@ -686,7 +711,8 @@ private:
     int            ractive_ = 0;    /* the voice the last strike took, which follows the pitch */
     int            rmember_ = 0;    /* the instrument of a family the voice is built from */
     int            rpoly_ = 1;
-    float          rvnote_[kPoly];  /* the note each voice was built at; 1e9 for not yet, or to be again */
+    float          rvnote_[kPoly];  /* the note each voice was built at; 1e9 for not yet */
+    bool           rvdirty_[kPoly]; /* the voice is to be rebuilt at that note: the tune or the member changed */
     float          rtune_[3] = {0.f, 1.f, 1.f};   /* voicing (widths), decay (x), coil (x) */
     bool           rframe_ = false;  /* a resonate world's one silent frame has been rendered */
     bool           tune_from_control_ = false;

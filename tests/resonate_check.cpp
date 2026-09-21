@@ -281,6 +281,34 @@ int main()
         printf("  burst: rate 1 %.0f Hz / %d samples, rate 2 %.0f Hz / %d; the 1 kHz corner %.1f dB, the 13 kHz corner %.1f dB; three semitones up reads at %.3f\n", r1.first, n1, r2.first, n2, d1, d13, v.burst_rate);
     }
 
+    /* the carry across a retune goes to the nearest frequency, not the
+       same index. Three modes ringing at 100, 200 and 300 Hz; the bank is
+       retuned to 50, 105, 210 and 315 — a new low mode at index 0, as a
+       family's next member or a note world's ghost puts one. The rings
+       must land at 105, 210, 315 and nothing at 50, where the old index
+       carry would have put the 100 Hz ring. Measured on the 200 ms after
+       the retune: the line at 50 Hz at least 40 dB under the one at 105. */
+    {
+        auto level_at = [](const std::vector<float>& y, float hz, float sr) {
+            double re = 0, im = 0; const int n = (int)y.size();
+            for(int i = 0; i < n; i++) { const double ph = 6.2831853 * hz * i / sr; re += y[i] * std::cos(ph); im -= y[i] * std::sin(ph); }
+            return 20 * std::log10(std::sqrt(re * re + im * im) / n + 1e-12);
+        };
+        const float sr = 48000.f;
+        ResonatorBank b; b.Init();
+        const float h0[3] = {100.f, 200.f, 300.f}, z0[3] = {0.001f, 0.001f, 0.001f}, g0[3] = {1.f, 1.f, 1.f};
+        b.Set(h0, z0, g0, 3, sr);
+        b.Strike(1.f);
+        std::vector<float> y(4800); b.Process(y.data(), 4800);                   /* 100 ms of ring, the strike folded */
+        const float h1[4] = {50.f, 105.f, 210.f, 315.f}, z1[4] = {0.001f, 0.001f, 0.001f, 0.001f}, g1[4] = {1.f, 1.f, 1.f, 1.f};
+        b.Set(h1, z1, g1, 4, sr, nullptr, true);
+        std::vector<float> z(9600); b.Process(z.data(), 9600);
+        const double at50 = level_at(z, 50.f, sr), at105 = level_at(z, 105.f, sr), at210 = level_at(z, 210.f, sr);
+        CHECK(at105 > at50 + 40.0, "the 100 Hz ring went to index 0 (50 Hz): %.1f dB there against %.1f at 105", at50, at105);
+        CHECK(at210 > at50 + 40.0, "the 200 Hz ring is not at 210: %.1f dB at 210 against %.1f at 50", at210, at50);
+        printf("  the carry goes by frequency: after a retune that puts a new mode at index 0, 50 Hz %.1f dB, 105 Hz %.1f, 210 Hz %.1f\n", at50, at105, at210);
+    }
+
     printf(fails ? "resonate_check: %d FAILED\n" : "resonate_check: ok\n", fails);
     return fails ? 1 : 0;
 }
