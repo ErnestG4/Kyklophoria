@@ -60,6 +60,7 @@ artifact changed.
     tools/bursts.py      the attack as a stored burst: the recording's first 60 ms
                          minus the model's, into every record; fixes the sign the
                          STFT loss cannot see
+    tools/noise.py       the wash: a dense body's energy deficit per octave band, as noise
     tools/playvel.py     a record played soft to hard, burst and all (numpy/scipy)
     tools/earcheck.py    grades every rendered wav for rails, silence, level, clicks
     tools/export.py      a fitted world condensed for the module (.kykm, out/worlds/)

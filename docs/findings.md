@@ -638,6 +638,22 @@ gong to woodblock through everything between (`out/wav/perc-morph.wav`) —
 the brief's "spin them" in its first form, and the honest one: a morph
 between bodies is a morph between their modes, and it sounds like that.
 
+*The wash.* Is a tam-tam's leftover dense modes or noise? Measured: 93–100%
+of the residual's energy in 5% of the bins over 0.5–1.5 s — lines, hundreds
+of them — and a bank of 96 or 144 modes bought the gong five per cent of
+spectral convergence while the tam-tam kept only 26–49 of them, its
+spectrum too dense for the initialiser's gates. Hundreds of modes is a
+wash to the ear and a wash on the M7, so `tools/noise.py` fits one: the
+energy the recording has and the model does not, per octave band over 100
+ms frames, a level and a T60 a band, played as white noise through eight
+band-passes (~64 instructions a sample). The deficit and not the residual —
+a well-fitted partial with its phase a little off leaves a residual as loud
+as itself, and the first version put 13 dB of noise on a cowbell that had
+none. Sustain band error, 0.3–1.3 s: gong 10.5 → 4.2 dB, cymbal 21.6 →
+5.7; the cowbell, agogo and djembe within half a dB of where they were
+(their washes are small because their modes fit); the tam-tam unmoved,
+its errors being modes with too much, which a wash cannot subtract.
+
 *The spin, otherwise.* For an electric world the axes to spin are the
 stage's own — voicing (the screw, in widths off the fitted centre), decay
 (every mode's T60 × k), the coil — and the runtime has them as `Tune` on a

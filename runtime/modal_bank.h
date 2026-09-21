@@ -261,11 +261,81 @@ struct BurstPlayer
     }
 };
 
+/* The wash: what a dense body leaves after its modes and its burst — a
+ * tam-tam is hundreds of modes, and three times the bank bought five per
+ * cent (ModalBake's findings) — as white noise through eight octave
+ * band-passes from 62.5 Hz, each under its own exponential envelope: a
+ * level at the strike and a T60 a band, sixteen numbers a point
+ * (tools/noise.py). Sixty-odd instructions a sample; nothing on a world
+ * whose bands are zero. The noise is an xorshift, the band-pass an RBJ
+ * biquad at Q 1.414 (an octave), its gain set so that unit white noise
+ * comes out at the band's fitted level. */
+struct NoiseLayer
+{
+    static constexpr int kBands = 8;
+    float b0[kBands], a1[kBands], a2[kBands];     /* band-pass: b0 x[n] - b0 x[n-2] */
+    float x1[kBands], x2[kBands], y1[kBands], y2[kBands];
+    float env[kBands], fall[kBands], level[kBands];
+    uint32_t rng;
+    bool  on;
+
+    void Init()
+    {
+        on = false; rng = 0x9E3779B9u;
+        for(int k = 0; k < kBands; k++) { b0[k] = a1[k] = a2[k] = x1[k] = x2[k] = y1[k] = y2[k] = env[k] = fall[k] = level[k] = 0.0f; }
+    }
+
+    /* levels and T60s per band, sr; a band with no level is off */
+    void Set(const float* lvl, const float* t60, float sr)
+    {
+        on = false;
+        if(rng == 0u) rng = 0x9E3779B9u;      /* an xorshift of zero is zero forever */
+        for(int k = 0; k < kBands; k++)
+        {
+            const float lo = 62.5f * (float)(1 << k), hi = lo * 2.f, fc = std::sqrt(lo * hi);
+            const float w0 = 6.2831853f * fc / sr, alpha = std::sin(w0) / (2.f * 1.41421f);
+            const float a0 = 1.f + alpha;
+            b0[k] = alpha / a0; a1[k] = -2.f * std::cos(w0) / a0; a2[k] = (1.f - alpha) / a0;
+            /* unit white noise through an octave band carries about
+               (hi - lo) / (sr / 2) of its power: scale to the fitted level */
+            const float share = std::sqrt((hi - lo) / (0.5f * sr));
+            level[k] = lvl[k] > 0.0f && t60[k] > 0.0f ? lvl[k] / (share > 1e-6f ? share : 1e-6f) : 0.0f;
+            fall[k]  = t60[k] > 0.0f ? std::exp(-6.91f / (t60[k] * sr)) : 0.0f;
+            env[k]   = 0.0f;
+            x1[k] = x2[k] = y1[k] = y2[k] = 0.0f;
+            if(level[k] > 0.0f) on = true;
+        }
+    }
+
+    void Strike(float swing) { for(int k = 0; k < kBands; k++) env[k] += swing * level[k]; }
+
+    void Process(float* io, int frames)
+    {
+        if(!on) return;
+        for(int i = 0; i < frames; i++)
+        {
+            rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+            const float x = ((int32_t)rng) * (1.7320508f / 2147483648.f);    /* uniform, unit variance */
+            float acc = 0.0f;
+            for(int k = 0; k < kBands; k++)
+            {
+                if(level[k] <= 0.0f) continue;
+                const float y = b0[k] * (x - x2[k]) - a1[k] * y1[k] - a2[k] * y2[k];
+                x2[k] = x1[k]; x1[k] = x; y2[k] = y1[k]; y1[k] = y;
+                acc += env[k] * y;
+                env[k] *= fall[k];
+            }
+            io[i] += acc;
+        }
+    }
+};
+
 struct ModalVoice
 {
     ModalBank      bank;
     Pickup         pickup;
     BurstPlayer    burst{};
+    NoiseLayer     wash{};
     const uint8_t* bursts = nullptr;  /* the point's burst block in the world, or null */
     float          swing_soft = 1.0f, swing_hard = 1.0f;
 
@@ -276,12 +346,14 @@ struct ModalVoice
         const float s = swing_hard > swing_soft ? swing_soft * std::pow(swing_hard / swing_soft, velocity01) : swing_soft * velocity01;
         bank.Strike(s);
         burst.Strike(bursts, s);
+        wash.Strike(s);
     }
     void Process(float* out, int frames)
     {
         bank.Process(out, frames);
         pickup.Process(out, frames);
         burst.Process(out, frames);
+        wash.Process(out, frames);
     }
 };
 

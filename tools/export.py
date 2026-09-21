@@ -7,7 +7,7 @@
 
 One file a world, small enough to sit in SDRAM beside the wavetables:
 
-    'KYKM' u16 version=3  u16 N  u16 P  u8 form  u8 body
+    'KYKM' u16 version=4  u16 N  u16 P  u8 form  u8 body
     f32 param_lo  f32 param_hi
     P points, each:
         f32 param
@@ -21,6 +21,8 @@ One file a world, small enough to sit in SDRAM beside the wavetables:
                     hammer's timing per mode lives — from zero phase every partial
                     rises together and the onset is a spike the recording never had)
 
+        then u8 nbands and per band f32 level, f32 t60: the wash (tools/noise.py),
+        white noise through octave band-passes from 62.5 Hz under those envelopes
         then u16 nbursts, and per burst: f32 swing, f32 scale, u16 len, i16 samples[len]
         at 48 kHz — the attack the modes are not (tools/bursts.py): the recording's
         first 40 ms minus the model's, played at strike time after the pickup,
@@ -74,11 +76,12 @@ def write(path, N, points, form=0, body=0):
     """points: [(param, modes, stage[, bursts])] with stage = (h, w, K, fc, Q, swing_soft, swing_hard) or None,
     bursts = [(swing, samples_at_48k)]"""
     params = [p[0] for p in points]
-    out = b'KYKM' + struct.pack('<HHHBB', 3, N, len(points), form, body)
+    out = b'KYKM' + struct.pack('<HHHBB', 4, N, len(points), form, body)
     out += struct.pack('<ff', min(params), max(params))
     for pt in points:
         p, modes, stage = pt[0], pt[1], pt[2]
         bursts = pt[3] if len(pt) > 3 else []
+        noise = pt[4] if len(pt) > 4 else []
         out += struct.pack('<f', p)
         loudest = max((abs(m[2]) for m in modes), default=1.0)
         out += struct.pack('<8f', *(stage or (0, 1, 1, 0, 1, 1, 1)), loudest)
@@ -91,6 +94,9 @@ def write(path, N, points, form=0, body=0):
         rows = ms + [(20.0, 1.0, 0.0, 0.0)] * max(0, N - len(ms))
         for hz, zeta, g, ph in rows:
             out += struct.pack('<HBBB', cents(hz), decay8(zeta), level8(g, loudest), phase8(ph))
+        out += struct.pack('<B', len(noise))
+        for level, t60 in noise:
+            out += struct.pack('<ff', level, t60)
         out += struct.pack('<H', len(bursts))
         for swing, samples in bursts:
             scale = float(np.max(np.abs(samples))) if len(samples) else 1.0
@@ -99,6 +105,15 @@ def write(path, N, points, form=0, body=0):
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     open(path, 'wb').write(out)
     print('%s: %d points x %d modes, form %d, %d bytes' % (path, len(points), N, form, len(out)))
+
+
+def noise_of(recdir, rid):
+    """[(level, t60)] x 8 from a record's noise line, or []"""
+    for w in (l.split() for l in open(os.path.join(recdir, rid + '.mmr'))):
+        if w and w[0] == 'noise':
+            v = [float(x) for x in w[1:]]
+            return [(v[2 * k], v[2 * k + 1]) for k in range(len(v) // 2)]
+    return []
 
 
 def bursts_of(recdir, rid, swings=None):
@@ -157,7 +172,8 @@ def main():
             return best[1] if best[0] < 1e-4 else 0.0
 
         pts = sorted([(r[3], [(h, z, g, phase_of(r[0], h)) for h, z, g in zip(r[5], r[6], r[7])], None,
-                       bursts_of(recdir, r[0]) if os.path.exists(os.path.join(recdir, r[0] + '.mmr')) else [])
+                       bursts_of(recdir, r[0]) if os.path.exists(os.path.join(recdir, r[0] + '.mmr')) else [],
+                       noise_of(recdir, r[0]) if os.path.exists(os.path.join(recdir, r[0] + '.mmr')) else [])
                       for r in rows if r[1] == fam], key=lambda p: p[0])
         if not pts:
             print('no family', fam); return 1
@@ -186,7 +202,7 @@ def main():
                     takes[w[1]] = float(w[3])
             if swings[1] <= 0:
                 swings = [1.0, 1.0]
-            pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes)))
+            pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes), noise_of(d, c[0])))
         pts.sort(key=lambda p: p[0])
         N = max(len(pt[1]) for pt in pts)
         write(sys.argv[3], N, pts, form, 0)

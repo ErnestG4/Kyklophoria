@@ -36,10 +36,13 @@ struct World
     const uint8_t* Point(int i) const
     {
         const uint8_t* q = blob + kHeader;
-        for(int j = 0; j < i; j++) q = BurstEnd(q + FixedBytes());
+        for(int j = 0; j < i; j++) q = BurstEnd(NoiseEnd(q + FixedBytes()));
         return q;
     }
-    const uint8_t* Bursts(int i) const { return Point(i) + FixedBytes(); }
+    /* after the fixed part: u8 nbands + nbands x (f32 level, f32 t60), then the bursts */
+    const uint8_t* Noise(int i) const { return Point(i) + FixedBytes(); }
+    static const uint8_t* NoiseEnd(const uint8_t* b) { return b + 1 + 8u * b[0]; }
+    const uint8_t* Bursts(int i) const { return NoiseEnd(Noise(i)); }
     static const uint8_t* BurstEnd(const uint8_t* b)
     {
         uint16_t nb; std::memcpy(&nb, b, 2);
@@ -56,7 +59,7 @@ struct World
         std::memcpy(&N, blob + 6, 2); std::memcpy(&P, blob + 8, 2);
         form = blob[10]; body = blob[11];
         std::memcpy(&lo, blob + 12, 4); std::memcpy(&hi, blob + 16, 4);
-        return ver == 3 && N <= ModalBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
+        return ver == 4 && N <= ModalBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
     }
 
     float Param(int i) const { float p; std::memcpy(&p, Point(i), 4); return p; }
@@ -114,6 +117,22 @@ struct World
         st[0] += voicing * st[1];                                /* h moves by widths */
         st[3] *= coil;
         v.bursts = Bursts(t < 0.5f ? a : b);      /* a burst is not interpolated: the nearer point's */
+        /* the wash: levels and T60s interpolated between the points, applied
+           with the spin's decay; state kept on a retune */
+        {
+            float la[8] = {0}, ta[8] = {0}, lb[8] = {0}, tb[8] = {0};
+            const uint8_t* na = Noise(a); const uint8_t* nb = Noise(b);
+            for(int k = 0; k < na[0] && k < 8; k++) { std::memcpy(&la[k], na + 1 + 8 * k, 4); std::memcpy(&ta[k], na + 5 + 8 * k, 4); }
+            for(int k = 0; k < nb[0] && k < 8; k++) { std::memcpy(&lb[k], nb + 1 + 8 * k, 4); std::memcpy(&tb[k], nb + 5 + 8 * k, 4); }
+            for(int k = 0; k < 8; k++) { la[k] += t * (lb[k] - la[k]); ta[k] = (ta[k] + t * (tb[k] - ta[k])) * decay; }
+            if(keep)
+            {
+                NoiseLayer w2 = v.wash; v.wash.Set(la, ta, sr);
+                for(int k = 0; k < 8; k++) { v.wash.env[k] = w2.env[k]; v.wash.x1[k] = w2.x1[k]; v.wash.x2[k] = w2.x2[k]; v.wash.y1[k] = w2.y1[k]; v.wash.y2[k] = w2.y2[k]; }
+                v.wash.rng = w2.rng;
+            }
+            else v.wash.Set(la, ta, sr);
+        }
         v.swing_soft = st[5]; v.swing_hard = st[6];
         if(keep && v.pickup.on)
         {
