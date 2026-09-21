@@ -3564,7 +3564,7 @@ const fmtVec = v => Array.from(v).map(x => x.toFixed(2)).join(' ');
  * page are comes from the descriptor. Neither alone is enough — the descriptor
  * describes all six pages and cannot say which one you are holding, and the
  * page index alone is a number with no meaning. */
-const RESO_KNOBS = { 0: { 2: 'Voicing / body', 3: 'Velocity', 4: 'Decay', 5: 'Coil' }, 6: { 2: 'Voices 1 · 2 · 4' } };
+const RESO_KNOBS = { 0: { 2: 'Voicing / body', 3: 'Velocity', 4: 'Decay', 5: 'Coil' }, 2: { 5: 'Exciter (J1 in)' }, 6: { 2: 'Voices 1 · 2 · 4' } };
 function drawPanel(x0, y0, W, H) {
   if (!panel || !panel.pots) return;
   const pg = tel && tel.page < panel.pages ? tel.page : 0;

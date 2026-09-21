@@ -93,6 +93,11 @@ public:
         rpoly_ = n; ractive_ = 0; rnote_ = 1e9f;
     }
     int Polyphony() const { return rpoly_; }
+    /* Rings' external exciter: an audio block driven into the voice that
+       follows the pitch, g x a sample into every mode — the world as a
+       resonant filter bank for whatever is patched in. Set per block; the
+       pointer is read by the Process that follows and then dropped. */
+    void SetExciter(const float* x, float gain) { exciter_ = x; exgain_ = gain; }
     static float NoteOf(float hz) { return 69.f + 12.f * std::log2(hz > 1.f ? hz / 440.f : 1.f / 440.f); }
     /* Where on its axis the world is played: a note world at the pitch, an
      * index world — a row of bodies, gong to woodblock — where position 0
@@ -297,9 +302,11 @@ public:
                 for(int i = 0; i < n; i += 48)
                 {
                     const int m = n - i < 48 ? n - i : 48;
-                    rvoices_[v].Process(tmp, m);
+                    const bool drive = v == ractive_ && exciter_ && exgain_ > 0.f;
+                    rvoices_[v].Process(tmp, m, drive ? exciter_ + i : nullptr, exgain_);
                     for(int k = 0; k < m; k++) out[i + k] += tmp[k];
                 }
+            exciter_ = nullptr;
         }
         /* Cells are normalised to unit RMS, so peak depends on how the
          * harmonics happen to line up. Measured crest factor across a baked
@@ -628,6 +635,8 @@ private:
     float          rtune_[3] = {0.f, 1.f, 1.f};   /* voicing (widths), decay (x), coil (x) */
     bool           rframe_ = false;  /* a resonate world's one silent frame has been rendered */
     bool           tune_from_control_ = false;
+    const float*   exciter_ = nullptr;   /* this block's drive, or null */
+    float          exgain_ = 0.f;
 
     const World*   morph_world_ = nullptr;
 

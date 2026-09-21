@@ -770,6 +770,15 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     }
     /* after SetF0: a strike retunes the bank to the pitch it is struck at */
     if(gStrike >= 0) { gEng.Strike((float)gStrike / 255.0f); gStrike = -1; gStrikeFromJack = false; }
+    /* Rings' external exciter: J1's audio driven into the resonate world's
+       bank, the amount on the Stereo page's sixth pot, which under a
+       resonator has no CV out A to be the depth of (J4 is the trigger).
+       0.02 of the codec's unit for a pot at full; the level is a bench
+       question, since a driven mode's gain is its Q */
+    {
+        const World* lw = gEng.L.WorldPtr();
+        if(lw && lw->IsResonate()) gEng.SetExciter(in[0], 0.02f * k_cvdep.Norm());
+    }
     gEng.SetControl(c, kMaxN);
     gEng.Process(out[0], out[1], (int)size);
     gPayloadA = gEng.Payload()[4];

@@ -245,6 +245,29 @@ int main()
         printf("  polyphony: two voices hold C3 at %.1f dB under a G3 at %.1f; one voice leaves the C3 at %.1f\n", p2.first, p2.second, p1.first);
     }
 
+    /* 8. the exciter: white noise driven into the Wurlitzer's C3 voice with
+       no strike at all rings at the note — the fundamental's line stands
+       20 dB over the noise's own level there — and nothing rings without
+       the drive */
+    {
+        auto level_at = [](const std::vector<float>& y, float hz) {
+            double re = 0, im = 0; const int n = (int)y.size();
+            for(int i = 0; i < n; i++) { const double ph = 6.2831853 * hz * i / 48000.0; re += y[i] * std::cos(ph); im -= y[i] * std::sin(ph); }
+            return 20 * std::log10(std::sqrt(re * re + im * im) / n + 1e-12);
+        };
+        Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetF0(130.81f);
+        std::vector<float> noise(4800), y(4800), quiet(4800);
+        uint32_t r = 12345u; for(auto& v : noise) { r ^= r << 13; r ^= r >> 17; r ^= r << 5; v = ((int32_t)r) * (0.3f / 2147483648.f); }
+        for(int b = 0; b < 100; b++) { e.SetExciter(noise.data() + b * 48, 0.02f); e.Process(y.data() + b * 48, 48); }
+        Engine q; q.Init(&wurli, sr); q.gain = 1.f; q.SetF0(130.81f);
+        for(int b = 0; b < 100; b++) q.Process(quiet.data() + b * 48, 48);
+        double eq = 0; for(float v : quiet) eq += v * v;
+        const double at = level_at(y, 130.81f), off = level_at(y, 150.f);
+        CHECK(at > off + 15.0, "a driven voice does not ring at its note: %.1f dB at C3, %.1f at 150 Hz", at, off);
+        CHECK(eq == 0.0, "an undriven, unstruck voice made sound: %.3g", eq);
+        printf("  exciter: noise in, C3 stands %.1f dB over 150 Hz; silent without the drive\n", at - off);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }
