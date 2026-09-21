@@ -9,6 +9,7 @@
  * desktop shell compiles it without any SDK .cpp.
  */
 #pragma once
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include "alchemy/host_link/extension.h"
@@ -143,7 +144,24 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              the module has a trigger of its own this is the
                              only hand on it. BAD_STATE when what is playing
                              has nothing to strike. */
-                          kActStrike     = 17 };
+                          kActStrike     = 17,
+                          /* u8 which, u8 value: the spin on a resonate world.
+                             which 0 = voicing, the pickup's pole off its
+                             fitted centre, (value - 128) / 64 widths; 1 =
+                             decay, every mode's T60 x 2^((value - 128) / 64),
+                             a quarter to four times; 2 = coil, its resonance
+                             x 2^((value - 128) / 128), half to double. 128 is
+                             the world as fitted. Takes effect on the next
+                             block with the state ringing on. BAD_STATE when
+                             what is playing is not a resonator. */
+                          kActTune       = 18 };
+/* the tune byte to its value, shared by the host and the module so a page
+   sees one mapping */
+inline float TuneValue(uint8_t which, uint8_t v)
+{
+    const float c = ((float)v - 128.f);
+    return which == 0 ? c / 64.f : which == 1 ? std::exp2(c / 64.f) : std::exp2(c / 128.f);
+}
 /* Slots, matching the card's own list size so the two stay one to one. A u8
    index then still has room for the two sentinels below. */
 constexpr int     kSlotCount   = 32;

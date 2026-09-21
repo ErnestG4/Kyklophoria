@@ -883,6 +883,16 @@ struct ModuleSource : ExtSource
                 gStrike = (int16_t)(len >= 1 ? args[0] : 204u);
                 return 0u;
             }
+            case kActTune:
+            {
+                if(len < 2 || args[0] > 2) return 2u;
+                const World* w = gEng.L.WorldPtr();
+                if(!w || !w->IsResonate()) return 3u;
+                /* three floats and a flag the audio thread reads at its
+                   next block: the same shape as the morph amount */
+                gEng.SetTune((Engine::Tune)args[0], TuneValue(args[0], args[1]));
+                return 0u;
+            }
             case kActRenderDiv: (void)args; (void)len; return 1u;   /* the pot owns it on the module */
             case kActSelectWorld:
                 if(len < 1 || args[0] >= worlds::kCount) return 2u;

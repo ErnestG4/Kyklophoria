@@ -83,7 +83,28 @@ public:
     void Retune()
     {
         const float p = ResParam();
-        if(std::fabs(p - rnote_) > 0.01f) { world_->Res().At(p, rvoice_, sr_, true); rnote_ = p; }
+        if(std::fabs(p - rnote_) > 0.01f) { Tuned().At(p, rvoice_, sr_, true); rnote_ = p; }
+    }
+    /* The spin on a resonator: voicing (the pickup's pole off its fitted
+     * centre, in widths), decay (every mode's T60, x) and coil (the coil's
+     * resonance, x). A knob's business, so it lives on the engine and not
+     * on the world, which is shared and const; applied through a copy of
+     * the world's reader, which is a pointer and a dozen floats. Takes
+     * effect on the next block, the state ringing on. */
+    enum class Tune : uint8_t { Voicing = 0, Decay = 1, Coil = 2 };
+    void SetTune(Tune which, float v)
+    {
+        float& t = rtune_[(int)which];
+        if(t == v) return;
+        t = v;
+        rnote_ = 1e9f;                            /* re-read at the next block or strike */
+    }
+    float GetTune(Tune which) const { return rtune_[(int)which]; }
+    ResonatorWorld Tuned() const
+    {
+        ResonatorWorld r = world_->Res();
+        r.voicing = rtune_[0]; r.decay = rtune_[1]; r.coil = rtune_[2];
+        return r;
     }
 
     /* Position moves that are smaller than this are not worth a re-render.
@@ -204,7 +225,7 @@ public:
         osc_.Process(out, n, render);
         if(world_ && world_->IsResonate())
         {
-            if(world_->Res().kind == 1) Retune();
+            if(world_->Res().kind == 1 || rnote_ == 1e9f) Retune();
             float tmp[48];
             for(int i = 0; i < n; i += 48)
             {
@@ -350,7 +371,7 @@ public:
          * is the same as starting in it */
         rvoice_.Init();
         rnote_ = 1e9f;
-        if(w && w->IsResonate()) { rnote_ = ResParam(); w->Res().At(rnote_, rvoice_, sr_); }
+        if(w && w->IsResonate()) { rnote_ = ResParam(); Tuned().At(rnote_, rvoice_, sr_); }
     }
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
@@ -531,6 +552,7 @@ private:
     const World* world_ = nullptr;
     ResonatorVoice rvoice_;         /* the resonate path; idle for every other kind */
     float          rnote_ = 1e9f;   /* the note the voice was built at */
+    float          rtune_[3] = {0.f, 1.f, 1.f};   /* voicing (widths), decay (x), coil (x) */
 
     const World*   morph_world_ = nullptr;
 

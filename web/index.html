@@ -1346,7 +1346,31 @@ function renderStrikeChips() {
     };
     box.appendChild(b);
   }
+  /* and the spin: voicing, decay, coil — 128 is the world as fitted. The
+     page keeps the values (telemetry does not carry them) and sends each
+     move; the module applies it on its next block with the ring kept. A
+     double-click puts a knob back to centre. */
+  for (const [i, label, title] of [[0, 'voice', 'the pickup pole off its fitted centre, ±2 widths'],
+                                   [1, 'decay', 'every mode\'s T60, ×¼ to ×4'],
+                                   [2, 'coil', 'the coil resonance, ×½ to ×2']]) {
+    const lab = document.createElement('span');
+    lab.textContent = ' ' + label; lab.style.color = 'var(--dim)'; lab.style.paddingLeft = '6px';
+    const r = document.createElement('input');
+    r.type = 'range'; r.min = 0; r.max = 255; r.value = tune[i]; r.title = title;
+    r.style.width = '64px'; r.style.verticalAlign = 'middle';
+    r.disabled = !link;
+    const send = async () => {
+      tune[i] = r.value | 0;
+      if (!link) return;
+      try { await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.tune, [i, tune[i]]), { urgent: true }); }
+      catch (e) { say('tune: ' + e.message, true); }
+    };
+    r.oninput = send;
+    r.ondblclick = () => { r.value = 128; send(); };
+    box.appendChild(lab); box.appendChild(r);
+  }
 }
+const tune = [128, 128, 128];    /* the spin as last sent; the fitted world is 128 */
 
 function renderTrailChips() {
   const box = $('trailChips'); box.innerHTML = '';

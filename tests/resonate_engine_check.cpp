@@ -186,6 +186,39 @@ int main()
         printf("  an index world: position, not pitch (0 apart at two pitches; %.3g of the energy apart at two positions); the pot moving keeps the ring (%.3g -> %.3g)\n", dac / en, e_before, e_after);
     }
 
+    /* 6. the spin: a tune at its centre is the fitted world bit for bit;
+       decay x4 rings longer; voicing and the coil change the EP's spectrum
+       (it has a pickup), and the change lands with the state ringing on */
+    {
+        auto energy = [](const std::vector<float>& v, size_t a, size_t b) { double e = 0; for(size_t i = a; i < b; i++) e += v[i] * v[i]; return e; };
+        Engine e0; e0.Init(&wurli, sr); e0.gain = 1.f; e0.SetF0(261.63f);
+        Engine e1 = e0; e1.SetTune(Engine::Tune::Voicing, 0.f); e1.SetTune(Engine::Tune::Decay, 1.f); e1.SetTune(Engine::Tune::Coil, 1.f);
+        e0.Strike(0.7f); e1.Strike(0.7f);
+        std::vector<float> y0, y1; Run(e0, y0, 100); Run(e1, y1, 100);
+        double d = 0; for(size_t i = 0; i < y0.size(); i++) d += (y0[i] - y1[i]) * (y0[i] - y1[i]);
+        CHECK(d == 0.0, "a tune at its centre changed the sound: %.3g", d);
+        Engine e4; e4.Init(&wurli, sr); e4.gain = 1.f; e4.SetF0(261.63f); e4.SetTune(Engine::Tune::Decay, 4.f); e4.Strike(0.7f);
+        std::vector<float> y4; Run(e4, y4, 1000);
+        Engine e5; e5.Init(&wurli, sr); e5.gain = 1.f; e5.SetF0(261.63f); e5.Strike(0.7f);
+        std::vector<float> y5; Run(e5, y5, 1000);
+        const double late4 = energy(y4, 40000, 48000), late1 = energy(y5, 40000, 48000);
+        CHECK(late4 > 2.0 * late1, "decay x4 did not ring longer: %.3g against %.3g at 0.9 s", late4, late1);
+        /* the EP: voicing moves the pole, the coil moves its resonance;
+           the tune arriving under a ring is heard on the next block */
+        Engine p0; p0.Init(&rw, sr); p0.gain = 1.f; p0.SetF0(261.63f); p0.Strike(0.8f);
+        Engine pv = p0, pc = p0;
+        std::vector<float> a0; Run(p0, a0, 100);
+        pv.SetTune(Engine::Tune::Voicing, 1.5f); std::vector<float> av; Run(pv, av, 100);
+        pc.SetTune(Engine::Tune::Coil, 0.5f); std::vector<float> ac; Run(pc, ac, 100);
+        double dv = 0, dc = 0, ea = 0;
+        for(size_t i = 0; i < a0.size(); i++) { dv += (a0[i] - av[i]) * (a0[i] - av[i]); dc += (a0[i] - ac[i]) * (a0[i] - ac[i]); ea += a0[i] * a0[i]; }
+        CHECK(dv > 0.01 * ea, "voicing did nothing on the EP: %.3g of the energy", dv / ea);
+        CHECK(dc > 0.01 * ea, "the coil did nothing on the EP: %.3g of the energy", dc / ea);
+        CHECK(energy(av, 0, 240) > 0.1 * energy(a0, 0, 240), "voicing cut the ring: %.3g against %.3g", energy(av, 0, 240), energy(a0, 0, 240));
+        printf("  the spin: centre is the fitted world (0 apart); decay x4 rings %.1fx at 0.9 s; voicing moves the EP %.2f of its energy, the coil %.2f, the ring kept\n",
+               late4 / late1, dv / ea, dc / ea);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }

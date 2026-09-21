@@ -190,6 +190,13 @@ what it is). Concretely:
   a tom's came back 28 dB louder before this. The Wurlitzer's retune,
   which used to lift or drop by the frequency ratio, is now transparent
   (the golden `m4_resonate` re-pinned for it).
+- ACTION 18 `tune u8 which, u8 value`: the spin — voicing (widths off the
+  fitted pole), decay (×¼–×4) and coil (×½–×2), 128 the world as fitted —
+  on the engine as a knob's value, applied through a copy of the world's
+  reader on the next block with the ring kept. The page has three sliders
+  beside the strike chips (double-click recentres). `resonate_engine_check`:
+  the centre is the fitted world bit for bit, decay ×4 rings 5.7× at
+  0.9 s, voicing and coil move the EP's spectrum with the ring kept.
 - ACTION 17 `strike u8 velocity`: the hand on a resonator until the module
   has a trigger. On the module it is a flag the audio callback consumes
   after `SetF0`, so the strike retunes to the pitch it is struck at; the
@@ -200,8 +207,8 @@ what it is). Concretely:
   over) and the node selftest (the same through `link.js`).
 
 Still the bench's: the hardware trigger (J2's edge, or the oscillator into
-the bank), the three pots on `ResonatorWorld::voicing / decay / coil`, the
-cycle budget, and the module's card path above, which is
+the bank), which pots carry the spin (the action exists; a page is the
+one hand on it so far), the cycle budget, and the module's card path above, which is
 built and untested. The pot that plays an index world is position 0, which on the
 module is the Play page's third pot; whether a body row wants its own
 page is a bench question.

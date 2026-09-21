@@ -513,6 +513,11 @@ public:
                 if(!world || !world->IsResonate()) return 3u;
                 eng->Strike((len >= 1 ? args[0] : 204u) / 255.0f);
                 return 0u;
+            case kyk::kActTune:
+                if(len < 2 || args[0] > 2) return 2u;
+                if(!world || !world->IsResonate()) return 3u;
+                eng->SetTune((kyk::Engine::Tune)args[0], kyk::TuneValue(args[0], args[1]));
+                return 0u;
             case kyk::kActRenderDiv: if(len < 1 || args[0] < 1) return 2u; eng->SetRenderDiv(args[0]); return 0u;
             case kyk::kActAimMorph:
             {
