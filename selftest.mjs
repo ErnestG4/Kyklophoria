@@ -869,10 +869,20 @@ console.log('\n== the card: write, list, read back, and refuse to clobber');
   check((await act(KYK.ACT.slotLive, 10))[0] === 0, 'and plays');
   const tr = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
   check(tr.n === 1 && tr.world === 0xFF, `as a 1-D user world (N=${tr.n}, world ${tr.world})`);
+  /* and says what it is playing: the Wurlitzer's eleven points C2 to C7,
+     the voice built at the pitch (110 Hz at boot: A2, 45), its modes */
+  const rs = await KYK.fetchResonate(link);
+  check(rs && rs.kind === 0 && rs.P === 11 && rs.points.length === 11 && rs.lo === 36 && rs.hi === 96,
+        `the readout: kind ${rs && rs.kind}, ${rs && rs.P} points ${rs && rs.lo}..${rs && rs.hi}`);
+  check(rs && Math.abs(rs.param - 45) < 0.01, `the voice built at the pitch (${rs && rs.param.toFixed(2)}, A2 is 45)`);
+  check(rs && rs.modes.filter(q => q.gain > 0).length >= 20 && rs.modes.some(q => Math.abs(q.hz - 110) < 5),
+        `${rs && rs.modes.filter(q => q.gain > 0).length} modes, one of them at 110 Hz`);
+  check(rs && rs.burst > 0, `and a burst of ${rs && rs.burst} samples`);
   let refused = '';
   try { await act(KYK.ACT.slotTarget, 10); } catch (e) { refused = e.message; }
   check(refused === 'BAD_STATE', `it is not a morph target (${refused || 'accepted'})`);
   check((await act(KYK.ACT.slotLive, 9))[0] === 0, 'a frame world takes over again');
+  check((await KYK.fetchResonate(link)) === null, 'and there is no readout for it');
 
   await link.close();
   fs.rmSync(dir, { recursive: true, force: true });

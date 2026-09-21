@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; } };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; } };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -183,6 +183,18 @@ const CASES = [
   /* a resonate world — a .kykm loaded from the card — is one-dimensional and
      has no rotation plane at all; the page had never drawn N=1 before it */
   ['a resonate world live: N=1, no planes', tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4 })],
+  /* the same with the module's readout in hand: an axis of points and the
+     voice between two of them, modes on a log axis (one at zero gain, one
+     at zero frequency, which the drawing must skip rather than take the
+     log of), a burst */
+  ['a resonate world with its readout', tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4 }), {
+    kind: 0, lo: 36, hi: 96, param: 61.5, P: 11, burst: 3360,
+    points: [36, 43, 48, 55, 60, 67, 72, 79, 84, 91, 96],
+    modes: [{ hz: 261.6, zeta: 0.001, gain: 0.5 }, { hz: 523.2, zeta: 0.002, gain: 0.2 }, { hz: 2093, zeta: 0.03, gain: 0.001 },
+            { hz: 0, zeta: 1, gain: 0 }, { hz: 8000, zeta: 0.5, gain: 0.00001 }] }],
+  ['an index world with its readout', tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4 }), {
+    kind: 1, lo: 0, hi: 18, param: 7.2, P: 19, burst: 0, points: Array.from({ length: 19 }, (_, i) => i),
+    modes: [{ hz: 488, zeta: 0.0009, gain: 0.24 }, { hz: 975, zeta: 0.001, gain: 0.1 }] }],
 ];
 
 /* The panel mirror, from a descriptor shaped the way the SDK emits one
@@ -1356,8 +1368,9 @@ console.log('');
 }
 
 let caseIdx = 0;
-for (const [name, t] of CASES) {
+for (const [name, t, r] of CASES) {
   P.setTel(t);
+  P.setReso(r || null);
   /* Every case is seen by both views, and the selection walks through the set
      (including nothing selected) so the inspector's branches — a poor fit, a
      spectrum-mode node, one with no traces drawn for it, a silent one, and no

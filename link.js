@@ -23,6 +23,7 @@ const CMD = {
   telemetry: 0x60, spaceInfo: 0x61, cell: 0x62, stats: 0x63, action: 0x64,
   worlds: 0x65, basis: 0x66, putWorld: 0x67, cardWorlds: 0x68,
   putSlot: 0x69, slots: 0x6a, saveCard: 0x6b, getSlot: 0x6c, tour: 0x6d, setControl: 0x6e,
+  resonate: 0x6f,
 };
 /* 0x6D TOUR ops (shell/common/kyk_ext.h) */
 const TOUR = { get: 0, set: 1, tick: 2, max: 8 };
@@ -572,6 +573,26 @@ async function putSlot(link, slot, blob, onProgress) {
 
 /* What the module is holding, which of them is playing, and which one it is
    morphing towards. An empty slot has a null name. */
+/* 0x6F RESONATE: what the resonate world is playing — its axis, where the
+   voice was built on it, the modes it was built from, the burst, and the
+   world's points. The page never has the world; the module says. Null when
+   what is playing is not a resonator. */
+async function fetchResonate(link) {
+  let b;
+  try { b = await link.request(CMD.resonate, new Uint8Array(0), { key: 'resonate' }); }
+  catch (e) { if (/BAD_STATE/.test(e.message)) return null; throw e; }
+  if (!b.length || b[0] !== 0) return null;
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const out = { kind: b[1], lo: dv.getFloat32(2, true), hi: dv.getFloat32(6, true), param: dv.getFloat32(10, true),
+                P: dv.getUint16(14, true), modes: [], burst: 0, points: [] };
+  const N = b[16]; let at = 17;
+  for (let k = 0; k < N && at + 12 <= b.length; k++, at += 12)
+    out.modes.push({ hz: dv.getFloat32(at, true), zeta: dv.getFloat32(at + 4, true), gain: dv.getFloat32(at + 8, true) });
+  if (at + 4 <= b.length) { out.burst = dv.getUint32(at, true); at += 4; }
+  if (at < b.length) { const M = b[at]; at += 1; for (let i = 0; i < M && at + 4 <= b.length; i++, at += 4) out.points.push(dv.getFloat32(at, true)); }
+  return out;
+}
+
 async function fetchSlots(link) {
   const b = await link.request(CMD.slots, new Uint8Array(0), { key: 'slots' });
   if (!b.length || b[0] !== 0) return null;
@@ -1228,7 +1249,7 @@ const planeCount = n => n * (n - 1) / 2;
 const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
-  TOUR, tourReq, parseTour,
+  TOUR, tourReq, parseTour, fetchResonate,
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, putSlot, fetchSlots,
   MORPH_USER, SLOT_COUNT, STAT_CARD_EXISTS, SHAPER, SHAPER_NAME, buildUserWorld, parseUserWorld,
