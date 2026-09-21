@@ -63,6 +63,7 @@ def main():
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--from', dest='lo', type=int, default=0, help='first midi note')
     ap.add_argument('--to', dest='hi', type=int, default=127, help='last midi note')
+    ap.add_argument('--only', default='', help='comma-separated note keys (g1,g#1) to fit again in place, the rest of fits.tsv kept')
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     dirs = a.order.split(',') if a.order else sorted(d for d in os.listdir(a.indir) if os.path.isdir(os.path.join(a.indir, d)))
@@ -85,11 +86,24 @@ def main():
         keys = keys[:a.limit]
     print('  %s: %d notes in every one of %d velocity folders (%s)' % (a.family, len(keys), len(dirs), ', '.join(dirs)))
     device = 'cuda' if modalfit.torch.cuda.is_available() else 'cpu'
-    with open(os.path.join(a.outdir, 'fits.tsv'), 'w') as man:
+    # a refit of some notes in place: the manifest's other rows are kept as
+    # they are, the chosen ones rewritten where they stand (the ids are the
+    # notes' places in the full list, so the list is walked whole)
+    only = set(k.lower() for k in a.only.split(',')) if a.only else None
+    old = {}
+    if only:
+        for l in open(os.path.join(a.outdir, 'fits.tsv')).read().splitlines()[1:]:
+            old[l.split('\t')[0]] = l
+    with open(os.path.join(a.outdir, 'fits.tsv' if not only else 'fits.new.tsv'), 'w') as man:
         man.write('id\tfamily\tparam\tvalue\tdynamic\tsource\tmodes\tloss\th_over_w\tcoil_hz\tcoil_q\tswings\tbark_target\tbark_model\n')
         for n, key in enumerate(keys):
             midi = midi_of(key) + 12 * a.octave
             f0 = 440.0 * 2 ** ((midi - 69) / 12)
+            if only and key.lower() not in only:
+                mid = '%s%03d' % (a.family, n)
+                if mid in old:
+                    man.write(old[mid] + '\n')
+                continue
             xs = []
             for rel in files[key]:
                 try:
@@ -120,13 +134,13 @@ def main():
             # pickup's harmonics and the fundamental sits 20 dB under h2,
             # so it must be looked for wider, and put in by hand if it is
             # still not there — a tine without its fundamental is nothing
-            init = modalfit.initialise(xs[loud] / (np.abs(xs[loud]).max() or 1.0), sr, 4 * a.modes if a.bar else a.modes)
+            init = modalfit.initialise(xs[loud] / (np.abs(xs[loud]).max() or 1.0), sr, 4 * a.modes if a.bar else a.modes, f0=f0)
             if a.bar:
                 init = modalfit.bar_metal(init, f0)
                 if not any(abs(m[0] / f0 - 1) < 0.03 for m in init):
                     top = max((m[2] for m in init), default=0.1)
                     init.append((f0, 1.0, 0.3 * top, 0.0))
-                init = sorted(init, key=lambda m: -m[2])[:a.modes]
+                init = sorted(init, key=lambda m: -(m[2] * (1e6 if abs(m[0] / f0 - 1) < 0.04 else 1.0)))[:a.modes]
                 # the decay is read off the softest usable take, where the
                 # pickup is near-linear and the output decays as the metal
                 # does; on the loudest take the field compresses the
@@ -142,7 +156,9 @@ def main():
                 print('  %-6s no partials' % key)
                 continue
             f, r, amp, ph, g, (h, w, K, fc, Q), ys, loss = modalfit.fit_shaped(xs, sr, init, a.steps, device, verbose=False, normalised=a.normalised, form=a.form)
-            keep = modalfit.audible(amp, r) & (amp > 0)
+            # the tine's own note stays whatever the level test says: the EP's
+            # G2 came out of the fit without it and played a fifth low
+            keep = modalfit.keep_fundamental(modalfit.audible(amp, r) & (amp > 0), f, f0)
             order = [i for i in np.argsort(f) if keep[i]]
             mid = '%s%03d' % (a.family, n)
             bt, bm = [], []
@@ -168,6 +184,8 @@ def main():
             print('  %-6s %-8s midi %3d  %2d metal  loss %.3f  h/w %.2f coil %.0f Hz Q %.2f  swings %s' % (mid, key, midi, len(order), loss, h / w, fc, Q, ','.join('%.2f' % v for v in g)))
             for k, d in enumerate(used):
                 print('         %-5s target h2/h3/h4 %-14s model %s' % (d, bt[k], bm[k]))
+    if only:
+        os.replace(os.path.join(a.outdir, 'fits.new.tsv'), os.path.join(a.outdir, 'fits.tsv'))
     print('  done: %s' % a.outdir)
 
 

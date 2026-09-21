@@ -17,7 +17,7 @@ banjo014	banjo	midi	71	forte	banjo_B4_very-long_forte_normal.mp3	40	0.6843	0.017
 banjo015	banjo	midi	71	piano	banjo_B4_very-long_piano_normal.mp3	43	0.8722	0.032	1.166
 banjo016	banjo	midi	83	forte	banjo_B5_very-long_forte_normal.mp3	42	0.7164	0.055	0.228
 banjo017	banjo	midi	83	piano	banjo_B5_very-long_piano_normal.mp3	41	1.3908	0.026	0.434
-banjo018	banjo	midi	48	forte	banjo_C3_very-long_forte_normal.mp3	42	0.8661	0.257	0.866
+banjo018	banjo	midi	48	forte	banjo_C3_very-long_forte_normal.mp3	41	0.8551	0.197	0.827
 banjo019	banjo	midi	48	piano	banjo_C3_very-long_piano_normal.mp3	43	0.8931	0.187	1.195
 banjo020	banjo	midi	60	forte	banjo_C4_very-long_forte_normal.mp3	40	1.4559	0.032	0.629
 banjo021	banjo	midi	60	piano	banjo_C4_very-long_piano_normal.mp3	47	0.8668	0.089	0.945
@@ -25,13 +25,13 @@ banjo022	banjo	midi	72	forte	banjo_C5_very-long_forte_normal.mp3	43	0.8628	0.036
 banjo023	banjo	midi	72	piano	banjo_C5_very-long_piano_normal.mp3	30	0.9078	0.066	0.941
 banjo024	banjo	midi	84	forte	banjo_C6_very-long_forte_normal.mp3	41	0.8318	0.017	0.954
 banjo025	banjo	midi	49	forte	banjo_Cs3_very-long_forte_normal.mp3	47	0.8424	0.051	0.759
-banjo026	banjo	midi	49	piano	banjo_Cs3_very-long_piano_normal.mp3	42	1.1526	0.230	0.766
+banjo026	banjo	midi	49	piano	banjo_Cs3_very-long_piano_normal.mp3	44	1.1526	0.230	0.765
 banjo027	banjo	midi	61	forte	banjo_Cs4_very-long_forte_normal.mp3	41	0.7769	0.100	0.994
 banjo028	banjo	midi	61	piano	banjo_Cs4_very-long_piano_normal.mp3	44	0.8877	0.106	1.128
 banjo029	banjo	midi	73	forte	banjo_Cs5_very-long_forte_normal.mp3	42	0.5787	0.038	1.133
 banjo030	banjo	midi	85	forte	banjo_Cs6_very-long_forte_normal.mp3	41	0.6578	0.013	1.241
-banjo031	banjo	midi	50	forte	banjo_D3_very-long_forte_normal.mp3	41	0.7989	0.106	1.153
-banjo032	banjo	midi	50	piano	banjo_D3_very-long_piano_normal.mp3	45	1.0678	0.180	0.822
+banjo031	banjo	midi	50	forte	banjo_D3_very-long_forte_normal.mp3	44	0.7978	0.105	1.161
+banjo032	banjo	midi	50	piano	banjo_D3_very-long_piano_normal.mp3	43	1.0647	0.180	0.779
 banjo033	banjo	midi	62	forte	banjo_D4_very-long_forte_normal.mp3	43	0.9440	0.128	1.167
 banjo034	banjo	midi	62	piano	banjo_D4_very-long_piano_normal.mp3	39	0.8614	0.090	0.785
 banjo035	banjo	midi	74	forte	banjo_D5_very-long_forte_normal.mp3	34	1.1144	0.057	0.532

@@ -232,17 +232,44 @@ struct ResonatorBank
                 }
                 drive += m;
             }
-            else for(int i = 0; i < n; i++)
+            else
             {
-                const float a = c1[i], b = c2[i];
-                float u1 = y1[i], u2 = y2[i];
-                for(int k = 0; k < m; k++)
+                /* two modes at a time. A mode's recurrence is a chain — the
+                   multiply, the add, the next sample's multiply — and the
+                   M7's FPU waits on each link; two chains interleaved fill
+                   the wait. Ten instructions a mode a sample became eight
+                   and a half for the pair, but the cycles are what fell:
+                   the sums are the same operations in the same order, so
+                   the output is bit for bit what one mode at a time gave */
+                int i = 0;
+                for(; i + 1 < n; i += 2)
                 {
-                    const float y = a * u1 + b * u2;
-                    u2 = u1; u1 = y;
-                    out[k] += y;
+                    const float a0 = c1[i], b0 = c2[i], a1 = c1[i + 1], b1 = c2[i + 1];
+                    float p1 = y1[i], p2 = y2[i], q1 = y1[i + 1], q2 = y2[i + 1];
+                    for(int k = 0; k < m; k++)
+                    {
+                        const float yp = a0 * p1 + b0 * p2;
+                        const float yq = a1 * q1 + b1 * q2;
+                        p2 = p1; p1 = yp;
+                        q2 = q1; q1 = yq;
+                        float o = out[k];
+                        o += yp; o += yq;
+                        out[k] = o;
+                    }
+                    y1[i] = p1; y2[i] = p2; y1[i + 1] = q1; y2[i + 1] = q2;
                 }
-                y1[i] = u1; y2[i] = u2;
+                for(; i < n; i++)
+                {
+                    const float a = c1[i], b = c2[i];
+                    float u1 = y1[i], u2 = y2[i];
+                    for(int k = 0; k < m; k++)
+                    {
+                        const float y = a * u1 + b * u2;
+                        u2 = u1; u1 = y;
+                        out[k] += y;
+                    }
+                    y1[i] = u1; y2[i] = u2;
+                }
             }
             for(int q = 0; q < kStrikes; q++) if(ramping[q])
             {
@@ -252,7 +279,24 @@ struct ResonatorBank
                     const float u = ramp_n[q] + (float)k - ramp_lead[q];
                     w[k] = u <= 0.f ? 0.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len[q]);
                 }
-                for(int i = 0; i < n; i++)
+                int i = 0;
+                for(; i + 1 < n; i += 2)      /* in pairs, as above */
+                {
+                    const float a0 = c1[i], b0 = c2[i], a1 = c1[i + 1], b1 = c2[i + 1];
+                    float p1 = s1[q][i], p2 = s2[q][i], r1 = s1[q][i + 1], r2 = s2[q][i + 1];
+                    for(int k = 0; k < m; k++)
+                    {
+                        const float yp = a0 * p1 + b0 * p2;
+                        const float yr = a1 * r1 + b1 * r2;
+                        p2 = p1; p1 = yp;
+                        r2 = r1; r1 = yr;
+                        float o = out[k];
+                        o += w[k] * yp; o += w[k] * yr;
+                        out[k] = o;
+                    }
+                    s1[q][i] = p1; s2[q][i] = p2; s1[q][i + 1] = r1; s2[q][i + 1] = r2;
+                }
+                for(; i < n; i++)
                 {
                     const float a = c1[i], b = c2[i];
                     float u1 = s1[q][i], u2 = s2[q][i];

@@ -80,9 +80,14 @@ def load(path, seconds, onset_db, normalise=True):
     return x, sr
 
 
-def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None):
+def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None, f0=None):
     """Peaks of the mean spectrum, verified, with a decay per peak from its
-    bin's track.
+    bin's track. With f0 — the note the record is labelled — the line
+    nearest it (within 4%) is the first candidate and is not gated: a
+    Wurlitzer's C2 has its 65 Hz at the bottom of its six loudest lines and
+    the gates and the budget dropped it, so the fit played a C3, an octave
+    up (Combust, on the module: "C2 in particular is an octave wrong").
+    The fundamental is the one line a note record cannot be without.
 
     Verification is what the first version lacked, and what let a whistle into
     the guitars: a peak of the *mean* spectrum can be a partial, or it can be a
@@ -129,16 +134,27 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None):
         if mean[b] > mean[b - 1] and mean[b] >= mean[b + 1] and mean[b] > mean[b - 2] and mean[b] >= mean[b + 2]:
             cand.append((mean[b], b))
     cand.sort(reverse=True)
+    fund = None
+    if f0:
+        near = [(h, b) for h, b in cand if abs(freqs[b] / f0 - 1) < 0.04]
+        if not near:
+            # no local maximum there: the bin itself, so the fit starts with
+            # a line at the note and decides its level
+            b = int(round(f0 * nfft / sr))
+            near = [(mean[b], b)]
+        fund = max(near)[1]
+        cand = [max(near)] + [c for c in cand if c[1] != fund]
     modes = []
     rejected = {'prominence': 0, 'coherence': 0, 'decay': 0}
     t = np.arange(len(S)) * hop / sr
     for h, b in cand:
         if len(modes) >= nmodes:
             break
+        gated = b != fund
         # prominence over the local floor: the median over an octave each side
         lo, hi = max(1, b // 2), min(len(mean) - 1, b * 2)
         floor = np.median(logmean[lo:hi])
-        if logmean[b] - floor < PROMINENCE_DB / 8.686:  # in nepers
+        if gated and logmean[b] - floor < PROMINENCE_DB / 8.686:  # in nepers
             rejected['prominence'] += 1
             continue
         track = np.log(S[:, b] + 1e-9)
@@ -147,7 +163,7 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None):
         expect = 2 * math.pi * b * hop / nfft
         dev = np.angle(np.exp(1j * (dphi - expect)))
         good = ok[1:] & ok[:-1]
-        if good.sum() >= 2 and np.std(dev[good]) > 0.33:
+        if gated and good.sum() >= 2 and np.std(dev[good]) > 0.33:
             rejected['coherence'] += 1
             continue
         f = (expect + (np.median(dev[good]) if good.any() else 0.0)) * sr / (2 * math.pi * hop)
@@ -169,7 +185,7 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None):
             # against the last, 3 dB, is a drop that hum and a room never make
             q = max(1, ok.sum() // 4)
             drop = track[ok][:q].mean() - track[ok][-q:].mean()
-            if p[0] > 0 or (r2 < 0.5 and ok.sum() > 6 and drop < 3.0 / 8.686):
+            if gated and (p[0] > 0 or (r2 < 0.5 and ok.sum() > 6 and drop < 3.0 / 8.686)):
                 rejected['decay'] += 1
                 continue
             rate = max(0.5, -p_fall[0])
@@ -218,11 +234,22 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None):
         if thump is not None:
             modes.append((f, 6.91 / 0.05, thump, 0.0))
     if len(modes) > nmodes:
-        # the split can overrun the budget: keep the loudest
-        modes = sorted(modes, key=lambda m: -m[2])[:nmodes]
+        # the split can overrun the budget: keep the loudest, and the note
+        modes = sorted(modes, key=lambda m: -(m[2] * (1e6 if f0 and abs(m[0] / f0 - 1) < 0.04 else 1.0)))[:nmodes]
     if report is not None:
         report.update(rejected)
     return modes
+
+
+def keep_fundamental(keep, f, f0, tol=0.04):
+    """The mode nearest f0 (within tol) stays whatever audible() and
+    validate() said: a weak fundamental is still the note."""
+    if not f0 or not len(f):
+        return keep
+    i = int(np.argmin(np.abs(f / f0 - 1)))
+    if abs(f[i] / f0 - 1) < tol:
+        keep = keep.copy(); keep[i] = True
+    return keep
 
 
 def split(F, f, sr, nfine, nfft, rel_db=-20.0, min_sep_hz=1.5):

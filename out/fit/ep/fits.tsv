@@ -2,7 +2,7 @@ id	family	param	value	dynamic	source	modes	loss	excess_db	decay_ratio
 ep000	ep	midi	46	MAX	MAX/a#1 max.wav	47	0.6782	0.022	1.103
 ep001	ep	midi	58	MAX	MAX/a#2 max.wav	37	0.5734	0.081	1.073
 ep002	ep	midi	70	MAX	MAX/a#3 max.wav	31	0.3946	0.048	1.016
-ep003	ep	midi	82	MAX	MAX/a#4 max.wav	27	0.4377	0.050	0.982
+ep003	ep	midi	82	MAX	MAX/a#4 max.wav	29	0.4335	0.050	0.929
 ep004	ep	midi	94	MAX	MAX/a#5 max.wav	16	0.3935	0.018	0.905
 ep005	ep	midi	106	MAX	MAX/a#6 max.wav	15	0.4629	0.007	0.899
 ep006	ep	midi	118	MAX	MAX/a#7 max.wav	13	0.7378	0.008	0.698
@@ -16,7 +16,7 @@ ep013	ep	midi	117	MAX	MAX/a7 max.wav	13	0.4665	0.014	1.017
 ep014	ep	midi	47	MAX	MAX/b1 max.wav	39	0.7205	0.052	1.159
 ep015	ep	midi	59	MAX	MAX/b2 max.wav	41	0.5628	0.051	1.049
 ep016	ep	midi	71	MAX	MAX/b3 max.wav	27	0.4040	0.050	0.989
-ep017	ep	midi	83	MAX	MAX/b4 max.wav	18	0.4841	0.024	0.820
+ep017	ep	midi	83	MAX	MAX/b4 max.wav	18	0.4821	0.025	0.822
 ep018	ep	midi	95	MAX	MAX/b5 max.wav	15	0.3999	0.025	0.951
 ep019	ep	midi	107	MAX	MAX/b6 max.wav	13	0.4728	0.017	0.863
 ep020	ep	midi	119	MAX	MAX/b7 max.wav	13	0.4914	0.013	0.993
@@ -24,7 +24,7 @@ ep021	ep	midi	37	MAX	MAX/c#1 max.wav	42	0.8748	0.007	1.133
 ep022	ep	midi	49	MAX	MAX/c#2 max.wav	42	0.7530	0.071	1.162
 ep023	ep	midi	61	MAX	MAX/c#3 max.wav	45	0.5192	0.057	1.042
 ep024	ep	midi	73	MAX	MAX/c#4 max.wav	36	0.4294	0.040	1.019
-ep025	ep	midi	85	MAX	MAX/c#5 max.wav	18	0.5044	0.019	0.822
+ep025	ep	midi	85	MAX	MAX/c#5 max.wav	21	0.4755	0.019	0.664
 ep026	ep	midi	97	MAX	MAX/c#6 max.wav	15	0.4311	0.019	0.911
 ep027	ep	midi	109	MAX	MAX/c#7 max.wav	18	0.3652	0.026	2.335
 ep028	ep	midi	36	MAX	MAX/c1 max.wav	45	0.7966	0.007	1.195
@@ -46,7 +46,7 @@ ep043	ep	midi	38	MAX	MAX/d1 max.wav	44	0.8140	0.009	1.136
 ep044	ep	midi	50	MAX	MAX/d2 max.wav	43	0.6569	0.057	1.103
 ep045	ep	midi	62	MAX	MAX/d3 max.wav	36	0.5683	0.064	1.063
 ep046	ep	midi	74	MAX	MAX/d4 max.wav	38	0.4384	0.043	1.041
-ep047	ep	midi	86	MAX	MAX/d5 max.wav	27	0.4139	0.020	0.941
+ep047	ep	midi	86	MAX	MAX/d5 max.wav	25	0.4126	0.020	0.946
 ep048	ep	midi	98	MAX	MAX/d6 max.wav	16	0.3649	0.031	1.175
 ep049	ep	midi	110	MAX	MAX/d7 max.wav	11	0.5323	0.008	0.774
 ep050	ep	midi	40	MAX	MAX/e1 max.wav	46	0.7580	0.006	1.019

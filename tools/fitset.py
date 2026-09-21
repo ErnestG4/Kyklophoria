@@ -113,6 +113,7 @@ def main():
     ap.add_argument('--steps', type=int, default=800)
     ap.add_argument('--max-seconds', type=float, default=4.0)
     ap.add_argument('--limit', type=int, default=0)
+    ap.add_argument('--only', default='', help='comma-separated record ids to fit again in place, the rest of fits.tsv kept')
     ap.add_argument('--polish', type=int, default=-1,
                     help='steps of a second fit from the surviving modes after validation (default steps/2, 0 for none)')
     ap.add_argument('--keep-ids', action='store_true', help='name records after their files rather than family+index')
@@ -141,16 +142,28 @@ def main():
     print('  %s: %d single-note files, articulation %s' % (a.family, len(rows), a.articulation))
     device = 'cuda' if modalfit.torch.cuda.is_available() else 'cpu'
     residuals = []
-    with open(os.path.join(a.outdir, 'fits.tsv'), 'w') as man:
+    # a refit of some records in place: the manifest's other rows are kept
+    # as they are, the chosen ones rewritten where they stand
+    only = set(a.only.split(',')) if a.only else None
+    old = {}
+    if only:
+        for l in open(os.path.join(a.outdir, 'fits.tsv')).read().splitlines()[1:]:
+            old[l.split('\t')[0]] = l
+    with open(os.path.join(a.outdir, 'fits.tsv' if not only else 'fits.new.tsv'), 'w') as man:
         man.write('id\tfamily\tparam\tvalue\tdynamic\tsource\tmodes\tloss\texcess_db\tdecay_ratio\n')
         for n, (path, midi, dyn, f) in enumerate(rows):
             mid = os.path.splitext(os.path.basename(path))[0] if a.keep_ids else '%s%03d' % (a.family, n + a.first_id)
+            if only and mid not in only:
+                if mid in old:
+                    man.write(old[mid] + '\n')
+                continue
+            f0 = 440.0 * 2 ** ((midi + 12 * a.octave - 69) / 12) if param == 'midi' else None
             raw, sr = sf.read(path, always_2d=True)
             raw = raw.mean(axis=1)
             secs = ring_seconds(raw, sr, a.max_seconds)
             try:
                 x, sr = modalfit.load(path, secs, a.onset)
-                init = modalfit.initialise(x, sr, a.modes)
+                init = modalfit.initialise(x, sr, a.modes, f0=f0)
             except ValueError as e:
                 print('  %-10s %s: skipped, %s' % (mid, f, e))
                 continue
@@ -160,14 +173,14 @@ def main():
             fr, r, amp, y, loss, ph = modalfit.fit(x, sr, init, a.steps, device, verbose=False)
             cap = a.t60_cap * secs
             r = np.maximum(r, 6.91 / cap)
-            keep = modalfit.audible(amp, r) & modalfit.validate(fr, r, amp, x, sr)
+            keep = modalfit.keep_fundamental(modalfit.audible(amp, r) & modalfit.validate(fr, r, amp, x, sr), fr, f0)
             fr, r, amp, ph = fr[keep], r[keep], amp[keep], ph[keep]
             if a.polish and len(fr) and (~keep).any():
                 # the survivors, fitted again without the modes that were
                 # taking energy they had no claim to, from their own phases
                 fr, r, amp, y, loss, ph = modalfit.fit(x, sr, list(zip(fr, r, amp, ph)), a.polish, device, verbose=False)
                 r = np.maximum(r, 6.91 / cap)
-                keep = modalfit.audible(amp, r) & modalfit.validate(fr, r, amp, x, sr)
+                keep = modalfit.keep_fundamental(modalfit.audible(amp, r) & modalfit.validate(fr, r, amp, x, sr), fr, f0)
                 fr, r, amp, ph = fr[keep], r[keep], amp[keep], ph[keep]
             order = np.argsort(fr)
             nbody = 0
@@ -200,6 +213,8 @@ def main():
         print('  body of the set: %s' % ', '.join('%.0f Hz Q%.0f' % (f, q) for f, q in body))
         for mid, sp, sr, n in residuals:
             modalfit.append_body(os.path.join(a.outdir, mid + '.mmr'), body, sp, sr)
+    if only:
+        os.replace(os.path.join(a.outdir, 'fits.new.tsv'), os.path.join(a.outdir, 'fits.tsv'))
     print('  done: %s' % a.outdir)
 
 
