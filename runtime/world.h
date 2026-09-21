@@ -98,7 +98,11 @@ struct World
         {
             ha[k] = ha[k] * std::pow(hb[k] / ha[k], t);
             za[k] = za[k] * std::pow(zb[k] / za[k], t);
-            ga[k] = ga[k] * std::pow((gb[k] + 1e-9f) / (ga[k] + 1e-9f), t);
+            /* gain linearly: the export puts a ghost — the same ratio at
+               zero gain — where a point has no mode in a slot, so a mode
+               fades in and out along the axis; geometric took it to
+               nothing at the first step */
+            ga[k] = ga[k] + t * (gb[k] - ga[k]);
             float d = fb[k] - fa[k];                 /* phase: the short way round */
             if(d > 3.1415927f) d -= 6.2831853f;
             if(d < -3.1415927f) d += 6.2831853f;

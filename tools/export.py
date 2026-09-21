@@ -195,6 +195,91 @@ def layer(recdir, pts):
     return out
 
 
+def align(pts, kind, cap=48, tol=0.015):
+    """Slots that mean the same thing between neighbouring points. The
+    runtime interpolates a note between two points slot by slot, and a slot
+    was a mode's rank in its point's list: a point with a body mode under
+    its fundamental put every harmonic one rank off its neighbour's, and a
+    Wurlitzer A2 — between the G2 and C3 points — came out with modes at
+    167, 281 and 417 Hz and no fundamental at all; where one point had
+    fewer modes than the other, its 20 Hz padding was interpolated against
+    real modes into 128 Hz junk.
+
+    The runtime only ever interpolates adjacent points, so the slots need
+    agree only pairwise, along the chain: each point's modes take the slot
+    of the previous point's mode at the same ratio to the note (within
+    1.5%; the parameter is the note, so the ratio is known), a mode with no
+    partner takes a slot the previous point left free — with a ghost put
+    there in the previous point, its ratio at that pitch at zero gain, so it
+    fades in rather than sliding from somewhere else — and a previous mode
+    with no partner gets a ghost in this point, and fades out. A slot only
+    ever holds one ghost, so when a slot must serve a fade-out on one side
+    and a fade-in on the other the ghost's pitch is one of the two; with no
+    free slot at all, the quietest unmatched mode is dropped and counted.
+    A global slot table was tried first and threw a third of the modes out:
+    eleven points of a keyboard share few ratios end to end, and they do
+    not have to. Index worlds, rows of bodies, have no ratio to share and
+    keep their rank order."""
+    if kind != 0 or len(pts) < 2:
+        return pts
+    f0 = lambda param: 440.0 * 2 ** ((param - 69) / 12)
+    rows = [[None] * cap for _ in pts]            # rows[i][s] = (hz, zeta, g, ph) or None
+    dropped = slid = 0
+    first = sorted(pts[0][1])[:cap]
+    for s_, m in enumerate(first):
+        rows[0][s_] = m
+    dropped += max(0, len(pts[0][1]) - cap)
+    for i in range(1, len(pts)):
+        fp, fc = f0(pts[i - 1][0]), f0(pts[i][0])
+        prev = rows[i - 1]
+        taken = set()
+        unmatched = []
+        for m in sorted(pts[i][1], key=lambda m: -(m[2] ** 2 / max(m[1] * m[0], 1e-9))):
+            r = m[0] / fc
+            best, bs = None, -1
+            for s_ in range(cap):
+                q = prev[s_]
+                if q is None or q[2] == 0.0 or s_ in taken:
+                    continue
+                d = abs((q[0] / fp) / r - 1)
+                if d < tol and (best is None or d < best):
+                    best, bs = d, s_
+            if bs >= 0:
+                rows[i][bs] = m; taken.add(bs)
+            else:
+                unmatched.append(m)
+        for m in unmatched:
+            free = [s_ for s_ in range(cap) if s_ not in taken and (prev[s_] is None or prev[s_][2] == 0.0)]
+            if free:
+                s_ = free[0]; taken.add(s_)
+                rows[i][s_] = m
+                if prev[s_] is None:
+                    prev[s_] = (m[0] / fc * fp, m[1], 0.0, 0.0)    # a ghost behind it: fades in
+                continue
+            # no free slot: the slot of a previous mode that has no partner
+            # here, and the mode slides between the two along the axis —
+            # what every mode did before, kept for the few, because dropping
+            # a mode loses it at the point itself and sliding only between
+            slid_from = [s_ for s_ in range(cap) if s_ not in taken and prev[s_] is not None]
+            if not slid_from:
+                dropped += 1
+                continue
+            s_ = slid_from[0]; taken.add(s_); rows[i][s_] = m; slid += 1
+        for s_ in range(cap):
+            if rows[i][s_] is None and prev[s_] is not None:
+                q = prev[s_]
+                rows[i][s_] = (q[0] / fp * fc, q[1], 0.0, 0.0)    # a ghost ahead of it: fades out
+    # only as many slots as are used somewhere: a shaped world's sixteen
+    # metal modes must not become forty-eight resonators on the module
+    used = max(s_ + 1 for row in rows for s_ in range(cap) if row[s_] is not None)
+    out = []
+    for (param, modes, *rest), row in zip(pts, rows):
+        f = f0(param)
+        out.append((param, [m if m is not None else (f, 0.01, 0.0, 0.0) for m in row[:used]], *rest))
+    print('  slots aligned by ratio to the note along %d points; %d modes slide between neighbours, %d dropped' % (len(pts), slid, dropped))
+    return out
+
+
 def read_corpus(path):
     b = open(path, 'rb').read()
     assert b[:4] == b'MODB'
@@ -268,6 +353,7 @@ def main():
             pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes), noise_of(d, c[0]), c[0]))
         pts = layer(d, pts)
         pts.sort(key=lambda p: p[0])
+        pts = align(pts, kind)
         N = max(len(pt[1]) for pt in pts)
         write(sys.argv[3], N, pts, form, kind)
     return 0

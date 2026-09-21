@@ -691,6 +691,24 @@ notes E1–G3 from the Philharmonia's single-note files (loss 1.1–1.8; the
 `phrase` files under the same articulation are runs of notes and are now
 skipped), as `bass.kykm`.
 
+*A slot is a ratio, not a rank.* The runtime interpolates a note between
+two points slot by slot, and a slot was a mode's rank in its point's
+sorted list. A point with a body mode under its fundamental put every
+harmonic one rank off its neighbour's, and a point with fewer modes had
+its 20 Hz padding interpolated against real modes: the Wurlitzer's A2,
+between the G2 and C3 points, came out with modes at 167, 281 and 417 Hz
+and no fundamental at all — and every key between points is between
+points, which on the Wurlitzer is most of them. `export.py` aligns the
+slots along the chain of points by ratio to the note (within 1.5%), puts
+a ghost — the same ratio at that pitch, at zero gain — where a point has
+no mode in a slot so a mode fades in or out along the axis, and lets a
+mode slide between two only when there is no slot left (70 of the
+Wurlitzer's 488, 295 of the piano's 1283, the quiet ones, since the loud
+take their slots first). The runtime interpolates gain linearly now, so a
+ghost is a fade and not a cliff. Found through the module's own readout
+(`kCmdResonate`, the page's new panes for a resonator), which is what a
+readout is for.
+
 *No wash on a pitched instrument; the burst runs as long as it matters.*
 Combust heard the piano get worse: white noise under its C#2 still, and a
 fizz on the attacks of the first notes. Measured against the recording,
