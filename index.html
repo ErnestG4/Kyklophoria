@@ -1379,7 +1379,12 @@ function renderStrikeChips() {
     const r = document.createElement('input');
     r.type = 'range'; r.min = 0; r.max = 255; r.value = tune[i]; r.title = title;
     r.style.width = '64px'; r.style.verticalAlign = 'middle';
-    r.disabled = !link;
+    /* on the module the pots and CVs own the spin, read every block, and a
+       slider sent from here would be overwritten at the next one; the
+       desktop shell has no panel, and there the sliders are the only hand */
+    const moduleOwns = !!(panel && panel.pots);
+    r.disabled = !link || moduleOwns;
+    if (moduleOwns) r.title = title + ' — on the module the Play page pots and CV 0..3 own this';
     const send = async () => {
       tune[i] = r.value | 0;
       if (!link) return;
