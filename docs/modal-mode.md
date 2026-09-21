@@ -213,6 +213,40 @@ built and untested. The pot that plays an index world is position 0, which on th
 module is the Play page's third pot; whether a body row wants its own
 page is a bench question.
 
+## Playing it: the bench steps
+
+Nothing on the module side of this has run on hardware. The steps, and
+what each one is the first test of:
+
+1. `cd shell/alchemy && make program-live` (or `program-dfu` from the
+   bootloader) on the `modal` branch. Boot is the first test: 8 MB of
+   `.sdram_bss` for the four resonate regions, with the static_assert
+   guarding it.
+2. Copy `ModalBake/out/worlds/*.kykm` into `/kyklophoria/` on the card
+   beside the `.kykw` files (every world is under a 2 MB region;
+   `reed-vel` is the largest at 1.25 MB). Rescan on the page: the CARD
+   list is the second test — `wurli · resonator` and the rest beside the
+   frame worlds.
+3. Worlds tab: pick an empty slot, load a resonator into it (the chunked
+   card read into a region is the third test — a megabyte through the
+   6.7 KB staging buffer, 150 reads), play it. Telemetry should say a 1-D
+   user world; the world bar `resonator`.
+4. MOTION row: soft / mid / hard strike it. That is the only hand on it —
+   there is no trigger on the panel yet — and the strike is a flag the
+   audio callback takes after `SetF0`, so the pitch pot tunes what the
+   next strike plays. The three sliders beside it are the spin.
+5. `perc` is an index world: the Play page's third pot (position 0) walks
+   gong to woodblock; strike anywhere along it.
+
+What to listen for first, and what it would mean: a click on a strike (the
+3 ms ramp, or the burst's fade-in); a note that is the wrong pitch (the
+cents decode, or the retune under a moving pot); a level that jumps
+between notes of one world (the `loudest` scaling, the layers' swings); a
+world that will not load (the region read, or the header check). The
+desktop shell renders every one of these worlds identically through the
+same core, so a difference between the module and `kykdesk --resonate` is
+the shell's — the card read, the SDRAM, the flag — not the engine's.
+
 ## What is not done, and why
 
 Nothing above the header is wired. The engine change is small in lines and
