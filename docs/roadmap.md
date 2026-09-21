@@ -125,11 +125,32 @@ Each with what it fixes and what it costs. *Measured*, *reasoned* and
    tune sliders should know when the module owns the spin; the Play page
    pot labels on the module's own rings.
 
-8. **Fits.** The Philharmonia's guitar harmonics, the cello (no single-note
-   pizz; the `phrase` files could be cut), Epi's other metals as a second
-   tine-mh axis, and the water drum, which is still the one instrument in
-   the room. ESPRIT on the gong's residual only if the wash is heard wrong
-   there.
+8. **The refit, from the holistic pass** (`docs/holistic-math.md`, its
+   items 9, 10 and 7 — the three the export rules only contain). Three
+   changes to the fitter, then every set again, three hours on the GPU:
+   - *A cluster penalty.* The fitter builds non-exponential attacks out of
+     large antiphase pairs — the Wurlitzer C4's loudest mode, 7.7, is half
+     of a pair summing to 1.1; `loudest` sits 14 dB (Wurlitzer median) to
+     46 dB (piano worst) over what its own cluster sums to. Valid, and
+     fragile: a byte, a slot or a lerp that moves one of the pair by a
+     hair un-cancels it. A term on Σ|aᵢ| against |Σ aᵢ e^{jφᵢ}| over the
+     modes within 1% of each other makes a record's amplitudes its audible
+     amplitudes. Then the index world's glide stops paying the bump too.
+   - *One coil per set.* `fit_shaped` fits fc and Q per note and uses the
+     coil as a free equaliser (Q 0.02–55 across the EP; 13 of 84 records
+     outside 0.3–10), and the runtime interpolates them linearly, 60 dB
+     off the fit at h3 on those. A coil is one L, one C, one R: share fc
+     and Q across a set's notes, or penalise their slope along the
+     keyboard; and interpolate fc, Q, K geometrically in the runtime.
+   - *A monotonic prior on the swings.* 39 of the EP's 84 notes had MAX
+     under MED (every note from midi 81 up, where the tine barely moves
+     and the swing is ill-determined). The export reorders them now; the
+     fit should not produce them.
+   Then the sets not fitted yet: the Philharmonia's guitar harmonics, the
+   cello (no single-note pizz; the `phrase` files could be cut), Epi's
+   other metals as a second tine-mh axis, and the water drum, which is
+   still the one instrument in the room. ESPRIT on the gong's residual
+   only if the wash is heard wrong there.
 
 9. **Merge.** `modal` into `master` when 1 says the module is an
    instrument in this mode: the branch is 30-odd commits of engine, shell,
