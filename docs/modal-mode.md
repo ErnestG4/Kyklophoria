@@ -317,12 +317,52 @@ desktop shell renders every one of these worlds identically through the
 same core, so a difference between the module and `kykdesk --resonate` is
 the shell's — the card read, the SDRAM, the flag — not the engine's.
 
+## The oscillator into the bank: a design, not yet built
+
+The plan's original exciter (`ModalBake/docs/roadmap.md`, next-steps 4):
+a wavetable world as the mallet, so the two halves of the firmware are one
+instrument. The exciter path now exists — `Engine::SetExciter` drives a
+block into the bank of the voice that follows the pitch — so this is the
+question of *where the block comes from* and *what plays the second
+world*.
+
+- **Two worlds live at once.** The engine holds one `world_`; a resonate
+  world's frame is silent and its voice rings. An exciter world would be
+  a wavetable world rendered by the same oscillator into a scratch block
+  rather than the output, and that block driven into the bank. The
+  engine already has everything for one wavetable world: `RenderFrame`,
+  the oscillator, the band limit. Rendering a *second* frame is a second
+  render (an IFFT) and a second oscillator — the cost the morph notes
+  say the M7 does not have at 33% average / 97% peak *with* the render
+  running; but under a resonate world the render is skipped now, which
+  is exactly that cost freed. So: a resonate world owns the render slot,
+  and the exciter world is rendered into it. Reasoned; the count is a
+  bench number.
+- **Which world.** The morph target is already "a second world the page
+  chose" (`kActMorphWorld` / `kActSlotTarget`, `gMorphWorld` on the
+  module, its own buffer in the tour's ring). A resonate world refuses a
+  morph target today as BAD_STATE. Let it take one — and let that target
+  be the exciter. No new command, no new slot: the target selector on the
+  page reads "exciter" under a resonator, the Morph knob is the drive.
+- **Gating.** An oscillator is continuous; a mallet is not. The exciter
+  block is the oscillator's output times an envelope opened by the strike
+  — the same flag — with an attack of a millisecond and a decay of the
+  Stereo page's sixth pot (the exciter amount, above); at zero decay it
+  is the burst-like tap the plan imagined, at full it is Rings' driven
+  string. J1's audio and the oscillator share the drive through
+  `SetExciter`, summed.
+- **What it needs before it is built.** The oscillator's second frame in
+  the engine (a `Render` into a block, not a member); `SetMorph` taking a
+  resonate live world without blending; the envelope; the page's label.
+  Then the bench, for the count and for whether a saw into a Wurlitzer is
+  a sound anyone wants — which is the plan's premise and nobody has heard.
+
 ## What is not done, and why
 
-Nothing above the header is wired. The engine change is small in lines and
-large in consequence — it puts a second signal model behind `Process`, and
-the notes on this repo say what happens to state derived from a world when
-it is invalidated on everything except the world changing. That change is
-made with `switch_check` extended first and the module on the bench, not
-overnight and blind. The header, the check and the count are what can be
-believed without hands; the rest is a session with them.
+The oscillator into the bank, above; the waveguide above the modes for
+the bass notes' cliff (`lit-runtime.md`); a body row transposed by v/oct
+(a question for Combust); the fitter's refit (`roadmap.md` step 8); the
+merge into `master`, which waits on the bench saying the mode is an
+instrument. Everything on this branch is host-tested and host-rendered
+through the same core the module runs, so what the bench finds should be
+the shell's — the jacks, the SDRAM, the flags — and not the engine's.
