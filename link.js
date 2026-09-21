@@ -30,7 +30,7 @@ const TOUR = { get: 0, set: 1, tick: 2, max: 8 };
 const ACT = { resetPhase: 0, nextSpace: 1, loadSpace: 2, renderDiv: 3, selectWorld: 4,
               morphWorld: 5, scanCard: 6, loadCardWorld: 7, phase: 8, motionMute: 9,
               aimMorph: 10, slotLive: 11, slotTarget: 12, slotFree: 13, slotSwap: 14,
-              cardToSlot: 15, snapshot: 16, strike: 17, tune: 18, polyphony: 19 };
+              cardToSlot: 15, snapshot: 16, strike: 17, tune: 18, polyphony: 19, pitchLock: 20 };
 /* "that file is already there" — a well-formed request whose answer is a
    question for the player, which is why it is not BAD_ARGS. */
 const STAT_CARD_EXISTS = 20;
@@ -598,6 +598,10 @@ async function fetchResonate(link) {
     out.member = cur; out.name = txt(at); at += 16;
     for (let i = 0; i < fam && at + 16 <= b.length; i++, at += 16) out.members.push(txt(at));
   }
+  /* the voice count and the pitch lock, from firmware that reports them;
+     null from firmware that does not, which is not the same as 1 and off */
+  out.voices = null; out.lock = null;
+  if (at + 2 <= b.length) { out.voices = b[at]; out.lock = b[at + 1] !== 0; at += 2; }
   return out;
 }
 
