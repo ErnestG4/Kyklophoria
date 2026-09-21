@@ -659,6 +659,38 @@ mandolin 3.2 → 2.8, banjo and violin slightly; on the Wurlitzer 2.4 →
 3.0, because an electric instrument has no body and its deficit is fit
 error, so the electric worlds carry no wash.
 
+*The wash, calibrated.* A synthetic octave of noise at a known level and a
+1 s T60, through `noise.py`, the world and the runtime, came back 25 dB
+low with a 2.7 s T60: the line through log band energy ran into the
+recording's floor, which drags the slope flat and the intercept down. On
+a hand-damped Chinese cymbal the same line ran off the cliff the other
+way and put a wash 10 dB above the recording. Now the fit takes only the
+frames above the recording's own floor and within 40 dB of the band's
+peak; the band-energy constant is Parseval's through a Hann window (3/16
+N², not N²/8, which read 1.8 dB high); and the runtime scales each band by
+the band-pass's own measured noise gain — a Q 1.41 biquad is not a brick
+wall, and the octave's share of the spectrum was 2 dB hot at 88 Hz and 1
+dB cold at 11 kHz. The synthetic comes back within 1.3 dB. On the sets,
+`tools/washcheck.py` (sustain band error 0.3–1.3 s, model against target,
+the wash simulated as the runtime plays it) reads guitar 5.8 → 2.5 dB,
+banjo 11.4 → 6.1, mandolin 13.6 → 6.7, perc 10.8 → 4.1 with the wash —
+within half a dB of what the accidental calibration had, which is the
+honest finding: the old numbers were tuned by luck and the new ones are
+tuned by measurement, and the ear will not tell them apart except on the
+cymbal. A world now depends on its records in the Makefile, since a wash
+rewritten by `noise.py` used to leave the world stale.
+
+*Nineteen percussion bodies, and a double bass.* Bass drum (loss 1.44),
+surdo (0.98), djundjun (0.94), snare (1.64, its rattle in the burst and
+the wash), triangle (1.11, once its onset threshold let a −34 dBFS
+recording through), clash cymbals (2.6), spring coil (2.1), tambourine
+(2.3), castanets (3.2, a click — the burst is the body) and a hand-damped
+Chinese cymbal (3.3) join the nine; `perc.kykm` has 19 points on its
+index and `perc-morph.wav` walks them all. Double bass pizzicato, 12
+notes E1–G3 from the Philharmonia's single-note files (loss 1.1–1.8; the
+`phrase` files under the same articulation are runs of notes and are now
+skipped), as `bass.kykm`.
+
 *The spin, otherwise.* For an electric world the axes to spin are the
 stage's own — voicing (the screw, in widths off the fitted centre), decay
 (every mode's T60 × k), the coil — and the runtime has them as `Tune` on a

@@ -79,11 +79,20 @@ def main():
         out = []
         for k in range(8):
             sel = (fr >= EDGES[k]) & (fr < EDGES[k + 1])
-            tb = St[:, sel].sum(axis=1) / (nfft * nfft / 8)      # band energy per sample, roughly
-            yb = Sy[:, sel].sum(axis=1) / (nfft * nfft / 8)
+            # band power per sample: Parseval through a Hann window is
+            # 3/8 N^2 over all bins, half of that one-sided. It was N^2 / 8,
+            # "roughly", which read 1.8 dB high
+            tb = St[:, sel].sum(axis=1) / (3.0 * nfft * nfft / 16)
+            yb = Sy[:, sel].sum(axis=1) / (3.0 * nfft * nfft / 16)
             eb = np.maximum(tb - yb, 0.0)
             le = np.log(eb + 1e-12)
-            ok = le > np.log(1e-12) + 2
+            # the fall is fitted only where there is a fall to fit: above the
+            # recording's own floor (its last frames) and within 40 dB of the
+            # band's peak. A line through the floor read a 1 s T60 as 2.7 s
+            # and its intercept 25 dB low; a line through a hand-damped
+            # cymbal's cliff put the intercept 9 dB above the recording
+            floor = 2.0 * tb[-3:].mean()
+            ok = (le > np.log(1e-12) + 2) & (eb > floor) & (eb > eb.max() * 1e-4)
             if ok.sum() < 4:
                 out += [0.0, 0.0]; continue
             p = np.polyfit(t[ok], le[ok], 1)

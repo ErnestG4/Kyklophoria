@@ -296,9 +296,21 @@ struct NoiseLayer
             const float w0 = 6.2831853f * fc / sr, alpha = std::sin(w0) / (2.f * 1.41421f);
             const float a0 = 1.f + alpha;
             b0[k] = alpha / a0; a1[k] = -2.f * std::cos(w0) / a0; a2[k] = (1.f - alpha) / a0;
-            /* unit white noise through an octave band carries about
-               (hi - lo) / (sr / 2) of its power: scale to the fitted level */
-            const float share = std::sqrt((hi - lo) / (0.5f * sr));
+            /* the filter's own noise power gain, measured from its impulse
+               response — the octave's share of the spectrum, (hi - lo) / (sr / 2),
+               was the guess before and it was 2 dB hot in the low bands and
+               1 dB cold at the top, because a Q 1.41 biquad is not a brick
+               wall and its width warps towards Nyquist. 2048 samples holds
+               the whole ring at band 0 (2Q / w0 = 5 ms) */
+            float g = 0.0f, u1 = 0.0f, u2 = 0.0f, v1 = 0.0f, v2 = 0.0f;
+            for(int i = 0; i < 2048; i++)
+            {
+                const float u = i == 0 ? 1.0f : 0.0f;
+                const float v = b0[k] * (u - u2) - a1[k] * v1 - a2[k] * v2;
+                u2 = u1; u1 = u; v2 = v1; v1 = v;
+                g += v * v;
+            }
+            const float share = std::sqrt(g);
             level[k] = lvl[k] > 0.0f && t60[k] > 0.0f ? lvl[k] / (share > 1e-6f ? share : 1e-6f) : 0.0f;
             fall[k]  = t60[k] > 0.0f ? std::exp(-6.91f / (t60[k] * sr)) : 0.0f;
             env[k]   = 0.0f;

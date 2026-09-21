@@ -66,6 +66,8 @@ def discover(indir, layout, articulation):
             parts = os.path.splitext(f)[0].split('_')
             if len(parts) < 5 or parts[4] != articulation:
                 continue
+            if parts[2] == 'phrase':      # a run of notes, not one: the double bass has these under pizz-normal
+                continue
             midi = midi_of(parts[1])
             if midi is not None:
                 out.append((os.path.join(indir, f), midi, parts[3], f))

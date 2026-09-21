@@ -238,7 +238,11 @@ GLIDES += out/wav/wurli-glide.wav out/wav/walk-wurli.wav
 # corpus keeps one mode of a cluster and its render was dull on the low
 # Wurlitzer notes (centroid 209 Hz against the recording's 321). The walk is
 # the space's, because a walk is what the space is for
-out/worlds/%.kykm: out/fit/%/fits.tsv tools/export.py
+# a world is its records too: a wash or a burst rewritten by noise.py or
+# bursts.py changes the world without touching fits.tsv, and a world made
+# from stale records once put a 10 dB wash on a cymbal whose record had none
+.SECONDEXPANSION:
+out/worlds/%.kykm: out/fit/%/fits.tsv $$(wildcard out/fit/$$*/*.mmr) tools/export.py
 	@mkdir -p out/worlds
 	$(PYFIT) tools/export.py records out/fit/$* $@
 $(foreach f,$(FITTED),out/wav/$(f)-keyboard.wav): out/wav/%-keyboard.wav: build/modaltest out/worlds/%.kykm

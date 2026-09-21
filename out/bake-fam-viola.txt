@@ -1,0 +1,80 @@
+bake — variant diagonal with decay, K=4, extent 2.20, reference viola016, D=144 over 31 models (viola only), blocks weighted by total variance
+
+map round trip (log then exp, no PCA): worst 1.50e+00 over cents and relative gain
+
+held out 2 models, fitted on 29. variance explained by the 4 components: 38.6% 13.5% 9.7% 7.1%  (cumulative 68.9%)
+
+reconstruction from each model's own coordinates:
+  model    family   param       cents  gain err    min hz     frame   neg   coords (whitened)
+  viola014 viola   49.000        58.0     0.814     143.4  0.00e+00     0    -1.23  -0.54   0.74  -0.11  held out
+  viola001 viola   57.000       112.4     0.405     235.7  0.00e+00     0    -0.38  -0.83   0.28  -0.47  held out
+  viola009 viola   48.000        35.2     1.354     133.1  0.00e+00     0    -1.72   0.41  -1.28  -0.09  
+  viola008 viola   48.000        23.6     2.741     129.5  0.00e+00     0    -1.77   0.24  -1.20  -1.06  
+  viola015 viola   49.000        70.6     0.847     132.1  0.00e+00     0    -1.18  -0.58   1.80   2.14  
+  viola021 viola   51.000        99.2     0.718     147.9  0.00e+00     0    -0.93  -2.47   0.33  -2.56  
+  viola020 viola   51.000        23.1     0.818     157.4  0.00e+00     0    -1.29   0.05  -0.64   0.30  
+  viola030 viola   54.000        30.1     0.660     183.0  0.00e+00     0    -1.15   0.86  -0.06   0.15  
+  viola000 viola   57.000        72.2     0.483     229.2  0.00e+00     0    -0.49  -0.07   0.56   1.06  
+  viola003 viola   58.000        33.1     0.380     237.9  0.00e+00     0    -0.47   0.14   0.97   0.18  
+  viola004 viola   58.000        36.6     0.564     237.2  0.00e+00     0    -0.23  -1.05   0.73   0.96  
+  viola006 viola   59.000        38.3     0.403     253.2  0.00e+00     0    -0.35  -0.09   0.71   0.02  
+  viola007 viola   59.000        27.7     0.593     250.3  0.00e+00     0    -0.44   0.20   0.31   0.40  
+  viola011 viola   60.000        20.8     0.702     261.7  0.00e+00     0    -0.40   1.04   2.27  -0.40  
+  viola010 viola   60.000        13.4     0.721     259.8  0.00e+00     0    -0.47  -0.22  -1.64   0.19  
+  viola016 viola   61.000        89.6     0.405     293.4  0.00e+00     0    -0.17  -0.32  -0.40  -0.73  
+  viola017 viola   61.000        32.6     0.482     272.4  0.00e+00     0     0.01  -1.63  -0.12  -0.05  
+  viola023 viola   63.000        45.9     0.527     303.5  0.00e+00     0     0.13  -1.04   0.43  -0.03  
+  viola022 viola   63.000        86.2     0.343     328.9  0.00e+00     0     0.07  -0.31   0.24  -0.92  
+  viola029 viola   65.000       102.9     0.632     372.4  0.00e+00     0     0.34  -0.39   0.43  -0.20  
+  viola028 viola   65.000        59.4     0.808     334.5  0.00e+00     0    -0.07   0.73  -0.87   2.35  
+  viola002 viola   69.000        11.8     0.709     441.6  0.00e+00     0     0.20   1.13  -0.87  -0.76  
+  viola005 viola   70.000        48.2     0.587     452.7  0.00e+00     0     0.10   1.74  -1.52   0.26  
+  viola019 viola   74.000        10.5     0.503     587.4  0.00e+00     0     0.94   0.67   0.58   0.30  
+  viola018 viola   74.000        19.6     0.738     585.8  0.00e+00     0     0.70   1.05  -0.97  -0.41  
+  viola024 viola   75.000        65.7     0.725     607.5  0.00e+00     0     0.87   1.26   0.90  -0.78  
+  viola025 viola   75.000        13.3     1.301     632.5  0.00e+00     0     1.03   0.18  -0.23  -1.31  
+  viola026 viola   76.000        11.6     0.251     663.6  0.00e+00     0     1.08   1.22   1.50  -0.63  
+  viola027 viola   76.000         6.5     0.113     653.7  0.00e+00     0     1.57  -2.11  -1.35   1.54  
+  viola012 viola   84.000        24.8     1.439    1041.0  0.00e+00     0     2.01  -0.33  -0.47  -0.32  
+  viola013 viola   84.000         8.9     0.802    1055.4  0.00e+00     0     2.09  -0.35  -0.17   0.40  
+
+  held out, worst: 112.4 cents, gain error 0.814, frame 0.00e+00, 0 non-positive frequencies
+  in sample, worst: 102.9 cents, gain error 2.741, frame 0.00e+00, 0 non-positive frequencies
+
+fitted on all 31. variance explained: 38.0% 13.0% 9.3% 6.7%  (cumulative 67.0%)
+block scales: 4.086 10.11 5.197
+component sdevs: 1.086 0.6357 0.5371 0.4542
+
+where every model sits in the cube (whitened coordinate / extent, so inside is |x| < 1):
+  viola000  -0.20  -0.01   0.23  -0.50
+  viola001  -0.16  -0.38   0.07   0.22
+  viola002   0.14   0.58  -0.40   0.37
+  viola003  -0.20   0.06   0.44  -0.10
+  viola004  -0.09  -0.46   0.26  -0.50
+  viola005   0.09   0.87  -0.60  -0.10
+  viola006  -0.14  -0.05   0.33  -0.01
+  viola007  -0.17   0.11   0.12  -0.19
+  viola008  -0.76   0.24  -0.66   0.47
+  viola009  -0.75   0.30  -0.63   0.06
+  viola010  -0.18   0.00  -0.81  -0.09
+  viola011  -0.15   0.45   1.03   0.15   outside
+  viola012   0.94  -0.16  -0.20   0.14
+  viola013   0.98  -0.18  -0.09  -0.20
+  viola014  -0.60  -0.31   0.48   0.06
+  viola015  -0.52  -0.24   0.71  -1.06   outside
+  viola016  -0.06  -0.12  -0.22   0.34
+  viola017   0.03  -0.71  -0.18  -0.02
+  viola018   0.35   0.49  -0.34   0.24
+  viola019   0.45   0.28   0.33  -0.13
+  viola020  -0.56   0.09  -0.31  -0.13
+  viola021  -0.43  -1.11   0.03   1.11   outside
+  viola022   0.05  -0.15   0.11   0.44
+  viola023   0.08  -0.46   0.10  -0.03
+  viola024   0.42   0.54   0.51   0.37
+  viola025   0.49   0.06  -0.05   0.63
+  viola026   0.53   0.51   0.72   0.28
+  viola027   0.73  -0.93  -0.71  -0.73
+  viola028   0.00   0.41  -0.39  -1.10   outside
+  viola029   0.17  -0.19   0.18   0.09
+  viola030  -0.49   0.47  -0.06  -0.09
+  4 of 31 outside the cube at extent 2.20

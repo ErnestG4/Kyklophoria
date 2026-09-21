@@ -7,4 +7,14 @@ djembe	perc	midi	4	-	djembe	44	1.1215	0.129	0.983
 suspended-cymbal	perc	midi	5	-	suspended-cymbal	32	3.2149	0.000	0.445
 tam-tam	perc	midi	6	-	tam-tam	36	3.0087	0.000	0.306
 tom-toms	perc	midi	7	-	tom-toms	48	0.8311	0.107	0.963
+triangle	perc	midi	8	-	triangle	34	1.1125	0.053	2.157
 woodblock	perc	midi	9	-	woodblock	18	1.6519	0.055	8.386
+bass-drum	perc	midi	10	-	bass-drum	48	1.4394	0.000	1.111
+surdo	perc	midi	11	-	surdo	37	0.9750	0.000	1.327
+djundjun	perc	midi	12	-	djundjun	40	0.9410	0.018	0.937
+snare-drum	perc	midi	13	-	snare-drum	47	1.6369	0.023	1.357
+clash-cymbals	perc	midi	14	-	clash-cymbals	48	2.6281	0.004	1.188
+spring-coil	perc	midi	15	-	spring-coil	48	2.1114	0.110	2.012
+tambourine	perc	midi	16	-	tambourine	39	2.3303	0.014	0.660
+castanets	perc	midi	17	-	castanets	48	3.2394	0.983	8.410
+Chinese-cymbal	perc	midi	18	-	Chinese-cymbal	48	3.3326	0.312	0.737
