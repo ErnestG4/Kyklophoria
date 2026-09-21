@@ -53,8 +53,13 @@ const ctx2d = new Proxy({}, {
       if (k === 'arc') arcLog.push(a);
       /* and the straight segments, which is how a pointer or a tick is drawn */
       if (k === 'moveTo' || k === 'lineTo') segLog.push([a[0], a[1]]);
-      if (a.some(v => typeof v === 'number' && !Number.isFinite(v)))
+      if (a.some(v => typeof v === 'number' && !Number.isFinite(v))) {
         nanDraws.push(`${k}(${a.map(v => typeof v === 'number' ? v : typeof v).join(', ')})`);
+        /* NANSTACK=1 says where from: the page's functions are anonymous
+           inside the Function wrapper, so the line numbers are into the
+           script block, not into index.html */
+        if (process.env.NANSTACK) console.log(new Error().stack.split('\n').slice(2, 5).join('\n'));
+      }
     };
     if (k === 'createImageData') return (w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h });
     if (k === 'canvas') return mkEl('canvas');
@@ -175,6 +180,9 @@ const CASES = [
   ['pots and values disagreeing, as they do after a page change',
     tel({ pots: [0.9, 0.9, 0.9, 0.9, 0.9, 0.9], knobs: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6] })],
   ['every motion muted', tel({ mute: 0xFFFF })],
+  /* a resonate world — a .kykm loaded from the card — is one-dimensional and
+     has no rotation plane at all; the page had never drawn N=1 before it */
+  ['a resonate world live: N=1, no planes', tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4 })],
 ];
 
 /* The panel mirror, from a descriptor shaped the way the SDK emits one

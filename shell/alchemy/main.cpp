@@ -293,6 +293,28 @@ static_assert(std::is_trivially_default_constructible<decltype(gSlotBlob)>::valu
    live at reset and can be read while the FMC is still down. */
 static uint32_t gSlotLen[kSlotCount];
 static char     gSlotName[kSlotCount][kUserNameLen + 1];
+/* Resonate worlds (.kykm, from ModalBake: a fitted body of resonators, struck
+ * rather than scanned — core/kyk_resonate.h) are card worlds. One is a sample
+ * library's size, 66 KB for a Wurlitzer and a megabyte for an electric piano
+ * with its attack bursts, so it never fits the wire's receiver or a slot's
+ * 6.7 KB store; it is read off the card into one of these regions and the
+ * World reads it *where it lies*, the way the runtime was written (no copy,
+ * no heap). Four fixed regions rather than an arena with holes, so a load
+ * either fits or is refused, and freeing one can never fragment the rest.
+ * 8 MB of the 64 MB SDRAM. A slot holding one keeps its region's number in
+ * gSlotRes and its gSlotBlob bytes mean nothing. */
+constexpr uint32_t kResRegionBytes = 2u << 20;
+constexpr int      kResRegions     = 4;
+static uint8_t KYK_SDRAM gResArena[kResRegions][kResRegionBytes];
+static_assert(std::is_trivially_default_constructible<decltype(gResArena)>::value,
+              "gResArena is in SDRAM and must not be constructed before hw.Init()");
+static uint8_t gSlotRes[kSlotCount];        /* 0 = a frame world in gSlotBlob, r + 1 = region r */
+static uint8_t gResOwner[kResRegions];      /* slot + 1, 0 = free */
+static bool IsKykm(const char* name)
+{
+    const size_t n = std::strlen(name);
+    return n > 5 && (name[n - 1] == 'm' || name[n - 1] == 'M') && name[n - 5] == '.';
+}
 static volatile uint8_t gSlotLive   = 0xFFu;   /* which slot is playing, if any */
 static volatile uint8_t gSlotTarget = 0xFFu;   /* which slot is the morph target */
 /* Requests, served on the control loop like every other world change. */
@@ -384,8 +406,9 @@ static void ScanCard()
         if(gCardFno.fattrib & AM_DIR) continue;
         const char* dot = std::strrchr(gCardFno.fname, '.');
         if(!dot || std::strlen(gCardFno.fname) > 30) continue;
-        if(dot[1] != 'k' && dot[1] != 'K') continue;
-        if(std::strlen(dot) != 5) continue;                  /* ".kykw" */
+        /* .kykw, a set of frames; .kykm, a resonator — both are worlds */
+        if(std::strlen(dot) != 5 || (dot[1] != 'k' && dot[1] != 'K')) continue;
+        if(dot[4] != 'w' && dot[4] != 'W' && dot[4] != 'm' && dot[4] != 'M') continue;
         std::strncpy(gCardNames[gCardCount], gCardFno.fname, 31);
         gCardNames[gCardCount][31] = 0;
         gCardCount++;
@@ -409,6 +432,34 @@ static size_t ReadCardWorld(uint8_t i)
         UINT rd = 0;
         if(f_read(&gCardFil, gCardStage, (UINT)sz, &rd) != FR_OK) rd = 0;
         got = rd;
+    }
+    f_close(&gCardFil);
+    return got;
+}
+/* A card file into a resonate region, through the staging buffer a chunk at a
+ * time — IDMA's reach is the staging buffer's section, not SDRAM's, and the
+ * DMA law above is not one to test by reading a megabyte straight in. Returns
+ * bytes read, 0 on any failure or a file past the region. */
+static size_t ReadCardResonate(uint8_t i, uint8_t* dst, size_t cap)
+{
+    if(i >= gCardCount) return 0;
+    if(!gSd.EnsureMounted(daisy::System::GetNow())) return 0;
+    alchemy::SdCard::BusyGuard busy(gSd);
+    char path[80];
+    std::snprintf(path, sizeof path, "%s/%s", kWorldDir, gCardNames[i]);
+    if(f_open(&gCardFil, path, FA_READ) != FR_OK) return 0;
+    const FSIZE_t sz = f_size(&gCardFil);
+    size_t got = 0;
+    if(sz > 0 && (size_t)sz <= cap)
+    {
+        while(got < (size_t)sz)
+        {
+            const size_t want = (size_t)sz - got < sizeof gCardStage ? (size_t)sz - got : sizeof gCardStage;
+            UINT rd = 0;
+            if(f_read(&gCardFil, gCardStage, (UINT)want, &rd) != FR_OK || rd != want) { got = 0; break; }
+            std::memcpy(dst + got, gCardStage, rd);
+            got += rd;
+        }
     }
     f_close(&gCardFil);
     return got;
@@ -464,6 +515,9 @@ static uint8_t SaveSlotToCard(uint8_t slot, const char* name, bool overwrite)
         FILINFO fno;
         if(f_stat(path, &fno) == FR_OK) return kStatCardExists;
     }
+    /* a resonate slot came off the card and is still there: BAD_STATE, not
+       a second copy of a megabyte */
+    if(gSlotRes[slot]) return 3u;
     const uint32_t n = gSlotLen[slot];
     if(n > sizeof gCardStage) return 1u;
     std::memcpy(gCardStage, gSlotBlob[slot], n);
@@ -483,6 +537,20 @@ static uint8_t SaveSlotToCard(uint8_t slot, const char* name, bool overwrite)
 static char             gUserName[kUserNameLen + 1] = {0};
 static volatile uint8_t gWorldBusy = 0;
 static StereoEngine KYK_AXI gEng;
+/* Whether the audio thread is reading a slot's resonate region right now. A
+   region is freed only when nothing reads it, because the World reads it in
+   place: overwriting a region under a playing world is not a fault, it is a
+   glitch nobody could trace. */
+static bool ResSlotLive(uint8_t slot)
+{
+    if(slot >= kSlotCount || !gSlotRes[slot]) return false;
+    const World* w = gEng.L.WorldPtr();
+    return w && w->IsResonate() && w->Res().blob == gResArena[gSlotRes[slot] - 1];
+}
+static void ResRelease(uint8_t slot)
+{
+    if(slot < kSlotCount && gSlotRes[slot]) { gResOwner[gSlotRes[slot] - 1] = 0u; gSlotRes[slot] = 0u; }
+}
 
 /* Aiming runs on the main loop, never the audio callback: a few hundred world
  * evaluations is milliseconds, which is nothing between blocks and everything
@@ -762,6 +830,7 @@ struct ModuleSource : ExtSource
                     const uint8_t* data, int len) override
     {
         if(slot >= kSlotCount) return 2u;
+        if(ResSlotLive(slot)) return 3u;            /* its region is being read */
         if(gUserReq || gSlotStore >= 0 || gWorldBusy) return 9u;
         const uint8_t st = gRx.Take(total, off, data, len);
         if(st != 0u) return st;
@@ -780,7 +849,8 @@ struct ModuleSource : ExtSource
         if(offset >= total) return 0;
         uint32_t n = total - offset;
         if(n > (uint32_t)max) n = (uint32_t)max;
-        std::memcpy(out, gSlotBlob[slot] + offset, n);
+        const uint8_t* src = gSlotRes[slot] ? gResArena[gSlotRes[slot] - 1] : gSlotBlob[slot];
+        std::memcpy(out, src + offset, n);
         return (int)n;
     }
 
@@ -814,6 +884,10 @@ struct ModuleSource : ExtSource
                 return 0u;
             case kActLoadCardWorld:
                 if(len < 1 || args[0] >= gCardCount) return 2u;
+                /* a resonate world needs a region to live in, and a region is
+                   a slot's: load it into a slot and play that (the page does
+                   exactly this behind its load button) */
+                if(IsKykm(gCardNames[args[0]])) return 3u;
                 if(gWorldBusy || gCardLoadReq >= 0) return 9u;
                 gCardLoadReq = (int8_t)args[0];
                 return 0u;
@@ -857,6 +931,9 @@ struct ModuleSource : ExtSource
             case kActSlotTarget:
                 if(len < 1) return 2u;
                 if(args[0] != 0xFFu && (args[0] >= kSlotCount || !gSlotLen[args[0]])) return 2u;
+                /* a resonate world is not a frame and cannot be blended
+                   towards: BAD_STATE, the same word as a morph that cannot happen */
+                if(args[0] != 0xFFu && gSlotRes[args[0]]) return 3u;
                 if(gWorldBusy || gSlotTargetReq >= 0) return 9u;
                 gSlotTargetReq = args[0] == 0xFFu ? (int8_t)kSlotCount : (int8_t)args[0];
                 return 0u;
@@ -865,6 +942,10 @@ struct ModuleSource : ExtSource
                 if(len < 1 || args[0] >= kSlotCount) return 2u;
                 const uint8_t which = len >= 2 ? args[1] : 0xFFu;
                 if(which != 0xFFu && which >= worlds::kCount) return 2u;
+                /* a resonate world has no frame to sample; and a slot whose
+                   region is playing cannot be written over */
+                if(which == 0xFFu && gEng.L.WorldPtr() && gEng.L.WorldPtr()->IsResonate()) return 3u;
+                if(ResSlotLive(args[0])) return 3u;
                 if(gWorldBusy || gSnapReq >= 0) return 9u;
                 gSnapWorld = which;
                 gSnapReq   = (int8_t)args[0];
@@ -875,6 +956,7 @@ struct ModuleSource : ExtSource
                    already on the control loop. Unlike a save, which touches no
                    audio state and is done where it is asked. */
                 if(len < 2 || args[1] >= kSlotCount) return 2u;
+                if(ResSlotLive(args[1])) return 3u;   /* its region is being read */
                 if(gWorldBusy || gCardToSlotReq >= 0) return 9u;
                 gCardToSlotCard = args[0];
                 gCardToSlotReq  = (int8_t)args[1];
@@ -895,7 +977,10 @@ struct ModuleSource : ExtSource
                  * does in a hurry is 6.7 KB spent on nothing. 13.5 KB of SDRAM
                  * memcpy is on the order of a hundred microseconds. */
                 uint8_t        tmp[256];
-                const uint32_t n = gSlotLen[a] > gSlotLen[b] ? gSlotLen[a] : gSlotLen[b];
+                uint32_t       n = gSlotLen[a] > gSlotLen[b] ? gSlotLen[a] : gSlotLen[b];
+                /* a resonate slot's length is its region's, not its blob's;
+                   the region numbers swap below and the blob bytes are moot */
+                if(n > kUserBlobMax) n = kUserBlobMax;
                 for(uint32_t off = 0; off < n; off += (uint32_t)sizeof tmp)
                 {
                     const uint32_t c = (n - off) < (uint32_t)sizeof tmp
@@ -905,6 +990,9 @@ struct ModuleSource : ExtSource
                     std::memcpy(gSlotBlob[b] + off, tmp, c);
                 }
                 const uint32_t ln = gSlotLen[a]; gSlotLen[a] = gSlotLen[b]; gSlotLen[b] = ln;
+                const uint8_t  rs = gSlotRes[a]; gSlotRes[a] = gSlotRes[b]; gSlotRes[b] = rs;
+                if(gSlotRes[a]) gResOwner[gSlotRes[a] - 1] = (uint8_t)(a + 1);
+                if(gSlotRes[b]) gResOwner[gSlotRes[b] - 1] = (uint8_t)(b + 1);
                 char nm[kUserNameLen + 1];
                 std::memcpy(nm, gSlotName[a], sizeof nm);
                 std::memcpy(gSlotName[a], gSlotName[b], sizeof nm);
@@ -918,6 +1006,8 @@ struct ModuleSource : ExtSource
             }
             case kActSlotFree:
                 if(len < 1 || args[0] >= kSlotCount) return 2u;
+                if(ResSlotLive(args[0])) return 3u;   /* the world reads it where it lies */
+                ResRelease(args[0]);
                 gSlotLen[args[0]] = 0u;
                 if(gSlotLive == args[0]) gSlotLive = 0xFFu;
                 if(gSlotTarget == args[0]) { gSlotTarget = 0xFFu; gMorphReq = 0xFFu; }
@@ -1064,6 +1154,9 @@ static bool TourLoad(int slot, uint8_t w)
     {
         const uint8_t sl = (uint8_t)(w & 0x7Fu);
         if(sl >= kSlotCount || !gSlotLen[sl]) return false;
+        /* a resonate slot is not a stop: a step blends between its two
+           worlds and a resonator has no frame to blend */
+        if(gSlotRes[sl]) return false;
         return dst.UseUserWorld(gSlotBlob[sl], gSlotLen[sl], kBootP, nullptr) == UserError::Ok;
     }
     if(w >= worlds::kCount) return false;
@@ -1191,8 +1284,9 @@ static void ServeWorldRequest()
         const uint8_t sl = (uint8_t)gSlotStore;
         gSlotStore = -1;
         const size_t n = gRx.Size();
-        if(sl < kSlotCount && n && n <= kUserBlobMax)
+        if(sl < kSlotCount && n && n <= kUserBlobMax && !ResSlotLive(sl))
         {
+            ResRelease(sl);
             std::memcpy(gSlotBlob[sl], gRx.Blob(), n);
             gSlotLen[sl] = (uint32_t)n;
             for(int c = 0; c < kUserNameLen; c++)
@@ -1308,6 +1402,7 @@ static void ServeWorldRequest()
                     for(int a = 0; a < n; a++) { std::memcpy(p + at, &pos[a], 4); at += 4; }
                     for(int i = 0; i < k; i++) { std::memcpy(p + at, &mags[i], 4); at += 4; }
                 }
+                ResRelease(sl);
                 gSlotLen[sl] = (uint32_t)need;
                 std::snprintf(gSlotName[sl], sizeof gSlotName[sl], "%s", nm);
             }
@@ -1322,11 +1417,42 @@ static void ServeWorldRequest()
     {
         const uint8_t sl = (uint8_t)gCardToSlotReq;
         gCardToSlotReq = -1;
+        if(sl < kSlotCount && gCardToSlotCard < gCardCount && IsKykm(gCardNames[gCardToSlotCard]))
+        {
+            /* a resonate world: into the region this slot already has, or
+               a free one; the file's base name is its name, since the
+               header carries none. Probed as the world it will be before
+               the slot claims it, like a frame world is. */
+            int r = gSlotRes[sl] ? gSlotRes[sl] - 1 : -1;
+            if(r < 0) for(int k = 0; k < kResRegions; k++) if(!gResOwner[k]) { r = k; break; }
+            if(r >= 0)
+            {
+                const size_t n = ReadCardResonate(gCardToSlotCard, gResArena[r], kResRegionBytes);
+                if(n)
+                {
+                    gScratch.UseResonate(gResArena[r], (uint32_t)n);
+                    if(gScratch.IsResonate())
+                    {
+                        gSlotRes[sl]  = (uint8_t)(r + 1);
+                        gResOwner[r]  = (uint8_t)(sl + 1);
+                        gSlotLen[sl]  = (uint32_t)n;
+                        const char* nm = gCardNames[gCardToSlotCard];
+                        const size_t bl = std::strlen(nm) - 5;
+                        std::snprintf(gSlotName[sl], sizeof gSlotName[sl], "%.*s",
+                                      (int)(bl < (size_t)kUserNameLen ? bl : (size_t)kUserNameLen), nm);
+                    }
+                    else if(!gSlotRes[sl]) gResOwner[r] = 0u;
+                }
+                else if(!gSlotRes[sl]) gResOwner[r] = 0u;
+            }
+            return;
+        }
         const size_t n = ReadCardWorld(gCardToSlotCard);
         if(n && sl < kSlotCount && n <= kUserBlobMax)
         {
             if(gScratch.UseUserWorld(gCardStage, n, kBootP, nullptr) == UserError::Ok)
             {
+                ResRelease(sl);
                 std::memcpy(gSlotBlob[sl], gCardStage, n);
                 gSlotLen[sl] = (uint32_t)n;
                 for(int c = 0; c < kUserNameLen; c++)
@@ -1350,8 +1476,18 @@ static void ServeWorldRequest()
         {
             gWorldBusy = 1;
             const uint8_t wi = (uint8_t)(gBufIdx ^ 1u);
-            if(gWorlds[wi].UseUserWorld(gSlotBlob[sl], gSlotLen[sl], kBootP, nullptr, gUserName)
-               == UserError::Ok)
+            bool ok;
+            if(gSlotRes[sl])
+            {
+                /* the World reads the region in place; the engine's SetWorld
+                   builds the voice from it */
+                gWorlds[wi].UseResonate(gResArena[gSlotRes[sl] - 1], gSlotLen[sl]);
+                ok = gWorlds[wi].IsResonate();
+                if(ok) std::snprintf(gUserName, sizeof gUserName, "%s", gSlotName[sl]);
+            }
+            else ok = gWorlds[wi].UseUserWorld(gSlotBlob[sl], gSlotLen[sl], kBootP, nullptr, gUserName)
+                      == UserError::Ok;
+            if(ok)
             {
                 __asm__ volatile("dmb" ::: "memory");
                 gEng.SetWorld(&gWorlds[wi]);

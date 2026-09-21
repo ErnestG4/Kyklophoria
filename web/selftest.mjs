@@ -857,6 +857,23 @@ console.log('\n== the card: write, list, read back, and refuse to clobber');
   const after = await KYK.fetchCardWorlds(link);
   check(after.names.length === 2, `two worlds on the card (${after.names.join(' ')})`);
 
+  /* and the other kind of card world: a resonator (.kykm, from ModalBake),
+     which the page cannot send and never parses — it lists it, loads it by
+     index, and plays it the same way; the world that arrives is 1-D */
+  fs.copyFileSync(path.join(here, '..', 'tests/data/wurli.kykm'), path.join(dir, 'wurli.kykm'));
+  await act(KYK.ACT.scanCard);
+  const both = await KYK.fetchCardWorlds(link);
+  check(both.names.includes('wurli.kykm'), `the card lists a resonator beside the frames (${both.names.join(' ')})`);
+  check((await act(KYK.ACT.cardToSlot, both.names.indexOf('wurli.kykm'), 10))[0] === 0, 'it loads into a slot');
+  check((await KYK.fetchSlots(link)).names[10] === 'wurli', 'named by its file');
+  check((await act(KYK.ACT.slotLive, 10))[0] === 0, 'and plays');
+  const tr = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
+  check(tr.n === 1 && tr.world === 0xFF, `as a 1-D user world (N=${tr.n}, world ${tr.world})`);
+  let refused = '';
+  try { await act(KYK.ACT.slotTarget, 10); } catch (e) { refused = e.message; }
+  check(refused === 'BAD_STATE', `it is not a morph target (${refused || 'accepted'})`);
+  check((await act(KYK.ACT.slotLive, 9))[0] === 0, 'a frame world takes over again');
+
   await link.close();
   fs.rmSync(dir, { recursive: true, force: true });
 }

@@ -393,6 +393,67 @@ def mute_tests():
     link.close()
 
 
+def card_tests():
+    """A fitted world (.kykm, from ModalBake) is a card world.
+
+    It is a sample library's size — 66 KB for the Wurlitzer, a megabyte for an
+    EP with its attack bursts — so it never goes over the wire and never fits
+    a slot's store on the module; the card lists it beside the .kykw files,
+    card-to-slot keeps the whole file, and slot-live builds a resonate world
+    from it. The page then has the same three moves for both kinds. What it
+    cannot do with one is what a frame world can: be a morph target, or be
+    snapshotted, and both are refused as BAD_STATE rather than half-done."""
+    print('card')
+    import shutil, tempfile
+    d = tempfile.mkdtemp(prefix='kyk-card-')
+    src = os.path.join(ROOT, 'tests/data/wurli.kykm')
+    shutil.copy(src, os.path.join(d, 'wurli.kykm'))
+    with open(src, 'rb') as f: head = f.read(1000)
+    with open(os.path.join(d, 'cut.kykm'), 'wb') as f: f.write(head)       # truncated: refused
+    with open(os.path.join(d, 'notes.txt'), 'w') as f: f.write('not a world\n')
+    link = Stdio(['--gen', '--seed', '1', '--card', d])
+    link.request(0x01)
+    ty, seq, r, ok = link.request(0x68)
+    n = r[1]; names = []; at = 2
+    for _ in range(n):
+        ln = r[at]; names.append(r[at + 1:at + 1 + ln].decode()); at += 1 + ln
+    check('wurli.kykm' in names and 'cut.kykm' in names and 'notes.txt' not in names,
+          f'the card lists .kykm files ({names})')
+    ty, seq, r, ok = link.request(0x64, bytes([15, names.index('cut.kykm'), 3]))
+    check(r[0] == 1, 'a truncated .kykm is refused into a slot')
+    ty, seq, r, ok = link.request(0x64, bytes([15, names.index('wurli.kykm'), 3]))
+    check(r[0] == 0, 'a whole one goes into a slot')
+    ty, seq, r, ok = link.request(0x6A)
+    slots = {}; at = 4
+    while at < len(r):
+        i, ln = r[at], r[at + 1]; slots[i] = r[at + 2:at + 2 + ln].decode(); at += 2 + ln
+    check(slots.get(3) == 'wurli', f'and the slot is named by its file ({slots})')
+    t = telemetry(link, 7)
+    check(t['n'] == 4, f"the generated space is live before ({t['n']}-D)")
+    ty, seq, r, ok = link.request(0x64, bytes([11, 3]))
+    check(r[0] == 0, 'slot-live builds a resonate world from it')
+    t = telemetry(link, 7)
+    check(t['n'] == 1 and t['world'] == 0xFF, f"telemetry: a 1-D user world is live ({t['n']}-D, world {t['world']:#x})")
+    ty, seq, r, ok = link.request(0x64, bytes([0]))
+    check(r[0] == 0, 'reset-phase strikes it')
+    ty, seq, r, ok = link.request(0x64, bytes([12, 3]))
+    check(r[0] == 3, 'it cannot be a morph target (BAD_STATE)')
+    ty, seq, r, ok = link.request(0x64, bytes([16, 0]))
+    check(r[0] == 3, 'nor be snapshotted (BAD_STATE)')
+    ty, seq, r, ok = link.request(0x64, bytes([13, 3]))
+    check(r[0] == 3, 'nor freed while it is live: the world reads the slot where it lies')
+    ty, seq, r, ok = link.request(0x64, bytes([4, 0]))
+    check(r[0] == 0, 'a built-in takes over')
+    t = telemetry(link, 7)
+    check(t['n'] == 4 and t['world'] == 0, 'and telemetry says so')
+    ty, seq, r, ok = link.request(0x64, bytes([13, 3]))
+    check(r[0] == 0, 'now the slot can be freed')
+    ty, seq, r, ok = link.request(0x64, bytes([11, 3]))
+    check(r[0] == 2, 'and is empty')
+    link.close()
+    shutil.rmtree(d, ignore_errors=True)
+
+
 def ws_client(port, path='/link'):
     s = socket.create_connection(('127.0.0.1', port), timeout=5)
     key = base64.b64encode(os.urandom(16)).decode()
@@ -456,6 +517,7 @@ if __name__ == '__main__':
     if not os.path.exists(KYKDESK): sys.exit('build/host/kykdesk missing — make host')
     stdio_tests()
     mute_tests()
+    card_tests()
     bridge_tests()
     print(f'link_check: {checks - fails}/{checks} passed' if not fails else f'link_check: {fails} FAILURES of {checks}')
     sys.exit(1 if fails else 0)

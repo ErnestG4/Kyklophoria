@@ -144,10 +144,44 @@ what it is). Concretely:
   C3's fundamental 52 dB under it), a retune keeps the ring, a re-strike
   adds. The golden renders are unchanged.
 
+- A resonate world is a **card world**. A `.kykm` is a sample library's
+  size — 66 KB for the Wurlitzer, a megabyte for the EP with its attack
+  bursts — which is past the wire's receiver (`kUserBlobMax`, 6.7 KB) and
+  past a slot's store, so it never crosses the wire and the page never
+  parses it: the card scan lists `.kykm` beside `.kykw`, card-to-slot keeps
+  the whole file, slot-live builds the world from it, and the page has the
+  same three moves for both kinds (its CARD **load** button does slot then
+  play for a resonator, since the straight-to-live path has nowhere to put
+  one). What a resonator cannot do is what a frame world can — be a morph
+  target, a tour stop, or a snapshot — and each is refused as `BAD_STATE`
+  rather than half-done. The host (`shell/desktop/serve.h`) keeps the file
+  in the slot's vector and the world reads it there, so freeing the slot
+  that is playing is refused (judged by the blob pointer, not by the live
+  index, which no world select clears).
+- The module (`shell/alchemy/main.cpp`, *built, not run*): four fixed
+  2 MB regions in SDRAM (`gResArena`), a slot holding a resonator keeps its
+  region's number in `gSlotRes`; the file is read through the SDMMC
+  staging buffer a chunk at a time (IDMA's reach is the staging buffer's
+  section); the World reads the region in place, so anything that would
+  write a slot whose region is playing — free, card-to-slot, put, snapshot
+  — is refused rather than glitched. Slot swap moves the region number and
+  copies at most a blob's worth of bytes; a resonate slot reads back over
+  the wire from its region; saving one to the card is refused (it came from
+  there). The tour will not take a resonate slot as a stop.
+- The page: `.kykm` is labelled `· resonator` in both card lists, a slot
+  loaded from one says so, the world bar says `resonator` for a 1-D user
+  world, and every read of a position on a projection axis the world does
+  not have (a resonator has one axis, the projection is a pair) sits at the
+  centre — `pagecheck` has an N=1 case, and before the fix it drew 22 marks
+  at NaN.
+- `link_check.py` (card: list, refuse a truncated file, load, play as 1-D,
+  refuse target/snapshot/free-while-live, free after a built-in takes
+  over) and the node selftest (the same through `link.js`).
+
 Still the bench's: the hardware trigger (J2's edge, or the oscillator into
 the bank), the three pots on `ResonatorWorld::voicing / decay / coil`, the
-velocity, SDRAM placement and the cycle budget, the page's kind and send
-path for `.kykm`. A retune re-reads the old state at the new frequency,
+velocity, the cycle budget, and the module's card path above, which is
+built and untested. A retune re-reads the old state at the new frequency,
 which lifts or drops the ringing note's amplitude by the frequency ratio at
 low frequencies (a tone up: about 1 dB; an octave: 6 dB); if that is heard,
 the state can be rescaled at retune.

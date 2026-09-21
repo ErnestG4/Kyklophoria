@@ -289,6 +289,8 @@ public:
         return 0u;
     }
 
+    static bool IsResonateBlob(const std::vector<uint8_t>& b) { return b.size() >= 4 && b[0] == 'K' && b[1] == 'Y' && b[2] == 'K' && b[3] == 'M'; }
+
     void ScanCard()
     {
         cardNames.clear();
@@ -298,7 +300,12 @@ public:
         while(dirent* e = readdir(d))
         {
             const std::string n = e->d_name;
-            if(n.size() > 5 && n.compare(n.size() - 5, 5, ".kykw") == 0) cardNames.push_back(n);
+            /* a .kykm — a fitted world from ModalBake, resonators and not a
+               frame — lists beside the .kykw files; it is a card world
+               because it is a sample library's size (66 KB for a Wurlitzer,
+               a megabyte for an EP with its bursts), far past the wire's
+               receiver and the module's slot store */
+            if(n.size() > 5 && (n.compare(n.size() - 5, 5, ".kykw") == 0 || n.compare(n.size() - 5, 5, ".kykm") == 0)) cardNames.push_back(n);
         }
         closedir(d);
         std::sort(cardNames.begin(), cardNames.end());
@@ -346,6 +353,23 @@ public:
         const std::string path = cardDir + "/" + cardNames[card];
         FILE* f = std::fopen(path.c_str(), "rb");
         if(!f) return 1u;
+        const bool resonate = cardNames[card].size() > 5 && cardNames[card].compare(cardNames[card].size() - 5, 5, ".kykm") == 0;
+        if(resonate)
+        {
+            /* whole, whatever its size; probed as the world it will be; named
+               by its file, since its header carries no name */
+            std::fseek(f, 0, SEEK_END); const long sz = std::ftell(f); std::fseek(f, 0, SEEK_SET);
+            std::vector<uint8_t> rb(sz > 0 ? (size_t)sz : 0);
+            const size_t got = rb.empty() ? 0 : std::fread(rb.data(), 1, rb.size(), f);
+            std::fclose(f);
+            kyk::World probe;
+            probe.UseResonate(rb.data(), (uint32_t)got);
+            if(!got || !probe.IsResonate()) return 1u;
+            slotBlob[slot] = rb;
+            slotName[slot] = cardNames[card].substr(0, cardNames[card].size() - 5);
+            if(slotName[slot].size() > (size_t)kyk::kUserNameLen) slotName[slot].resize(kyk::kUserNameLen);
+            return 0u;
+        }
         std::vector<uint8_t> buf(kyk::kUserBlobMax);
         const size_t n = std::fread(buf.data(), 1, buf.size(), f);
         std::fclose(f);
@@ -393,6 +417,8 @@ public:
         /* A named built-in is built into scratch, so sampling one does not
            disturb the world that is playing. */
         const kyk::World* src = world;
+        /* a resonate world has no frame to sample: BAD_STATE */
+        if(which == 0xFFu && world && world->IsResonate()) return 3u;
         if(which != 0xFFu)
         {
             if(which >= kyk::worlds::kCount) return 2u;
@@ -546,8 +572,17 @@ public:
             {
                 if(len < 1 || args[0] >= kyk::kSlotCount) return 2u;
                 if(slotBlob[args[0]].empty()) return 2u;
-                if(userWorld.UseUserWorld(slotBlob[args[0]].data(), slotBlob[args[0]].size(),
-                                          8, nullptr, userName) != kyk::UserError::Ok) return 1u;
+                if(IsResonateBlob(slotBlob[args[0]]))
+                {
+                    /* the blob is read where it lies, so the slot must keep it
+                       while it is live; SlotFree on a live resonate slot is
+                       refused below for that reason */
+                    userWorld.UseResonate(slotBlob[args[0]].data(), (uint32_t)slotBlob[args[0]].size());
+                    if(!userWorld.IsResonate()) return 1u;
+                    std::snprintf(userName, sizeof userName, "%s", slotName[args[0]].c_str());
+                }
+                else if(userWorld.UseUserWorld(slotBlob[args[0]].data(), slotBlob[args[0]].size(),
+                                               8, nullptr, userName) != kyk::UserError::Ok) return 1u;
                 *world    = userWorld;
                 eng->SetWorld(world);
                 world_idx = kNoWorld;
@@ -564,6 +599,10 @@ public:
                     return 0u;
                 }
                 if(args[0] >= kyk::kSlotCount || slotBlob[args[0]].empty()) return 2u;
+                /* a resonate world is not a frame and cannot be blended
+                   towards: BAD_STATE, the same word the wire uses for a morph
+                   that cannot happen */
+                if(IsResonateBlob(slotBlob[args[0]])) return 3u;
                 if(morphWorld.UseUserWorld(slotBlob[args[0]].data(), slotBlob[args[0]].size(),
                                            8, nullptr) != kyk::UserError::Ok) return 1u;
                 eng->SetMorph(&morphWorld, morphAmt);
@@ -594,6 +633,10 @@ public:
             case kyk::kActSlotFree:
             {
                 if(len < 1 || args[0] >= kyk::kSlotCount) return 2u;
+                /* a resonate world reads its slot where it lies, so the slot
+                   stays while the world does — judged by the pointer and not
+                   by slotLive, which no world select clears */
+                if(world && world->IsResonate() && world->Res().blob == slotBlob[args[0]].data()) return 3u;
                 slotBlob[args[0]].clear();
                 slotName[args[0]].clear();
                 if(slotLive == args[0]) slotLive = 0xFFu;
