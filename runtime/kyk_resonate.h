@@ -388,6 +388,11 @@ struct BurstPlayer
     int  active;
 
     void Init() { active = 0; for(auto& q : slot) { q.s = nullptr; q.n = 0; q.pos = q.rate = q.gain = q.lp = q.z = 0.f; } }
+    bool Playing() const
+    {
+        for(int a = 0; a < active; a++) if(slot[a].s && slot[a].pos + 1.f < (float)slot[a].n) return true;
+        return false;
+    }
 
     /* bursts: pointer to the point's burst block in the world (nbursts,
        then per burst swing, scale, len, samples), and the strike's swing */
@@ -536,6 +541,7 @@ struct NoiseLayer
        level under the burst — a tam-tam's was +32 dB inside it — and the
        envelopes only start falling once it is up */
     void Strike(float swing, float rise = 0.f) { for(int k = 0; k < kBands; k++) env[k] += swing * level[k]; rise_n = 0.f; rise_len = rise; }
+    bool Active() const { for(int k = 0; k < kBands; k++) if(env[k] > 1e-7f) return true; return false; }
 
     void Process(float* io, int frames)
     {
@@ -617,6 +623,8 @@ struct ResonatorVoice
         burst.Process(out, frames);
         wash.Process(out, frames);
     }
+    /* still making sound: a mode ringing, a burst playing or the wash falling */
+    bool Active() const { return bank.Ringing() || burst.Playing() || wash.Active(); }
 };
 
 /* A condensed world (ModalBake tools/export.py), attached where it lies. */
