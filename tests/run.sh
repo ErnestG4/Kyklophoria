@@ -26,7 +26,11 @@
 #                     and through tools/bridge/bridge.py (stdlib only; KYK_NODE=1 adds
 #                     the node selftest, which needs node but never npm)
 #   8. golden       — kykdesk renders tests/scripts/*.txt and diffs against
-#                     tests/golden/*.wav (tolerance 1e-6; --update rewrites)
+#                     tests/golden/*.wav (tolerance 1e-6; --update rewrites).
+#                     m4_sweep_note is the EP (a pickup world) under a two-
+#                     octave glide, retriggers and a velocity run; m4_sweep_index
+#                     the percussion row struck at every body and walked under
+#                     a ring — the two scripts that found the coil's clicks
 # Same params + same seed must give the same CRC on every machine of the same
 # arch; the CRC is printed so it can be compared against the module (M1).
 set -u
@@ -103,6 +107,7 @@ if [ "${KYK_SLOW:-0}" = 1 ]; then "$OUT/alias_check" --scan || fail=1; fi
 echo "== golden =="
 make -s host || fail=1
 $CXX -std=gnu++17 -O2 -Icore tests/wavdiff.cpp -o "$OUT/wavdiff" || fail=1
+$CXX -std=gnu++17 -O2 -Icore tests/earcheck.cpp -o "$OUT/earcheck" || fail=1
 for script in tests/scripts/*.txt; do
     name=$(basename "$script" .txt)
     args="--gen --seed 1"
@@ -123,8 +128,13 @@ for script in tests/scripts/*.txt; do
         m3_edge*) args="--gen --seed 1 --world 20";;
         m3_grit*) args="--gen --seed 1 --world 21";;
         m4_resonate*) args="--gen --seed 1 --resonate tests/data/wurli.kykm";;
+        m4_sweep_note*) args="--gen --seed 1 --resonate tests/data/ep-vel.kykm";;
+        m4_sweep_index*) args="--gen --seed 1 --resonate tests/data/perc.kykm";;
     esac
     build/host/kykdesk $args --script "$script" --out "$OUT/$name.wav" --telemetry "$OUT/$name.csv" || { fail=1; continue; }
+    # the resonate renders are graded by ear as well as by bit: a rail, a
+    # click, silence — the check that found the coil's step and the ramp's
+    case "$name" in m4_*) "$OUT/earcheck" "$OUT/$name.wav" || fail=1;; esac
     if [ $update = 1 ] || [ ! -f "tests/golden/$name.wav" ]; then
         cp "$OUT/$name.wav" "tests/golden/$name.wav"
         echo "  wrote tests/golden/$name.wav"
