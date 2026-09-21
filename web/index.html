@@ -125,7 +125,13 @@
   .slot.builtin .sn { color: #4f5b68; }
   #slots .libhead { grid-column: 1 / -1; font-size: 10px; letter-spacing: .1em;
                     color: var(--dim); padding: 6px 2px 0; }
-  #buildMain { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
+  /* Five children, five rows. This said three — a bar, the panes, the
+     strip — and the build tab has three bars, so the panes fell into an
+     implicit auto row and took the height of their own canvases, which is
+     whatever the last resize left in the attribute: the tab opened with the
+     panes collapsed or overgrown until the window was resized. Combust:
+     "some parts require resizing on the build page". */
+  #buildMain { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; min-height: 0; }
   #buildMain .brow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
                      padding: 5px 12px; border-bottom: 1px solid var(--line);
                      font-size: 11px; color: var(--dim); }
