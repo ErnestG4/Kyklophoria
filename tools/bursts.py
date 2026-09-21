@@ -58,6 +58,31 @@ def burst(x, modes, sr, ms, thump_s, fade_ms=30.0, signed=False):
     keep = [m for m in modes if 6.91 / (parse(m)[1] * 2 * math.pi * parse(m)[0]) >= thump_s]
     f = np.array([parse(m)[0] for m in keep]); z = np.array([parse(m)[1] for m in keep])
     a = np.array([parse(m)[2] for m in keep]); ph = np.array([parse(m)[3] for m in keep])
+    if ms is None:
+        # as long as it matters: the burst runs until what the bank cannot
+        # play — the recording above its highest fitted partial — has fallen
+        # 30 dB under the recording, on 10 ms windows; at least 60 ms and at
+        # most 400. A piano's E1 has a hundred partials above the bank's 48
+        # that die in half a second; cut at 60 ms they fell off a cliff
+        # behind the burst, every band above 2 kHz 60-77 dB under the
+        # recording from 60 ms on, which Combust heard as a fizz on the
+        # attack. A treble note the bank covers to 8 kHz stays at 60 ms.
+        # (The residual itself is no measure: a partial with its phase a
+        # little off leaves a residual as loud as itself for as long as it
+        # rings, and every note ran to the cap.)
+        m = min(len(x), int(0.4 * sr))
+        f_top = float(f.max()) if len(f) else 0.0
+        from scipy import signal as sg
+        hp = sg.sosfiltfilt(sg.butter(6, min(f_top * 1.05, 0.45 * sr), 'highpass', fs=sr, output='sos'), x[:m]) if f_top > 0 else x[:m]
+        hop = int(0.01 * sr)
+        peak = max(np.sqrt(np.mean(x[i:i + hop] ** 2)) for i in range(0, min(len(x), int(0.1 * sr)) - hop + 1, hop))
+        ms = 60.0
+        for i in range(int(0.06 * sr), m - hop, hop):
+            r = np.sqrt(np.mean(hp[i:i + hop] ** 2))
+            ms = (i + hop) * 1000.0 / sr
+            if r < peak * 10 ** (-40 / 20):      # 40 dB under the note's own peak: gone, or the floor
+                break
+        fade_ms = max(fade_ms, ms / 3)
     n = min(len(x), int(ms * sr / 1000))
     y = modalfit.resynth(f, z * 2 * math.pi * f, a, n, sr, ph) if len(f) else np.zeros(n)
     # the fit's loss is STFT magnitude, which cannot see a sign: every
@@ -98,7 +123,7 @@ def flip(line):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('recdir')
-    ap.add_argument('--ms', type=float, default=60.0)
+    ap.add_argument('--ms', default='60', help='the burst\'s length in ms, or "auto": until the residual is 24 dB under the recording, 60 to 400')
     ap.add_argument('--fade', type=float, default=30.0, help='the burst\'s last this many ms cross into the modes on a raised cosine')
     ap.add_argument('--thump', type=float, default=0.06, help='modes with a T60 under this are the hammer, and leave')
     ap.add_argument('--shaped', action='store_true', help='a fitvel set: a burst a take')
@@ -164,7 +189,7 @@ def main():
             if not os.path.exists(tp):
                 continue
             x, sr = sf.read(tp)
-            e, keep, flipped = burst(x / 0.5, modes, sr, a.ms, a.thump, a.fade, signed)   # the target wav is the analysed excerpt at half scale
+            e, keep, flipped = burst(x / 0.5, modes, sr, None if a.ms == 'auto' else float(a.ms), a.thump, a.fade, signed)   # the target wav is the analysed excerpt at half scale
             flips += flipped
             bp = rid + '-burst.wav'
             sf.write(os.path.join(a.recdir, bp), e, sr, subtype='FLOAT')   # at the record's scale, not the target wav's half
@@ -174,7 +199,7 @@ def main():
         out += tail + lines
         open(rp, 'w').write('\n'.join(out) + '\n')
         done += 1
-    print('  %s: %d records with a burst of %.0f ms, %d sign-flipped%s' % (a.recdir, done, a.ms, flips, '' if a.shaped else ', thumps under %.0f ms removed' % (1000 * a.thump)))
+    print('  %s: %d records with a burst of %s ms, %d sign-flipped%s' % (a.recdir, done, a.ms, flips, '' if a.shaped else ', thumps under %.0f ms removed' % (1000 * a.thump)))
 
 
 if __name__ == '__main__':

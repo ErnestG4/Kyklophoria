@@ -120,6 +120,17 @@ def main():
         # detuned, put every line in a doublet and no lag lines up
         pitched = r[2] != 'index' if len(r) > 2 else True
         f_top = float(f.max()) if len(f) else 0.0
+        # and on a pitched instrument, in the end, no wash at all. Stopped at
+        # the highest partial, floored, capped, it was still white noise
+        # under a piano's C#2 and a fizz on its attacks — a band's deficit
+        # 35 dB under the note is still 5 dB over the note's own partials in
+        # that band, and the ear hears the band. What a piano's bass note is
+        # missing is partials, and the honest fix is more modes, not noise
+        # in their place. The wash stays for the bodies it was made for
+        if pitched:
+            lines.append('noise ' + ' '.join('0 0' for _ in range(8)))
+            open(rp, 'w').write('\n'.join(lines) + '\n')
+            continue
         # and no longer than the partials the fit found in that band: what
         # the wash fills is the body and the strings the bank did not take,
         # and those do not outlast the ones it did. Above the highest mode,

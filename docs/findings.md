@@ -691,6 +691,25 @@ notes E1–G3 from the Philharmonia's single-note files (loss 1.1–1.8; the
 `phrase` files under the same articulation are runs of notes and are now
 skipped), as `bass.kykm`.
 
+*No wash on a pitched instrument; the burst runs as long as it matters.*
+Combust heard the piano get worse: white noise under its C#2 still, and a
+fizz on the attacks of the first notes. Measured against the recording,
+band by band, the runtime's bass notes match to a decibel below 2 kHz
+and are 60–77 dB short above it from 60 ms on: the bank's 48 modes on an
+E1 stop at 1.7 kHz, and the recording's hundred partials above that die
+over half a second — inside the 60 ms burst they were there, and at 60 ms
+they fell off a cliff, which is the fizz. And the wash, stopped at the
+highest partial and floored and capped, was still noise where the ear
+wanted partials: 35 dB under the note is 5 dB over the note's own
+partials in that band. So a pitched world now carries no wash at all
+(the wash stays for the bodies it was made for), and `bursts.py --ms
+auto` runs a burst until the recording above the bank's highest partial
+has fallen 40 dB under the note's peak, 60 to 400 ms — 390 on the
+piano's five lowest notes, 70 across the rest of the keyboard, 7 of the
+guitar's 71 over 100 ms. The cliff is now at 0.4 s and 40 dB down. What
+would close it is more modes for the bass notes, which is the runtime's
+budget and a bench question: 96 modes is twice the bank's cost.
+
 *Dynamics are layers, not points.* Combust heard the violin and viola
 keyboards as wrong, and the training was not missing a note — it was
 missing what a Philharmonia set is: two or three dynamics a note, fitted
