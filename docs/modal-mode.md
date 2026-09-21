@@ -223,7 +223,14 @@ what it is). Concretely:
   add a mode a sample; Elements' exciter section (bow / blow / strike
   with contour and timbre) as a way to strike a world with something
   other than its own burst; Rings' chord/structure axis, which for a
-  body row is the row itself.
+  body row is the row itself. *Taken since:* the external
+  exciter — J1's audio driven into the bank of the voice that follows the
+  pitch, g·x a sample into every mode, the amount on the Stereo page's
+  sixth pot (CV out A depth, which a resonator has no use for); the world
+  as a resonant filter bank for whatever is patched in. 0.02 of the
+  codec's unit at full pot; the level is a bench question, since a driven
+  mode's gain is its Q. `resonate_engine_check`: noise in, the C3 stands
+  17 dB over its neighbours, silent without the drive.
 - ACTION 18 `tune u8 which, u8 value`: the spin — voicing (widths off the
   fitted pole), decay (×¼–×4) and coil (×½–×2), 128 the world as fitted —
   on the engine as a knob's value, applied through a copy of the world's
