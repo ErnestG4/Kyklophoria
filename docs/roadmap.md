@@ -61,10 +61,12 @@ filtered by velocity, which is commuted synthesis and the SY99's lineage in one
    reed-vel, guitar, banjo, mandolin, violin, viola, bass, piano, perc (a
    row of nineteen bodies), tine-h045.
 
-5. **Condense.** Done: `.kykm` v5 — five bytes a mode, the stage, the wash,
-   the bursts, velocity layers, slots aligned by ratio to the note along the
-   chain of points with ghosts so a mode fades rather than slides, each
-   point pulled to its nominal note, a `kind` byte for a row of bodies.
+5. **Condense.** Done: `.kykm` v6 — five bytes a mode (fifths of a cent,
+   a decay byte, a level byte with 255 for silence, a phase byte), the
+   stage, the wash, the bursts with their fades, velocity layers, each
+   point pulled to its nominal note, a `kind` byte for a row of bodies. A
+   note world plays its nearest point transposed; a body row interpolates
+   along the row (`docs/holistic-math.md` for why).
 
 6. **The runtime, in the engine, on the module.** Done past the line:
    `core/kyk_resonate.h` and the engine's resonate path, the card path for
@@ -82,18 +84,17 @@ Each with what it fixes and what it costs. *Measured*, *reasoned* and
 `findings.md`'s.
 
 1. **Hands on it, again.** The remap of J4–J8, the polyphony, the strum on
-   a note jump, the in-tune export and the aligned slots have not been
-   played. That is one evening and it decides the order of everything
+   a note jump, the in-tune export and format v6 (the transposed point,
+   the burst as the recording) have not been played. That is one evening and it decides the order of everything
    below. *Ask:* does a note between points now sound like the note; does a
    trigger with a velocity CV feel like an instrument; does 4 voices
    overrun.
 
 2. **The bass notes' cliff** — the largest measured gap in the sound.
-   `lit-runtime.md` items 3 and 5: first the band-wise burst crossfade (the
-   burst's top fades on its own decay, its bottom hands to the modes;
-   hides the cliff, a day, no format change), then B per note in the world
-   (a float a point, costs nothing), then the waveguide above the modes for
-   string worlds (the structural fix; a delay line a voice in AXI; a week
+   `lit-runtime.md` items 3 and 5: the band-wise burst crossfade is in
+   (the burst's top runs to its end on its own decay, its bottom hands to
+   the modes); B per note is moot while a point plays transposed; what is
+   left is the waveguide above the modes for string worlds (the structural fix; a delay line a voice in AXI; a week
    and a flag in the format). *Reasoned*, the cliff *measured* at 60–77 dB
    above 2 kHz from the burst's end on a piano E1.
 
