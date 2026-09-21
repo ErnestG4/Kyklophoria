@@ -456,8 +456,17 @@ struct ResonatorVoice
     float          swing_soft, swing_hard;
     float          burst_rate;        /* the burst's read step: the played note over the burst's own, 1 on an index world */
     float          sr;
+    /* what the voice was built from, kept for a readout: the page asks
+       what the module is playing and the module says, rather than the
+       page decoding a world it never has */
+    float          hz[ResonatorBank::kMax], zeta[ResonatorBank::kMax], gain[ResonatorBank::kMax];
+    uint32_t       burst_len;         /* samples in the burst it would play at swing 1, 0 for none */
 
-    void Init() { bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; }
+    void Init()
+    {
+        bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0;
+        for(int k = 0; k < ResonatorBank::kMax; k++) hz[k] = zeta[k] = gain[k] = 0.f;
+    }
 
     void Strike(float velocity01)
     {
@@ -573,7 +582,11 @@ struct ResonatorWorld
         {
             ha[k] = ha[k] * std::pow(hb[k] / ha[k], t);
             za[k] = za[k] * std::pow(zb[k] / za[k], t);
-            ga[k] = ga[k] * std::pow((gb[k] + 1e-9f) / (ga[k] + 1e-9f), t);
+            /* gain linearly: the export puts a ghost — the same ratio at
+               zero gain — where a point has no mode in a slot, so a mode
+               fades in and out along the axis; geometric took it to
+               nothing at the first step */
+            ga[k] = ga[k] + t * (gb[k] - ga[k]);
             float d = fb[k] - fa[k];                 /* phase: the short way round */
             if(d > 3.1415927f) d -= 6.2831853f;
             if(d < -3.1415927f) d += 6.2831853f;
@@ -588,6 +601,7 @@ struct ResonatorWorld
            the bank takes them */
         for(int k = 0; k < N; k++) ga[k] *= st[7];
         for(int k = 0; k < N; k++) za[k] /= decay;            /* T60 x decay */
+        for(int k = 0; k < N; k++) { v.hz[k] = ha[k]; v.zeta[k] = za[k]; v.gain[k] = ga[k]; }
         v.bank.Set(ha, za, ga, N, sr, fa, keep);
         st[0] += voicing * st[1];                                /* h moves by widths */
         st[3] *= coil;
@@ -599,6 +613,9 @@ struct ResonatorWorld
             v.bursts = Bursts(near);
             v.burst_rate = kind == 1 ? 1.f : std::exp2((param - Param(near)) / 12.f);
             v.sr = sr;
+            uint16_t nb; std::memcpy(&nb, v.bursts, 2);
+            v.burst_len = 0;
+            if(nb) { uint16_t n; std::memcpy(&n, v.bursts + 2 + 8, 2); v.burst_len = n; }
         }
         /* the wash: levels and T60s interpolated between the points, applied
            with the spin's decay; state kept on a retune */

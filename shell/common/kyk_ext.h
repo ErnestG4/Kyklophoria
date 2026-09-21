@@ -16,6 +16,7 @@
 #include "alchemy/host_link/frame.h"
 #include "kyk_types.h"
 #include "kyk_tour.h"   /* kTourMax, and the op names the wire uses */
+#include "kyk_engine.h"  /* the resonate readout reads the engine's voice */
 
 namespace kyk {
 
@@ -75,6 +76,13 @@ constexpr uint8_t kStatCardExists = 20u;
  * next. The state comes back on every op, so a host never has to ask twice. */
 constexpr uint8_t kCmdTour       = 0x6D;
 constexpr uint8_t kCmdSetControl = 0x6E;   /* desktop bridge only */
+/* What the resonate world is playing (docs/modal-mode.md): the page never
+   has the world, so the module says. Reply: status, u8 kind, f32 lo, f32
+   hi, f32 param (where on its axis the voice was built), u16 P (points),
+   u8 N, then N x (f32 hz, f32 zeta, f32 gain), then u32 burst samples,
+   then u8 M and M x f32 point params (the first 64). BAD_STATE when what
+   is playing is not a resonator. */
+constexpr uint8_t kCmdResonate   = 0x6F;
 enum TourOp : uint8_t { kTourGet = 0, kTourSet = 1, kTourTick = 2 };
 
 enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace = 2, kActRenderDiv = 3,
@@ -259,6 +267,10 @@ struct ExtSource
        morphed towards. `names[i]` is null for an empty slot. */
     virtual int Slots(uint8_t& live, uint8_t& target, const char** names, int max)
     { (void)live; (void)target; (void)names; (void)max; return -1; }
+
+    /* the live world if it is a resonator, and the engine playing it */
+    virtual const World*  ResonateWorld() { return nullptr; }
+    virtual const Engine* ResonateEngine() { return nullptr; }
 
     virtual uint8_t SetControl(float f0, const float* c, int n, const float* angles, int planes, float spread)
     {
@@ -448,6 +460,20 @@ public:
                 /* And no leading dot, which is how you spell `..` */
                 if(name[0] == '.') { w.U8(2u); return; }
                 w.U8(src_.SaveCardWorld(f.body[0], name, (f.body[1] & 1u) != 0u));
+                return;
+            }
+            case kCmdResonate:
+            {
+                const World* wd = src_.ResonateWorld(); const Engine* en = src_.ResonateEngine();
+                if(!wd || !en || !wd->IsResonate()) { w.U8(3u); return; }
+                const ResonatorWorld& r = wd->Res(); const ResonatorVoice& v = en->Voice();
+                auto f32 = [&](float x) { uint32_t u; std::memcpy(&u, &x, 4); w.U32(u); };
+                w.U8(0u); w.U8(r.kind); f32(r.lo); f32(r.hi); f32(en->ResParamNow()); w.U16(r.P); w.U8((uint8_t)r.N);
+                for(int k = 0; k < r.N; k++) { f32(v.hz[k]); f32(v.zeta[k]); f32(v.gain[k]); }
+                w.U32(v.burst_len);
+                const int m = r.P < 64 ? r.P : 64;
+                w.U8((uint8_t)m);
+                for(int i = 0; i < m; i++) f32(r.Param(i));
                 return;
             }
             case kCmdSlots:

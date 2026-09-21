@@ -816,6 +816,9 @@ struct ModuleSource : ExtSource
         s.render_div    = (uint8_t)gEng.L.render_div;
         s.cycles_budget = kCycBudget;
     }
+    const World*  ResonateWorld() override { const World* w = gEng.L.WorldPtr(); return w && w->IsResonate() ? w : nullptr; }
+    const Engine* ResonateEngine() override { return &gEng.L; }
+
     int CardWorlds(const char** names, int max) override
     {
         const int n = gCardCount < max ? gCardCount : max;

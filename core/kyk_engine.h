@@ -111,6 +111,8 @@ public:
         rnote_ = 1e9f;                            /* re-read at the next block or strike */
     }
     float GetTune(Tune which) const { return rtune_[(int)which]; }
+    const ResonatorVoice& Voice() const { return rvoice_; }
+    float ResParamNow() const { return rnote_; }
     ResonatorWorld Tuned() const
     {
         ResonatorWorld r = world_->Res();

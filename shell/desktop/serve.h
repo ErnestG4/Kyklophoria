@@ -312,6 +312,9 @@ public:
         if(cardNames.size() > 32) cardNames.resize(32);
     }
 
+    const kyk::World*  ResonateWorld() override { return world && world->IsResonate() ? world : nullptr; }
+    const kyk::Engine* ResonateEngine() override { return eng ? &eng->L : nullptr; }
+
     int CardWorlds(const char** names, int max) override
     {
         if(cardDir.empty()) return 0;
