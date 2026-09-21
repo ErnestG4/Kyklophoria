@@ -655,9 +655,19 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     const uint32_t t0 = Cycles();
     if(gTour.Running()) ReadClock(in[1], size);
 
-    /* pitch: v/oct on J3 (calibrated volts), coarse octaves, fine semitones */
-    const float voct = hw.cv[0].Volts();
-    const float f0   = 261.6256f * exp2f(voct + k_coarse.Value() + k_fine.Value() * (1.f / 12.f));
+    /* pitch: v/oct on J3 (calibrated volts), coarse octaves, fine semitones.
+       Under a resonate world with the pitch lock on, coarse is whole
+       octaves and fine whole semitones: the lock rounds the note, and a
+       coarse pot resting at +0.37 of an octave would have put every note
+       4.4 semitones up and then rounded each its own way — a C landing on
+       an E and a C sharp on an F, the intervals coming out wrong by a
+       semitone here and there. 0 V is C4, the wavetable's convention; a
+       rack that puts C3 there is a turn of the coarse pot. */
+    const bool  quant = gEng.L.WorldPtr() && gEng.L.WorldPtr()->IsResonate() && gEng.L.PitchLock();
+    const float voct  = hw.cv[0].Volts();
+    const float crs   = quant ? roundf(k_coarse.Value()) : k_coarse.Value();
+    const float fin   = quant ? roundf(k_fine.Value()) : k_fine.Value();
+    const float f0    = 261.6256f * exp2f(voct + crs + fin * (1.f / 12.f));
 
     /* position: pot offset (0..1) + CV (±5 V → ±1) per axis */
     /* Six, not four. The four CV jacks are axes 0-3; 4 and 5 are the World

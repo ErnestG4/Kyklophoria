@@ -81,7 +81,7 @@ public:
         }
         rstriking_ = true;
         Retune();          /* the pitch is taken here, locked or not */
-        rstriking_ = false;
+        rstriking_ = false; rsince_ = 0;
         rvoices_[ractive_].Strike(velocity01);
     }
     /* 1, 2 or 4 voices. Changing it cuts nothing: a voice past the new
@@ -150,8 +150,13 @@ public:
         if(note != 1e9f && std::fabs(p - note) <= eps) return;
         /* locked, and not a strike: the ring keeps the note it was struck
            at and the new pitch waits for the next strike — unless the bank
-           is being driven, when the pitch is the only thing playing it */
-        if(pitch_lock_ && r.kind != 1 && note != 1e9f && !rstriking_ && !(exciter_ && exgain_ > 0.f)) return;
+           is being driven, when the pitch is the only thing playing it, or
+           the pitch jumps a semitone or more within 30 ms of the strike,
+           which is a sequencer whose CV lands after its gate: the note
+           belongs to the strike it followed, and a strike that held the
+           old note would be the wrong note for as long as it rang */
+        const bool late = rsince_ < 0.03f * sr_ && std::fabs(p - note) > 0.4f;
+        if(pitch_lock_ && r.kind != 1 && note != 1e9f && !rstriking_ && !late && !(exciter_ && exgain_ > 0.f)) return;
         Tuned().At(p, rvoices_[ractive_], sr_, true); note = p;
     }
     /* The spin on a resonator: voicing (the pickup's pole off its fitted
@@ -342,6 +347,7 @@ public:
                 SetTune(Tune::Coil, CoilOf(c_[3]));
             }
             Retune();
+            if(rsince_ < 0xFFFFFFu) rsince_ += (uint32_t)n;
             float tmp[48];
             for(int v = 0; v < kPoly; v++)
             {
@@ -686,6 +692,7 @@ private:
     bool           tune_from_control_ = false;
     bool           pitch_lock_ = true;   /* the nearest semitone, taken at the strike; off, a bend */
     bool           rstriking_ = false;
+    uint32_t       rsince_ = 0xFFFFFFu;  /* samples since the last strike, for the late-CV window */
     const float*   exciter_ = nullptr;   /* this block's drive, or null */
     float          exgain_ = 0.f;
 

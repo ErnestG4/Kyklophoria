@@ -312,7 +312,21 @@ what it is). Concretely:
     (`lock 0`) and the goldens were re-pinned: the old ones had the tail
     bending up before every strike. `resonate_engine_check`: 131.8 Hz
     strikes C3, holds it under a G3 pitch, takes the G3 at the strike;
-    free, 131.8 then 196.
+    free, 131.8 then 196. Two more things about pinning the note: a pitch
+    that jumps a semitone or more **within 30 ms of a strike** is taken by
+    that strike's ring (a sequencer whose CV lands after its gate would
+    otherwise play the previous step's note for as long as it rang; at
+    120 ms it is held, checked); and on the module, under the lock, the
+    Play page's **coarse is whole octaves and fine whole semitones** — a
+    coarse pot resting at +0.37 of an octave put every note 4.4 semitones
+    up and the rounding then landed each note its own way, an interval
+    wrong by a semitone here and there, which may be the "mistakes with
+    which octave a note belongs to". 0 V is C4 here (the wavetable's
+    convention); a rack that puts C3 at 0 V is a turn of the coarse pot.
+    The manifests were checked for octave errors by the harmonic series of
+    every fitted record (a strong 1.5× beside a 0.5× says the recording is
+    an octave under its label): one violin record (violin016, midi 73) and
+    none of the pianos, so the worlds are not where the octaves went.
   - *The pop, one of them.* A strike past the voice count built its voice
     fresh, which zeroed the ring it carried — a step at every strike once
     the round came back — and a turn of the voice count silenced every

@@ -329,7 +329,7 @@ int main()
         CHECK(e.PitchLock(), "the lock is not on by default");
         e.SetF0(131.8f); e.Strike(0.7f);
         const float struck = f0_of(e);
-        std::vector<float> y; Run(e, y, 20);
+        std::vector<float> y; Run(e, y, 50);      /* past the 30 ms late-CV window */
         e.SetF0(196.f); Run(e, y, 20);
         const float moved = f0_of(e);
         e.Strike(0.7f); Run(e, y, 20);
@@ -345,6 +345,18 @@ int main()
         CHECK(std::fabs(ustruck - 131.8f) < 0.2f, "unlocked, a strike was quantised: %.2f Hz for 131.8", ustruck);
         CHECK(std::fabs(umoved - 196.f) < 0.3f, "unlocked, the ring did not follow the pitch: %.2f Hz", umoved);
         printf("  pitch lock: 131.8 Hz strikes C3 (%.2f), holds it under a G3 pitch, takes the G3 at the strike; unlocked %.1f then %.1f\n", struck, ustruck, umoved);
+        /* a sequencer whose CV lands after its gate: a jump within 30 ms of
+           the strike is the strike's note; one at 100 ms is not */
+        Engine l; l.Init(&wurli, sr); l.gain = 1.f;
+        l.SetF0(130.81f); l.Strike(0.7f); Run(l, y, 10);
+        l.SetF0(196.f); Run(l, y, 10);
+        const float late = f0_of(l);
+        Run(l, y, 100);
+        l.SetF0(220.f); Run(l, y, 10);
+        const float later = f0_of(l);
+        CHECK(std::fabs(late - 196.f) < 0.3f, "a pitch landing 10 ms after the strike was not taken: %.2f Hz", late);
+        CHECK(std::fabs(later - 196.f) < 0.3f, "a pitch moving 120 ms after the strike was taken: %.2f Hz", later);
+        printf("  a late CV: 10 ms after the strike the ring goes to it (%.1f), 120 ms after it does not (%.1f)\n", late, later);
     }
 
     /* 11. nothing cuts: a strike past the voice count carries the voice it
