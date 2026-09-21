@@ -1496,9 +1496,11 @@ $('cardLoad').onclick = async () => {
          the module refuses for it. */
       const slot = freeSlot();
       if (slot < 0) { say('every slot is full — forget one on the worlds tab', true); return; }
-      await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.cardToSlot, [i & 0xff, slot & 0xff]), { urgent: true, timeoutMs: 4000 });
+      await requestUntilFree(MVL.actionReq(MVL.ACT.cardToSlot, [i & 0xff, slot & 0xff]));
       delete slotNodes[slot]; slotKind[slot] = 'resonator';
       heldLost();
+      say(`loading ${cardLabel(cardList.names[i])}…`);
+      if (!await waitForSlots(s => !!s.names[slot], 8000, `load: slot ${slot} never filled`)) return;
       await slotAction(MVL.ACT.slotLive, slot);
       say(`${cardLabel(cardList.names[i])} playing from slot ${slot}`);
       setTimeout(() => { refreshWorlds(); }, 250);
@@ -2800,16 +2802,45 @@ async function libTargetSel(clear) {
   } catch (e) { say('target: ' + e.message, true); }
 }
 
+/* A deferred action is refused BUSY while the last one is still being
+   done on the module's control loop — a card read of a megabyte, say — so
+   it is asked again, a few times, before it is an error. */
+async function requestUntilFree(req, tries = 30) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await link.request(MVL.CMD.action, req, { urgent: true, timeoutMs: 4000 }); }
+    catch (e) { if (!/BUSY/.test(e.message) || attempt >= tries) throw e; await new Promise(r => setTimeout(r, 120)); }
+  }
+}
+/* Read the slot list until it says what the action was for, or give up
+   and say so. Every read redraws the library, so the tile fills in as soon
+   as the module has it. */
+async function waitForSlots(done, ms, fail) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    try { slots = await MVL.fetchSlots(link); } catch { slots = null; }
+    renderLibrary(); renderLib();
+    if (slots && done(slots)) return true;
+    if (Date.now() > deadline) { say(fail, true); return false; }
+    await new Promise(r => setTimeout(r, 80));
+  }
+}
+
 async function slotAction(op, slot) {
   if (!link) return;
   try {
-    await link.request(MVL.CMD.action, MVL.actionReq(op, [slot & 0xff]), { urgent: true });
+    await requestUntilFree(MVL.actionReq(op, [slot & 0xff]));
     if (op === MVL.ACT.slotLive) {
       const known = slotNodes[slot];
       if (known) held = { name: (slots && slots.names[slot]) || 'slot ' + slot, nodes: known.map(k => ({ name: k.name, pos: k.pos.slice() })) };
       else heldLost();
       place.sent = false;
       renderImport();
+      /* The action only queues it: the module parses the slot on its
+         control loop, a resonator's region included, and the list read
+         straight back still said the old slot was playing — which is why
+         playing one took two clicks. Wait until the module agrees. */
+      await waitForSlots(s => s.live === slot, 4000, 'play: the module did not switch');
+      return;
     }
     await refreshSlots();
   } catch (e) { say('slot: ' + e.message, true); }
@@ -2990,14 +3021,19 @@ async function loadCardIntoSlot() {
   const i = $('libCardSel').selectedIndex;
   if (i < 0 || !cardList.names.length) return;
   try {
-    await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.cardToSlot, [i & 0xff, libSel.i & 0xff]), { urgent: true, timeoutMs: 4000 });
+    const slot = libSel.i, name = cardList.names[i];
+    await requestUntilFree(MVL.actionReq(MVL.ACT.cardToSlot, [i & 0xff, slot & 0xff]));
     /* The module parsed it; the page did not, so it does not know where the
        nodes are. Same rule as any slot filled elsewhere: it plays, and its
        rings stay undrawn rather than guessed. */
-    delete slotNodes[libSel.i];
-    if (isResonator(cardList.names[i])) slotKind[libSel.i] = 'resonator'; else delete slotKind[libSel.i];
-    say(`${cardList.names[i]} into slot ${libSel.i}`);
-    await refreshSlots();
+    delete slotNodes[slot];
+    if (isResonator(name)) slotKind[slot] = 'resonator'; else delete slotKind[slot];
+    /* deferred on the module, and a resonator is a megabyte read off the
+       card in 6.7 KB pieces: a second or two before the slot has it */
+    say(`loading ${cardLabel(name)} into slot ${slot}…`);
+    const before = slots && slots.names[slot];
+    if (await waitForSlots(s => s.names[slot] && s.names[slot] !== before, 8000, `load: slot ${slot} never filled`))
+      say(`${cardLabel(name)} in slot ${slot}`);
   } catch (e) { say('load: ' + e.message, true); }
 }
 

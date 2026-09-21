@@ -303,8 +303,11 @@ static char     gSlotName[kSlotCount][kUserNameLen + 1];
  * either fits or is refused, and freeing one can never fragment the rest.
  * 8 MB of the 64 MB SDRAM. A slot holding one keeps its region's number in
  * gSlotRes and its gSlotBlob bytes mean nothing. */
+/* Sixteen: four was the first evening's number and the fifth world would
+ * not load, silently — a slot past 03 stayed empty. 32 MB of the 64, with
+ * the wavetable blobs and the slots taking under 5 MB of the rest. */
 constexpr uint32_t kResRegionBytes = 2u << 20;
-constexpr int      kResRegions     = 4;
+constexpr int      kResRegions     = 16;
 static uint8_t KYK_SDRAM gResArena[kResRegions][kResRegionBytes];
 static_assert(std::is_trivially_default_constructible<decltype(gResArena)>::value,
               "gResArena is in SDRAM and must not be constructed before hw.Init()");
