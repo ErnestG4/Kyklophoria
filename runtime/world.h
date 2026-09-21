@@ -116,7 +116,14 @@ struct World
         v.bank.Set(ha, za, ga, N, sr, fa, keep);
         st[0] += voicing * st[1];                                /* h moves by widths */
         st[3] *= coil;
-        v.bursts = Bursts(t < 0.5f ? a : b);      /* a burst is not interpolated: the nearer point's */
+        {
+            /* a burst is not interpolated: the nearer point's, read at the
+               played note over its own; a body row plays it as it is */
+            const int near = t < 0.5f ? a : b;
+            v.bursts = Bursts(near);
+            v.burst_rate = kind == 1 ? 1.0f : std::exp2((param - Param(near)) / 12.0f);
+            v.sr = sr;
+        }
         /* the wash: levels and T60s interpolated between the points, applied
            with the spin's decay; state kept on a retune */
         {

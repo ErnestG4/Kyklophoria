@@ -248,15 +248,22 @@ struct Pickup
  * gain. */
 struct BurstPlayer
 {
-    struct Slot { const int16_t* s; uint32_t n, pos; float gain; };
+    struct Slot { const int16_t* s; uint32_t n; float pos, rate, gain, lp, z; };
     Slot slot[2];
     int  active;
 
-    void Init() { active = 0; for(auto& q : slot) { q.s = nullptr; q.n = q.pos = 0; q.gain = 0.0f; } }
+    void Init() { active = 0; for(auto& q : slot) { q.s = nullptr; q.n = 0; q.pos = q.rate = q.gain = q.lp = q.z = 0.0f; } }
 
     /* bursts: pointer to the point's burst block in the world (nbursts,
        then per burst swing, scale, len, samples), and the strike's swing */
-    void Strike(const uint8_t* block, float swing)
+    /* rate: the read step, 1 at the burst's own pitch — a note between two
+       points plays the nearer point's burst, and without this played it at
+       that point's pitch, a semitone off at worst (lit-runtime.md); lp: a
+       one-pole low-pass coefficient, 0 for none, from the strike's velocity
+       on a world with one take — a soft hit is a filtered attack, not a
+       quiet copy of the hard one (commuted synthesis: the hammer does not
+       commute) */
+    void Strike(const uint8_t* block, float swing, float rate = 1.0f, float lp = 0.0f)
     {
         active = 0;
         if(!block) return;
@@ -286,7 +293,7 @@ struct BurstPlayer
             std::memcpy(&sw, pick[i], 4); std::memcpy(&sc, pick[i] + 4, 4); std::memcpy(&n, pick[i] + 8, 2);
             Slot& q2 = slot[active++];
             q2.s = (const int16_t*)(pick[i] + 10);
-            q2.n = n; q2.pos = 0;
+            q2.n = n; q2.pos = 0.0f; q2.rate = rate > 0.0f ? rate : 1.0f; q2.lp = lp; q2.z = 0.0f;
             q2.gain = wgt[i] * sc / 32767.f * (ref[i] > 0.0f ? swing / ref[i] : 1.f);
         }
     }
@@ -296,10 +303,16 @@ struct BurstPlayer
         for(int a = 0; a < active; a++)
         {
             Slot& q = slot[a];
-            for(int k = 0; k < frames && q.pos < q.n; k++, q.pos++)
+            for(int k = 0; k < frames; k++)
             {
-                int16_t v; std::memcpy(&v, q.s + q.pos, 2);   /* the blob may be unaligned */
+                const uint32_t i0 = (uint32_t)q.pos;
+                if(i0 + 1 >= q.n) { q.pos = (float)q.n; break; }
+                const float f = q.pos - (float)i0;
+                int16_t v0, v1; std::memcpy(&v0, q.s + i0, 2); std::memcpy(&v1, q.s + i0 + 1, 2);   /* the blob may be unaligned */
+                float v = (float)v0 + f * ((float)v1 - (float)v0);
+                if(q.lp > 0.0f) { q.z += q.lp * (v - q.z); v = q.z; }
                 io[k] += q.gain * v;
+                q.pos += q.rate;
             }
         }
     }
@@ -394,6 +407,8 @@ struct ModalVoice
     NoiseLayer     wash{};
     const uint8_t* bursts = nullptr;  /* the point's burst block in the world, or null */
     float          swing_soft = 1.0f, swing_hard = 1.0f;
+    float          burst_rate = 1.0f; /* the burst's read step: the played note over the burst's own, 1 on an index world */
+    float          sr = 48000.0f;
 
     void Strike(float velocity01)
     {
@@ -401,7 +416,16 @@ struct ModalVoice
            one take (swing_soft == swing_hard) scales linearly with velocity */
         const float s = swing_hard > swing_soft ? swing_soft * std::pow(swing_hard / swing_soft, velocity01) : swing_soft * velocity01;
         bank.Strike(s);
-        burst.Strike(bursts, s);
+        /* one take: the attack is filtered by velocity, a one-pole from 1 kHz
+           at nothing to 13 kHz at full; takes carry this themselves */
+        float lp = 0.0f;
+        if(!(swing_hard > swing_soft))
+        {
+            const float v = velocity01 < 0.0f ? 0.0f : velocity01 > 1.0f ? 1.0f : velocity01;
+            const float fc = 1000.0f * std::exp2(3.7f * v);
+            lp = v >= 1.0f ? 0.0f : 1.0f - std::exp(-6.2831853f * fc / sr);
+        }
+        burst.Strike(bursts, s, burst_rate, lp);
         wash.Strike(s);
     }
     void Process(float* out, int frames)
