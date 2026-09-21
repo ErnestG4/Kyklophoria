@@ -691,6 +691,25 @@ notes E1–G3 from the Philharmonia's single-note files (loss 1.1–1.8; the
 `phrase` files under the same articulation are runs of notes and are now
 skipped), as `bass.kykm`.
 
+*Dynamics are layers, not points.* Combust heard the violin and viola
+keyboards as wrong, and the training was not missing a note — it was
+missing what a Philharmonia set is: two or three dynamics a note, fitted
+as separate records and exported as separate points at the same
+parameter, so the runtime played whichever came last and a keyboard
+walked piano and forte at random (violin 49 records for 25 notes, viola
+31 for 17, guitar 71 for 38, banjo 74 for 41). `export.py` now layers
+them: the loudest take is the point — its modes, its wash — each take's
+swing is its level over the loudest's read back from the source file
+(the fit normalised every recording, so the level was not in the
+records: piano takes sit at 0.12–0.2 of forte), and each take's burst,
+its own attack, which is where a pizzicato's dynamics differ most, sits
+at its swing in the loudest take's units. A strike between two dynamics
+crossfades their attacks over the shared modes at the level between
+them, which is the runtime's velocity mechanism doing what it was built
+for. `tools/ringers.py` was written on the way — modes that ring longer
+than the recording at their frequency — and finds 0 of 1476 on the
+violin and 9 of 1283 on the piano, so the fits were not the problem.
+
 *The chain on the snare.* Combust heard a high resonance like a snare's
 chain under some notes of the piano and of the other acoustic sets. It
 was the wash: on a pitched instrument the deficit above the highest fitted

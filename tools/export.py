@@ -137,6 +137,64 @@ def bursts_of(recdir, rid, swings=None):
     return out
 
 
+def source_rms(recdir, rid):
+    """the recording's own level, before the fit normalised it: the RMS of
+    its loudest half second, from the file the record names. None if the
+    file is not there (the samples are not in the repo)"""
+    import soundfile as sf
+    src = None
+    for w in (l.split() for l in open(os.path.join(recdir, rid + '.mmr'))):
+        if w and w[0] == 'source':
+            src = ' '.join(w[1:]); break
+    if not src or not os.path.exists(src):
+        return None
+    x, sr = sf.read(src, always_2d=True); x = x.mean(axis=1)
+    n = int(0.5 * sr)
+    if len(x) <= n:
+        return float(np.sqrt(np.mean(x ** 2)) + 1e-9)
+    e = np.convolve(x ** 2, np.ones(n) / n, mode='valid')
+    return float(np.sqrt(e.max()) + 1e-9)
+
+
+def layer(recdir, pts):
+    """Records at the same parameter are one point with velocity layers,
+    not several points. The Philharmonia sets have two or three dynamics a
+    note, and exported as separate points the runtime played whichever came
+    last — a keyboard walking piano and forte at random, which Combust
+    heard as the violin and viola sounding wrong. The fit normalised every
+    recording, so the dynamics' levels are read back from the source files:
+    the loudest take is the point (its modes, its wash), each take's swing
+    is its level over the loudest's, and each take's burst — its own attack,
+    which is where a pizzicato's dynamics differ most — is placed at that
+    swing, scaled into the loudest take's units, so a strike between two
+    dynamics crossfades their attacks over the shared modes at the level
+    between them. Without the source files the loudest-fitting record
+    stands alone and the others are dropped, and it says so."""
+    groups = {}
+    for pt in pts:
+        groups.setdefault(pt[0], []).append(pt)
+    out = []
+    for param, g in groups.items():
+        if len(g) == 1:
+            out.append(g[0][:5]); continue
+        lv = [(source_rms(recdir, pt[5]), pt) for pt in g]
+        if any(l is None for l, _ in lv):
+            print('  %s: %d records at param %g and no source levels: keeping %s, dropping the rest' % (recdir, len(g), param, g[-1][5]))
+            out.append(g[-1][:5]); continue
+        lv.sort(key=lambda t: -t[0])
+        top, carrier = lv[0]
+        bursts = []
+        for l, pt in lv:
+            sw = l / top
+            for _, samples in pt[3]:
+                bursts.append((sw, samples * sw))
+        bursts.sort(key=lambda b: b[0])
+        stage = tuple(carrier[2][:5]) + (bursts[0][0] if bursts else 1.0, 1.0)
+        print('  %s: param %g, %d takes as layers: %s' % (recdir, param, len(g), ' '.join('%s@%.2f' % (pt[5], l / top) for l, pt in lv)))
+        out.append((param, carrier[1], stage, bursts, carrier[4]))
+    return out
+
+
 def read_corpus(path):
     b = open(path, 'rb').read()
     assert b[:4] == b'MODB'
@@ -207,7 +265,8 @@ def main():
                     takes[w[1]] = float(w[3])
             if swings[1] <= 0:
                 swings = [1.0, 1.0]
-            pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes), noise_of(d, c[0])))
+            pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes), noise_of(d, c[0]), c[0]))
+        pts = layer(d, pts)
         pts.sort(key=lambda p: p[0])
         N = max(len(pt[1]) for pt in pts)
         write(sys.argv[3], N, pts, form, kind)
