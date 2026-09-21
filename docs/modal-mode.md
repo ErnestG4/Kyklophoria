@@ -129,20 +129,27 @@ what it is). Concretely:
 - `World::Kind::Resonate` (11) and `World::UseResonate(blob, bytes)`: a
   `.kykm` attached where it lies; `N() == 1` (the note), `K() == 1` (a
   silent frame). `Evaluate` gives silence for it, as for any unknown kind.
-- `Engine`: a `ResonatorVoice` after `osc_.Process`, built in `SetWorld` —
-  and only there — at the current pitch; `Engine::Strike(velocity)` retunes
-  the bank with its state ringing on when the pitch has moved (the way the
-  oscillator follows the pitch) and strikes; `StereoEngine::Strike` both
-  sides. Every other kind renders bit for bit as before: the path is behind
-  the world's kind.
-- Host: the desktop script has `t strike v`, and the phase-reset action
-  strikes at 0.8 until the page has a velocity control.
+- `Engine`: up to four `ResonatorVoice`s after `osc_.Process`, built in
+  `SetWorld` (and `Init`) at the current parameter; the voice that follows
+  the pitch retunes every block past a two-cent deadband with its state
+  carried as amplitude and phase; `Engine::Strike(velocity)` strikes it
+  (round-robin to the next voice when polyphony is 2 or 4). A resonate
+  world's silent frame is rendered once and never again. Every other kind
+  renders bit for bit as before: the path is behind the world's kind, and
+  `StereoEngine` takes its mono branch for it (one voice, R copies L).
+- Host: the desktop script has `t strike v`; the phase-reset action
+  strikes at 0.8; ACTION 17 strikes at a velocity, 18 sets the spin, 19
+  the polyphony; 0x6F is the readout.
 - `tests/resonate_engine_check`: the engine path equals the standalone voice
   bit for bit; Saw's frame is unchanged by the path's existence; arriving
-  at a resonate world equals starting in it past the oscillator's
-  crossfade; a strike at a new pitch is the new note (a C4 series with the
-  C3's fundamental 52 dB under it), a retune keeps the ring, a re-strike
-  adds. The golden renders are unchanged.
+  at a resonate world equals starting in it; a strike at a new pitch is
+  the new note, a retune keeps the ring, a re-strike adds; an index world
+  is played by position; the spin's centre is the fitted world; two voices
+  hold two notes; a driven voice rings at its note. `resonate_check` is
+  the runtime alone: a mode's frequency, decay and level, the EP's bark
+  with velocity, the burst's rate and low-pass. The goldens `m4_resonate`,
+  `m4_sweep_note` and `m4_sweep_index` run under `tests/earcheck` (a rail,
+  a click, silence) as well as the bit diff.
 
 - A resonate world is a **card world**. A `.kykm` is a sample library's
   size — 66 KB for the Wurlitzer, a megabyte for the EP with its attack
@@ -158,8 +165,10 @@ what it is). Concretely:
   in the slot's vector and the world reads it there, so freeing the slot
   that is playing is refused (judged by the blob pointer, not by the live
   index, which no world select clears).
-- The module (`shell/alchemy/main.cpp`, *built, not run*): four fixed
-  2 MB regions in SDRAM (`gResArena`), a slot holding a resonator keeps its
+- The module (`shell/alchemy/main.cpp`; the card path has run on the
+  bench since, the rest is built and not run): sixteen fixed 2 MB regions
+  in SDRAM (`gResArena`; four was the first evening's number and the fifth
+  world would not load), a slot holding a resonator keeps its
   region's number in `gSlotRes`; the file is read through the SDMMC
   staging buffer a chunk at a time (IDMA's reach is the staging buffer's
   section); the World reads the region in place, so anything that would
@@ -171,15 +180,20 @@ what it is). Concretely:
 - The page: `.kykm` is labelled `· resonator` in both card lists, a slot
   loaded from one says so, the world bar says `resonator` for a 1-D user
   world, and every read of a position on a projection axis the world does
-  not have (a resonator has one axis, the projection is a pair) sits at the
-  centre — `pagecheck` has an N=1 case, and before the fix it drew 22 marks
-  at NaN.
-- An **index world** (`.kykm` v5, `kind` byte 1: a row of bodies, the
+  not have sits at the centre — `pagecheck` has an N=1 case, and before the
+  fix it drew 22 marks at NaN. With the readout (0x6F) the space pane
+  draws the world's axis, its points and the voice on it, and the sound
+  pane the modes on a log axis with the burst's length; the panel mirror
+  names the pots for a resonator; the tune sliders grey out when a panel
+  (the module) owns the spin; the readout and knobs reset on connect and
+  disconnect; a deferred load or play is retried while the module is BUSY
+  and the slot list read until it agrees, so neither takes two clicks.
+- An **index world** (`kind` byte 1 from v5: a row of bodies, the
   nineteen percussion instruments gong to woodblock) is played by
   position 0, lo to hi, not by pitch — the world's one axis doing what a
   position does everywhere else here, choosing the timbre — and follows
   the pot every block with its state ringing on. A note world (kind 0,
-  and every v4 file) follows the pitch as before. `tests/data/perc.kykm`;
+  and every v4 file) follows the pitch. `tests/data/perc.kykm`;
   `resonate_engine_check` asks that two pitches at one position are one
   sound bit for bit, that two positions are two bodies, and that the pot
   moving under a ring keeps it.
@@ -258,19 +272,21 @@ what it is). Concretely:
   jitter does not spend `At()`; the module sets it, the desktop does not,
   so the page's sliders still work against `kykdesk`. Unrun on hardware.
 
-Still the bench's: the cycle budget, and the module's card path above, which is
-built and untested. The pot that plays an index world is position 0, which on the
-module is the Play page's third pot; whether a body row wants its own
-page is a bench question.
+Still the bench's: everything since the evening of 20 September — the jack
+remap, the polyphony, the strum on a note jump, the exciter, format v6 and
+the level convention — is built, host-tested and unplayed. What the first
+evening settled: the card path works, the worlds load and play, and it
+"sounds amazing"; what it found — the overrun, the two clicks, the loads
+past slot 03 — is fixed above.
 
 ## Playing it: the bench steps
 
-Nothing on the module side of this has run on hardware. The steps, and
-what each one is the first test of:
+Written before the first evening; the steps still hold, with what has
+been added since noted. What each one is the first test of:
 
 1. `cd shell/alchemy && make program-live` (or `program-dfu` from the
-   bootloader) on the `modal` branch. Boot is the first test: 8 MB of
-   `.sdram_bss` for the four resonate regions, with the static_assert
+   bootloader) on the `modal` branch. Boot is the first test: 32 MB of
+   `.sdram_bss` for the sixteen resonate regions, with the static_assert
    guarding it.
 2. Copy `ModalBake/out/worlds/*.kykm` into `/kyklophoria/` on the card
    beside the `.kykw` files (every world is under a 2 MB region;
@@ -281,12 +297,16 @@ what each one is the first test of:
    card read into a region is the third test — a megabyte through the
    6.7 KB staging buffer, 150 reads), play it. Telemetry should say a 1-D
    user world; the world bar `resonator`.
-4. MOTION row: soft / mid / hard strike it. That is the only hand on it —
-   there is no trigger on the panel yet — and the strike is a flag the
-   audio callback takes after `SetF0`, so the pitch pot tunes what the
-   next strike plays. The three sliders beside it are the spin.
-5. `perc` is an index world: the Play page's third pot (position 0) walks
-   gong to woodblock; strike anywhere along it.
+4. MOTION row: soft / mid / hard strike it, or a trigger into J4 — a
+   rising edge past 1 V strikes at the velocity CV 1 + P4 holds — or a
+   note that jumps 0.4 semitone on v/oct with nothing in J4. The strike is
+   a flag the audio callback takes after `SetF0`, so the pitch pot tunes
+   what the next strike plays. The spin is P3, P5, P6 with J5, J7, J8 (the
+   page's sliders grey out); the polyphony is the World page's third pot
+   or the 1 · 2 · 4 chips; J1's audio into the bank is the Stereo page's
+   sixth pot.
+5. `perc` is an index world: the Play page's third pot (position 0, with
+   J5) walks gong to woodblock; strike anywhere along it.
 
 What to listen for first, and what it would mean: a click on a strike (the
 3 ms ramp, or the burst's fade-in); a note that is the wrong pitch (the
