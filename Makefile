@@ -73,11 +73,12 @@ armcost:
 'extern "C" void c_resonate(ResonatorBank* b, float* d, int n){ b->Process(d,n); }\n'\
 'extern "C" void c_pickup(Pickup* p, float* d, int n){ p->Process(d,n); }\n'\
 'extern "C" void c_burst(BurstPlayer* b, float* d, int n){ b->Process(d,n); }\n'\
+'extern "C" void c_wash(NoiseLayer* w, float* d, int n){ w->Process(d,n); }\n'\
 	  > build/arm/probe.cpp
 	@arm-none-eabi-g++ -std=gnu++17 -O3 -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard \
 	  -mthumb -ffp-contract=off -Icore -c build/arm/probe.cpp -o build/arm/probe.o
 	@echo "  Cortex-M7 instructions per shaper (whole function):"
-	@for f in c_fold c_warp c_ring c_crush c_drop c_resonate c_pickup c_burst; do \
+	@for f in c_fold c_warp c_ring c_crush c_drop c_resonate c_pickup c_burst c_wash; do \
 	  n=$$(arm-none-eabi-objdump -d build/arm/probe.o | awk -v fn=$$f '$$0 ~ "<"fn">:" {p=1;next} p && /^$$/ {exit} p' | grep -cE "^[[:space:]]+[0-9a-f]+:"); \
 	  printf "    %-8s %3d\n" $$f $$n; done
 

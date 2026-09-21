@@ -18,6 +18,12 @@ second-order resonators struck by a short pulse and read through the pickup:
               second bank and folded into the first
     pickup    u → phi = 1/(1 + ((u−h)/w)²)  (magnetic)  or  1/(1 − u/g)  (electrostatic)
               → first difference (Faraday) → the coil's second-order low-pass
+    wash      what a dense body leaves after its modes and its burst (a tam-tam is
+              hundreds of modes; three times the bank bought five per cent): white
+              noise through eight octave band-passes, each under its own level and
+              T60 fitted to the energy the recording has and the model does not
+              (ModalBake tools/noise.py), sixteen numbers a point; nothing on a
+              world whose bands are zero
     burst     the attack the modes are not: the recording's first 40 ms minus the
               model's, stored 16-bit in the world, played once at the strike after
               the pickup, scaled by the strike's swing; a shaped world crossfades the
@@ -30,9 +36,9 @@ velocity behaviour is the pickup's (ModalBake, from Muenster & Pfeifle's
 a handful of modes and five numbers a note, and velocity comes out of the
 physics rather than out of a sample layer.
 
-Worlds arrive as `.kykm` blobs (ModalBake `tools/export.py`, version 3): five
+Worlds arrive as `.kykm` blobs (ModalBake `tools/export.py`, version 4): five
 bytes a mode — cents, decay, level, phase — the stage and the loudest mode's
-absolute gain per point, then the point's bursts (~4 KB each; the EP with two
+absolute gain per point, the wash's eight bands, then the point's bursts (~4 KB each; the EP with two
 a note is 650 KB, the Wurlitzer 45 KB). Points are variable-length and walked
 at note-on. The EP is
 38 KB as 48 harmonic slots, 7 KB as metal plus pickup; the Wurlitzer with
