@@ -589,6 +589,7 @@ static volatile int16_t  gStrike     = -1;     /* velocity 0-255 to strike with,
 static volatile uint8_t  gJ4Out      = 1u;     /* J4's DG411: 1 CV out A (a wavetable world), 0 the trigger in (a resonate one) */
 static volatile uint8_t  gPolyReq    = 0u;     /* a polyphony asked for over the wire, 0 = none */
 static bool              gStrikeFromJack = false;   /* the pending strike came from J4, not the page or a note jump */
+static bool              gStrikeHeld = false;       /* the pending strike waits for the pitch to settle */
 static bool              gKepOn      = false;
 static float             gKepRadius  = 0.f;
 static constexpr uint32_t kCpuHz     = 480000000u;
@@ -758,18 +759,35 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
                trigger has been seen in the last two seconds, in which case
                the trigger owns the strikes. 10 ms between, as Rings has */
             static float    lastNote = 0.f;
-            static uint32_t sinceTrig = 0xFFFFFFu, sinceStrum = 0xFFFFu;
+            static uint32_t sinceTrig = 0xFFFFFFu, sinceStrum = 0xFFFFu, stable = 0u, held = 0u;
             const float note = Engine::NoteOf(f0);
             if(sinceTrig < 0xFFFFFFu) sinceTrig++;
             if(sinceStrum < 0xFFFFu) sinceStrum++;
             if(gStrike >= 0 && gStrikeFromJack) sinceTrig = 0u;
-            if(std::fabs(note - lastNote) > 0.4f && sinceTrig > 4000u && sinceStrum > 20u && gStrike < 0)
+            const bool jumped = std::fabs(note - lastNote) > 0.4f;
+            if(jumped && sinceTrig > 4000u && sinceStrum > 20u && gStrike < 0)
             { gStrike = (int16_t)(255.f * (c[1] < 0.f ? 0.f : c[1] > 1.f ? 1.f : c[1])); sinceStrum = 0u; }
+            /* Rings' note filter, the part of it this needs: a strike waits
+               for the pitch to settle. The CV input is a one-pole that
+               takes about 7 ms to a step, so a sequencer's trigger — or
+               the jump rule above, which fires on the first block of the
+               step — found the pitch a tenth of the way there: the attack
+               played at the wrong note and the ring slid up after it,
+               "drunk, sliding into position at the last second". Two blocks
+               within two cents, or 12 ms, whichever comes first */
+            stable = std::fabs(note - lastNote) <= 0.02f ? stable + 1u : 0u;
+            if(gStrike >= 0)
+            {
+                held++;
+                if(stable < 2u && held < 24u) gStrikeHeld = true; else gStrikeHeld = false;
+            }
+            else { held = 0u; gStrikeHeld = false; }
             lastNote = note;
         }
+        else gStrikeHeld = false;
     }
     /* after SetF0: a strike retunes the bank to the pitch it is struck at */
-    if(gStrike >= 0) { gEng.Strike((float)gStrike / 255.0f); gStrike = -1; gStrikeFromJack = false; }
+    if(gStrike >= 0 && !gStrikeHeld) { gEng.Strike((float)gStrike / 255.0f); gStrike = -1; gStrikeFromJack = false; }
     /* Rings' external exciter: J1's audio driven into the resonate world's
        bank, the amount on the Stereo page's sixth pot, which under a
        resonator has no CV out A to be the depth of (J4 is the trigger).

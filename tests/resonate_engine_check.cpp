@@ -230,13 +230,16 @@ int main()
             { double re = 0, im = 0; for(int i = 0; i < n; i++) { const double ph = 6.2831853 * f * i / 48000.0; re += y[i] * std::cos(ph); im -= y[i] * std::sin(ph); } best = std::fmax(best, std::sqrt(re * re + im * im) / n); }
             return 20 * std::log10(best + 1e-12);
         };
+        /* measured 0.5 to 0.7 s after the second strike: past the C3's
+           burst, which is the recording's first 390 ms and plays to its
+           end whatever the voice count (a cut burst was a click) */
         auto two = [&](int poly) {
             Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetPolyphony(poly);
             e.SetF0(130.81f); e.Strike(0.7f);
             std::vector<float> a; Run(e, a, 50);
             e.SetF0(196.f); e.Strike(0.7f);
-            std::vector<float> b; Run(e, b, 200);
-            std::vector<float> tail(b.begin() + 4800, b.end());
+            std::vector<float> b; Run(e, b, 700);
+            std::vector<float> tail(b.begin() + 24000, b.begin() + 33600);
             return std::make_pair(level_at(tail, 130.81f), level_at(tail, 196.f));
         };
         const auto p2 = two(2), p1 = two(1);
