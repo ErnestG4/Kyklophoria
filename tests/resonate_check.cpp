@@ -243,6 +243,44 @@ int main()
         printf("  wurli: 11 points struck, midpoint slot 0 %.2f Hz between %.2f and %.2f\n", got, ha[0], hb[0]);
     }
 
+    /* the burst player: a stored attack read at a rate, and filtered. A
+       synthetic burst block — one burst at swing 1, a 1 kHz sine of 480
+       samples — played at rate 2 is a 2 kHz sine of 240; played through
+       the velocity low-pass at a 1 kHz corner it is 3 dB down and at 13
+       kHz it is not. And the world sets the rate: a note a fifth above a
+       point reads that point's burst at 2^(7/12). */
+    {
+        std::vector<uint8_t> blk(2 + 10 + 2 * 480);
+        uint16_t nb = 1, len = 480; float sw = 1.f, sc = 1.f;
+        std::memcpy(&blk[0], &nb, 2); std::memcpy(&blk[2], &sw, 4); std::memcpy(&blk[6], &sc, 4); std::memcpy(&blk[10], &len, 2);
+        for(int i = 0; i < 480; i++) { int16_t v = (int16_t)std::lround(32767.0 * 0.5 * std::sin(6.2831853 * 1000.0 * i / 48000.0)); std::memcpy(&blk[12 + 2 * i], &v, 2); }
+        auto freq_of = [&](float rate, float lp, int& played) {
+            BurstPlayer b; b.Init(); b.Strike(blk.data(), 1.f, rate, lp);
+            std::vector<float> y(960, 0.f); b.Process(y.data(), 960);
+            played = 0; for(int i = 0; i < 960; i++) if(y[i] != 0.f) played = i + 1;
+            int zc = 0; for(int i = 1; i < played; i++) if((y[i - 1] < 0.f) != (y[i] < 0.f)) zc++;
+            double e = 0; for(int i = 0; i < played; i++) e += y[i] * y[i];
+            return std::make_pair(zc * 48000.0 / (2.0 * played), e);
+        };
+        int n1, n2, n3;
+        auto r1 = freq_of(1.f, 0.f, n1), r2 = freq_of(2.f, 0.f, n2);
+        /* zero crossings count a half-cycle short at the edges: within 6% */
+        CHECK(std::fabs(r1.first / 1000.0 - 1) < 0.06 && n1 == 479, "at rate 1: %.0f Hz over %d samples", r1.first, n1);
+        CHECK(std::fabs(r2.first / 2000.0 - 1) < 0.06 && n2 >= 238 && n2 <= 240, "at rate 2: %.0f Hz over %d samples (a 2 kHz sine of 240)", r2.first, n2);
+        const float lp1k = 1.f - std::exp(-6.2831853f * 1000.f / 48000.f), lp13k = 1.f - std::exp(-6.2831853f * 13000.f / 48000.f);
+        auto r3 = freq_of(1.f, lp1k, n3); auto r4 = freq_of(1.f, lp13k, n3);
+        const double d1 = 10 * std::log10(r3.second / r1.second), d13 = 10 * std::log10(r4.second / r1.second);
+        CHECK(d1 < -2.0 && d1 > -5.0, "a 1 kHz sine through the 1 kHz corner: %.1f dB (expected about -3)", d1);
+        CHECK(d13 > -0.5, "through the 13 kHz corner: %.1f dB (expected about 0)", d13);
+        auto wb = slurp("tests/data/wurli.kykm");
+        ResonatorWorld w; w.Init(); w.Attach(wb.data(), (uint32_t)wb.size());
+        /* three semitones above point 0 (C2): nearer to it than to point 1
+           (G2), so its burst, read at 2^(3/12) */
+        ResonatorVoice v; v.Init(); w.At(w.Param(0) + 3.f, v, 48000.f);
+        CHECK(std::fabs(v.burst_rate - std::exp2(3.f / 12.f)) < 1e-4, "three semitones above point 0 reads its burst at rate %.4f, expected %.4f", v.burst_rate, std::exp2(3.f / 12.f));
+        printf("  burst: rate 1 %.0f Hz / %d samples, rate 2 %.0f Hz / %d; the 1 kHz corner %.1f dB, the 13 kHz corner %.1f dB; three semitones up reads at %.3f\n", r1.first, n1, r2.first, n2, d1, d13, v.burst_rate);
+    }
+
     printf(fails ? "resonate_check: %d FAILED\n" : "resonate_check: ok\n", fails);
     return fails ? 1 : 0;
 }
