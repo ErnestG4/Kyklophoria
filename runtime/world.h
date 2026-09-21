@@ -138,10 +138,12 @@ struct World
         {
             /* the pickup retunes without a click: its filter state and its
                last flux stay, only the field and the coil move */
-            const float prev = v.pickup.prev, z1 = v.pickup.z1, z2 = v.pickup.z2;
+            const float prev = v.pickup.prev, rest = v.pickup.rest, z1 = v.pickup.z1, z2 = v.pickup.z2;
             if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
             else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);
-            v.pickup.prev = prev; v.pickup.z1 = z1; v.pickup.z2 = z2;
+            /* the last flux kept as its distance from rest: the pole moved,
+               so rest did, and carrying the value put a step through d/dt */
+            v.pickup.prev = prev - rest + v.pickup.rest; v.pickup.z1 = z1; v.pickup.z2 = z2;
         }
         else if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
         else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);

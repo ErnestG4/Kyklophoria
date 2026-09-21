@@ -160,7 +160,7 @@ struct Pickup
     bool  on = false, gap = false;
     float h = 0.0f, inv_w = 1.0f, K = 1.0f;
     float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;   /* the coil */
-    float prev = 0.0f, z1 = 0.0f, z2 = 0.0f;
+    float prev = 0.0f, rest = 0.0f, z1 = 0.0f, z2 = 0.0f;   /* the last flux, and the flux at rest for this pole */
 
     /* the electrostatic plate: C = C0 / (1 - u/g), the reed short of the
        plate through a tanh, as the fit had it */
@@ -168,7 +168,7 @@ struct Pickup
     {
         Set(0.0f, g_, K_, fc, Q, sr);
         gap = true;
-        prev = 1.0f;
+        rest = prev = 1.0f;
     }
 
     void Set(float h_, float w_, float K_, float fc, float Q, float sr)
@@ -180,7 +180,7 @@ struct Pickup
         b0 = (1.0f - cw) * 0.5f / a0; b1 = (1.0f - cw) / a0; b2 = b0;
         a1 = -2.0f * cw / a0; a2 = (1.0f - alpha) / a0;
         const float u0 = (0.0f - h) * inv_w;
-        prev = 1.0f / (1.0f + u0 * u0);            /* the field at rest: no click at power-on */
+        rest = prev = 1.0f / (1.0f + u0 * u0);     /* the field at rest: no click at power-on */
         z1 = z2 = 0.0f;
     }
 
