@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes planeAxes plane inspect strip tabPlay tabBuild tabLib playMain buildMain libMain slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
+const IDS = 'axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; } };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -1179,6 +1179,71 @@ const parsed = P.parsePanel(DESC);
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} descriptor pager block parses (found ${
     parsed ? parsed.pages + ' pages x ' + parsed.pots + ' pots' : 'nothing'}, gap at Couple P6 kept null)`);
 }
+
+/* ── the model tab: a resonator's hands ─────────────────────────────────
+ * The chips are built from what the module says (0x6F) and what the page
+ * holds; each plane is checked for the control it should offer on each kind
+ * of world, and for greying where the module's pots own it. */
+{
+  console.log('== the model tab');
+  const tick = () => new Promise(r => setImmediate(r));
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  const sent = [];
+  P.setLink({ kind: 'bridge', request: async (cmd, body) => { sent.push([cmd, [...body]]); return new Uint8Array([0]); } });
+  P.setPanel(null);
+  const fam = { kind: 0, lo: 55, hi: 93, param: 62.0, P: 25, burst: 3360, points: [55, 58, 62, 67], modes: [{ hz: 293.7, zeta: 0.001, gain: 0.5 }],
+                members: ['violin', 'viola', 'bass'], member: 1, name: 'viola', voices: 2, lock: false };
+  P.setSlots({ count: 32, live: 3, target: 0xFF, names: Array.from({ length: 32 }, (_, i) => (i === 3 ? 'strings' : i === 7 ? 'wurli' : null)) });
+  P.setCardList({ count: 3, names: ['a.kykw', 'pianos.kykm', 'perc.kykm'] });
+  P.setTel(tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4, f0: 130.8 }));
+  P.setReso(fam);
+  P.setView('model');
+  P.renderModelChips();
+  T(els.instChips.children.filter(c => c.tagName === 'button').length === 2, 'the instruments are the slots with something in them (2)');
+  T(els.instChips.children[0].className.includes('on'), 'and the live one is lit');
+  T(els.modelCardSel.children.length === 2 && !/kykw/.test(els.modelCardSel.children[0].textContent), 'the card list is the resonators alone (2)');
+  T(els.lockChips.children.length === 2 && els.lockChips.children[1].className.includes('on'), 'the lock chips follow the readout: free');
+  T(P.getPoly() === 2, 'and so does the voice count (2)');
+  T(els.voiceChips.children.filter(c => c.tagName === 'button')[1].className.includes('on'), 'with its chip lit');
+  T(els.strikeChips.children.filter(c => c.tagName === 'button').length === 4, 'four strike pads: soft, mid, hard and the slider\'s');
+  T(els.bodyChips.children.length === 3 && els.bodyChips.children[1].className.includes('on'), 'a family\'s body is its members, the one playing lit');
+  T(!els.bodyChips.children[0].disabled, 'and over the bridge they can be pressed');
+  T(els.ringChips.children.filter(c => c.tagName === 'input').length === 2, 'the ring is decay and coil');
+  T(/C3.*built at D4.*follows the cent/.test(P.pitchNoteText()), `the pitch line: ${P.pitchNoteText()}`);
+  /* the pads send strikes; the lock chip sends the action */
+  sent.length = 0;
+  els.strikeChips.children.filter(c => c.tagName === 'button')[2].onclick();
+  await tick();
+  T(sent.length === 1 && sent[0][1][0] === 17 && sent[0][1][1] === 230, `hard strikes at 230 (${JSON.stringify(sent[0])})`);
+  sent.length = 0;
+  els.lockChips.children[0].onclick();
+  await tick();
+  T(sent.length === 1 && sent[0][1][0] === 20 && sent[0][1][1] === 1, `locked sends op 20, 1 (${JSON.stringify(sent[0])})`);
+  T(P.getLock() === true, 'and the page records it');
+  /* a note world: the body is the voicing slider; an index world: the row */
+  P.setReso({ ...fam, members: [], name: 'wurli' }); P.renderModelChips();
+  T(els.bodyChips.children.filter(c => c.tagName === 'input').length === 1 && /voicing/.test(els.bodyChips.children[0].textContent), 'a note world\'s body is the voicing');
+  P.setReso({ ...fam, kind: 1, lo: 0, hi: 18, param: 4, P: 19, members: [], name: 'perc' }); P.renderModelChips();
+  T(/body 0\.\.18/.test(els.bodyChips.children[0].textContent), 'an index world\'s body is the row');
+  /* the module owns the spin: the sliders and the members grey, the pads do not */
+  P.setPanel(parsed); P.setReso(fam); P.renderModelChips();
+  T(els.bodyChips.children.every(c => c.disabled), 'on the module the members are its pot\'s');
+  T(els.ringChips.children.filter(c => c.tagName === 'input').every(c => c.disabled), 'and so are decay and coil');
+  T(els.strikeChips.children.filter(c => c.tagName === 'button').every(c => !c.disabled), 'while the pads still strike');
+  T(/Model page/.test(els.modelHint.textContent), 'and the hint names the Model page');
+  /* the axis is a pad: a press strikes, and over the bridge sets the pitch first */
+  P.setPanel(null); sent.length = 0;
+  P.pressAxis({ clientX: 150, clientY: 20 });
+  await tick();
+  T(sent.some(([c, b]) => b[0] === 17) , 'a press on the axis strikes');
+  /* no resonator: everything but the instruments stands down */
+  P.setTel(tel({ n: 4, world: 0 })); P.setReso(null); P.renderModelChips();
+  T(els.lockChips.children.every(c => c.disabled) && /no resonator/.test(els.modelHint.textContent), 'with a wavetable playing the planes stand down and the hint says why');
+  P.drawModel();
+  P.setView('play'); P.setLink(null); P.setPanel(null); P.setTel(null);
+}
+console.log('');
+
 console.log('');
 
 /* The page's idea of the render has to be the module's idea of it.
@@ -1392,6 +1457,8 @@ for (const [name, t, r] of CASES) {
     for (const pg of [0, 1, 4, 5, 99]) { P.setTel(t ? { ...t, page: pg } : t); P.drawSound(); }
     P.setTel(t);
     P.frame();
+    /* and the model tab, which draws the same readout on panes of its own */
+    P.setView('model'); P.drawModel(); P.renderModelChips(); P.setView('play');
     console.log(`  ok    ${name}`);
   } catch (e) {
     bad++;
