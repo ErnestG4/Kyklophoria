@@ -590,7 +590,7 @@ async function connect(transport) {
   say('');
   /* the resonator's knobs as last sent belong to the module that was
      answering; a fresh module is at its fitted centre and one voice */
-  reso = null; poly = 1; lock = true; tune[0] = tune[1] = tune[2] = 128; lastStrikeN = -1;
+  reso = null; poly = 1; lock = true; lastStrikeN = -1;
   renderModelChips();
   polling = true; pollTelemetry(); pollStats(); pollResonate();
 }
@@ -648,7 +648,7 @@ function describeSpace() {
   const wn = w ? w.name : '—';
   $('sSpace').textContent = space
     ? `${wn} · ${space.side}^${space.n} K=${space.k} P=${space.p} ${space.topo.join('/')}`
-    : (tel && tel.n === 1 ? `${wn} · resonator`
+    : (tel && tel.resonate ? `${wn} · resonator · body / velocity / decay / coil`
        : tel ? `${wn} · analytic N=${tel.n} K=${tel.k} P=${tel.p}` : wn);
 }
 async function refreshWorlds() {
@@ -1398,7 +1398,6 @@ function renderMuteChips() {
  * the Model page's pots own body, decay and coil, read every block, so a
  * slider sent from here would be overwritten at the next one: those are
  * greyed there and live over the bridge, where they are the only hand. */
-const tune = [128, 128, 128];    /* the spin as last sent; the fitted world is 128 */
 let poly = 1, lock = true;       /* voices and the pitch lock, as last sent or read */
 let vel = 200;                   /* the strike pad's velocity, 0..255 */
 const moduleOwns = () => !!(panel && panel.pots);
@@ -1414,35 +1413,28 @@ async function act(op, args, what) {
   catch (e) { say(what + ': ' + e.message, true); return false; }
 }
 const strikeAt = v => act(MVL.ACT.strike, [Math.max(0, Math.min(255, v | 0))], 'strike');
-/* a slider that sends on input and goes back to its centre on a double
-   click; greyed where the module's pots own it */
-function spinSlider(i, label, title) {
-  const lab = dimText(label, '0 0 0 6px');
-  const r = document.createElement('input');
-  r.type = 'range'; r.min = 0; r.max = 255; r.value = tune[i]; r.title = title;
-  const owned = moduleOwns();
-  r.disabled = !link || owned;
-  if (owned) r.title = title + ' — the Model page\'s pot owns this on the module';
-  const send = () => { tune[i] = r.value | 0; act(MVL.ACT.tune, [i, tune[i]], 'tune'); };
-  r.oninput = send;
-  r.ondblclick = () => { r.value = 128; send(); };
-  return [lab, r];
-}
-/* a position axis over the bridge, which has no pots: 0x6E SET_CONTROL */
+/* one of the resonator's axes — body 0, velocity 1, decay 2, coil 3 — as
+   a slider: the axis is a position like any world's, so on the module the
+   Play page pot and its CV own it (the slider only shows where it is) and
+   over the bridge the slider is the hand (0x6E SET_CONTROL). A double
+   click puts it back to the centre, which is the world as fitted. */
+const axisSliders = {};
 function positionSlider(a, label, title, steps) {
   const lab = dimText(label, '0 0 0 6px');
   const r = document.createElement('input');
   r.type = 'range'; r.min = 0; r.max = 1000; r.step = steps ? Math.round(1000 / steps) : 1; r.title = title;
-  r.value = Math.round(1000 * (tel && tel.ctl ? tel.ctl[a] : 0.5));
+  r.value = Math.round(1000 * (tel && tel.ctl && a < tel.ctl.length ? tel.ctl[a] : 0.5));
   const owned = moduleOwns();
   r.disabled = !link || owned || (link && link.kind !== 'bridge');
-  if (owned) r.title = title + ' — the Model page\'s pot and J5 own this on the module';
+  if (owned) r.title = title + ` — Play page P${a + 3} and J${a + 5} own this on the module`;
   r.oninput = () => { ctl.c[a] = r.value / 1000; sendControl(); };
+  r.ondblclick = () => { r.value = 500; ctl.c[a] = 0.5; sendControl(); };
+  axisSliders[a] = r;
   return [lab, r];
 }
 let modelSig = '', readSig = '';
 function renderModelChips() {
-  const r = reso, live = !!(tel && tel.n === 1);
+  const r = reso, live = !!(tel && tel.resonate);
   /* what the module says, when it says something new: a pot on the module
      or a button moves these too, and the readout is how the page hears of
      it. Taken only when the readout changes, so the page's own record of
@@ -1493,7 +1485,7 @@ function renderModelChips() {
       const b = chip(label, false, `strike at ${(v / 255).toFixed(2)}`, () => strikeAt(v)); b.classList.add('pad'); b.disabled = !link || !live; box.appendChild(b);
     }
     const lab = dimText('velocity', '0 0 0 8px');
-    const s = document.createElement('input'); s.type = 'range'; s.min = 0; s.max = 255; s.value = vel; s.title = 'the pad\'s velocity; on the module the Model page\'s second pot and J6';
+    const s = document.createElement('input'); s.type = 'range'; s.min = 0; s.max = 255; s.value = vel; s.title = 'the pad\'s velocity; on the module J4\'s trigger strikes at axis 1 (Play page P4 and J6)';
     s.oninput = () => { vel = s.value | 0; };
     const pad = chip('strike', false, 'strike at the slider', () => strikeAt(vel)); pad.classList.add('pad'); pad.disabled = !link || !live;
     box.appendChild(lab); box.appendChild(s); box.appendChild(pad);
@@ -1510,14 +1502,14 @@ function renderModelChips() {
         box.appendChild(b);
       }
     }
-    else if (r.kind === 1) { for (const e of positionSlider(0, `body 0..${r.P - 1}`, 'which body of the row, position 0', r.P - 1)) box.appendChild(e); }
-    else { for (const e of spinSlider(0, 'voicing', 'the pickup pole off its fitted centre, ±2 widths')) box.appendChild(e); }
+    else if (r.kind === 1) { for (const e of positionSlider(0, `body 0..${r.P - 1}`, 'which body of the row: axis 0', r.P - 1)) box.appendChild(e); }
+    else { for (const e of positionSlider(0, 'voicing', 'the pickup pole off its fitted centre, ±2 widths: axis 0')) box.appendChild(e); }
   }
-  /* ring: decay and coil */
+  /* ring: decay and coil, axes 2 and 3 */
   {
     const box = $('ringChips'); box.innerHTML = '';
-    for (const e of spinSlider(1, 'decay', 'every mode\'s T60, ×¼ to ×4')) box.appendChild(e);
-    for (const e of spinSlider(2, 'coil', 'the coil resonance, ×½ to ×2')) box.appendChild(e);
+    for (const e of positionSlider(2, 'decay', 'every mode\'s T60, ×¼ to ×4: axis 2')) box.appendChild(e);
+    for (const e of positionSlider(3, 'coil', 'the coil resonance, ×½ to ×2: axis 3')) box.appendChild(e);
     for (const e of box.children) if (e.tagName === 'INPUT') e.disabled = e.disabled || !live;
   }
   /* voices, the way Rings does it */
@@ -1527,20 +1519,20 @@ function renderModelChips() {
       const b = chip(String(n), poly === n, `${n} voice${n > 1 ? 's' : ''}: a strike takes the next, the ones before ring on`, async () => { if (await act(MVL.ACT.polyphony, [n], 'voices')) { poly = n; renderModelChips(); } });
       b.disabled = !link || !live; box.appendChild(b);
     }
-    if (moduleOwns()) $('voiceChips').appendChild(dimText('· the Model page\'s fifth pot too'));
+    if (moduleOwns()) $('voiceChips').appendChild(dimText('· the World page\'s third pot too'));
   }
   $('exciterNote').textContent = moduleOwns()
-    ? 'J1\'s audio driven into the bank, as much as the Model page\'s sixth pot says — the world as a filter bank for whatever is patched in'
-    : 'on the module: J1 in, the Model page\'s sixth pot';
+    ? 'J1\'s audio driven into the bank, as much as the Stereo page\'s sixth pot says — the world as a filter bank for whatever is patched in'
+    : 'on the module: J1 in, the Stereo page\'s sixth pot';
   $('modelHint').textContent = !link ? 'connect to a module or the bridge'
     : !live ? 'no resonator is playing — pick one above, or load a .kykm from the card'
-    : moduleOwns() ? 'Model page  P1 body · P2 velocity · P3 decay · P4 coil · P5 voices · P6 exciter  ·  B2 taps a strike, B3 flips the lock  ·  J3 v/oct · J4 trigger · J5–J8 CV into the first four'
-    : 'over the bridge the pitch is the drawer\'s f0 or a press on the axis';
+    : moduleOwns() ? 'the same hands as a wavetable: Play P3–P6 and J5–J8 are body · velocity · decay · coil, and every motion moves them  ·  J4 trigger, B2 taps a strike, B3 flips the lock  ·  World P3 voices · Stereo P6 exciter'
+    : 'over the bridge the pitch is the drawer\'s f0 or a press on the axis; the axes are the drawer\'s too';
 }
 let lastStrikeN = -1;
 function pitchNoteText() {
   const r = reso;
-  if (!tel || tel.n !== 1) return '';
+  if (!tel || !tel.resonate) return '';
   const here = `${MVL.noteName(tel.f0)} · ${tel.f0.toFixed(1)} Hz`;
   if (!r || r.kind !== 0) return here;
   const built = r.param < 1e8 ? MVL.noteName(440 * Math.pow(2, (r.param - 69) / 12)) : '—';
@@ -1550,7 +1542,7 @@ function pitchNoteText() {
 /* the axis is a pad: a press strikes at the velocity the height says, and
    over the bridge first puts the pitch where the press is on the axis */
 function pressAxis(e) {
-  if (!link || !tel || tel.n !== 1 || !reso) return;
+  if (!link || !tel || !tel.resonate || !reso) return;
   const rect = ma.getBoundingClientRect();
   const x = e.clientX - rect.left, y = e.clientY - rect.top;
   const v = Math.round(255 * (1 - Math.min(1, Math.max(0, (y - 10) / Math.max(1, rect.height - 20)))));
@@ -1745,7 +1737,7 @@ async function pollTelemetry() {
 let reso = null;
 async function pollResonate() {
   while (polling && link) {
-    if (tel && tel.n === 1) {
+    if (tel && tel.resonate) {
       try { reso = await MVL.fetchResonate(link); } catch { reso = null; }
     } else reso = null;
     await new Promise(r => setTimeout(r, 125));
@@ -1914,6 +1906,7 @@ function buildAxisButtons() {
     const box = $(id); box.innerHTML = '';
     for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
       const btn = document.createElement('button'); btn.textContent = a + '×' + b;
+      if (tel && tel.resonate) btn.title = axisName(a) + ' × ' + axisName(b);
       btn.classList.toggle('on', axes[0] === a && axes[1] === b);
       btn.onclick = () => { axes = [a, b]; trail.n = 0; trail.head = 0; trail.at = -1; buildAxisButtons(); };
       box.appendChild(btn);
@@ -2284,10 +2277,17 @@ function drawResonateSpace(W, H, cx) {   /* cx: the pane it draws on, the play t
   cx.lineWidth = 1;
 }
 
+/* what an axis is called: a resonator's four have names, a wavetable's are
+   numbered (its own world decides what they mean) */
+const RESO_AXES = ['body', 'velocity', 'decay', 'coil'];
+const axisName = a => (tel && tel.resonate && RESO_AXES[a]) ? RESO_AXES[a] : 'axis ' + a;
 function drawSpace() {
   const { w: W, h: H } = boxOf(cs);
   fit(cs);
-  if (tel && tel.n === 1) { drawResonateSpace(W, H, cx); return; }
+  /* a resonator is a four-axis world here like any other — body,
+     velocity, decay, coil, under the same pots, CVs and motions — so the
+     play tab draws it the same way; its note axis and modes are the model
+     tab's */
   const n = tel ? tel.n : (space ? space.n : 4), side = space ? space.side : 4, planes = MVL.planeCount(n);
   const arcRow = 34, m = 30;
   const S = Math.max(40, Math.min(W - 2 * m, H - 2 * m - arcRow));
@@ -2328,8 +2328,8 @@ function drawSpace() {
     cx.fillStyle = basis ? '#8b98a6' : '#6b819d'; cx.fillText(text, 0, 0);
     cx.lineWidth = 1; cx.restore();
   };
-  axLabel('axis ' + ax, ox + S - 44, oy + S - 6, false);
-  axLabel('axis ' + ay, ox + 13, oy + 52, true);
+  axLabel(axisName(ax), ox + S - 44, oy + S - 6, false);
+  axLabel(axisName(ay), ox + 13, oy + 52, true);
   /* Now that the ramp is absolute, a slice with nothing in it paints one
      colour — which is correct, and indistinguishable from a slice that failed
      to build. So name it. */
@@ -3701,6 +3701,8 @@ function drawModel() {
   { const { w: W, h: H } = boxOf(ma); fit(ma); drawResonateSpace(W, H, max); }
   { const { w: W, h: H } = boxOf(mm); fit(mm); drawModes(mmx, 30, 26, W - 60, H - 26); }
   setText('pitchNote', pitchNoteText());
+  /* the axes under the module's pots: the sliders show where they are */
+  if (tel && tel.ctl && moduleOwns()) for (const a in axisSliders) { const s = axisSliders[a]; if (s.disabled && a < tel.ctl.length) s.value = Math.round(1000 * tel.ctl[a]); }
   /* what the module says about the voices and the lock, and which member
      it plays, can change under a pot: the chips follow */
   const r = reso;
@@ -3720,7 +3722,7 @@ function drawSound() {
   const specCap = stripY + 34;                                  /* "spectrum" caption baseline */
   const specTop = specCap + 8, base = H - m - 12 - panelH, h = Math.max(20, base - specTop);
   cnx.font = font;
-  if (tel && tel.n === 1) {
+  if (tel && tel.resonate) {
     /* a resonator: its modes, not a frame. The panel mirror keeps its
        place below. */
     drawModes(cnx, m, 26, W - 2 * m, base - 4);
@@ -3926,7 +3928,10 @@ function drawStatus() {
   setText('sF0', tel.f0.toFixed(1) + ' Hz ' + MVL.noteName(tel.f0));
   setText('sKcut', tel.kcut + '/' + tel.k);
   if (tel.mute !== lastMute) { lastMute = tel.mute; renderMuteChips(); }
-  if (tel.n !== lastStrikeN) { lastStrikeN = tel.n; renderModelChips(); setText('motionNote', tel.n === 1 ? 'a resonator is playing — its hands are on the model tab' : ''); }
+  {
+    const key = (tel.resonate ? 1000 : 0) + tel.n;
+    if (key !== lastStrikeN) { lastStrikeN = key; renderModelChips(); buildAxisButtons(); setText('motionNote', tel.resonate ? 'a resonator: body · velocity · decay · coil are its axes, struck from the model tab or J4' : ''); }
+  }
   /* What the Morph knob is actually doing. A knob whose effect is invisible is
      a knob nobody trusts, and this one does nothing at all unless a target is
      set — which is worth saying rather than leaving to be discovered. */
