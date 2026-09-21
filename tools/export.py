@@ -246,9 +246,9 @@ def monotonic(takes, rid):
     return fixed
 
 
-def headroom(pts, form, target=4.0):
-    """A world's loudest note at full velocity peaks at 4 through the
-    runtime's own model — modes with their phases through the pickup where
+def headroom(pts, form, target=3.0):
+    """A world's loudest note at full velocity peaks at 3 through the
+    runtime's own model (4 was tried and two notes overlapping railed) — modes with their phases through the pickup where
     there is one, plus the burst — which is where a wavetable cell's peaks
     sit (unit RMS, a crest of up to 4.3), so that behind the engine's 0.23
     of output gain a resonator at full level peaks where the wavetable
@@ -387,6 +387,44 @@ def align(pts, kind, cap=48):
     return out
 
 
+def write_family(path, members):
+    """A family: one world that is a row of instruments that work the same
+    way, position 0 choosing among them and v/oct the note within each —
+    strings, pianos, the percussion row as it already is. Combust, after
+    the bench: "when you tried to model a bunch together they were mush
+    because we were trying to bridge paradigms. Keeping families together
+    by the way they work is key." A container, not a merge: each member is
+    a complete .kykm (its own form, bursts, wash, points) and the runtime
+    plays the chosen one; a morph between two instruments is not a lerp of
+    their slots, which the holistic pass measured as mush.
+
+        'KYKM' u16 version=6  u16 N (the widest member)  u16 P=0  u8 form=0  u8 kind=2
+        f32 lo=0  f32 hi=M-1
+        u8 M, then M x (u32 offset from the file's start, u32 size, char[16] name)
+        the members' bytes, each a whole .kykm, 4-aligned
+    """
+    blobs = []
+    for name, f in members:
+        b = open(f, 'rb').read()
+        assert b[:4] == b'KYKM', f
+        blobs.append((name[:15], b))
+    N = max(struct.unpack_from('<H', b, 6)[0] for _, b in blobs)
+    head = b'KYKM' + struct.pack('<HHHBB', 6, N, 0, 0, 2) + struct.pack('<ff', 0.0, float(len(blobs) - 1))
+    table_at = len(head) + 1
+    off = table_at + 24 * len(blobs)
+    off = (off + 3) & ~3
+    table = b''
+    body = b''
+    for name, b in blobs:
+        table += struct.pack('<II16s', off + len(body), len(b), name.encode())
+        body += b + b'\0' * ((-len(b)) & 3)
+    out = head + struct.pack('<B', len(blobs)) + table
+    out += b'\0' * (off - len(out)) + body
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    open(path, 'wb').write(out)
+    print('%s: a family of %d — %s — %d bytes' % (path, len(blobs), ', '.join(n for n, _ in blobs), len(out)))
+
+
 def read_corpus(path):
     b = open(path, 'rb').read()
     assert b[:4] == b'MODB'
@@ -432,6 +470,9 @@ def main():
         if not pts:
             print('no family', fam); return 1
         write(sys.argv[4], N, pts)
+    elif kind == 'family':
+        # export.py family out/worlds/strings.kykm violin=out/worlds/violin.kykm viola=... 
+        write_family(sys.argv[2], [(a.split('=')[0], a.split('=')[1]) for a in sys.argv[3:]])
     elif kind in ('shaped', 'records'):
         d = sys.argv[2]
         pts, form, kind = [], 0, 0
