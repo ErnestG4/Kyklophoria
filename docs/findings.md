@@ -691,6 +691,16 @@ notes E1–G3 from the Philharmonia's single-note files (loss 1.1–1.8; the
 `phrase` files under the same articulation are runs of notes and are now
 skipped), as `bass.kykm`.
 
+*A grand piano.* Thirty-four notes E1–C8 from a sampler library with no
+note names (`tools/pitchman.py` pitched 32 of them; two were set by hand),
+at 50 kHz stereo, 1.3–6.5 s a note. Loss 0.4–0.9 across the keyboard,
+1.0–1.4 on the three lowest — the modes-plus-burst model with beat pairs
+and knees is what a piano string is, and the wash takes the sustain band
+error from 10.4 to 4.4 dB. The treble decays are the sampler's: an E6 at
+−45 dB in 0.2 s and a floor after, which the fit follows (T60s of 0.1–0.4
+s on the loud modes) and `decay_ratio` reads as ×22 against a measured
+tail that is floor. `piano.kykm`, 34 points.
+
 *An index is not a note.* The percussion world's parameter is a row of
 bodies, and the runtime had been asked to play it by pitch: a C4 on the
 module is midi 60, past the row's end, so every note was the last body.
