@@ -78,15 +78,26 @@ struct ResonatorBank
        and is then added into the main state, which a linear bank allows
        exactly. An impulse into the main bank was a click the fit never
        heard; a 3 ms pulse would starve the high modes */
-    float s1[kMax], s2[kMax];
-    float ramp_n, ramp_len, ramp_lead;
-    bool  ramping;
+    /* two of them: a strike inside the last one's burst window — the lead
+       is up to 300 ms on a piano's bass, 260 on a Wurlitzer C3 — takes the
+       second and both ramp in on their own clocks; a third folds the
+       older at the weight it is heard at. One strike bank meant the old
+       note's modes were dropped whenever the next note came fast */
+    static constexpr int kStrikes = 2;
+    float s1[kStrikes][kMax], s2[kStrikes][kMax];
+    float ramp_n[kStrikes], ramp_len[kStrikes], ramp_lead[kStrikes];
+    bool  ramping[kStrikes];
 
     void Init()
     {
         n = 0;
-        ramp_n = 0.f; ramp_len = 144.f; ramp_lead = 0.f; ramping = false;
-        for(int i = 0; i < kMax; i++) c1[i] = c2[i] = p1[i] = p2[i] = y1[i] = y2[i] = s1[i] = s2[i] = 0.f;
+        for(int q = 0; q < kStrikes; q++) { ramp_n[q] = 0.f; ramp_len[q] = 144.f; ramp_lead[q] = 0.f; ramping[q] = false; }
+        for(int i = 0; i < kMax; i++) { c1[i] = c2[i] = p1[i] = p2[i] = y1[i] = y2[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; }
+    }
+    bool Ringing() const
+    {
+        for(int i = 0; i < n; i++) { if(std::fabs(y1[i]) > 1e-7f) return true; for(int q = 0; q < kStrikes; q++) if(std::fabs(s1[q][i]) > 1e-7f) return true; }
+        return false;
     }
 
     /* modes: frequency, decay, amplitude, and the phase at the strike. A
@@ -121,8 +132,8 @@ struct ResonatorBank
                 float cw = c1[i] / (2.0f * r0); cw = cw > 1.0f ? 1.0f : cw < -1.0f ? -1.0f : cw;
                 const float w0 = std::acos(cw), sw0 = std::sin(w0) > 1e-6f ? std::sin(w0) : 1e-6f;
                 const float cwn = std::cos(w), swn = std::sin(w);
-                float* a[2] = {y1, s1}; float* b[2] = {y2, s2};
-                for(int q = 0; q < 2; q++)
+                float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
+                for(int q = 0; q < 1 + kStrikes; q++)
                 {
                     const float sp = a[q][i], cp = (a[q][i] * cw - b[q][i] * r0) / sw0;   /* A sin phi, A cos phi */
                     a[q][i] = sp;
@@ -133,14 +144,14 @@ struct ResonatorBank
             c2[i] = -r * r;
             p1[i] = gain[i] * std::sin(ph - w) / r;
             p2[i] = gain[i] * std::sin(ph - 2.0f * w) / (r * r);
-            if(!keep) y1[i] = y2[i] = s1[i] = s2[i] = 0.f;
+            if(!keep) { y1[i] = y2[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; }
         }
         /* the ramp is the strike's business (its length is the burst's
            fade): Set used to reset it to 3 ms on every call, so a retune
            under a playing burst — a glide starting 50 ms after a strike —
            snapped the strike bank from a third of its way in to full,
            a step the ear-check caught on four worlds */
-        if(!keep) { ramp_len = 0.003f * sr; ramp_lead = 0.f; ramping = false; }
+        if(!keep) for(int q = 0; q < kStrikes; q++) { ramp_len[q] = 0.003f * sr; ramp_lead[q] = 0.f; ramping[q] = false; }
     }
 
     /* the hammer: the strike bank set to the given swing at every mode's
@@ -154,18 +165,32 @@ struct ResonatorBank
        the seam; the ramp only scales what is heard */
     void Strike(float swing, float lead = 0.f, float ramp = 0.f)
     {
-        if(ramping) Fold();
-        for(int i = 0; i < n; i++) { s1[i] = swing * p1[i]; s2[i] = swing * p2[i]; }
-        ramp_n = 0.f;
-        ramp_lead = lead;
-        if(ramp > 0.f) ramp_len = ramp;
-        ramping = true;
+        int q = -1;
+        for(int k = 0; k < kStrikes; k++) if(!ramping[k]) { q = k; break; }
+        if(q < 0)
+        {
+            /* both busy: fold the one further along */
+            q = ramp_n[0] - ramp_lead[0] >= ramp_n[1] - ramp_lead[1] ? 0 : 1;
+            Fold(q);
+        }
+        for(int i = 0; i < n; i++) { s1[q][i] = swing * p1[i]; s2[q][i] = swing * p2[i]; }
+        ramp_n[q] = 0.f;
+        ramp_lead[q] = lead;
+        if(ramp > 0.f) ramp_len[q] = ramp;
+        ramping[q] = true;
     }
 
-    void Fold()
+    /* the strike bank folded into the main state at the weight it is
+       heard at now. It folded at full: a strike inside the last one's
+       burst window — the lead is up to 300 ms on a piano's bass — took a
+       bank that was inaudible under the burst to full in one sample, a
+       pop on every fast note that the old 3 ms ramp never showed */
+    void Fold(int q)
     {
-        for(int i = 0; i < n; i++) { y1[i] += s1[i]; y2[i] += s2[i]; s1[i] = s2[i] = 0.f; }
-        ramping = false;
+        const float u = ramp_n[q] - ramp_lead[q];
+        const float w = u <= 0.f ? 0.f : u >= ramp_len[q] ? 1.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len[q]);
+        for(int i = 0; i < n; i++) { y1[i] += w * s1[q][i]; y2[i] += w * s2[q][i]; s1[q][i] = s2[q][i] = 0.f; }
+        ramping[q] = false;
     }
 
     /* the displacement, summed over the modes, into out (overwrite) */
@@ -185,9 +210,9 @@ struct ResonatorBank
         while(frames > 0)
         {
             int m = frames < 64 ? frames : 64;
-            if(ramping)
+            for(int q = 0; q < kStrikes; q++) if(ramping[q])
             {
-                const int left = (int)(ramp_lead + ramp_len - ramp_n);
+                const int left = (int)(ramp_lead[q] + ramp_len[q] - ramp_n[q]);
                 if(left > 0 && left < m) m = left;
             }
             for(int k = 0; k < m; k++) out[k] = 0.f;
@@ -219,28 +244,28 @@ struct ResonatorBank
                 }
                 y1[i] = u1; y2[i] = u2;
             }
-            if(ramping)
+            for(int q = 0; q < kStrikes; q++) if(ramping[q])
             {
                 float w[64];
                 for(int k = 0; k < m; k++)
                 {
-                    const float u = ramp_n + (float)k - ramp_lead;
-                    w[k] = u <= 0.f ? 0.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len);
+                    const float u = ramp_n[q] + (float)k - ramp_lead[q];
+                    w[k] = u <= 0.f ? 0.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len[q]);
                 }
                 for(int i = 0; i < n; i++)
                 {
                     const float a = c1[i], b = c2[i];
-                    float u1 = s1[i], u2 = s2[i];
+                    float u1 = s1[q][i], u2 = s2[q][i];
                     for(int k = 0; k < m; k++)
                     {
                         const float y = a * u1 + b * u2;
                         u2 = u1; u1 = y;
                         out[k] += w[k] * y;
                     }
-                    s1[i] = u1; s2[i] = u2;
+                    s1[q][i] = u1; s2[q][i] = u2;
                 }
-                ramp_n += (float)m;
-                if(ramp_n >= ramp_lead + ramp_len) Fold();
+                ramp_n[q] += (float)m;
+                if(ramp_n[q] >= ramp_lead[q] + ramp_len[q]) Fold(q);
             }
             out += m; frames -= m;
         }
@@ -354,8 +379,12 @@ struct Pickup
  * gain. */
 struct BurstPlayer
 {
+    /* four slots: two for this strike's crossfade, two for the last
+       strike's, which play to their end rather than being cut — a cut
+       burst was a click on every fast note */
+    static constexpr int kSlots = 4;
     struct Slot { const int16_t* s; uint32_t n; float pos, rate, gain, lp, z; };
-    Slot slot[2];
+    Slot slot[kSlots];
     int  active;
 
     void Init() { active = 0; for(auto& q : slot) { q.s = nullptr; q.n = 0; q.pos = q.rate = q.gain = q.lp = q.z = 0.f; } }
@@ -371,37 +400,48 @@ struct BurstPlayer
        commute) */
     void Strike(const uint8_t* block, float swing, float rate = 1.0f, float lp = 0.0f, uint32_t head = 10u)
     {
+        /* what is still playing from the last strike plays to its end —
+           the two most recent slots — rather than being cut, which was a
+           click on every fast note */
+        Slot old[2]; int keep = 0;
+        for(int a = 0; a < active && keep < 2; a++)
+            if(slot[a].s && slot[a].pos + 1.f < (float)slot[a].n) old[keep++] = slot[a];
         active = 0;
-        if(!block) return;
-        uint16_t nb; std::memcpy(&nb, block, 2);
-        const uint8_t* q = block + 2;
-        /* find the two bursts bracketing the swing (bursts are in ascending swing) */
-        const uint8_t* lo = nullptr; const uint8_t* hi = nullptr;
-        float slo = 0.f, shi = 0.f;
-        for(uint16_t i = 0; i < nb; i++)
+        if(block)
         {
-            float sw, sc; uint16_t n;
-            std::memcpy(&sw, q, 4); std::memcpy(&sc, q + 4, 4); std::memcpy(&n, q + 8, 2);
-            if(!lo || sw <= swing) { lo = q; slo = sw; }
-            if(sw >= swing) { hi = q; shi = sw; break; }
-            q += head + 2u * n;
+            uint16_t nb; std::memcpy(&nb, block, 2);
+            const uint8_t* q = block + 2;
+            /* find the two bursts bracketing the swing (bursts are in ascending swing) */
+            const uint8_t* lo = nullptr; const uint8_t* hi = nullptr;
+            float slo = 0.f, shi = 0.f;
+            for(uint16_t i = 0; i < nb; i++)
+            {
+                float sw, sc; uint16_t n;
+                std::memcpy(&sw, q, 4); std::memcpy(&sc, q + 4, 4); std::memcpy(&n, q + 8, 2);
+                if(!lo || sw <= swing) { lo = q; slo = sw; }
+                if(sw >= swing) { hi = q; shi = sw; break; }
+                q += head + 2u * n;
+            }
+            if(lo)
+            {
+                if(!hi) { hi = lo; shi = slo; }
+                const float t = (hi != lo && shi > slo) ? (swing - slo) / (shi - slo) : 0.f;
+                const uint8_t* pick[2] = { lo, hi };
+                const float wgt[2] = { 1.f - t, t };
+                const float ref[2] = { slo, shi };
+                for(int i = 0; i < 2; i++)
+                {
+                    if(wgt[i] <= 0.f || (i == 1 && hi == lo)) continue;
+                    float sw, sc; uint16_t n;
+                    std::memcpy(&sw, pick[i], 4); std::memcpy(&sc, pick[i] + 4, 4); std::memcpy(&n, pick[i] + 8, 2);
+                    Slot& q2 = slot[active++];
+                    q2.s = (const int16_t*)(pick[i] + head);
+                    q2.n = n; q2.pos = 0.0f; q2.rate = rate > 0.0f ? rate : 1.0f; q2.lp = lp; q2.z = 0.0f;
+                    q2.gain = wgt[i] * sc / 32767.f * (ref[i] > 0.f ? swing / ref[i] : 1.f);
+                }
+            }
         }
-        if(!lo) return;
-        if(!hi) { hi = lo; shi = slo; }
-        const float t = (hi != lo && shi > slo) ? (swing - slo) / (shi - slo) : 0.f;
-        const uint8_t* pick[2] = { lo, hi };
-        const float wgt[2] = { 1.f - t, t };
-        const float ref[2] = { slo, shi };
-        for(int i = 0; i < 2; i++)
-        {
-            if(wgt[i] <= 0.f || (i == 1 && hi == lo)) continue;
-            float sw, sc; uint16_t n;
-            std::memcpy(&sw, pick[i], 4); std::memcpy(&sc, pick[i] + 4, 4); std::memcpy(&n, pick[i] + 8, 2);
-            Slot& q2 = slot[active++];
-            q2.s = (const int16_t*)(pick[i] + head);
-            q2.n = n; q2.pos = 0.0f; q2.rate = rate > 0.0f ? rate : 1.0f; q2.lp = lp; q2.z = 0.0f;
-            q2.gain = wgt[i] * sc / 32767.f * (ref[i] > 0.f ? swing / ref[i] : 1.f);
-        }
+        for(int k = 0; k < keep; k++) slot[active++] = old[k];
     }
 
     void Process(float* io, int frames)
@@ -742,9 +782,7 @@ struct ResonatorWorld
         v.swing_soft = st[5]; v.swing_hard = st[6];
         /* a voice at rest has nothing to carry: built fresh, so arriving at
            a world is the same as starting in it */
-        bool ringing = false;
-        for(int k = 0; k < v.bank.n && !ringing; k++) ringing = std::fabs(v.bank.y1[k]) + std::fabs(v.bank.s1[k]) > 1e-7f;
-        if(keep && v.pickup.on && ringing)
+        if(keep && v.pickup.on && v.bank.Ringing())
         {
             /* the pickup retunes without a click. The new point's stage is
                built beside the old one and compared: if the coil is the
