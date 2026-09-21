@@ -589,7 +589,8 @@ function describeSpace() {
   const wn = w ? w.name : '—';
   $('sSpace').textContent = space
     ? `${wn} · ${space.side}^${space.n} K=${space.k} P=${space.p} ${space.topo.join('/')}`
-    : (tel ? `${wn} · analytic N=${tel.n} K=${tel.k} P=${tel.p}` : wn);
+    : (tel && tel.n === 1 ? `${wn} · resonator`
+       : tel ? `${wn} · analytic N=${tel.n} K=${tel.k} P=${tel.p}` : wn);
 }
 async function refreshWorlds() {
   if (!link) return;
@@ -747,6 +748,14 @@ function renderMorphSel() {
   sel.disabled = !link;
 }
 
+/* What the card holds is two kinds of file: a `.kykw` is a set of waveforms
+   placed in a space, and a `.kykm` is a resonator — a fitted body from
+   ModalBake, struck rather than scanned. The second is a sample library's
+   size, so it is only ever a card world: it never crosses the wire and the
+   page never parses it, it lists it and asks for it by index. */
+const isResonator = nm => /\.kykm$/i.test(nm || '');
+const cardLabel = nm => nm.replace(/\.kyk[wm]$/i, '') + (isResonator(nm) ? ' · resonator' : '');
+
 function renderCardSel() {
   const sel = $('cardSel');
   sel.innerHTML = '';
@@ -756,7 +765,7 @@ function renderCardSel() {
     sel.appendChild(o);
   } else for (const nm of cardList.names) {
     const o = document.createElement('option');
-    o.value = nm; o.textContent = nm.replace(/\.kykw$/i, '');
+    o.value = nm; o.textContent = cardLabel(nm);
     sel.appendChild(o);
   }
   const none = !link || !cardList.names.length;
@@ -1432,6 +1441,21 @@ $('cardLoad').onclick = async () => {
   const i = $('cardSel').selectedIndex;
   if (i < 0 || !cardList.names.length) return;
   try {
+    if (isResonator(cardList.names[i])) {
+      /* A resonator needs somewhere to live — the module reads it in place
+         from a slot's region — so load is slot then play, the same two
+         moves the worlds tab makes, rather than the straight-to-live path
+         the module refuses for it. */
+      const slot = freeSlot();
+      if (slot < 0) { say('every slot is full — forget one on the worlds tab', true); return; }
+      await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.cardToSlot, [i & 0xff, slot & 0xff]), { urgent: true, timeoutMs: 4000 });
+      delete slotNodes[slot]; slotKind[slot] = 'resonator';
+      heldLost();
+      await slotAction(MVL.ACT.slotLive, slot);
+      say(`${cardLabel(cardList.names[i])} playing from slot ${slot}`);
+      setTimeout(() => { refreshWorlds(); }, 250);
+      return;
+    }
     await link.request(MVL.CMD.action, MVL.actionReq(7, [i & 0xff]), { urgent: true });
     /* A card world is another user world: the module stops holding ours the
        moment this lands. This was missed the first time — `sent` stayed true
@@ -1524,8 +1548,8 @@ function onTelemetry(t) {
       if (trail.at >= 0 && due > 0) trail.gap += (due - trail.gap) * 0.2;
       trail.at = t.block;
       const i = trail.head;
-      trail.L[2 * i] = t.posL[axes[0]]; trail.L[2 * i + 1] = t.posL[axes[1]];
-      trail.R[2 * i] = t.posR[axes[0]]; trail.R[2 * i + 1] = t.posR[axes[1]];
+      trail.L[2 * i] = on(t.posL, axes[0]); trail.L[2 * i + 1] = on(t.posL, axes[1]);
+      trail.R[2 * i] = on(t.posR, axes[0]); trail.R[2 * i + 1] = on(t.posR, axes[1]);
       trail.C[i] = timbre.v;
       trail.head = (i + 1) % trail.cap; if (trail.n < trail.cap) trail.n++;
     }
@@ -2001,7 +2025,7 @@ function drawSpace() {
   if (!tel) { cx.fillStyle = '#6b819d'; cx.fillText('waiting for the module', ox + S / 2 - 70, oy + S / 2); drawArcs(n, planes, null, ox, oy + S + 18, S); return; }
   /* active cell around L — only a tabulated world has cells */
   if (space && side > 1) {
-    const cw = 1 / (side - 1), ci = Math.min(side - 2, Math.max(0, Math.floor(tel.posL[ax] * (side - 1)))), cj = Math.min(side - 2, Math.max(0, Math.floor(tel.posL[ay] * (side - 1))));
+    const cw = 1 / (side - 1), ci = Math.min(side - 2, Math.max(0, Math.floor(on(tel.posL, ax) * (side - 1)))), cj = Math.min(side - 2, Math.max(0, Math.floor(on(tel.posL, ay) * (side - 1))));
     cx.fillStyle = 'rgba(98,213,255,0.06)'; cx.fillRect(px(ci * cw), py((cj + 1) * cw), cw * S, cw * S);
     cx.strokeStyle = 'rgba(98,213,255,0.25)'; cx.strokeRect(px(ci * cw) + .5, py((cj + 1) * cw) + .5, cw * S, cw * S);
   }
@@ -2045,7 +2069,7 @@ function drawSpace() {
   }
   cx.globalAlpha = 1;
   /* control frame (before rotation), faint cross */
-  const cxp = px(clamp01(tel.ctl[ax])), cyp = py(clamp01(tel.ctl[ay]));
+  const cxp = px(clamp01(on(tel.ctl, ax))), cyp = py(clamp01(on(tel.ctl, ay)));
   const cross = () => { cx.beginPath(); cx.moveTo(cxp - 6, cyp); cx.lineTo(cxp + 6, cyp); cx.moveTo(cxp, cyp - 6); cx.lineTo(cxp, cyp + 6); };
   cx.lineWidth = 2.5; cx.strokeStyle = 'rgba(7,9,12,0.7)'; cross(); cx.stroke();
   cx.lineWidth = 1; cx.strokeStyle = 'rgba(232,238,244,0.5)'; cross(); cx.stroke();
@@ -2063,18 +2087,18 @@ function drawSpace() {
     cx.lineWidth = 1;
   };
   if (tel.stereo) {
-    const connector = () => { cx.beginPath(); cx.moveTo(px(tel.posL[ax]), py(tel.posL[ay])); cx.lineTo(px(tel.posR[ax]), py(tel.posR[ay])); };
+    const connector = () => { cx.beginPath(); cx.moveTo(px(on(tel.posL, ax)), py(on(tel.posL, ay))); cx.lineTo(px(on(tel.posR, ax)), py(on(tel.posR, ay))); };
     cx.lineWidth = 2.5; cx.strokeStyle = 'rgba(7,9,12,0.7)'; connector(); cx.stroke();
     cx.lineWidth = 1; cx.strokeStyle = 'rgba(232,238,244,0.45)'; connector(); cx.stroke();
     /* R is the same colour as L, drawn as a ring rather than a disc: the
        voices differ in where they are, not in what they sound like, so the
        difference belongs in the shape and not in the hue. */
-    const ring = () => { cx.beginPath(); cx.arc(px(tel.posR[ax]), py(tel.posR[ay]), r, 0, 7); };
+    const ring = () => { cx.beginPath(); cx.arc(px(on(tel.posR, ax)), py(on(tel.posR, ay)), r, 0, 7); };
     ring(); cx.lineWidth = 2.5; cx.strokeStyle = 'rgba(7,9,12,0.85)'; cx.stroke();
     ring(); cx.lineWidth = 1.5; cx.strokeStyle = dotColour(tv, 1); cx.stroke();
     cx.lineWidth = 1;
   }
-  const disc = () => { cx.beginPath(); cx.arc(px(tel.posL[ax]), py(tel.posL[ay]), r, 0, 7); };
+  const disc = () => { cx.beginPath(); cx.arc(px(on(tel.posL, ax)), py(on(tel.posL, ay)), r, 0, 7); };
   halo(disc);
   cx.fillStyle = dotColour(tv, 1); disc(); cx.fill();
   drawFold(tel, n, ox, oy, S, px, py);
@@ -2565,6 +2589,7 @@ $('audC').onclick = () => auditionPick(2);
 let slots = null, slotDrag = -1;
 let libSel = null;                 /* { kind: 'builtin' | 'slot', i } */
 const slotNodes = {};              /* slot -> [{ name, pos }], only what we sent */
+const slotKind  = {};              /* slot -> 'resonator', only what we loaded from the card */
 
 const libIsSel = (kind, i) => !!libSel && libSel.kind === kind && libSel.i === i;
 const slotFilled = (i) => !!(slots && slots.names[i]);
@@ -2650,6 +2675,9 @@ async function swapSlots(a, b) {
     const na = slotNodes[a], nb = slotNodes[b];
     if (nb) slotNodes[a] = nb; else delete slotNodes[a];
     if (na) slotNodes[b] = na; else delete slotNodes[b];
+    const ka = slotKind[a], kb = slotKind[b];
+    if (kb) slotKind[a] = kb; else delete slotKind[a];
+    if (ka) slotKind[b] = ka; else delete slotKind[b];
     if (libIsSel('slot', a)) libSel = { kind: 'slot', i: b };
     else if (libIsSel('slot', b)) libSel = { kind: 'slot', i: a };
     await refreshSlots();
@@ -2664,6 +2692,7 @@ async function storeFile(slot, file) {
     if (!w) { say(`${file.name} is not a .kykw world`, true); return; }
     await MVL.putSlot(link, slot, bytes, (d, a) => say(`storing ${(100 * d / a).toFixed(0)}%`));
     slotNodes[slot] = w.nodes.map((nd, i) => ({ name: w.name ? `${w.name} ${i}` : String(i), pos: nd.pos.slice() }));
+    delete slotKind[slot];
     say(`${w.name || file.name} in slot ${slot} — ${w.count} node${w.count > 1 ? 's' : ''}`);
     await refreshSlots();
   } catch (e) { say('store: ' + e.message, true); }
@@ -2688,6 +2717,7 @@ async function keepBuildSet() {
     const blob = importedBlob();
     await MVL.putSlot(link, slot, blob, (d, a) => say(`keeping ${(100 * d / a).toFixed(0)}%`));
     slotNodes[slot] = imported.map(w => ({ name: w.name, pos: w.pos.slice() }));
+    delete slotKind[slot];
     say(`${worldName()} is now in your worlds, slot ${slot}`);
     await refreshSlots();
   } catch (e) { say('add: ' + e.message, true); }
@@ -2757,7 +2787,8 @@ function renderLib() {
     $('libState').textContent = w ? `${w.name} — ${w.note}` : 'a world that ships';
   } else if (mine) {
     $('libState').textContent = `slot ${sel.i}: ${slots.names[sel.i]}`
-      + (slotNodes[sel.i] ? '' : ' (nodes unknown — stored elsewhere)');
+      + (slotKind[sel.i] === 'resonator' ? ' — a resonator: play it and strike; it is not a morph target'
+         : slotNodes[sel.i] ? '' : ' (nodes unknown — stored elsewhere)');
   } else {
     $('libState').textContent = `slot ${sel.i} is empty — drop a .kykw on it, or add one from the build tab`;
   }
@@ -2867,7 +2898,7 @@ function renderLibCardSel() {
   sel.innerHTML = '';
   for (const nm of cardList.names || []) {
     const o = document.createElement('option');
-    o.value = nm; o.textContent = nm.replace(/\.kykw$/i, '');
+    o.value = nm; o.textContent = cardLabel(nm);
     sel.appendChild(o);
   }
   if (keep >= 0 && keep < sel.children.length) sel.selectedIndex = keep;
@@ -2916,6 +2947,7 @@ async function loadCardIntoSlot() {
        nodes are. Same rule as any slot filled elsewhere: it plays, and its
        rings stay undrawn rather than guessed. */
     delete slotNodes[libSel.i];
+    if (isResonator(cardList.names[i])) slotKind[libSel.i] = 'resonator'; else delete slotKind[libSel.i];
     say(`${cardList.names[i]} into slot ${libSel.i}`);
     await refreshSlots();
   } catch (e) { say('load: ' + e.message, true); }
@@ -2933,7 +2965,7 @@ $('libEdit').onclick = () => {
 };
 $('libFree').onclick = () => {
   if (!libSel || libSel.kind !== 'slot') return;
-  delete slotNodes[libSel.i];
+  delete slotNodes[libSel.i]; delete slotKind[libSel.i];
   slotAction(MVL.ACT.slotFree, libSel.i);
 };
 $('libSave').onclick = saveSelectedToCard;
@@ -3040,7 +3072,7 @@ function drawFold(t, n, ox, oy, S, px, py) {
   const [ax, ay] = axes;
   const wrapped = (a) => {
     if (space && space.topo && a < space.topo.length) return space.topo[a] === 'wrap';
-    const c = t.centre[a];
+    const c = on(t.centre, a);
     if (c >= 0 && c <= 1) return foldVote[a] < 0;      /* nothing to learn now */
     const ec = Math.abs(t.posL[a] - clamp01(c));
     const ew = Math.abs(t.posL[a] - (c - Math.floor(c)));
@@ -3051,7 +3083,7 @@ function drawFold(t, n, ox, oy, S, px, py) {
     return foldVote[a] < 0;
   };
   const over = (a) => {
-    const c = t.centre[a];
+    const c = on(t.centre, a);
     const d = c > 1 ? c - 1 : (c < 0 ? -c : 0);
     return (d < 0.004 || wrapped(a)) ? 0 : (c > 1 ? d : -d);
   };
@@ -3072,8 +3104,8 @@ function drawFold(t, n, ox, oy, S, px, py) {
     cx.lineWidth = 1;
   };
   const dx = over(ax), dy = over(ay);
-  if (dx) tick(px(dx > 0 ? 1 : 0), py(clamp01(t.posL[ay])), dx > 0 ? 1 : -1, 0, dx);
-  if (dy) tick(px(clamp01(t.posL[ax])), py(dy > 0 ? 1 : 0), 0, dy > 0 ? -1 : 1, dy);
+  if (dx) tick(px(dx > 0 ? 1 : 0), py(clamp01(on(t.posL, ay))), dx > 0 ? 1 : -1, 0, dx);
+  if (dy) tick(px(clamp01(on(t.posL, ax))), py(dy > 0 ? 1 : 0), 0, dy > 0 ? -1 : 1, dy);
   /* Axes off the projection get named rather than drawn: there is no edge on
      screen that belongs to them, and pretending otherwise would put a mark
      somewhere it does not mean anything. */
@@ -3328,6 +3360,11 @@ function drawSound() {
   }
 }
 const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+/* A vector's value on an axis the world may not have. The projection is a
+   pair of axes and a resonate world has one, so its second axis is nowhere:
+   drawn at the centre, which is where a position the module does not report
+   belongs, rather than at NaN, which a canvas swallows without a word. */
+const on = (v, a) => (v && a < v.length) ? v[a] : 0.5;
 const fmtVec = v => Array.from(v).map(x => x.toFixed(2)).join(' ');
 /* The six knobs under the player's hands, right now.
  *
