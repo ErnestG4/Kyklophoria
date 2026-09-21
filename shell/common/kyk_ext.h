@@ -173,7 +173,16 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              third pot (the tour division, which a resonate
                              world has no use for) sets it as well. BAD_STATE
                              when what is playing is not a resonator. */
-                          kActPolyphony  = 19 };
+                          kActPolyphony  = 19,
+                          /* u8 on: the pitch lock of a resonate world, on
+                             (1, the default) or off (0). Locked, a strike
+                             takes the pitch to the nearest semitone and the
+                             ring keeps it — the tail does not bend up behind
+                             the next note; a bank driven with no strikes
+                             follows by the semitone. Unlocked, the ring
+                             follows the pitch by the cent: a bend. BAD_STATE
+                             when what is playing is not a resonator. */
+                          kActPitchLock  = 20 };
 /* the tune byte to its value, shared by the host and the module so a page
    sees one mapping */
 inline float TuneValue(uint8_t which, uint8_t v)
@@ -492,6 +501,10 @@ public:
                 const char* nm = fam.MemberName(en->ResMember());
                 for(int i = 0; i < 16; i++) w.U8((uint8_t)nm[i]);
                 for(int i = 0; i < (fam.kind == 2 ? fam.M : 0); i++) { const char* q = fam.MemberName(i); for(int c = 0; c < 16; c++) w.U8((uint8_t)q[c]); }
+                /* the voice count and the pitch lock, which the page has
+                   no other way to read: on the module a pot sets the one
+                   and a button the other */
+                w.U8((uint8_t)en->Polyphony()); w.U8(en->PitchLock() ? 1u : 0u);
                 return;
             }
             case kCmdSlots:

@@ -79,6 +79,7 @@ public:
     void TuneFromControl(bool on) { L.TuneFromControl(on); R.TuneFromControl(on); }
     void SetPolyphony(int n) { L.SetPolyphony(n); R.SetPolyphony(n); }
     void SetExciter(const float* x, float gain) { L.SetExciter(x, gain); }   /* the voice is L's; R copies */
+    void SetPitchLock(bool on) { L.SetPitchLock(on); R.SetPitchLock(on); }
 
     /* Change worlds under a running voice. Build the World fully first. */
     void SetWorld(const World* w)

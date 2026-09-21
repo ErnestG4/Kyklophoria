@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <vector>
+#include <string>
 #include "../shell/desktop/wavio.h"
 
 namespace {
@@ -89,7 +90,7 @@ int main(int argc, char** argv)
         const auto hf = Sixth(x, true, 12000.0, sr);
         const auto mf = Sixth(x, true, 4000.0, sr, true, 12000.0);
         const auto henv = Env(hf, hop), menv = Env(mf, hop);
-        int clicks = 0;
+        int clicks = 0; std::string when;
         const int k = 100;
         for(size_t n = 0; n < henv.size(); n++)
         {
@@ -102,14 +103,14 @@ int main(int argc, char** argv)
             for(size_t j = n + 1; j < std::min(henv.size(), n + 4); j++) after = std::min(after, henv[j]);
             for(size_t j = n >= 3 ? n - 3 : 0; j < n; j++) before = std::min(before, henv[j]);
             const bool ends = after < 0.1 * henv[n] && (n == 0 || before < 0.1 * henv[n]);
-            if(ends && henv[n] > 0.1 * menv[n]) clicks++;
+            if(ends && henv[n] > 0.1 * menv[n]) { clicks++; if(clicks <= 6) { char b[32]; snprintf(b, sizeof b, "%s%.3fs", clicks > 1 ? "," : "", (double)n * hop / sr); when += b; } }
         }
         size_t quiet = 0; for(double e : env) if(e < 1e-4) quiet++;
         const double silence = env.empty() ? 1.0 : (double)quiet / env.size();
         double rms = 0; for(double v : xd) rms += v * v; rms = sqrt(rms / xd.size());
         std::string verdict;
         if(rails) verdict += " rail x" + std::to_string(rails);
-        if(clicks) verdict += " " + std::to_string(clicks) + " click" + (clicks > 1 ? "s" : "");
+        if(clicks) verdict += " " + std::to_string(clicks) + " click" + (clicks > 1 ? "s" : "") + " at " + when;
         if(silence > 0.5) verdict += " silence " + std::to_string((int)(100 * silence)) + "%";
         printf("  %-40s %5.1fs %6.1f dBFS  %s\n", argv[i], (double)x.size() / sr, 20 * log10(rms + 1e-9), verdict.empty() ? "ok" : ("FAIL:" + verdict).c_str());
         if(!verdict.empty()) bad++;

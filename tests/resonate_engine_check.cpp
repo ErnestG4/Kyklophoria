@@ -61,7 +61,8 @@ int main()
         Engine e; e.Init(&rw, sr); e.gain = 1.f; e.SetF0(130.81f);
         e.Strike(0.6f);
         std::vector<float> ye; Run(e, ye, 100);
-        ResonatorVoice v; v.Init(); rw.Res().At(Engine::NoteOf(130.81f), v, sr); v.Strike(0.6f);
+        /* the engine's pitch is locked to the semitone: C3 exactly, not 130.81 */
+        ResonatorVoice v; v.Init(); rw.Res().At(std::floor(Engine::NoteOf(130.81f) + 0.5f), v, sr); v.Strike(0.6f);
         std::vector<float> yv(4800); for(int b = 0; b < 100; b++) v.Process(yv.data() + b * 48, 48);
         double d = 0, en = 0;
         for(int i = 0; i < 4800; i++) { d += (ye[i] / e.PhaseTrim() - yv[i]) * (ye[i] / e.PhaseTrim() - yv[i]); en += yv[i] * yv[i]; }
@@ -313,6 +314,69 @@ int main()
         CHECK(d1 == 0.0, "the family at position 1 is not the EP: %.3g of the energy", d1 / en);
         CHECK(dm == 0.0, "the family at 0.45 is not still the Wurlitzer (a blend?): %.3g of the energy", dm / en);
         printf("  a family of two: position 0 is the Wurlitzer, 1 the EP, 0.45 still the Wurlitzer, all bit for bit\n");
+    }
+
+    /* 10. the pitch lock, on by default: a strike lands on the semitone
+       nearest the pitch (131.8 Hz, 13 cents sharp, is a C3, not a C3 and
+       13 cents), a ring keeps its note when the pitch moves to the next
+       (the tail does not bend up behind the strike), and the next strike
+       takes the new pitch. Unlocked, the ring follows by the cent — a
+       bend. Read from the voice the engine reports, which is what At()
+       built it at. */
+    {
+        auto f0_of = [](const Engine& e) { return e.Voice().hz[0]; };
+        Engine e; e.Init(&wurli, sr); e.gain = 1.f;
+        CHECK(e.PitchLock(), "the lock is not on by default");
+        e.SetF0(131.8f); e.Strike(0.7f);
+        const float struck = f0_of(e);
+        std::vector<float> y; Run(e, y, 20);
+        e.SetF0(196.f); Run(e, y, 20);
+        const float moved = f0_of(e);
+        e.Strike(0.7f); Run(e, y, 20);
+        const float again = f0_of(e);
+        CHECK(std::fabs(struck - 130.81f) < 0.2f, "a strike 13 cents sharp of C3 was built at %.2f Hz, not C3", struck);
+        CHECK(moved == struck, "locked, the ring followed the pitch: %.2f Hz after C3 was struck", moved);
+        CHECK(std::fabs(again - 196.f) < 0.3f, "the next strike did not take the new pitch: %.2f Hz", again);
+        Engine u; u.Init(&wurli, sr); u.gain = 1.f; u.SetPitchLock(false);
+        u.SetF0(131.8f); u.Strike(0.7f);
+        const float ustruck = f0_of(u);
+        u.SetF0(196.f); Run(u, y, 20);
+        const float umoved = f0_of(u);
+        CHECK(std::fabs(ustruck - 131.8f) < 0.2f, "unlocked, a strike was quantised: %.2f Hz for 131.8", ustruck);
+        CHECK(std::fabs(umoved - 196.f) < 0.3f, "unlocked, the ring did not follow the pitch: %.2f Hz", umoved);
+        printf("  pitch lock: 131.8 Hz strikes C3 (%.2f), holds it under a G3 pitch, takes the G3 at the strike; unlocked %.1f then %.1f\n", struck, ustruck, umoved);
+    }
+
+    /* 11. nothing cuts: a strike past the voice count carries the voice it
+       takes rather than silencing it, and turning the count down lets the
+       voices past it ring out. The third strike is at velocity 0 — on the
+       Wurlitzer that is a retune with no energy added — so the only step
+       there could be is a cut of the C3's ring, and a ring's step from
+       one sample to the next is what it was a block earlier. */
+    {
+        auto max_step = [](const std::vector<float>& y, size_t from, size_t to) {
+            float m = 0.f; for(size_t i = from + 1; i < to && i < y.size(); i++) m = std::fmax(m, std::fabs(y[i] - y[i - 1])); return m; };
+        auto more = [](Engine& e, std::vector<float>& y, int blocks) {
+            std::vector<float> part; Run(e, part, blocks); y.insert(y.end(), part.begin(), part.end()); };
+        Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetPolyphony(2);
+        std::vector<float> y;
+        /* half a second between, past the Wurlitzer's 390 ms burst, so
+           what rings at the third strike is the bank and not the recording */
+        e.SetF0(130.81f); e.Strike(0.8f); more(e, y, 500);
+        e.SetF0(164.81f); e.Strike(0.8f); more(e, y, 500);
+        const size_t before = y.size();
+        e.SetF0(196.f);   e.Strike(0.f);                    /* takes the C3's voice: carried, not cut */
+        more(e, y, 500);
+        const size_t turn = y.size();
+        e.SetPolyphony(1); more(e, y, 40);
+        const float ringing  = max_step(y, before - 480, before - 1);
+        const float at_reuse = max_step(y, before - 1, before + 48);
+        const float at_turn  = max_step(y, turn - 1, turn + 48);
+        CHECK(at_reuse < 2.f * ringing, "a strike past the count cut a voice: step %.3g where the ring stepped %.3g", at_reuse, ringing);
+        CHECK(at_turn < 2.f * ringing, "turning the count down cut a voice: step %.3g where the ring stepped %.3g", at_turn, ringing);
+        double after = 0; for(size_t i = turn; i < turn + 480; i++) after += y[i] * y[i];
+        CHECK(after > 0, "the voices past the count fell silent at the turn");
+        printf("  nothing cuts: a reused voice steps %.3g, the count turned down %.3g, the ring itself %.3g\n", at_reuse, at_turn, ringing);
     }
 
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);

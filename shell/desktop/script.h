@@ -135,6 +135,10 @@ public:
                    other kind of world (docs/modal-mode.md) */
                 else if(e.cmd == "strike") { eng.SetF0(f0_); eng.Strike(e.v.empty() ? 0.8f : e.v[0]); }
                 else if(e.cmd == "glide_f0") { gf0_ = true; f0_from_ = f0_; f0_to_ = e.v[0]; f0_t0_ = t; f0_t1_ = t + e.dur; }
+                /* the pitch lock (1, the default: the semitone, taken at
+                   the strike) and the polyphony (1, 2 or 4) */
+                else if(e.cmd == "lock") eng.SetPitchLock(e.v.empty() || e.v[0] != 0.f);
+                else if(e.cmd == "poly") eng.SetPolyphony(e.v.empty() ? 1 : (int)e.v[0]);
                 else if(e.cmd == "glide_pos")
                 {
                     gpos_ = true; pos_t0_ = t; pos_t1_ = t + e.dur;

@@ -526,6 +526,11 @@ public:
                 if(!world || !world->IsResonate()) return 3u;
                 eng->SetPolyphony(args[0]);
                 return 0u;
+            case kyk::kActPitchLock:
+                if(len < 1 || args[0] > 1) return 2u;
+                if(!world || !world->IsResonate()) return 3u;
+                eng->SetPitchLock(args[0] != 0);
+                return 0u;
             case kyk::kActRenderDiv: if(len < 1 || args[0] < 1) return 2u; eng->SetRenderDiv(args[0]); return 0u;
             case kyk::kActAimMorph:
             {

@@ -131,7 +131,9 @@ Request: `u8 op [, args]`. Reply: status only.
 | 15 | `u8 card, u8 slot` | load a card file into a slot, rather than straight to the live world as op 7 does. Deferred to the control loop, because a card read is slow; parsed before it is kept, so a slot never holds something that would be refused later |
 | 14 | `u8 a, u8 b` | exchange two slots, contents and names, with `live` and `target` following the contents rather than the numbers. Here rather than on the host because a host does not have the blob for a slot it did not store. Safe in the handler: what is playing is an expanded World and the morph target is another, so neither reads a blob except when loading one |
 | 18 | `u8 which, u8 value` | the spin on the resonate world that is playing: which 0 = voicing, the pickup's pole off its fitted centre by (value − 128) / 64 widths; 1 = decay, every mode's T60 × 2^((value − 128) / 64), a quarter to four times; 2 = coil, its resonance × 2^((value − 128) / 128), half to double. 128 is the world as fitted. Takes effect on the next block with the state ringing on. BAD_STATE when what is playing is not a resonator. |
-| 17 | `u8 velocity` | strike the resonate world that is playing, velocity 0–255 (204 if absent). A resonate world — a `.kykm` from ModalBake, a fitted body of resonators — is struck, not scanned, and until the module has a trigger of its own this is the only hand on it. BAD_STATE when what is playing is not one. |
+| 17 | `u8 velocity` | strike the resonate world that is playing, velocity 0–255 (204 if absent). A resonate world — a `.kykm` from ModalBake, a fitted body of resonators — is struck, not scanned; on the module J4 is the trigger. BAD_STATE when what is playing is not one. |
+| 19 | `u8 voices` | a resonate world's polyphony, 1, 2 or 4, the way Rings does it: a strike takes the next voice round-robin, the ones before ring on at the notes they were struck at, the newest follows the pitch. A voice taken again carries what still rings in it; turning the count down lets the voices past it ring out. Anything but 1, 2 or 4 is BAD_ARGS; BAD_STATE when what is playing is not a resonator. |
+| 20 | `u8 on` | the pitch lock, on (1, the default) or off (0). Locked, a strike takes the pitch to the nearest semitone and the ring keeps it — the tail does not bend up behind the next note; a bank driven by the exciter with no strikes follows by the semitone. Unlocked, the ring follows the pitch by the cent: a bend. BAD_STATE when what is playing is not a resonator. |
 | 10 | — | aim the morph: search the target world for the position whose spectrum is nearest the one playing, and read it there. Refused with status 1 when no target is set |
 
 ### 0x65 GET_WORLDS
@@ -256,6 +258,20 @@ than a scatter of sampled dots:
 `u8 index`. Analytic worlds switch on a pointer write. A tabulated one has to
 be expanded first, on the control thread, and answers BUSY (9) if another
 expansion is already running.
+
+### 0x6F RESONATE
+Request: empty. Reply: `u8 status` (3 BAD_STATE when what is playing is not
+a resonator), then `u8 kind` (0 the axis is a note, 1 an index into a row of
+bodies, 2 a family of note worlds — the member playing is what follows),
+`f32 lo, f32 hi` (the axis), `f32 param` (where the voice was built; 1e9
+before it has been), `u16 P` (points on the axis), `u8 N` then N × (`f32 hz,
+f32 zeta, f32 gain`) — the modes the voice was built from, `u32 burst`
+(samples of recorded attack at swing 1, 0 for none), `u8 m` then m × `f32`
+(the points, up to 64), `u8 M` (members of a family, 0 for a plain world),
+`u8 member`, `char[16] name` (the member playing), M × `char[16]` (every
+member's name), then `u8 voices` (1, 2 or 4) and `u8 lock` (the pitch lock,
+op 20). A host reads to the length it has: firmware before the family fields
+stopped at the points, and before the last two at the names.
 
 ### 0x6E SET_CONTROL (desktop bridge only)
 Request: `f32 f0, u8 n, f32 c[n], u8 planes, f32 angle[planes], f32 spread`.
