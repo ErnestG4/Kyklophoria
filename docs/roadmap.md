@@ -6,6 +6,16 @@ unrelated families does not hold, a family with real parameters does, and the
 sound of a struck thing lives in its decay, its strike and its pickup, none of
 which the grade heard — is the plan's premise.
 
+**Where it stands, 21 September 2026.** The six steps below are done to the
+line where the module is the only test left, and the module has now had two
+evenings: it played, it overran, the overrun was three costs none of them the
+voice, and then it "sounded amazing" (Combust, 20 Sept). Fourteen worlds ship
+as `.kykm` files on the card; Kyklophoria's `modal` branch plays them behind
+`World::Kind::Resonate` with a trigger, four CVs, a page readout, polyphony
+and the spin. The second half of this document is what comes next, in order,
+with what each item costs and what it would fix — the working list, since the
+first six are history now.
+
 ## The shape of the thing
 
 One **world per family**, exactly as Kyklophoria has one world per formula: a
@@ -19,98 +29,111 @@ resonators is about three hundred operations a sample, a few per cent of the
 M7; the morph is coefficient updates per block, which is what the engine
 already does with the frame. Nothing needs a manifold at runtime.
 
-The exciter is the wavetable. Kyklophoria's oscillator into the modal bank —
-the existing worlds become the mallet, and the modelling synth is a second mode
-of the same firmware rather than a fork. If it fails to be one, it is a
-separate instrument with the same tools behind it.
+The exciter was going to be the wavetable — Kyklophoria's oscillator into the
+modal bank. What shipped first is a stored burst: the recording's own attack
+minus the model, per note and per velocity layer, read at the played pitch and
+filtered by velocity, which is commuted synthesis and the SY99's lineage in one
+(`lit-runtime.md`). The oscillator into the bank, and the audio input into it
+(Rings' external exciter), are still the right next exciters and are below.
 
-## Steps
+## The six steps, done
 
 1. **Clamped boundaries in the FEM.** Done. Every tine and reed is a
    cantilever; mesh2faust was free-free. Checked against the clamped-free rod:
    +8% at every length, the same everywhere in a sweep.
 
-2. **A grade that hears decay.** Done in its first form: `grade --ring`
-   weighs every mode by its energy over the whole decay, and the space can
-   carry decay as a block (`bake --decay`, log zeta per mode) so that a fitted
-   record's measured decay survives into a world. On the FEM corpus the ring
-   grade moves nothing — Rayleigh decay is a function of frequency, so it adds
-   no information — which is the point: it is there for the records that come
-   from recordings. The pickup's nonlinearity is still to come.
+2. **A grade that hears decay.** Done: `grade --ring`, `bake --decay`, and
+   then the metrics that mattered more — `decay_ratio` per note (fitted over
+   measured T60), `excess_db` (whistle), the ringers check
+   (`tools/ringers.py`), the sustain band error (`tools/washcheck.py`).
 
-3. **The Rhodes as the first world.** Done, from both ends. The pickup is
-   fitted (`fit_shaped`, findings) and turned out to be most of the
-   instrument — the tine is one sine, the harmonics and the velocity
-   behaviour are the field's — and the voicing sweep says the fitted knob
-   is the screw. The tone bar is in the records as the 1.4-1.7x partial the
-   metal carries, measured rather than modelled; the strike point is the
-   twelve gains of a FEM tine, and the geometry fit (4) puts that FEM tine
-   on the recorded note. Epi (`../epi`) is the bench for all of it: any
-   note, any velocity, any voicing, eight metals, with the answer known.
-   As first written: Four real parameters, not one: tine
-   length, tuning-spring position, tonebar coupling, strike point. The tonebar
-   is a second FEM body coupled through the clamp; the pickup is a memoryless
-   nonlinearity at a position — a `Shaper` stage, which exists. Where a
-   measurement is cheap it beats a model: a recording gives (f, T60,
-   amplitude) per partial directly, and that is a better damping than any
-   Rayleigh model, which is where the GPU comes in.
+3. **The Rhodes as the first world.** Done, from both ends: the pickup fitted
+   (`fit_shaped`) and found to be most of the instrument; Epi (`../epi`) as
+   the bench with the answer known; the geometry fit putting a FEM tine on
+   the recorded note. Then the Wurlitzer, the EP with velocity layers, the
+   reed with an electrostatic gap, and the acoustic sets.
 
-4. **Fitting to sources on the GPU.** Two uses, in order of how sure they are:
-   - *Modal fitting.* Done in its first form: `tools/modalfit.py`, torch on
-     the 4090 (the `fmexplorer` venv has it). Phase-vocoder initialisation,
-     then a differentiable sum of decaying sines fitted by gradient against a
-     multi-resolution STFT loss — spectral convergence plus log magnitude,
-     because log magnitude alone let the loud modes ring four times too long:
-     two loud bins in two thousand do not move a mean over the floor. Checked
-     on synthetic strikes with known modes: the modes above -20 dB come back
-     within a cent and within 2% in T60; modes that ring for 80 ms at -26 dB
-     are dropped rather than misfitted, and the record says how many. A
-     recording is one strike position, and the record says that too. What it
-     needs now is recordings: a Rhodes, a Wurlitzer, the water drum.
-   - *Geometry fitting.* Done in its first form: `tools/geofit.py`,
-     Nelder-Mead over the tine's length and spring position, a fresh mesh
-     and a modalfem run per evaluation (a second each), against the two
-     numbers a shaped record gives the metal — the fundamental and the
-     second bending mode's ratio. Seven EP notes, C3 to E6: f1 to a tenth of
-     a hertz and the ratio to a hundredth on every one, with lengths 106 to
-     33 mm and springs 18 to 49 mm from the tip (`out/geofit-ep.tsv`). The
-     FEM family is the instrument, note by note. Where the "crazy topologies"
-     go is unchanged: sweep a parametric family and keep what sounds like
-     something.
-   Neither needs torch on the module; both need it on the desktop, and the
-   `fmexplorer` venv has torch 2.11 with CUDA on the 4090.
+4. **Fitting to sources on the GPU.** Done: `tools/modalfit.py` and its
+   drivers, with the gates, the beat pairs, the knees, the decay prior, the
+   T60 cap, the phases (the STFT loss is sign-blind; the residual is not),
+   `pitchman.py` for sets with no note names, `layer()` for sets with
+   several dynamics a note. Fourteen worlds: wurli, ep, ep-vel, tine-vel,
+   reed-vel, guitar, banjo, mandolin, violin, viola, bass, piano, perc (a
+   row of nineteen bodies), tine-h045.
 
-5. **Condense.** Done in its first form: `tools/export.py` writes a world as
-   a `.kykm` — four bytes a mode (cents, a log-decay byte, a quarter-dB
-   byte), the stage per point, 48 harmonic slots from the aligned corpus for
-   a pitched world or the metal's few modes for a shaped one. The EP is
-   38 KB, the Wurlitzer 2.5 KB. `runtime/world.h` attaches the blob where
-   it lies, decodes a point at note-on and interpolates between the two
-   neighbouring points by slot — log frequency, log decay, dB — so eleven
-   recorded Wurlitzer notes are a keyboard. Round trip within a cent. The
-   bake's four-component manifold is the other road to the same lattice and
-   stays for the FEM families; for a keyboard, the keyboard is the lattice.
+5. **Condense.** Done: `.kykm` v5 — five bytes a mode, the stage, the wash,
+   the bursts, velocity layers, slots aligned by ratio to the note along the
+   chain of points with ghosts so a mode fades rather than slides, each
+   point pulled to its nominal note, a `kind` byte for a row of bodies.
 
-6. **The runtime.** A `World::Kind::Modal` that evaluates to a modal set
-   instead of a spectrum, and a resonator bank in the engine behind the same
-   `dirty_`/render logic, then the world's `Shaper` — the bell field,
-   differentiated, the coil — where the world carries one. Header-only, no
-   heap, no exceptions; measured with `make armcost` before it is believed.
-   Done to the line where hands are needed. `runtime/modal_bank.h` and
-   `world.h` here are the prototype; `core/kyk_resonate.h` on Kyklophoria's
-   `modal` branch is the same thing in that repo's conventions (nothing
-   with a default member initialiser, so it can live in SDRAM), with
-   `tests/resonate_check` in its suite — a mode within 0.01 cent and 0.1%
-   in T60, the EP's C3 barking +8.5 → +20.2 dB where the fit said +7 → +19,
-   the Wurlitzer interpolated between its eleven notes — and `make armcost`:
-   ~15 M7 instructions a mode a sample, 48 modes under a tenth of the core.
-   The check caught a real bug on its first run (the level scale applied
-   after the bank took the gains). What is not done: wiring it behind
-   `Engine::Process` as a stage on the oscillator's output under a new
-   `World::Kind`, the exciter (gate, oscillator, both) and the pots. That
-   is `docs/modal-mode.md` in Kyklophoria, written to be executed with the
-   module on the bench and `switch_check` extended first, because that
-   repo's history says what blind changes to world-derived state cost.
+6. **The runtime, in the engine, on the module.** Done past the line:
+   `core/kyk_resonate.h` and the engine's resonate path, the card path for
+   a `.kykm` (a card world, read into an SDRAM region and played where it
+   lies), the strike, the spin, the readout, polyphony, J4 as the trigger
+   and J5–J8 as the four CVs, the page's panes for a resonator. What the
+   bench taught is in `Kyklophoria/docs/modal-mode.md` and `findings.md`:
+   the render under a voice, `At()` on pot jitter, the wash gain on the
+   audio thread, the pickup's rest flux, the slots by rank.
+
+## What comes next, in order
+
+Each with what it fixes and what it costs. *Measured*, *reasoned* and
+*hunch* as in `lit-runtime.md`; the numbers are that document's and
+`findings.md`'s.
+
+1. **Hands on it, again.** The remap of J4–J8, the polyphony, the strum on
+   a note jump, the in-tune export and the aligned slots have not been
+   played. That is one evening and it decides the order of everything
+   below. *Ask:* does a note between points now sound like the note; does a
+   trigger with a velocity CV feel like an instrument; does 4 voices
+   overrun.
+
+2. **The bass notes' cliff** — the largest measured gap in the sound.
+   `lit-runtime.md` items 3 and 5: first the band-wise burst crossfade (the
+   burst's top fades on its own decay, its bottom hands to the modes;
+   hides the cliff, a day, no format change), then B per note in the world
+   (a float a point, costs nothing), then the waveguide above the modes for
+   string worlds (the structural fix; a delay line a voice in AXI; a week
+   and a flag in the format). *Reasoned*, the cliff *measured* at 60–77 dB
+   above 2 kHz from the burst's end on a piano E1.
+
+3. **Rings' external exciter.** J1's audio into the bank instead of a
+   strike: one add a mode a sample, a mix pot, and the modal worlds become
+   a resonant filter bank for anything patched in. *Reasoned*; the cheapest
+   large feature on the list.
+
+4. **The oscillator into the bank.** The plan's original exciter: the
+   wavetable world as the mallet, so both halves of the firmware are one
+   instrument. Needs a second world slot (the exciter's) and a way to pick
+   it; the tour's ring of buffers is most of that. *Reasoned*.
+
+5. **Bodies you can tune.** A flag on an index world so the pitch pot
+   transposes the body — a tom tuned by v/oct. A few lines in the engine
+   and a byte in the header; asked of Combust, not yet answered.
+
+6. **More modes where they are needed.** The bank is 48 everywhere; a bass
+   piano note wants 96 and a treble one 12. A per-point count is in the
+   format already (`N` is the maximum; ghosts fill the rest); a per-point
+   *cost* is the runtime skipping ghosts, which it could. Then refit the
+   piano's bottom octave at 96. *Measured* that 48 stop at 1.7 kHz on an
+   E1; *reasoned* that 96 is a quarter of the core at one voice.
+
+7. **The UX.** The build tab's grid is fixed; the resonator has panes and
+   named pots; what it does not have is a page of its own — the worlds
+   tab is a library and the play tab is a readout, and neither is where a
+   resonator's strike, spin, voices and burst live together. Also: the
+   tune sliders should know when the module owns the spin; the Play page
+   pot labels on the module's own rings.
+
+8. **Fits.** The Philharmonia's guitar harmonics, the cello (no single-note
+   pizz; the `phrase` files could be cut), Epi's other metals as a second
+   tine-mh axis, and the water drum, which is still the one instrument in
+   the room. ESPRIT on the gong's residual only if the wash is heard wrong
+   there.
+
+9. **Merge.** `modal` into `master` when 1 says the module is an
+   instrument in this mode: the branch is 30-odd commits of engine, shell,
+   page and tests, every one host-tested, and the suite is green on it.
 
 ## What is not a modal body
 
@@ -132,5 +155,5 @@ separate instrument with the same tools behind it.
   list that is in the room.
 
 These are all "an exciter into the bank", which is the same runtime with a
-different mallet — the wavetable, noise, a bubble train — and no new
-representation.
+different mallet — the wavetable, noise, a bubble train, the audio input — and
+no new representation.
