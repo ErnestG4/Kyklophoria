@@ -126,6 +126,16 @@ def main():
         a.polish = a.steps // 2
     os.makedirs(a.outdir, exist_ok=True)
     rows = discover(a.indir, a.layout, a.articulation)
+    # what the parameter is: a note, or — a manifest may say so — an index
+    # into a row of bodies, which the world carries so the runtime knows to
+    # take it from a position and not from the pitch
+    param = 'midi'
+    if a.layout == 'manifest':
+        with open(os.path.join(a.indir, 'fits.tsv')) as m:
+            next(m)
+            first = m.readline().rstrip('\n').split('\t')
+            if len(first) > 2 and first[2] == 'index':
+                param = 'index'
     if a.limit:
         rows = rows[:a.limit]
     print('  %s: %d single-note files, articulation %s' % (a.family, len(rows), a.articulation))
@@ -178,7 +188,7 @@ def main():
                     o.write('mode %d hz %.6f zeta %.9g phase %.5f gains %s\n' % (k, fr[i], r[i] / w, ph[i], ' '.join('%.9g' % amp[i] for _ in range(12))))
             sf.write(os.path.join(a.outdir, mid + '-resynth.wav'), np.clip(y / (np.max(np.abs(y)) or 1) * 0.5, -1, 1), sr)
             sf.write(os.path.join(a.outdir, mid + '-target.wav'), np.clip(x * 0.5, -1, 1), sr)
-            man.write('%s\t%s\tmidi\t%d\t%s\t%s\t%d\t%.4f\t%.3f\t%.3f\n' % (mid, a.family, midi + 12 * a.octave, dyn, f, len(order), loss, ex, dr))
+            man.write('%s\t%s\t%s\t%d\t%s\t%s\t%d\t%.4f\t%.3f\t%.3f\n' % (mid, a.family, param, midi + 12 * a.octave, dyn, f, len(order), loss, ex, dr))
             man.flush()
             print('  %-10s %-40s midi %3d %-6s %.2fs  %2d modes  loss %.3f  excess %.2f dB  decay x%.2f' % (mid, f, midi, dyn, secs, len(order), loss, ex, dr))
     if a.body and residuals:

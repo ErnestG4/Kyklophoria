@@ -20,7 +20,7 @@ struct World
     const uint8_t* blob = nullptr;
     uint32_t size = 0;
     uint16_t N = 0, P = 0;
-    uint8_t  form = 0, body = 0;
+    uint8_t  form = 0, kind = 0;      /* kind: 0 the param is a note, 1 an index into a row of bodies */
     float    lo = 0, hi = 0;
     /* the spin: what a pot does to a loaded point. voicing moves the pole
        off centre by that many widths on top of the fitted h; decay
@@ -57,9 +57,9 @@ struct World
         if(bytes < kHeader || std::memcmp(blob, "KYKM", 4) != 0) return false;
         uint16_t ver; std::memcpy(&ver, blob + 4, 2);
         std::memcpy(&N, blob + 6, 2); std::memcpy(&P, blob + 8, 2);
-        form = blob[10]; body = blob[11];
+        form = blob[10]; kind = blob[11];
         std::memcpy(&lo, blob + 12, 4); std::memcpy(&hi, blob + 16, 4);
-        return ver == 4 && N <= ModalBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
+        return (ver == 4 || ver == 5) && N <= ModalBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
     }
 
     float Param(int i) const { float p; std::memcpy(&p, Point(i), 4); return p; }

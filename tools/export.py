@@ -7,8 +7,12 @@
 
 One file a world, small enough to sit in SDRAM beside the wavetables:
 
-    'KYKM' u16 version=4  u16 N  u16 P  u8 form  u8 body
+    'KYKM' u16 version=5  u16 N  u16 P  u8 form  u8 kind
     f32 param_lo  f32 param_hi
+    kind: what the parameter is. 0 = a note (MIDI), which the runtime takes
+    from the pitch it is played at; 1 = an index, a row of bodies, which it
+    takes from a position axis. (Version 4 wrote a `body` count here that
+    nothing ever read; a 4 reads as kind 0.)
     P points, each:
         f32 param
         f32 h  f32 w  f32 K  f32 fc  f32 Q  f32 swing_soft  f32 swing_hard   (the stage at this point; zeros if none)
@@ -72,11 +76,11 @@ def phase8(ph):
     return int(round((ph % (2 * math.pi)) / (2 * math.pi) * 256)) % 256
 
 
-def write(path, N, points, form=0, body=0):
+def write(path, N, points, form=0, kind=0):
     """points: [(param, modes, stage[, bursts])] with stage = (h, w, K, fc, Q, swing_soft, swing_hard) or None,
     bursts = [(swing, samples_at_48k)]"""
     params = [p[0] for p in points]
-    out = b'KYKM' + struct.pack('<HHHBB', 4, N, len(points), form, body)
+    out = b'KYKM' + struct.pack('<HHHBB', 5, N, len(points), form, kind)
     out += struct.pack('<ff', min(params), max(params))
     for pt in points:
         p, modes, stage = pt[0], pt[1], pt[2]
@@ -180,9 +184,10 @@ def main():
         write(sys.argv[4], N, pts)
     elif kind in ('shaped', 'records'):
         d = sys.argv[2]
-        pts, form = [], 0
+        pts, form, kind = [], 0, 0
         for line in open(os.path.join(d, 'fits.tsv')).read().splitlines()[1:]:
             c = line.split('\t')
+            kind = 1 if c[2] == 'index' else 0
             modes, shaper, swings = [], None, [1e9, 0]
             for l in open(os.path.join(d, c[0] + '.mmr')):
                 w = l.split()
@@ -205,7 +210,7 @@ def main():
             pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes), noise_of(d, c[0])))
         pts.sort(key=lambda p: p[0])
         N = max(len(pt[1]) for pt in pts)
-        write(sys.argv[3], N, pts, form, 0)
+        write(sys.argv[3], N, pts, form, kind)
     return 0
 
 

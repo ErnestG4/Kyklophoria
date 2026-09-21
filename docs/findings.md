@@ -691,6 +691,21 @@ notes E1–G3 from the Philharmonia's single-note files (loss 1.1–1.8; the
 `phrase` files under the same articulation are runs of notes and are now
 skipped), as `bass.kykm`.
 
+*An index is not a note.* The percussion world's parameter is a row of
+bodies, and the runtime had been asked to play it by pitch: a C4 on the
+module is midi 60, past the row's end, so every note was the last body.
+The world now says what its parameter is (`.kykm` v5, a `kind` byte in
+the slot v4 wrote an unread body count into; the fitter carries the
+manifest's `index` through), and Kyklophoria plays an index world by its
+position axis, lo to hi, the pot walking gong to woodblock with the state
+ringing on. Which found the retune's real flaw: it carried two state
+samples across a change of pole, and two samples of a fast oscillation
+read under a slow pole are a huge amplitude — a gong retuned to a tom
+came back 28 dB louder. The state now crosses as an amplitude and a
+phase, solved under the old pole and rewritten under the new, in both
+runtimes; the Wurlitzer's retune, which lifted or dropped by the
+frequency ratio before, is transparent.
+
 *The spin, otherwise.* For an electric world the axes to spin are the
 stage's own — voicing (the screw, in widths off the fitted centre), decay
 (every mode's T60 × k), the coil — and the runtime has them as `Tune` on a
