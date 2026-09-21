@@ -590,6 +590,14 @@ async function fetchResonate(link) {
     out.modes.push({ hz: dv.getFloat32(at, true), zeta: dv.getFloat32(at + 4, true), gain: dv.getFloat32(at + 8, true) });
   if (at + 4 <= b.length) { out.burst = dv.getUint32(at, true); at += 4; }
   if (at < b.length) { const M = b[at]; at += 1; for (let i = 0; i < M && at + 4 <= b.length; i++, at += 4) out.points.push(dv.getFloat32(at, true)); }
+  /* a family: which instrument of how many, by name */
+  out.members = []; out.member = 0; out.name = '';
+  const txt = (o) => new TextDecoder().decode(b.subarray(o, o + 16)).replace(/\0.*$/, '');
+  if (at + 18 <= b.length) {
+    const fam = b[at], cur = b[at + 1]; at += 2;
+    out.member = cur; out.name = txt(at); at += 16;
+    for (let i = 0; i < fam && at + 16 <= b.length; i++, at += 16) out.members.push(txt(at));
+  }
   return out;
 }
 

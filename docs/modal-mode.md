@@ -219,6 +219,22 @@ what it is). Concretely:
   burst's window, and the pickup carries the tine's last displacement
   across a retune rather than its flux. The module is 329 KB; the bank's
   whole-function count is 204 with the lead-and-ramp, the wash 289.
+- **Families** (21 Sept, Combust: "when you tried to model a bunch
+  together they were mush because we were trying to bridge paradigms.
+  Keeping families together by the way they work is key"). A family is
+  a `.kykm` of kind 2: a container of whole worlds that work the same way
+  — `strings` is violin, viola, bass, guitar, banjo, mandolin; `pianos`
+  the grand, the Wurlitzer, the EP twice; `electric` the pickup worlds —
+  and position 0 chooses the instrument (a selector with a tenth of a
+  step of hysteresis, never a blend), v/oct the note within it. The
+  runtime's `Member(m, w)` attaches the chosen one; the engine rebuilds
+  the voice with its ring carried when the pot crosses to another; the
+  readout says which of how many and by name, and the page draws the row
+  above the note axis. Built by `export.py family`. The module's regions
+  are eight of 4 MB now, since a family is the sum of its members.
+  `resonate_engine_check`: a family of the Wurlitzer and the EP is the
+  Wurlitzer at position 0 and the EP at 1, bit for bit, and still the
+  Wurlitzer at 0.45.
 - **Controls, learned from Rings and Elements** (Combust: "think of all
   the modes available to Mutable Elements and Rings"; the code is at
   `~/Mutable/Streams/eurorack/{rings,elements}`). Taken so far:

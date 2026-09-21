@@ -271,6 +271,50 @@ int main()
         printf("  exciter: noise in, C3 stands %.1f dB over 150 Hz; silent without the drive\n", at - off);
     }
 
+    /* 9. a family: a container of the Wurlitzer and the EP built here, the
+       way export.py builds one; position 0 chooses the instrument, the
+       pitch the note. At position 0 the family plays exactly what the
+       Wurlitzer alone plays; at 1, exactly the EP; between, one or the
+       other with hysteresis, never a blend. */
+    {
+        std::vector<uint8_t> fam;
+        auto u8 = [&](uint8_t v) { fam.push_back(v); };
+        auto u16 = [&](uint16_t v) { u8(v & 255); u8(v >> 8); };
+        auto u32 = [&](uint32_t v) { u16(v & 65535); u16(v >> 16); };
+        auto f32 = [&](float v) { uint32_t u; std::memcpy(&u, &v, 4); u32(u); };
+        const std::vector<uint8_t>* mem[2] = { &wblob, &blob };
+        const char* names[2] = { "wurli", "ep-vel" };
+        uint16_t Nmax = 0; for(auto* b : mem) { uint16_t nn; std::memcpy(&nn, b->data() + 6, 2); Nmax = std::max(Nmax, nn); }
+        fam.insert(fam.end(), {'K', 'Y', 'K', 'M'}); u16(6); u16(Nmax); u16(0); u8(0); u8(2); f32(0.f); f32(1.f);
+        u8(2);
+        uint32_t off = (uint32_t)(20 + 1 + 24 * 2); off = (off + 3) & ~3u;
+        std::vector<uint8_t> body;
+        for(int i = 0; i < 2; i++)
+        {
+            u32(off + (uint32_t)body.size()); u32((uint32_t)mem[i]->size());
+            char nm[16] = {0}; std::snprintf(nm, 16, "%s", names[i]); for(char c : nm) u8((uint8_t)c);
+            body.insert(body.end(), mem[i]->begin(), mem[i]->end());
+            while(body.size() & 3) body.push_back(0);
+        }
+        while(fam.size() < off) fam.push_back(0);
+        fam.insert(fam.end(), body.begin(), body.end());
+        World f; f.UseResonate(fam.data(), (uint32_t)fam.size());
+        CHECK(f.IsResonate() && f.Res().kind == 2 && f.Res().M == 2, "the family did not attach (kind %d, %d members)", f.Res().kind, f.Res().M);
+        CHECK(std::strcmp(f.Res().MemberName(1), "ep-vel") == 0, "member 1 is named '%s'", f.Res().MemberName(1));
+        const float at0[kMaxN] = {0.f}, at1[kMaxN] = {1.f}, at45[kMaxN] = {0.45f};
+        auto render = [&](const World& w, const float* pos) {
+            Engine e; e.Init(&w, sr); e.gain = 1.f; e.SetPosition(pos, 1); e.SetF0(130.81f); e.Strike(0.6f);
+            std::vector<float> y; Run(e, y, 100); return y;
+        };
+        const auto fw = render(f, at0), ww = render(wurli, at0), fe = render(f, at1), ee = render(rw, at0), fm = render(f, at45);
+        double d0 = 0, d1 = 0, dm = 0, en = 0;
+        for(size_t i = 0; i < fw.size(); i++) { d0 += (fw[i] - ww[i]) * (fw[i] - ww[i]); d1 += (fe[i] - ee[i]) * (fe[i] - ee[i]); dm += (fm[i] - ww[i]) * (fm[i] - ww[i]); en += ww[i] * ww[i]; }
+        CHECK(d0 == 0.0, "the family at position 0 is not the Wurlitzer: %.3g of the energy", d0 / en);
+        CHECK(d1 == 0.0, "the family at position 1 is not the EP: %.3g of the energy", d1 / en);
+        CHECK(dm == 0.0, "the family at 0.45 is not still the Wurlitzer (a blend?): %.3g of the energy", dm / en);
+        printf("  a family of two: position 0 is the Wurlitzer, 1 the EP, 0.45 still the Wurlitzer, all bit for bit\n");
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }

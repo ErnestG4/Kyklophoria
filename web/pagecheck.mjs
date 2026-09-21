@@ -192,6 +192,10 @@ const CASES = [
     points: [36, 43, 48, 55, 60, 67, 72, 79, 84, 91, 96],
     modes: [{ hz: 261.6, zeta: 0.001, gain: 0.5 }, { hz: 523.2, zeta: 0.002, gain: 0.2 }, { hz: 2093, zeta: 0.03, gain: 0.001 },
             { hz: 0, zeta: 1, gain: 0 }, { hz: 8000, zeta: 0.5, gain: 0.00001 }] }],
+  ['a family with its readout', tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4 }), {
+    kind: 0, lo: 55, hi: 93, param: 62.0, P: 25, burst: 3360, points: [55, 56, 58, 61, 62, 64, 67, 69, 70, 72, 74, 76, 79, 81, 82, 84, 86, 88, 91, 93],
+    modes: [{ hz: 293.7, zeta: 0.001, gain: 0.5 }, { hz: 587.3, zeta: 0.002, gain: 0.2 }],
+    members: ['violin', 'viola', 'bass', 'guitar', 'banjo', 'mandolin'], member: 1, name: 'viola' }],
   ['an index world with its readout', tel({ n: 1, world: 0xFF, mags: null, frame: null, flags: 4 }), {
     kind: 1, lo: 0, hi: 18, param: 7.2, P: 19, burst: 0, points: Array.from({ length: 19 }, (_, i) => i),
     modes: [{ hz: 488, zeta: 0.0009, gain: 0.24 }, { hz: 975, zeta: 0.001, gain: 0.1 }] }],

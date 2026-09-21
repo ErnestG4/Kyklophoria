@@ -2072,7 +2072,22 @@ function drawResonateSpace(W, H) {
   const px = v => x0 + (x1 - x0) * (v - r.lo) / span;
   const isNote = r.kind === 0;
   const label = v => isNote ? MVL.noteName(440 * Math.pow(2, (v - 69) / 12)) : String(Math.round(v));
-  cx.fillText(isNote ? `note: ${label(r.lo)} to ${label(r.hi)}, ${r.P} points` : `bodies: ${r.P} in a row, position 0 walks them`, x0, y - 30);
+  /* a family: the row of instruments above the axis, the chosen one lit;
+     position 0 walks the row */
+  if (r.members && r.members.length) {
+    const yy = y - 64, step = (x1 - x0) / r.members.length;
+    cx.fillText('family — position 0 chooses', x0, yy - 14);
+    for (let i = 0; i < r.members.length; i++) {
+      const on = i === r.member;
+      cx.strokeStyle = on ? '#e8eef4' : '#3a4a5e'; cx.lineWidth = 1;
+      cx.strokeRect(x0 + i * step + 0.5, yy + 0.5, step - 4, 18);
+      cx.fillStyle = on ? '#e8eef4' : '#6b819d';
+      let t = r.members[i]; while (t.length > 2 && cx.measureText(t).width > step - 10) t = t.slice(0, -1);
+      cx.fillText(t, x0 + i * step + 4, yy + 13);
+    }
+    cx.fillStyle = '#6b819d';
+  }
+  cx.fillText(isNote ? `${r.name ? r.name + ' — ' : ''}note: ${label(r.lo)} to ${label(r.hi)}, ${r.P} points` : `bodies: ${r.P} in a row, position 0 walks them`, x0, y - 30);
   /* the points: a tick each, the nearer one to the voice brighter */
   for (const p of r.points) {
     const near = Math.abs(p - r.param) <= span / Math.max(1, r.points.length) * 0.5;

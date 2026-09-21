@@ -628,6 +628,16 @@ struct ResonatorWorld
     uint8_t  form, kind;   /* kind: 0 the param is a note, taken from the pitch; 1 an index into a row of bodies, taken from a position */
     uint8_t  ver;          /* 4, 5 or 6: cents are fifths of a cent from 6, a burst carries its fade from 6, level 255 is silence from 6 */
     float    lo, hi;
+    /* a family (kind 2): a row of instruments that work the same way —
+       strings, pianos — position 0 choosing among them and the note
+       within each from the pitch. A container of whole .kykm files, not a
+       merge: a morph between two instruments' slots is mush (holistic-
+       math.md), a choice between them is an instrument. Member(m, w)
+       attaches w to the m-th; everything else about a family is the
+       member's. */
+    static constexpr int kMaxMembers = 8;
+    uint8_t  M;
+    uint32_t member_off[kMaxMembers], member_len[kMaxMembers];
     /* the spin: what a pot does to a loaded point. voicing moves the pole
        off centre by that many widths on top of the fitted h; decay
        multiplies every mode's T60; coil multiplies the coil's fc. Applied at
@@ -660,7 +670,7 @@ struct ResonatorWorld
         return q;
     }
 
-    void Init() { blob = nullptr; size = 0; N = P = 0; form = kind = 0; ver = 0; lo = hi = 0.f; voicing = 0.f; decay = coil = 1.f; }
+    void Init() { blob = nullptr; size = 0; N = P = 0; form = kind = 0; ver = 0; lo = hi = 0.f; voicing = 0.f; decay = coil = 1.f; M = 0; for(int m = 0; m < kMaxMembers; m++) member_off[m] = member_len[m] = 0; }
 
     bool Attach(const void* data, uint32_t bytes)
     {
@@ -670,7 +680,40 @@ struct ResonatorWorld
         std::memcpy(&N, blob + 6, 2); std::memcpy(&P, blob + 8, 2);
         form = blob[10]; kind = blob[11];      /* version 4 wrote an unread body count here, always 0: a note */
         std::memcpy(&lo, blob + 12, 4); std::memcpy(&hi, blob + 16, 4);
+        M = 0;
+        if(kind == 2)
+        {
+            if(v < 6 || size < kHeader + 1) return false;
+            const uint8_t m = blob[kHeader];
+            if(m == 0 || m > kMaxMembers || size < kHeader + 1 + 24u * m) return false;
+            for(int i = 0; i < m; i++)
+            {
+                std::memcpy(&member_off[i], blob + kHeader + 1 + 24 * i, 4);
+                std::memcpy(&member_len[i], blob + kHeader + 1 + 24 * i + 4, 4);
+                if(member_off[i] + member_len[i] > size) return false;
+                ResonatorWorld w; w.Init();
+                if(!w.Attach(blob + member_off[i], member_len[i]) || w.kind == 2) return false;
+            }
+            M = m;
+            return N <= ResonatorBank::kMax;
+        }
         return (v == 4 || v == 5 || v == 6) && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
+    }
+    /* the m-th instrument of a family, as a world of its own with this
+       family's spin; a plain world is its own only member */
+    bool Member(int m, ResonatorWorld& w) const
+    {
+        w.Init();
+        if(kind != 2) { w = *this; return true; }
+        if(m < 0) m = 0; if(m >= M) m = M - 1;
+        if(!w.Attach(blob + member_off[m], member_len[m])) return false;
+        w.voicing = voicing; w.decay = decay; w.coil = coil;
+        return true;
+    }
+    const char* MemberName(int m) const
+    {
+        if(kind != 2 || m < 0 || m >= M) return "";
+        return (const char*)(blob + kHeader + 1 + 24 * m + 8);   /* 16 bytes, zero padded by the export */
     }
 
     float Param(int i) const { float p; std::memcpy(&p, Point(i), 4); return p; }

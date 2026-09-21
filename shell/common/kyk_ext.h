@@ -80,8 +80,10 @@ constexpr uint8_t kCmdSetControl = 0x6E;   /* desktop bridge only */
    has the world, so the module says. Reply: status, u8 kind, f32 lo, f32
    hi, f32 param (where on its axis the voice was built), u16 P (points),
    u8 N, then N x (f32 hz, f32 zeta, f32 gain), then u32 burst samples,
-   then u8 M and M x f32 point params (the first 64). BAD_STATE when what
-   is playing is not a resonator. */
+   then u8 M and M x f32 point params (the first 64); then, for a family,
+   u8 members, u8 member, char[16] its name, then members x char[16] every
+   name (zero members for a plain world). The axis and modes reported are
+   the member's. BAD_STATE when what is playing is not a resonator. */
 constexpr uint8_t kCmdResonate   = 0x6F;
 enum TourOp : uint8_t { kTourGet = 0, kTourSet = 1, kTourTick = 2 };
 
@@ -475,7 +477,10 @@ public:
             {
                 const World* wd = src_.ResonateWorld(); const Engine* en = src_.ResonateEngine();
                 if(!wd || !en || !wd->IsResonate()) { w.U8(3u); return; }
-                const ResonatorWorld& r = wd->Res(); const ResonatorVoice& v = en->Voice();
+                /* a family reports the instrument the voice is built from,
+                   then says which of how many, and its name */
+                const ResonatorWorld& fam = wd->Res(); const ResonatorVoice& v = en->Voice();
+                ResonatorWorld r; fam.Member(en->ResMember(), r);
                 auto f32 = [&](float x) { uint32_t u; std::memcpy(&u, &x, 4); w.U32(u); };
                 w.U8(0u); w.U8(r.kind); f32(r.lo); f32(r.hi); f32(en->ResParamNow()); w.U16(r.P); w.U8((uint8_t)r.N);
                 for(int k = 0; k < r.N; k++) { f32(v.hz[k]); f32(v.zeta[k]); f32(v.gain[k]); }
@@ -483,6 +488,10 @@ public:
                 const int m = r.P < 64 ? r.P : 64;
                 w.U8((uint8_t)m);
                 for(int i = 0; i < m; i++) f32(r.Param(i));
+                w.U8(fam.kind == 2 ? fam.M : 0u); w.U8((uint8_t)en->ResMember());
+                const char* nm = fam.MemberName(en->ResMember());
+                for(int i = 0; i < 16; i++) w.U8((uint8_t)nm[i]);
+                for(int i = 0; i < (fam.kind == 2 ? fam.M : 0); i++) { const char* q = fam.MemberName(i); for(int c = 0; c < 16; c++) w.U8((uint8_t)q[c]); }
                 return;
             }
             case kCmdSlots:

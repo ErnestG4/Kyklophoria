@@ -314,8 +314,8 @@ static char     gSlotName[kSlotCount][kUserNameLen + 1];
 /* Sixteen: four was the first evening's number and the fifth world would
  * not load, silently — a slot past 03 stayed empty. 32 MB of the 64, with
  * the wavetable blobs and the slots taking under 5 MB of the rest. */
-constexpr uint32_t kResRegionBytes = 2u << 20;
-constexpr int      kResRegions     = 16;
+constexpr uint32_t kResRegionBytes = 4u << 20;   /* a family — strings is six worlds, 2.1 MB; electric 3.4 — needs the room */
+constexpr int      kResRegions     = 8;
 static uint8_t KYK_SDRAM gResArena[kResRegions][kResRegionBytes];
 static_assert(std::is_trivially_default_constructible<decltype(gResArena)>::value,
               "gResArena is in SDRAM and must not be constructed before hw.Init()");

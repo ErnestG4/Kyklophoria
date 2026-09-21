@@ -52,10 +52,10 @@ public:
         phase_dirty_ = false;
         dirty_ = true;
         for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
-        ractive_ = 0; rpoly_ = 1;
+        ractive_ = 0; rpoly_ = 1; rmember_ = 0;
         rnote_ = 1e9f;
         rframe_ = false;
-        if(world && world->IsResonate()) { rnote_ = ResParam(); Tuned().At(rnote_, rvoices_[0], sr_); }
+        if(world && world->IsResonate()) { rmember_ = ResMemberOf(c_[0]); rnote_ = ResParam(); Tuned().At(rnote_, rvoices_[0], sr_); }
     }
 
     /* ── the resonate path ───────────────────────────────────────────────
@@ -121,6 +121,8 @@ public:
         const float p = ResParam();
         const ResonatorWorld& r = world_->Res();
         const float eps = r.kind == 1 ? 0.005f * (r.hi - r.lo) : 0.02f;
+        const int m = ResMemberOf(c_[0]);
+        if(m != rmember_) { rmember_ = m; rnote_ = 1e9f; }   /* another instrument: rebuilt, the ring carried */
         if(rnote_ != 1e9f && std::fabs(p - rnote_) <= eps) return;
         Tuned().At(p, rvoices_[ractive_], sr_, !rfresh_); rnote_ = p; rfresh_ = false;
     }
@@ -161,10 +163,25 @@ public:
     static float VoicingOf(float c) { return (c - 0.5f) * 4.f; }              /* +-2 widths */
     ResonatorWorld Tuned() const
     {
-        ResonatorWorld r = world_->Res();
+        ResonatorWorld r;
+        world_->Res().Member(rmember_, r);     /* a plain world is its own only member */
         r.voicing = rtune_[0]; r.decay = rtune_[1]; r.coil = rtune_[2];
         return r;
     }
+    /* which instrument of a family position 0 chooses: the row quantised,
+       with a tenth of a step of hysteresis so a pot on a boundary does not
+       chatter between two instruments */
+    int ResMemberOf(float c) const
+    {
+        const ResonatorWorld& r = world_->Res();
+        if(r.kind != 2 || r.M < 2) return 0;
+        const float x = (c < 0.f ? 0.f : c > 1.f ? 1.f : c) * (float)(r.M - 1);
+        const int cur = rmember_;
+        if(x > (float)cur + 0.6f) return cur + 1 < r.M ? (int)(x + 0.4f) : cur;
+        if(x < (float)cur - 0.6f) return (int)(x + 0.6f);
+        return cur;
+    }
+    int  ResMember() const { return rmember_; }
 
     /* Position moves that are smaller than this are not worth a re-render.
      * The pots and CVs are read through a 16-bit ADC, so a perfectly still
@@ -292,7 +309,7 @@ public:
         {
             if(tune_from_control_)
             {
-                if(world_->Res().kind != 1) SetTune(Tune::Voicing, VoicingOf(c_[0]));
+                if(world_->Res().kind == 0) SetTune(Tune::Voicing, VoicingOf(c_[0]));   /* on a family or a row, axis 0 is the instrument */
                 SetTune(Tune::Decay, DecayOf(c_[2]));
                 SetTune(Tune::Coil, CoilOf(c_[3]));
             }
@@ -444,10 +461,10 @@ public:
          * here, silent, at the current pitch — arriving at a resonate world
          * is the same as starting in it */
         for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
-        ractive_ = 0;
+        ractive_ = 0; rmember_ = 0;
         rnote_ = 1e9f;
         rframe_ = false;
-        if(w && w->IsResonate()) { rnote_ = ResParam(); Tuned().At(rnote_, rvoices_[0], sr_); }
+        if(w && w->IsResonate()) { rmember_ = ResMemberOf(c_[0]); rnote_ = ResParam(); Tuned().At(rnote_, rvoices_[0], sr_); }
     }
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
@@ -630,6 +647,7 @@ private:
     ResonatorVoice rvoices_[kPoly]; /* the resonate path; idle for every other kind */
     int            ractive_ = 0;    /* the voice the last strike took, which follows the pitch */
     bool           rfresh_ = false; /* the next retune builds the voice fresh (a reused voice), not with its ring kept */
+    int            rmember_ = 0;    /* the instrument of a family the voice is built from */
     int            rpoly_ = 1;
     float          rnote_ = 1e9f;   /* the note the voice was built at */
     float          rtune_[3] = {0.f, 1.f, 1.f};   /* voicing (widths), decay (x), coil (x) */
