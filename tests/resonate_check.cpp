@@ -143,8 +143,8 @@ int main()
            inverse: cents back from hertz land on the byte that was read */
         CHECK(std::fabs(1200 * std::log2(hz[0] / 65.41f)) < 50.0, "point 0 decodes to %.2f Hz, C2 is 65.41", hz[0]);
         uint16_t c0; std::memcpy(&c0, w.Modes(0), 2);
-        const int back = (int)std::lround(1200.0 * std::log2(hz[0] / 20.0));
-        CHECK(back == (int)c0, "point 0: %.3f Hz encodes back to %d cents, byte says %d", hz[0], back, (int)c0);
+        const int back = (int)std::lround((w.ver >= 6 ? 6000.0 : 1200.0) * std::log2(hz[0] / 20.0));
+        CHECK(back == (int)c0, "point 0: %.3f Hz encodes back to %d (fifths of a cent from v6), field says %d", hz[0], back, (int)c0);
         /* C3 (param 48): six strikes rendered alone, h2 re h1 must rise monotonically */
         double prev = -1e9; bool mono = true; double first_h2 = 0, last_h2 = 0;
         for(int s = 0; s < 6; s++)

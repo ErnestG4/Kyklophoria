@@ -79,13 +79,13 @@ struct ResonatorBank
        exactly. An impulse into the main bank was a click the fit never
        heard; a 3 ms pulse would starve the high modes */
     float s1[kMax], s2[kMax];
-    float ramp_n, ramp_len;
+    float ramp_n, ramp_len, ramp_lead;
     bool  ramping;
 
     void Init()
     {
         n = 0;
-        ramp_n = 0.f; ramp_len = 144.f; ramping = false;
+        ramp_n = 0.f; ramp_len = 144.f; ramp_lead = 0.f; ramping = false;
         for(int i = 0; i < kMax; i++) c1[i] = c2[i] = p1[i] = p2[i] = y1[i] = y2[i] = s1[i] = s2[i] = 0.f;
     }
 
@@ -144,11 +144,17 @@ struct ResonatorBank
        strike while a strike is still ramping folds the earlier one into the
        main state first, un-ramped from there on — 3 ms of envelope is
        inaudible against a second hit that close */
-    void Strike(float swing)
+    /* lead samples of nothing (the burst carries the sound), then the
+       ramp: 1 - fade, the burst's own raised cosine mirrored. The state
+       runs from the strike so the modes' phases meet the recording's at
+       the seam; the ramp only scales what is heard */
+    void Strike(float swing, float lead = 0.f, float ramp = 0.f)
     {
         if(ramping) Fold();
         for(int i = 0; i < n; i++) { s1[i] = swing * p1[i]; s2[i] = swing * p2[i]; }
         ramp_n = 0.f;
+        ramp_lead = lead;
+        if(ramp > 0.f) ramp_len = ramp;
         ramping = true;
     }
 
@@ -174,7 +180,7 @@ struct ResonatorBank
             int m = frames < 64 ? frames : 64;
             if(ramping)
             {
-                const int left = (int)(ramp_len - ramp_n);
+                const int left = (int)(ramp_lead + ramp_len - ramp_n);
                 if(left > 0 && left < m) m = left;
             }
             for(int k = 0; k < m; k++) out[k] = 0.f;
@@ -193,7 +199,11 @@ struct ResonatorBank
             if(ramping)
             {
                 float w[64];
-                for(int k = 0; k < m; k++) w[k] = 0.5f - 0.5f * std::cos(3.1415927f * (ramp_n + (float)k) / ramp_len);
+                for(int k = 0; k < m; k++)
+                {
+                    const float u = ramp_n + (float)k - ramp_lead;
+                    w[k] = u <= 0.f ? 0.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len);
+                }
                 for(int i = 0; i < n; i++)
                 {
                     const float a = c1[i], b = c2[i];
@@ -207,7 +217,7 @@ struct ResonatorBank
                     s1[i] = u1; s2[i] = u2;
                 }
                 ramp_n += (float)m;
-                if(ramp_n >= ramp_len) Fold();
+                if(ramp_n >= ramp_lead + ramp_len) Fold();
             }
             out += m; frames -= m;
         }
@@ -220,8 +230,9 @@ struct Pickup
     float h, inv_w, K;
     float b0, b1, b2, a1, a2;     /* the coil */
     float prev, rest, z1, z2;     /* the last flux, and the flux at rest for this pole */
+    float u_last;                 /* the last displacement in, for a retune: the flux under the new pole at the tine's actual place */
 
-    void Init() { on = gap = false; h = 0.f; inv_w = K = 1.f; b0 = 1.f; b1 = b2 = a1 = a2 = 0.f; prev = rest = z1 = z2 = 0.f; }
+    void Init() { on = gap = false; h = 0.f; inv_w = K = 1.f; b0 = 1.f; b1 = b2 = a1 = a2 = 0.f; prev = rest = z1 = z2 = 0.f; u_last = 0.f; }
 
     void Set(float h_, float w_, float K_, float fc, float Q, float sr)
     {
@@ -264,6 +275,7 @@ struct Pickup
         if(!on) return;
         for(int k = 0; k < frames; k++)
         {
+            u_last = io[k];
             const float u   = (io[k] - h) * inv_w;
             const float phi = gap ? 1.f / (1.f - 0.9f * Tanh(u / 0.9f)) : 1.f / (1.f + u * u);
             const float d   = phi - prev;
@@ -301,7 +313,7 @@ struct BurstPlayer
        on a world with one take — a soft hit is a filtered attack, not a
        quiet copy of the hard one (commuted synthesis: the hammer does not
        commute) */
-    void Strike(const uint8_t* block, float swing, float rate = 1.0f, float lp = 0.0f)
+    void Strike(const uint8_t* block, float swing, float rate = 1.0f, float lp = 0.0f, uint32_t head = 10u)
     {
         active = 0;
         if(!block) return;
@@ -316,7 +328,7 @@ struct BurstPlayer
             std::memcpy(&sw, q, 4); std::memcpy(&sc, q + 4, 4); std::memcpy(&n, q + 8, 2);
             if(!lo || sw <= swing) { lo = q; slo = sw; }
             if(sw >= swing) { hi = q; shi = sw; break; }
-            q += 10 + 2u * n;
+            q += head + 2u * n;
         }
         if(!lo) return;
         if(!hi) { hi = lo; shi = slo; }
@@ -330,7 +342,7 @@ struct BurstPlayer
             float sw, sc; uint16_t n;
             std::memcpy(&sw, pick[i], 4); std::memcpy(&sc, pick[i] + 4, 4); std::memcpy(&n, pick[i] + 8, 2);
             Slot& q2 = slot[active++];
-            q2.s = (const int16_t*)(pick[i] + 10);
+            q2.s = (const int16_t*)(pick[i] + head);
             q2.n = n; q2.pos = 0.0f; q2.rate = rate > 0.0f ? rate : 1.0f; q2.lp = lp; q2.z = 0.0f;
             q2.gain = wgt[i] * sc / 32767.f * (ref[i] > 0.f ? swing / ref[i] : 1.f);
         }
@@ -372,12 +384,13 @@ struct NoiseLayer
     float x1[kBands], x2[kBands], y1[kBands], y2[kBands];
     float env[kBands], fall[kBands], level[kBands];
     float gain[kBands], gain_sr;   /* each band-pass's noise gain, measured once per sample rate */
+    float rise_n, rise_len;        /* the rise at a strike, in samples */
     uint32_t rng;
     bool  on;
 
     void Init()
     {
-        on = false; rng = 0x9E3779B9u; gain_sr = 0.f;
+        on = false; rng = 0x9E3779B9u; gain_sr = 0.f; rise_n = rise_len = 0.f;
         for(int k = 0; k < kBands; k++) { b0[k] = a1[k] = a2[k] = x1[k] = x2[k] = y1[k] = y2[k] = env[k] = fall[k] = level[k] = gain[k] = 0.f; }
     }
 
@@ -423,13 +436,18 @@ struct NoiseLayer
         }
     }
 
-    void Strike(float swing) { for(int k = 0; k < kBands; k++) env[k] += swing * level[k]; }
+    /* the wash rises over the burst's window rather than starting at its
+       level under the burst — a tam-tam's was +32 dB inside it — and the
+       envelopes only start falling once it is up */
+    void Strike(float swing, float rise = 0.f) { for(int k = 0; k < kBands; k++) env[k] += swing * level[k]; rise_n = 0.f; rise_len = rise; }
 
     void Process(float* io, int frames)
     {
         if(!on) return;
         for(int i = 0; i < frames; i++)
         {
+            float w = 1.f;
+            if(rise_n < rise_len) { w = rise_n / rise_len; rise_n += 1.f; }
             rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
             const float x = ((int32_t)rng) * (1.7320508f / 2147483648.f);    /* uniform, unit variance */
             float acc = 0.f;
@@ -439,9 +457,9 @@ struct NoiseLayer
                 const float y = b0[k] * (x - x2[k]) - a1[k] * y1[k] - a2[k] * y2[k];
                 x2[k] = x1[k]; x1[k] = x; y2[k] = y1[k]; y1[k] = y;
                 acc += env[k] * y;
-                env[k] *= fall[k];
+                if(w >= 1.f) env[k] *= fall[k];
             }
-            io[i] += acc;
+            io[i] += w * acc;
         }
     }
 };
@@ -456,6 +474,8 @@ struct ResonatorVoice
     float          swing_soft, swing_hard;
     float          burst_rate;        /* the burst's read step: the played note over the burst's own, 1 on an index world */
     float          sr;
+    uint32_t       burst_head;        /* bytes before a burst's samples in this world's version */
+    uint32_t       burst_fade;        /* samples the modes come in over, under the burst's fade; 0 for no burst */
     /* what the voice was built from, kept for a readout: the page asks
        what the module is playing and the module says, rather than the
        page decoding a world it never has */
@@ -464,7 +484,7 @@ struct ResonatorVoice
 
     void Init()
     {
-        bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0;
+        bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0; burst_head = 10; burst_fade = 0;
         for(int k = 0; k < ResonatorBank::kMax; k++) hz[k] = zeta[k] = gain[k] = 0.f;
     }
 
@@ -473,7 +493,13 @@ struct ResonatorVoice
         /* between the softest and hardest take in log; a world fitted from
            one take (swing_soft == swing_hard) scales linearly with velocity */
         const float s = swing_hard > swing_soft ? swing_soft * std::pow(swing_hard / swing_soft, velocity01) : swing_soft * velocity01;
-        bank.Strike(s);
+        /* the burst is the recording faded over its last part, and the
+           modes come in under that fade: the strike bank's ramp is the
+           burst's fade, at the burst's rate, where there is a burst — 3 ms
+           where there is none. Nothing to cancel (docs/holistic-math.md) */
+        const float ramp = burst_fade ? (float)burst_fade / (burst_rate > 0.f ? burst_rate : 1.f) : 0.003f * sr;
+        const float lead = burst_fade ? (float)(burst_len - burst_fade) / (burst_rate > 0.f ? burst_rate : 1.f) : 0.f;
+        bank.Strike(s, lead, ramp);
         /* one take: the attack is filtered by velocity, a one-pole with its
            corner from 1 kHz at nothing to 13 kHz at full — the hammer's felt
            and the finger's pad are softer the slower they arrive. Takes
@@ -485,8 +511,8 @@ struct ResonatorVoice
             const float fc = 1000.f * std::exp2(3.7f * v);
             lp = v >= 1.f ? 0.f : 1.f - std::exp(-6.2831853f * fc / sr);
         }
-        burst.Strike(bursts, s, burst_rate, lp);
-        wash.Strike(s);
+        burst.Strike(bursts, s, burst_rate, lp, burst_head);
+        wash.Strike(s, lead + ramp);
     }
     void Process(float* out, int frames)
     {
@@ -504,6 +530,7 @@ struct ResonatorWorld
     uint32_t size;
     uint16_t N, P;
     uint8_t  form, kind;   /* kind: 0 the param is a note, taken from the pitch; 1 an index into a row of bodies, taken from a position */
+    uint8_t  ver;          /* 4, 5 or 6: cents are fifths of a cent from 6, a burst carries its fade from 6, level 255 is silence from 6 */
     float    lo, hi;
     /* the spin: what a pot does to a loaded point. voicing moves the pole
        off centre by that many widths on top of the fitted h; decay
@@ -526,25 +553,28 @@ struct ResonatorWorld
     const uint8_t* Noise(int i) const { return Point(i) + FixedBytes(); }
     static const uint8_t* NoiseEnd(const uint8_t* b) { return b + 1 + 8u * b[0]; }
     const uint8_t* Bursts(int i) const { return NoiseEnd(Noise(i)); }
-    static const uint8_t* BurstEnd(const uint8_t* b)
+    /* a burst: f32 swing, f32 scale, u16 len, [u16 fade from version 6,]
+       i16 samples */
+    uint32_t BurstHead() const { return ver >= 6 ? 12u : 10u; }
+    const uint8_t* BurstEnd(const uint8_t* b) const
     {
         uint16_t nb; std::memcpy(&nb, b, 2);
         const uint8_t* q = b + 2;
-        for(uint16_t k = 0; k < nb; k++) { uint16_t n; std::memcpy(&n, q + 8, 2); q += 10 + 2u * n; }
+        for(uint16_t k = 0; k < nb; k++) { uint16_t n; std::memcpy(&n, q + 8, 2); q += BurstHead() + 2u * n; }
         return q;
     }
 
-    void Init() { blob = nullptr; size = 0; N = P = 0; form = kind = 0; lo = hi = 0.f; voicing = 0.f; decay = coil = 1.f; }
+    void Init() { blob = nullptr; size = 0; N = P = 0; form = kind = 0; ver = 0; lo = hi = 0.f; voicing = 0.f; decay = coil = 1.f; }
 
     bool Attach(const void* data, uint32_t bytes)
     {
         blob = (const uint8_t*)data; size = bytes;
         if(bytes < kHeader || std::memcmp(blob, "KYKM", 4) != 0) return false;
-        uint16_t ver; std::memcpy(&ver, blob + 4, 2);
+        uint16_t v; std::memcpy(&v, blob + 4, 2); ver = (uint8_t)v;
         std::memcpy(&N, blob + 6, 2); std::memcpy(&P, blob + 8, 2);
         form = blob[10]; kind = blob[11];      /* version 4 wrote an unread body count here, always 0: a note */
         std::memcpy(&lo, blob + 12, 4); std::memcpy(&hi, blob + 16, 4);
-        return (ver == 4 || ver == 5) && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
+        return (v == 4 || v == 5 || v == 6) && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
     }
 
     float Param(int i) const { float p; std::memcpy(&p, Point(i), 4); return p; }
@@ -557,15 +587,25 @@ struct ResonatorWorld
         for(int k = 0; k < N; k++)
         {
             uint16_t c; std::memcpy(&c, m + 5 * k, 2);
-            hz[k]    = 20.0f * std::exp2(c / 1200.0f);
+            hz[k]    = 20.0f * std::exp2(ver >= 6 ? c / 6000.0f : c / 1200.0f);   /* fifths of a cent from version 6 */
             zeta[k]  = std::exp(-0.1f * m[5 * k + 2]);
-            gain[k]  = std::exp(-0.25f * m[5 * k + 3] * 0.1151293f);   /* dB -> linear */
+            gain[k]  = (ver >= 6 && m[5 * k + 3] == 255) ? 0.f : std::exp(-0.25f * m[5 * k + 3] * 0.1151293f);   /* dB -> linear; 255 is silence */
             phase[k] = m[5 * k + 4] * (6.2831853f / 256.0f);
         }
     }
 
-    /* the world at a parameter value, into a voice: the two neighbouring
-       points interpolated by slot, the stage with them */
+    /* the world at a parameter value, into a voice. A note world (kind 0)
+       is the nearest point transposed to the note — every mode's frequency
+       by 2^((note − point)/12), the burst read at the same rate — and not
+       the two neighbours interpolated slot by slot, which the holistic pass
+       measured at +12 to +19 dB louder than either point at a midpoint:
+       the fitter builds attacks out of antiphase pairs that only cancel
+       as fitted, and a lerp of two such pairs stops them cancelling. A
+       sweep across a midpoint steps from one point's modes to the other's
+       with the state carried, which the retune does without a click. A
+       body row (kind 1) is still interpolated along the row — the glide
+       from gong to woodblock is the point of it — on absolute gains, so a
+       quiet slot is not lifted by the neighbour's louder loudest. */
     void At(float param, ResonatorVoice& v, float sr, bool keep = false) const
     {
         if(P == 0) return;
@@ -573,33 +613,38 @@ struct ResonatorWorld
         while(a + 1 < P && Param(a + 1) <= param) a++;
         const int b = a + 1 < P ? a + 1 : a;
         const float pa = Param(a), pb = Param(b);
-        const float t = pb > pa ? std::fmin(1.f, std::fmax(0.f, (param - pa) / (pb - pa))) : 0.f;
+        float t = pb > pa ? std::fmin(1.f, std::fmax(0.f, (param - pa) / (pb - pa))) : 0.f;
+        const int near = t < 0.5f ? a : b;
         float ha[ResonatorBank::kMax], za[ResonatorBank::kMax], ga[ResonatorBank::kMax], fa[ResonatorBank::kMax];
         float hb[ResonatorBank::kMax], zb[ResonatorBank::kMax], gb[ResonatorBank::kMax], fb[ResonatorBank::kMax];
-        Decode(a, ha, za, ga, fa);
-        Decode(b, hb, zb, gb, fb);
-        for(int k = 0; k < N; k++)
-        {
-            ha[k] = ha[k] * std::pow(hb[k] / ha[k], t);
-            za[k] = za[k] * std::pow(zb[k] / za[k], t);
-            /* gain linearly: the export puts a ghost — the same ratio at
-               zero gain — where a point has no mode in a slot, so a mode
-               fades in and out along the axis; geometric took it to
-               nothing at the first step */
-            ga[k] = ga[k] + t * (gb[k] - ga[k]);
-            float d = fb[k] - fa[k];                 /* phase: the short way round */
-            if(d > 3.1415927f) d -= 6.2831853f;
-            if(d < -3.1415927f) d += 6.2831853f;
-            fa[k] += t * d;
-        }
         float st[8], sb[8];
-        std::memcpy(st, Stage(a), 32);
-        std::memcpy(sb, Stage(b), 32);
-        for(int k = 0; k < 8; k++) st[k] += t * (sb[k] - st[k]);
-        /* the level bytes are relative to the point's loudest mode; the
-           swing into the field is absolute, so the gains get it back before
-           the bank takes them */
-        for(int k = 0; k < N; k++) ga[k] *= st[7];
+        if(kind != 1)
+        {
+            Decode(near, ha, za, ga, fa);
+            std::memcpy(st, Stage(near), 32);
+            const float r = std::exp2((param - Param(near)) / 12.f);
+            for(int k = 0; k < N; k++) { ha[k] *= r; ga[k] *= st[7]; }
+            t = 0.f;
+        }
+        else
+        {
+            Decode(a, ha, za, ga, fa);
+            Decode(b, hb, zb, gb, fb);
+            std::memcpy(st, Stage(a), 32);
+            std::memcpy(sb, Stage(b), 32);
+            for(int k = 0; k < N; k++) { ga[k] *= st[7]; gb[k] *= sb[7]; }     /* absolute before the lerp */
+            for(int k = 0; k < N; k++)
+            {
+                ha[k] = ha[k] * std::pow(hb[k] / ha[k], t);
+                za[k] = za[k] * std::pow(zb[k] / za[k], t);
+                ga[k] = ga[k] + t * (gb[k] - ga[k]);       /* linearly: a ghost is a fade, not a cliff */
+                float d = fb[k] - fa[k];                    /* phase: the short way round */
+                if(d > 3.1415927f) d -= 6.2831853f;
+                if(d < -3.1415927f) d += 6.2831853f;
+                fa[k] += t * d;
+            }
+            for(int k = 0; k < 7; k++) st[k] += t * (sb[k] - st[k]);
+        }
         for(int k = 0; k < N; k++) za[k] /= decay;            /* T60 x decay */
         for(int k = 0; k < N; k++) { v.hz[k] = ha[k]; v.zeta[k] = za[k]; v.gain[k] = ga[k]; }
         v.bank.Set(ha, za, ga, N, sr, fa, keep);
@@ -609,19 +654,24 @@ struct ResonatorWorld
             /* a burst is not interpolated: the nearer point's, read at the
                played note over its own, so a note between two points is not
                a semitone off in its attack; a body row plays it as it is */
-            const int near = t < 0.5f ? a : b;
             v.bursts = Bursts(near);
             v.burst_rate = kind == 1 ? 1.f : std::exp2((param - Param(near)) / 12.f);
+            v.burst_head = BurstHead();
             v.sr = sr;
             uint16_t nb; std::memcpy(&nb, v.bursts, 2);
-            v.burst_len = 0;
-            if(nb) { uint16_t n; std::memcpy(&n, v.bursts + 2 + 8, 2); v.burst_len = n; }
+            v.burst_len = 0; v.burst_fade = 0;
+            if(nb)
+            {
+                uint16_t n; std::memcpy(&n, v.bursts + 2 + 8, 2); v.burst_len = n;
+                if(ver >= 6) { uint16_t f; std::memcpy(&f, v.bursts + 2 + 10, 2); v.burst_fade = f; }
+                else v.burst_fade = n / 3;
+            }
         }
         /* the wash: levels and T60s interpolated between the points, applied
            with the spin's decay; state kept on a retune */
         {
             float la[8] = {0}, ta[8] = {0}, lb[8] = {0}, tb[8] = {0};
-            const uint8_t* na = Noise(a); const uint8_t* nb = Noise(b);
+            const uint8_t* na = Noise(kind != 1 ? near : a); const uint8_t* nb = Noise(kind != 1 ? near : b);
             for(int k = 0; k < na[0] && k < 8; k++) { std::memcpy(&la[k], na + 1 + 8 * k, 4); std::memcpy(&ta[k], na + 5 + 8 * k, 4); }
             for(int k = 0; k < nb[0] && k < 8; k++) { std::memcpy(&lb[k], nb + 1 + 8 * k, 4); std::memcpy(&tb[k], nb + 5 + 8 * k, 4); }
             for(int k = 0; k < 8; k++) { la[k] += t * (lb[k] - la[k]); ta[k] = (ta[k] + t * (tb[k] - ta[k])) * decay; }
@@ -638,16 +688,22 @@ struct ResonatorWorld
         {
             /* the pickup retunes without a click: its filter state and its
                last flux stay, only the field and the coil move */
-            const float prev = v.pickup.prev, rest = v.pickup.rest, z1 = v.pickup.z1, z2 = v.pickup.z2;
+            const float u_last = v.pickup.u_last, z1 = v.pickup.z1, z2 = v.pickup.z2;
             if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
             else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);
-            /* the last flux kept as its distance from rest, not as a value:
-               the pole has moved, so rest has too, and carrying the old
-               value put a step of (old rest - new rest) through d/dt — a
-               click on every retune of a pickup world, and a voice at rest
-               retuned before its first strike differing from one built
-               there by a tenth of its peak */
-            v.pickup.prev = prev - rest + v.pickup.rest; v.pickup.z1 = z1; v.pickup.z2 = z2;
+            /* the last flux re-read under the new pole at the tine's actual
+               displacement: the pole moved, so the flux the same tine
+               makes has too, and carrying the old value — or its distance
+               from rest, which was the first fix — put a step through
+               d/dt: −23 dB peaks per deadband step under a voicing sweep
+               (docs/holistic-math.md). The displacement is the thing that
+               did not move. */
+            {
+                const float u = (u_last - v.pickup.h) * v.pickup.inv_w;
+                v.pickup.prev = v.pickup.gap ? 1.f / (1.f - 0.9f * Pickup::Tanh(u / 0.9f)) : 1.f / (1.f + u * u);
+                v.pickup.u_last = u_last;
+            }
+            v.pickup.z1 = z1; v.pickup.z2 = z2;
         }
         else if(form == 1) v.pickup.Set(st[0], st[1], st[2], st[3], st[4], sr);
         else if(form == 2) v.pickup.SetGap(st[1], st[2], st[3], st[4], sr);

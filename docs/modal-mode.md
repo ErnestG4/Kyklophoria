@@ -190,6 +190,21 @@ what it is). Concretely:
   a tom's came back 28 dB louder before this. The Wurlitzer's retune,
   which used to lift or drop by the frequency ratio, is now transparent
   (the golden `m4_resonate` re-pinned for it).
+- **Format v6 and the runtime after the holistic pass** (21 Sept, from
+  `ModalBake/docs/holistic-math.md`, which measured every seam of the
+  maths). A note world plays the *nearest point transposed* — every mode by
+  2^((note − point)/12), the burst read at the same rate — and no longer
+  the two neighbours interpolated slot by slot, which was up to 12–19 dB
+  louder than either point at a midpoint (the fitter's antiphase pairs
+  un-cancelling); a body row still interpolates, on absolute gains. The
+  burst is the recording faded over its last part and the strike bank
+  comes in under (1 − fade) over the burst's own fade, so nothing has to
+  cancel (it was recording minus model, which asked the runtime to
+  reproduce the model to the sample). Cents are fifths of a cent, level
+  255 is silence, a burst carries its fade, the wash rises over the
+  burst's window, and the pickup carries the tine's last displacement
+  across a retune rather than its flux. The module is 329 KB; the bank's
+  whole-function count is 204 with the lead-and-ramp, the wash 289.
 - **Controls, learned from Rings and Elements** (Combust: "think of all
   the modes available to Mutable Elements and Rings"; the code is at
   `~/Mutable/Streams/eurorack/{rings,elements}`). Taken so far:
