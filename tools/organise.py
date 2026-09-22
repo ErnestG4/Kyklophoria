@@ -17,7 +17,8 @@ import soundfile as sf
 NOTE = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
 NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 # every dynamic word these libraries use, softest first
-ORDER = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'vl1', 'vl2', 'vl3', 'vl4', 'vl5', 'vl6',
+ORDER = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'vl1', 'vl2', 'vl3', 'vl4', 'vl5', 'vl6'] + \
+        ['v%02d' % k for k in range(1, 17)] + [
          'pianissimo', 'piano', 'mezzo-piano', 'mezzo-forte', 'forte', 'fortissimo']
 
 
@@ -40,6 +41,15 @@ def parse(name):
     # the first token is the instrument in every library seen so far, and
     # "Piano.ff.A0.aiff" reads its own name as a dynamic if you let it
     dyn = next((t.lower() for t in toks[1:] if t.lower() in ORDER), None)
+    if midi is None or dyn is None:
+        # Salamander writes the note and the velocity layer as one word,
+        # "F#3v2"; its `rel*` files are key releases and carry no note
+        for t in toks:
+            m = re.fullmatch(r'([A-Ga-g][b#s]?-?\d)v(\d+)', t)
+            if m:
+                midi = midi if midi is not None else midi_of(m.group(1))
+                dyn = dyn or ('v%02d' % int(m.group(2)))
+                break
     return midi, dyn
 
 
