@@ -53,27 +53,26 @@ def parse(name):
     return lo, hi, string, dyn
 
 
-def onsets(x, sr, want, floor_db=-45.0):
-    """Where the notes start: the envelope's rises, the `want` strongest,
-    at least 200 ms apart."""
+def onsets(x, sr, floor_db=-50.0, rise_db=2.5, min_gap=0.18):
+    """Where the notes start: every rise in the envelope above the floor,
+    at least min_gap apart. Generous on purpose — the labels come from the
+    pitch of each segment, not from counting these."""
     hop = int(0.01 * sr)
     e = np.array([np.sqrt((x[i:i + hop] ** 2).mean()) for i in range(0, len(x) - hop, hop)])
-    db = 20 * np.log10(e + 1e-9)
-    db -= db.max()
-    rise = np.concatenate([[0], np.diff(db)])
-    cand = [(rise[i], i) for i in range(2, len(db)) if db[i] > floor_db and rise[i] > 3.0]
-    cand.sort(reverse=True)
-    keep = []
-    for r, i in cand:
-        if all(abs(i - j) > 20 for j in keep):
-            keep.append(i)
-        if len(keep) >= want * 3:
-            break
-    keep.sort()
-    if len(keep) > want:                      # the loudest `want` rises, in order
-        by = sorted(keep, key=lambda i: -rise[i])[:want]
-        keep = sorted(by)
-    return [i * hop for i in keep]
+    db = 20 * np.log10(e + 1e-9); db -= db.max()
+    out = []
+    gap = int(min_gap / 0.01)
+    for i in range(1, len(db)):
+        if db[i] < floor_db:
+            continue
+        if db[i] - db[i - 1] < rise_db:
+            continue
+        if out and i - out[-1] < gap:
+            if db[i] > db[out[-1]]:
+                out[-1] = i
+            continue
+        out.append(i)
+    return [i * hop for i in out]
 
 
 def main():
@@ -92,29 +91,44 @@ def main():
             continue
         want = hi - lo + 1
         x, sr = sf.read(path, always_2d=True); x = x.mean(axis=1)
-        on = onsets(x, sr, want)
-        if len(on) != want:
-            print('  %-44s %d onsets for %d notes (%s..%s) — skipped' % (
-                os.path.basename(path), len(on), want, NAMES[lo % 12] + str(lo // 12 - 1), NAMES[hi % 12] + str(hi // 12 - 1)))
-            bad += 1; continue
+        on = onsets(x, sr)
+        if not on:
+            print('  %-44s no onsets' % os.path.basename(path)); bad += 1; continue
+        # the name says the range; the detector says which note each
+        # segment is. Take the segments whose pitch lands within the range,
+        # in an ascending run with no repeats — a run of chromatic notes is
+        # exactly that — and let the rest go. Counting onsets and trusting
+        # the order put every label a semitone out when the first note's
+        # onset was missed.
         d = os.path.join(a.outdir, string.lower() if (a.per_string and string) else '')
         os.makedirs(d, exist_ok=True)
-        off = []
+        picked = []
         for k, s0 in enumerate(on):
             e0 = on[k + 1] if k + 1 < len(on) else len(x)
             seg = x[max(0, s0 - int(0.01 * sr)):min(e0, s0 + int(a.max_seconds * sr))]
-            if len(seg) < int(0.2 * sr):
+            if len(seg) < int(0.25 * sr):
                 continue
-            m = lo + k
             f = pitch(seg, sr, 21, 108)
-            heard = 69 + 12 * math.log2(f / 440)
-            if abs(heard - m) > 0.6:
-                off.append('%s heard %s' % (NAMES[m % 12] + str(m // 12 - 1), NAMES[int(round(heard)) % 12] + str(int(round(heard)) // 12 - 1)))
+            m = int(round(69 + 12 * math.log2(f / 440)))
+            cents = abs(69 + 12 * math.log2(f / 440) - m)
+            if m < lo or m > hi or cents > 0.35:
+                continue
+            if picked and m <= picked[-1][0]:
+                continue
+            picked.append((m, seg))
+        off = []
+        if len(picked) != want:
+            off.append('%d of %d notes found' % (len(picked), want))
+        for m, seg in picked:
             nm = '%s%s.%s.wav' % (NAMES[m % 12].replace('s', '#'), m // 12 - 1, dyn or 'x')
-            sf.write(os.path.join(d, nm), seg, sr)
+            out = os.path.join(d, nm)
+            if os.path.exists(out):
+                continue
+            sf.write(out, seg, sr)
             made += 1
         if off:
-            print('  %-44s %d of %d disagree: %s' % (os.path.basename(path), len(off), want, '; '.join(off[:3])))
+            print('  %-44s %s' % (os.path.basename(path), '; '.join(off)))
+            bad += 1
     print('%s: %d notes written, %d files skipped' % (a.outdir, made, bad))
 
 
