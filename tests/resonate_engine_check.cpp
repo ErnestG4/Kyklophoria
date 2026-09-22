@@ -127,7 +127,7 @@ int main()
            and a re-strike adds rather than restarting from silence */
         Engine g; g.Init(&wurli, sr); g.gain = 1.f; g.SetF0(130.81f); g.Strike(0.7f);
         std::vector<float> a1; Run(g, a1, 100);
-        g.SetF0(146.83f); g.Strike(0.f);          /* a retune with no strike: velocity 0 is swing 0 on a world without takes */
+        g.SetPitchLock(false); g.SetF0(146.83f);  /* a retune with no strike: the pitch moved under a free ring (a strike at another note chokes it) */
         std::vector<float> a2; Run(g, a2, 5);
         double e_before = 0, e_after = 0;
         for(int i = 4560; i < 4800; i++) e_before += a1[i] * a1[i];

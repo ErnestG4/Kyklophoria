@@ -52,6 +52,7 @@ public:
         phase_dirty_ = false;
         dirty_ = true;
         for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
+        rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rpoly_ = 1; rmember_ = 0;
         for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; }
         rframe_ = false;
@@ -166,7 +167,7 @@ public:
         {
             /* a tune change under the lock rebuilds the voice at the note
                it holds, not at wherever the pitch has gone since */
-            Tuned().At(move ? p : note, rvoices_[ractive_], sr_, true, rstriking_);
+            Tuned().At(move ? p : note, rvoices_[ractive_], sr_, true, rstriking_); at_count_++;
             if(move) note = p;
             rvdirty_[ractive_] = false;
             return;
@@ -179,7 +180,7 @@ public:
         {
             const int v = (ractive_ + k) % kPoly;
             if(!rvdirty_[v]) continue;
-            if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { Tuned().At(rvnote_[v], rvoices_[v], sr_, true); rvdirty_[v] = false; return; }
+            if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { Tuned().At(rvnote_[v], rvoices_[v], sr_, true); at_count_++; rvdirty_[v] = false; return; }
             rvdirty_[v] = false;              /* silent, or never built: its next strike builds it */
         }
     }
@@ -206,6 +207,7 @@ public:
     const ResonatorVoice& Voice() const { return rvoices_[ractive_]; }
     const ResonatorVoice& VoiceAt(int v) const { return rvoices_[v < 0 ? 0 : v >= kPoly ? kPoly - 1 : v]; }
     float ResParamNow() const { return rvnote_[ractive_]; }
+    uint32_t AtCount() const { return at_count_; }   /* voices built since Init: the bench's measure of how often At() runs */
     float ControlAt(int a) const { return a >= 0 && a < kMaxN ? c_[a] : 0.f; }
     /* On a modular the spin is jacks and pots, not a page: with this set
        (the module sets it; the desktop does not, so the page's sliders
@@ -216,15 +218,27 @@ public:
        The frame is pot plus CV, the same numbers a wavetable world reads
        as positions, so the panel needs no second map to remember. */
     void TuneFromControl(bool on) { tune_from_control_ = on; }
-    static float DecayOf(float c) { return std::exp2((c - 0.5f) * 4.f); }     /* a quarter to four times */
+    /* the decay axis: four times at the top, the world as fitted at the
+       centre, and at the bottom every T60 a 256th of itself — a 10 s
+       piano string to 40 ms, a thonk on muted strings (Combust: "at low
+       end it should basically be a thonk on fully muted strings"). The
+       half below centre is steeper than the half above because muting is
+       what the bottom is for */
+    static float DecayOf(float c) { return c < 0.5f ? std::exp2((c - 0.5f) * 16.f) : std::exp2((c - 0.5f) * 4.f); }
     static float CoilOf(float c)  { return std::exp2((c - 0.5f) * 2.f); }     /* half to double */
     static float VoicingOf(float c) { return (c - 0.5f) * 4.f; }              /* +-2 widths */
-    ResonatorWorld Tuned() const
+    /* the member playing, attached once per member change rather than
+       per At() (attaching tables the points, a read per point out of
+       SDRAM), with the spin as it stands now */
+    const ResonatorWorld& Tuned()
     {
-        ResonatorWorld r;
-        world_->Res().Member(rmember_, r);     /* a plain world is its own only member */
-        r.voicing = rtune_[0]; r.decay = rtune_[1]; r.coil = rtune_[2];
-        return r;
+        if(rtuned_for_ != world_ || rtuned_member_ != rmember_)
+        {
+            world_->Res().Member(rmember_, rtuned_);     /* a plain world is its own only member */
+            rtuned_for_ = world_; rtuned_member_ = rmember_;
+        }
+        rtuned_.voicing = rtune_[0]; rtuned_.decay = rtune_[1]; rtuned_.coil = rtune_[2];
+        return rtuned_;
     }
     /* which instrument of a family position 0 chooses: the row quantised,
        with a tenth of a step of hysteresis so a pot on a boundary does not
@@ -524,6 +538,7 @@ public:
          * here, silent, at the current pitch — arriving at a resonate world
          * is the same as starting in it */
         for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
+        rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rmember_ = 0;
         for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; }
         rframe_ = false;
@@ -711,8 +726,12 @@ private:
     int            ractive_ = 0;    /* the voice the last strike took, which follows the pitch */
     int            rmember_ = 0;    /* the instrument of a family the voice is built from */
     int            rpoly_ = 1;
+    ResonatorWorld rtuned_;         /* the member playing, attached once per member (Tuned()) */
+    const World*   rtuned_for_ = nullptr;
+    int            rtuned_member_ = -1;
     float          rvnote_[kPoly];  /* the note each voice was built at; 1e9 for not yet */
     bool           rvdirty_[kPoly]; /* the voice is to be rebuilt at that note: the tune or the member changed */
+    uint32_t       at_count_ = 0;
     float          rtune_[3] = {0.f, 1.f, 1.f};   /* voicing (widths), decay (x), coil (x) */
     bool           rframe_ = false;  /* a resonate world's one silent frame has been rendered */
     bool           tune_from_control_ = false;

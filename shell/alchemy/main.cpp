@@ -597,6 +597,7 @@ static void AimMorph()
 /* Telemetry is encoded on the control thread now, so there is no snapshot
  * buffer and nothing for the audio callback to do (see ModuleSource). */
 static volatile uint32_t gCycLast = 0, gCycMax = 0, gCycSum = 0, gCycN = 0;
+static volatile uint32_t gCycEngMax = 0;         /* the engine's own peak this window */
 static volatile uint16_t gOverruns = 0, gDropped = 0;
 static volatile float    gPayloadA = 0.f;
 static volatile uint8_t  gResetPhase = 0;
@@ -833,8 +834,11 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
         if(lw && lw->IsResonate()) gEng.SetExciter(in[0], 0.02f * k_cvdep.Norm());
     }
     gEng.SetControl(c, kMaxN);
+    const uint32_t t1 = Cycles();
     gEng.Process(out[0], out[1], (int)size);
     gPayloadA = gEng.Payload()[4];
+    const uint32_t eng = Cycles() - t1;
+    if(eng > gCycEngMax) gCycEngMax = eng;
 
     const uint32_t cyc = Cycles() - t0;
     gCycLast = cyc;
@@ -932,6 +936,8 @@ struct ModuleSource : ExtSource
         s.dropped       = gDropped;
         s.render_div    = (uint8_t)gEng.L.render_div;
         s.cycles_budget = kCycBudget;
+        s.engine_max    = gCycEngMaxWin;
+        s.at_per_s      = gAtPerS;
     }
     const World*  ResonateWorld() override { const World* w = gEng.L.WorldPtr(); return w && w->IsResonate() ? w : nullptr; }
     const Engine* ResonateEngine() override { return &gEng.L; }
@@ -1293,7 +1299,7 @@ struct ModuleSource : ExtSource
     }
 
     uint32_t gBlobCrc   = 0;
-    uint32_t gCycMaxWin = 0, gCycAvgWin = 0;
+    uint32_t gCycMaxWin = 0, gCycAvgWin = 0, gCycEngMaxWin = 0, gAtPerS = 0;
 };
 static ModuleSource  gSource;
 static KykExt         gExt(gSource);
@@ -1803,7 +1809,11 @@ static void OnFrame()
         const uint32_t n = gCycN;
         gSource.gCycAvgWin = n ? gCycSum / n : 0;
         gSource.gCycMaxWin = gCycMax;
-        gCycSum = 0; gCycN = 0; gCycMax = 0;
+        gSource.gCycEngMaxWin = gCycEngMax;
+        static uint32_t at_last = 0;
+        const uint32_t at_now = gEng.L.AtCount();
+        gSource.gAtPerS = at_now - at_last; at_last = at_now;
+        gCycSum = 0; gCycN = 0; gCycMax = 0; gCycEngMax = 0;
         win_t = now_ms;
     }
     /* J4 follows the world: CV out A under a wavetable world, the trigger

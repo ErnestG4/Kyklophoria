@@ -899,12 +899,17 @@ inline int Serve(kyk::StereoEngine& eng, kyk::World& world, std::vector<uint8_t>
             const double ns = (Now() - b0) * 1e9;
             src.stats.cycles_last = (uint32_t)ns;
             if(ns > src.stats.cycles_max) src.stats.cycles_max = (uint32_t)ns;
+            if(ns > src.stats.engine_max) src.stats.engine_max = (uint32_t)ns;   /* the desktop's block is the engine alone */
             acc_ns += ns; acc_n++;
             if(src.stats.cycles_avg == 0) src.stats.cycles_avg = (uint32_t)ns;   /* before the first window closes */
             if(ns > 1e9 * block / sr) src.stats.overruns++;
             t_done += (double)block / sr;
         }
-        if(Now() - win_t >= 1.0 && acc_n) { src.stats.cycles_avg = (uint32_t)(acc_ns / acc_n); acc_ns = 0; acc_n = 0; win_t = Now(); src.stats.cycles_max = 0; }
+        if(Now() - win_t >= 1.0 && acc_n)
+        {
+            src.stats.cycles_avg = (uint32_t)(acc_ns / acc_n); acc_ns = 0; acc_n = 0; win_t = Now(); src.stats.cycles_max = 0; src.stats.engine_max = 0;
+            static uint32_t at_last = 0; const uint32_t at_now = eng.L.AtCount(); src.stats.at_per_s = at_now - at_last; at_last = at_now;
+        }
 
         /* serve the link */
         uint8_t inbuf[512];
