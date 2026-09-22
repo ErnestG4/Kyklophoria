@@ -163,7 +163,7 @@ public:
            its render */
         const float p = ResParam();
         const ResonatorWorld& r = world_->Res();
-        const float eps = r.kind == 1 ? 0.005f * (r.hi - r.lo) : 0.02f;
+        const float eps = r.kind == 1 ? 0.005f * (r.hi - r.lo) : (pitch_lock_ ? 0.02f : 0.03f);
         const int m = ResMemberOf(c_[0]);
         float& note = rvnote_[ractive_];
         if(m != rmember_) { rmember_ = m; for(int v = 0; v < kPoly; v++) rvdirty_[v] = true; }   /* another instrument: every voice rebuilt, its ring carried */
@@ -184,6 +184,22 @@ public:
         }
         if(move || rvdirty_[ractive_])
         {
+            /* free, and only the pitch has moved: a bend — the modes this
+               voice was struck with, transposed, and the burst read at the
+               new rate. A rebuild is At(), which on the module is about two
+               blocks of budget (a hundred transcendentals), and free ran one
+               every time the CV moved two cents: it overran, and at every
+               midpoint it stepped into the next point's timbre. A bend is a
+               twentieth of that and keeps the note it was struck with,
+               which is what a bend is. Three cents, and at most one every
+               four blocks — five hundred a second, smoother than a pot. */
+            if(move && !rstriking_ && !rvdirty_[ractive_] && note != 1e9f && !pitch_lock_ && r.kind != 1 && rbend_ >= 4)
+            {
+                Tuned().Bend(p, rvoices_[ractive_], sr_);
+                note = p; rbend_ = 0;
+                return;
+            }
+            if(!move && !rvdirty_[ractive_]) return;
             /* a tune change under the lock rebuilds the voice at the note
                it holds, not at wherever the pitch has gone since */
             Tuned().At(move ? p : note, rvoices_[ractive_], sr_, true, rstriking_); at_count_++;
@@ -405,6 +421,7 @@ public:
                 SetTune(Tune::Coil, CoilOf(c_[3]));
             }
             Retune();
+            if(rbend_ < 64) rbend_++;
             if(rsince_ < 0xFFFFFFu) rsince_ += (uint32_t)n;
             rdens_ *= 1.f - (float)n / sr_;                   /* the strike count leaks with a one-second time constant */
             float tmp[48];
@@ -761,6 +778,7 @@ private:
     float          rlast_v_ = 0.f;       /* the velocity the last strike was made at */
     bool           rstriking_ = false;
     uint32_t       rsince_ = 0xFFFFFFu;  /* samples since the last strike, for the late-CV window */
+    int            rbend_ = 64;          /* blocks since the last bend */
     const float*   exciter_ = nullptr;   /* this block's drive, or null */
     float          exgain_ = 0.f;
 
