@@ -88,6 +88,7 @@ struct ResonatorBank
     float s1[kStrikes][kMax], s2[kStrikes][kMax];
     float ramp_n[kStrikes], ramp_len[kStrikes], ramp_lead[kStrikes];
     bool  ramping[kStrikes];
+    float held[kStrikes];     /* samples a strike bank has sat out of its lead, its state not yet advanced by them */
     /* the choke: for damp_left samples every mode decays by damp_c a
        sample more than its own pole says — the main state and the strike
        banks marked damp_bank, not a strike that arrives meanwhile */
@@ -105,13 +106,19 @@ struct ResonatorBank
         damp_left = (int)(ms * 0.001f * sr);
         if(damp_left < 1) damp_left = 1;
         damp_c = std::pow(1e-3f, 1.f / (float)damp_left);
-        for(int k = 0; k < kStrikes; k++) damp_bank[k] = true;
+        for(int k = 0; k < kStrikes; k++)
+        {
+            damp_bank[k] = true;
+            /* a strike bank still in its lead is not heard yet and would
+               arrive 60 dB down: let go of it now */
+            if(ramping[k] && ramp_n[k] < ramp_lead[k]) { for(int i = 0; i < n; i++) s1[k][i] = s2[k][i] = 0.f; ramping[k] = false; held[k] = 0.f; }
+        }
     }
 
     void Init()
     {
         n = 0;
-        for(int q = 0; q < kStrikes; q++) { ramp_n[q] = 0.f; ramp_len[q] = 144.f; ramp_lead[q] = 0.f; ramping[q] = false; damp_bank[q] = false; }
+        for(int q = 0; q < kStrikes; q++) { ramp_n[q] = 0.f; ramp_len[q] = 144.f; ramp_lead[q] = 0.f; ramping[q] = false; damp_bank[q] = false; held[q] = 0.f; }
         for(int i = 0; i < kMax; i++) { c1[i] = c2[i] = p1[i] = p2[i] = g[i] = y1[i] = y2[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; }
         damp_left = 0; damp_c = 1.f;
     }
@@ -171,6 +178,7 @@ struct ResonatorBank
         bool  has[kMax], claimed[kMax];
         if(keep)
         {
+            for(int q = 0; q < kStrikes; q++) if(held[q] > 0.f) { Advance(q, held[q]); held[q] = 0.f; }   /* read as it is now, not as it was */
             float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
             for(int i = 0; i < n0; i++)
             {
@@ -253,12 +261,35 @@ struct ResonatorBank
             q = ramp_n[0] - ramp_lead[0] >= ramp_n[1] - ramp_lead[1] ? 0 : 1;
             Fold(q);
         }
+        held[q] = 0.f;
         for(int i = 0; i < n; i++) { s1[q][i] = swing * p1[i]; s2[q][i] = swing * p2[i]; }
         damp_bank[q] = false;                  /* a choke under way is the old note's, not this strike's */
         ramp_n[q] = 0.f;
         ramp_lead[q] = lead;
         if(ramp > 0.f) ramp_len[q] = ramp;
         ramping[q] = true;
+    }
+
+    /* a strike bank moved on by k samples without running: each mode's
+       state read as an amplitude and a phase under its pole, the
+       amplitude decayed by r^k, the phase advanced by k w, and the pair
+       written back. Used to skip a burst's lead (Process) */
+    void Advance(int q, float k)
+    {
+        const float* y1s = s1[q]; float* a = s1[q]; float* b = s2[q];
+        for(int i = 0; i < n; i++)
+        {
+            if(!(c2[i] < 0.f)) continue;
+            const float r = std::sqrt(-c2[i]);
+            float cw = c1[i] / (2.0f * r); cw = cw > 1.0f ? 1.0f : cw < -1.0f ? -1.0f : cw;
+            const float w = std::acos(cw), sw = std::sin(w) > 1e-6f ? std::sin(w) : 1e-6f;
+            const float sp = y1s[i], cp = (y1s[i] * cw - b[i] * r) / sw;     /* A sin phi, A cos phi */
+            const float g = std::pow(r, k), th = k * w;
+            const float sp2 = g * (sp * std::cos(th) + cp * std::sin(th));    /* A r^k sin(phi + k w) */
+            const float cp2 = g * (cp * std::cos(th) - sp * std::sin(th));    /* A r^k cos(phi + k w) */
+            a[i] = sp2;
+            b[i] = (sp2 * cw - cp2 * sw) / r;                                   /* A sin(phi - w) / r, one sample back */
+        }
     }
 
     /* the strike bank folded into the main state at the weight it is
@@ -268,6 +299,7 @@ struct ResonatorBank
        pop on every fast note that the old 3 ms ramp never showed */
     void Fold(int q)
     {
+        if(held[q] > 0.f) { Advance(q, held[q]); held[q] = 0.f; }
         const float u = ramp_n[q] - ramp_lead[q];
         const float w = u <= 0.f ? 0.f : u >= ramp_len[q] ? 1.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len[q]);
         for(int i = 0; i < n; i++) { y1[i] += w * s1[q][i]; y2[i] += w * s2[q][i]; s1[q][i] = s2[q][i] = 0.f; }
@@ -381,8 +413,34 @@ struct ResonatorBank
             }
             for(int q = 0; q < kStrikes; q++) if(ramping[q])
             {
+                /* the lead — the burst's body, before its fade, up to
+                   300 ms on a bass piano note — is heard at weight zero:
+                   the bank's work through it was wasted, two banks' worth
+                   on every fresh strike, and at four voices most of the
+                   block. Skipped: the bank sits, and is advanced by the
+                   samples it sat out — a decaying sinusoid k samples on is
+                   its amplitude by r^k and its phase by k w — the moment the
+                   ramp begins. The state then is what running it would have
+                   given, to the rounding */
+                /* d: the samples of this run still inside the lead (heard
+                   at weight zero); the bank is advanced past them and
+                   runs the rest of the run into the rest of the output */
+                int d = 0;
+                if(ramp_n[q] < ramp_lead[q])
+                {
+                    const float left = ramp_lead[q] - ramp_n[q];
+                    d = (int)std::ceil(left);
+                    if(d >= m) { ramp_n[q] += (float)m; held[q] += (float)m; continue; }
+                }
+                if(held[q] > 0.f || d > 0)          /* the lead ends in this run, or ended exactly at its start */
+                {
+                    Advance(q, held[q] + (float)d); held[q] = 0.f;
+                    ramp_n[q] += (float)d;
+                }
+                float* o_ = out + d;
+                const int mm = m - d;
                 float w[64];
-                for(int k = 0; k < m; k++)
+                for(int k = 0; k < mm; k++)
                 {
                     const float u = ramp_n[q] + (float)k - ramp_lead[q];
                     w[k] = u <= 0.f ? 0.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len[q]);
@@ -393,15 +451,15 @@ struct ResonatorBank
                 {
                     const float a0 = c1[i] * sc, b0 = c2[i] * sc2, a1 = c1[i + 1] * sc, b1 = c2[i + 1] * sc2;
                     float p1 = s1[q][i], p2 = s2[q][i], r1 = s1[q][i + 1], r2 = s2[q][i + 1];
-                    for(int k = 0; k < m; k++)
+                    for(int k = 0; k < mm; k++)
                     {
                         const float yp = a0 * p1 + b0 * p2;
                         const float yr = a1 * r1 + b1 * r2;
                         p2 = p1; p1 = yp;
                         r2 = r1; r1 = yr;
-                        float o = out[k];
+                        float o = o_[k];
                         o += w[k] * yp; o += w[k] * yr;
-                        out[k] = o;
+                        o_[k] = o;
                     }
                     s1[q][i] = p1; s2[q][i] = p2; s1[q][i + 1] = r1; s2[q][i + 1] = r2;
                 }
@@ -409,15 +467,15 @@ struct ResonatorBank
                 {
                     const float a = c1[i] * sc, b = c2[i] * sc2;
                     float u1 = s1[q][i], u2 = s2[q][i];
-                    for(int k = 0; k < m; k++)
+                    for(int k = 0; k < mm; k++)
                     {
                         const float y = a * u1 + b * u2;
                         u2 = u1; u1 = y;
-                        out[k] += w[k] * y;
+                        o_[k] += w[k] * y;
                     }
                     s1[q][i] = u1; s2[q][i] = u2;
                 }
-                ramp_n[q] += (float)m;
+                ramp_n[q] += (float)mm;
                 if(ramp_n[q] >= ramp_lead[q] + ramp_len[q]) Fold(q);
             }
             if(damp_left > 0) damp_left -= m;
