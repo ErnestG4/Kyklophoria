@@ -64,6 +64,7 @@ def main():
     ap.add_argument('--from', dest='lo', type=int, default=0, help='first midi note')
     ap.add_argument('--to', dest='hi', type=int, default=127, help='last midi note')
     ap.add_argument('--only', default='', help='comma-separated note keys (g1,g#1) to fit again in place, the rest of fits.tsv kept')
+    ap.add_argument('--coil-from-set', action='store_true', help="hold every note's coil to the median fc and Q of the set's last fit (fits.tsv here): one coil per set")
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     dirs = a.order.split(',') if a.order else sorted(d for d in os.listdir(a.indir) if os.path.isdir(os.path.join(a.indir, d)))
@@ -94,6 +95,15 @@ def main():
     if only:
         for l in open(os.path.join(a.outdir, 'fits.tsv')).read().splitlines()[1:]:
             old[l.split('\t')[0]] = l
+    coil_prior = None
+    if a.coil_from_set:
+        rows = [l.split('\t') for l in open(os.path.join(a.outdir, 'fits.tsv')).read().splitlines()]
+        hdr, rows = rows[0], rows[1:]
+        ifc, iq = hdr.index('coil_hz'), hdr.index('coil_q')
+        fcs = [float(r[ifc]) for r in rows if float(r[ifc]) > 0]
+        qs = [float(r[iq]) for r in rows if float(r[iq]) > 0]
+        coil_prior = (math.log(float(np.median(fcs))), math.log(float(np.median(qs))))
+        print('  one coil for the set: fc %.0f Hz, Q %.2f (the medians of %d notes)' % (math.exp(coil_prior[0]), math.exp(coil_prior[1]), len(fcs)))
     with open(os.path.join(a.outdir, 'fits.tsv' if not only else 'fits.new.tsv'), 'w') as man:
         man.write('id\tfamily\tparam\tvalue\tdynamic\tsource\tmodes\tloss\th_over_w\tcoil_hz\tcoil_q\tswings\tbark_target\tbark_model\n')
         for n, key in enumerate(keys):
@@ -155,7 +165,7 @@ def main():
             if not init:
                 print('  %-6s no partials' % key)
                 continue
-            f, r, amp, ph, g, (h, w, K, fc, Q), ys, loss = modalfit.fit_shaped(xs, sr, init, a.steps, device, verbose=False, normalised=a.normalised, form=a.form)
+            f, r, amp, ph, g, (h, w, K, fc, Q), ys, loss = modalfit.fit_shaped(xs, sr, init, a.steps, device, verbose=False, normalised=a.normalised, form=a.form, coil_prior=coil_prior)
             # the tine's own note stays whatever the level test says: the EP's
             # G2 came out of the fit without it and played a fifth low
             keep = modalfit.keep_fundamental(modalfit.audible(amp, r) & (amp > 0), f, f0)

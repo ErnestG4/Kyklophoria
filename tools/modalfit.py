@@ -472,6 +472,35 @@ def time_weight(frames, hop, sr, device):
 
 MIN_T60 = 0.005      # s; faster is exciter, not mode
 DECAY_PRIOR = float(_os.environ.get('MB_DECAY_PRIOR', 2.0))   # weight holding log decay to the track's measurement
+CLUSTER_WEIGHT = float(_os.environ.get('MB_CLUSTER', 1.0))   # weight against a cluster's amplitudes cancelling (holistic-math.md item 9)
+MONO_WEIGHT = float(_os.environ.get('MB_MONO', 2.0))         # weight holding the takes' swings in folder order (item 7)
+COIL_PRIOR = float(_os.environ.get('MB_COIL_PRIOR', 1.0))    # weight holding a note's coil to the set's (item 10)
+
+
+def cluster_excess(logf, loga, phase, tol=0.01):
+    """How much of a record's amplitude cancels. The fitter builds a
+    partial's non-exponential attack out of two large antiphase sines a
+    few hertz apart — the Wurlitzer C4's loudest mode, 7.7, is half of a
+    pair summing to 1.1 — which the STFT loss cannot see and which every
+    byte, slot and carry then un-cancels (docs/holistic-math.md, its
+    first finding: `loudest` 14–46 dB over its cluster's sum). For every
+    mode, its cluster is the modes within tol of its frequency; the excess
+    is the cluster's sum of amplitudes over the magnitude of its phasor
+    sum, as a fraction of the sum — 0 for a cluster in phase, towards 1
+    for one that cancels — weighted by the mode's share of the loudest,
+    so a quiet cluster costs little. Differentiable in amplitude and
+    phase; the cluster mask follows the frequencies without gradient."""
+    f = torch.exp(logf)
+    a = torch.exp(loga)
+    with torch.no_grad():
+        M = (torch.abs(f[:, None] / f[None, :] - 1.0) < tol).to(a.dtype)
+    S = M @ a
+    re = M @ (a * torch.cos(phase))
+    im = M @ (a * torch.sin(phase))
+    P = torch.sqrt(re * re + im * im + 1e-12)
+    excess = (S - P) / (S + 1e-9)
+    w = a / (a.max() + 1e-12)
+    return (excess * w).sum() / (w.sum() + 1e-9)
 DECAY_BAND = float(_os.environ.get('MB_DECAY_BAND', 0.405))   # ln 1.5: the free band around it
 LEVEL_WEIGHT = float(_os.environ.get('MB_LEVEL', 2.0))       # loudness per take in the shaped fit (log RMS ratio squared)
 
@@ -575,6 +604,9 @@ def fit(x, sr, init, steps, device, verbose=True):
         # a band, not a point: free within DECAY_BAND of the measurement so a
         # pair can split into the fast and slow decays of a real course
         loss = loss + DECAY_PRIOR * (torch.relu((logr - logr0).abs() - DECAY_BAND) ** 2).mean()
+        # and a record's amplitudes are its audible amplitudes
+        if CLUSTER_WEIGHT > 0:
+            loss = loss + CLUSTER_WEIGHT * cluster_excess(logf, loga, phase)
         loss.backward()
         opt.step()
         sched.step()
@@ -672,7 +704,7 @@ if __name__ == '__main__':
 # takes.
 # ---------------------------------------------------------------------------
 
-def fit_shaped(xs, sr, init, steps, device, verbose=True, normalised=False, form='bell'):
+def fit_shaped(xs, sr, init, steps, device, verbose=True, normalised=False, form='bell', coil_prior=None):
     """xs: list of takes (numpy, same length, one note at several velocities,
     softest first). Returns (f, r, a, phase, gains, (h, w, K), ys, loss)."""
     n = min(len(x) for x in xs)
@@ -781,6 +813,20 @@ def fit_shaped(xs, sr, init, steps, device, verbose=True, normalised=False, form
             for y, target in zip(ys, targets):
                 lvl = lvl + (torch.log(y.pow(2).mean() + 1e-12) - torch.log(target.pow(2).mean() + 1e-12)) ** 2
             loss = loss + LEVEL_WEIGHT * lvl / len(xs)
+        # the takes are in folder order, softest first: a harder take swings
+        # the metal further. 39 of the EP's 84 notes came out inverted where
+        # the tine barely moves and the swing is ill-determined; the export
+        # reordered them, the fit should not make them
+        if MONO_WEIGHT > 0 and len(xs) > 1:
+            loss = loss + MONO_WEIGHT * (torch.relu(logg[:-1] - logg[1:]) ** 2).sum()
+        # one coil per set: a coil is one L, one C, one R, and a note's fit
+        # used it as a free equaliser (Q 0.02 to 55 across the EP). Held to
+        # the set's own median fc and Q, passed in from the last pass
+        if coil_prior is not None and COIL_PRIOR > 0:
+            loss = loss + COIL_PRIOR * ((logfc - coil_prior[0]) ** 2 + (logQ - coil_prior[1]) ** 2)
+        # and the metal's amplitudes are its audible amplitudes
+        if CLUSTER_WEIGHT > 0:
+            loss = loss + CLUSTER_WEIGHT * cluster_excess(logf, loga, phase)
         loss.backward()
         opt.step()
         sched.step()
