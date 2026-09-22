@@ -1198,7 +1198,7 @@ const parsed = P.parsePanel(DESC);
   const fam = { kind: 0, lo: 55, hi: 93, param: 62.0, P: 25, burst: 3360, points: [55, 58, 62, 67], modes: [{ hz: 293.7, zeta: 0.001, gain: 0.5 }],
                 members: ['violin', 'viola', 'bass'], member: 1, name: 'viola', voices: 2, lock: false };
   P.setSlots({ count: 32, live: 3, target: 0xFF, names: Array.from({ length: 32 }, (_, i) => (i === 3 ? 'strings' : i === 7 ? 'wurli' : null)) });
-  P.setCardList({ count: 3, names: ['a.kykw', 'pianos.kykm', 'perc.kykm'] });
+  P.setCardList({ count: 3, names: ['a.kykw', 'pianos.kykm', 'bodies.kykm'] });
   P.setTel(tel({ ...RES, f0: 130.8 }));
   P.setReso(fam);
   P.setView('model');

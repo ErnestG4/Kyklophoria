@@ -862,19 +862,24 @@ console.log('\n== the card: write, list, read back, and refuse to clobber');
      which the page cannot send and never parses — it lists it, loads it by
      index, and plays it the same way; the world that arrives has four axes
      like any other and says what kind it is */
-  fs.copyFileSync(path.join(here, '..', 'tests/data/wurli.kykm'), path.join(dir, 'wurli.kykm'));
+  fs.copyFileSync(path.join(here, '..', 'tests/data/piano.kykm'), path.join(dir, 'piano.kykm'));
   await act(KYK.ACT.scanCard);
   const both = await KYK.fetchCardWorlds(link);
-  check(both.names.includes('wurli.kykm'), `the card lists a resonator beside the frames (${both.names.join(' ')})`);
-  check((await act(KYK.ACT.cardToSlot, both.names.indexOf('wurli.kykm'), 10))[0] === 0, 'it loads into a slot');
-  check((await KYK.fetchSlots(link)).names[10] === 'wurli', 'named by its file');
+  check(both.names.includes('piano.kykm'), `the card lists a resonator beside the frames (${both.names.join(' ')})`);
+  check((await act(KYK.ACT.cardToSlot, both.names.indexOf('piano.kykm'), 10))[0] === 0, 'it loads into a slot');
+  check((await KYK.fetchSlots(link)).names[10] === 'piano', 'named by its file');
   check((await act(KYK.ACT.slotLive, 10))[0] === 0, 'and plays');
   const tr = KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
   check(tr.n === 4 && tr.world === 0xFF && tr.resonate, `as a 4-axis resonate user world (N=${tr.n}, world ${tr.world}, kind ${tr.kind})`);
-  /* and says what it is playing: the Wurlitzer's eleven points C2 to C7,
-     the voice built at the pitch (110 Hz at boot: A2, 45), its modes */
+  /* and says what it is playing: a note world's points, the range they
+     span, the voice built at the pitch (110 Hz at boot: A2, 45), its modes.
+     The figures come from the fixture rather than from a note the fixture
+     is expected to have: the row's ends ARE its first and last point, and
+     that is the property — a readout that reported a range its points do
+     not reach would draw the keyboard wrong */
   const rs = await KYK.fetchResonate(link);
-  check(rs && rs.kind === 0 && rs.P === 11 && rs.points.length === 11 && rs.lo === 36 && rs.hi === 96,
+  check(rs && rs.kind === 0 && rs.P >= 2 && rs.points.length === rs.P
+        && rs.lo === rs.points[0] && rs.hi === rs.points[rs.P - 1] && rs.hi - rs.lo >= 48,
         `the readout: kind ${rs && rs.kind}, ${rs && rs.P} points ${rs && rs.lo}..${rs && rs.hi}`);
   check(rs && Math.abs(rs.param - 45) < 0.01, `the voice built at the pitch (${rs && rs.param.toFixed(2)}, A2 is 45)`);
   check(rs && rs.modes.filter(q => q.gain > 0).length >= 20 && rs.modes.some(q => Math.abs(q.hz - 110) < 5),
