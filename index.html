@@ -1490,10 +1490,10 @@ function renderModelChips() {
     s.oninput = () => { vel = s.value | 0; };
     const pad = chip('strike', false, 'strike at the slider', () => strikeAt(vel)); pad.classList.add('pad'); pad.disabled = !link || !live;
     box.appendChild(lab); box.appendChild(s); box.appendChild(pad);
-    /* the strike a little harder up the keyboard: 0 for none, at full a
-       fifth of the velocity an octave above middle C, softer below */
-    const tlab = dimText('track', '0 0 0 8px');
-    const t = document.createElement('input'); t.type = 'range'; t.min = 0; t.max = 255; t.value = velTrack; t.title = 'velocity added per octave above middle C, up to 0.2 at full; the strike softer below middle C by the same';
+    /* the strike a little harder the faster the playing: 0 for none, at
+       full a fifth of the velocity added at eight strikes a second */
+    const tlab = dimText('dig in', '0 0 0 8px');
+    const t = document.createElement('input'); t.type = 'range'; t.min = 0; t.max = 255; t.value = velTrack; t.title = 'the strike harder the faster the playing: up to 0.2 of velocity added at eight strikes a second and above, nothing at rest';
     t.disabled = !link || !live;
     t.oninput = () => { velTrack = t.value | 0; act(MVL.ACT.velTrack, [velTrack], 'track'); };
     box.appendChild(tlab); box.appendChild(t);
