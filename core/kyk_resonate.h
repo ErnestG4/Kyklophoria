@@ -835,6 +835,7 @@ struct ResonatorVoice
     float          swing_soft, swing_hard;
     float          burst_rate;        /* the burst's read step: the played note over the burst's own, 1 on an index world */
     float          param;             /* what the voice was built at: a note, or a position on a row; 1e9 for not yet */
+    float          body_top;          /* the instrument's own corner: where its envelope is 12 dB down, 0 for a world with no curve */
     int            cap;               /* modes this voice may have, 0 for all: Rings' rule for polyphony — the bank's 48 shared out, so four voices stacked are as rich as one, and cost the same */
     float          sr;
     uint32_t       burst_head;        /* bytes before a burst's samples in this world's version */
@@ -847,7 +848,7 @@ struct ResonatorVoice
 
     void Init()
     {
-        bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0; burst_head = 10; burst_fade = 0; param = 1e9f; cap = 0;
+        bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0; burst_head = 10; burst_fade = 0; param = 1e9f; cap = 0; body_top = 0.f;
         for(int k = 0; k < ResonatorBank::kMax; k++) hz[k] = zeta[k] = gain[k] = 0.f;
     }
 
@@ -874,10 +875,11 @@ struct ResonatorVoice
             if(v < 1.f) fc = 1000.f * std::exp2(3.7f * v);
         }
         /* and the attack of a point carried up the keyboard is read faster,
-           which moves its own spectrum up with it: the same body curve,
-           as far as a one-pole can carry it — 6 kHz at the point itself,
-           3 kHz an octave above, 1.5 kHz two octaves above */
-        if(burst_rate > 1.05f) { const float c = 6000.f / burst_rate; if(c < fc) fc = c; }
+           which moves its own spectrum up with it: the same body curve, as
+           far as a one-pole can carry it — the instrument's own corner
+           (where its envelope has fallen 12 dB from its loudest band)
+           divided by the read rate */
+        if(burst_rate > 1.05f && body_top > 0.f) { const float c = body_top / burst_rate; if(c < fc) fc = c; }
         const float lp = fc > 0.4f * sr ? 0.f : 1.f - std::exp(-6.2831853f * fc / sr);
         burst.Strike(bursts, s, burst_rate, lp, burst_head);
         wash.Strike(s, lead + ramp);
@@ -919,7 +921,33 @@ struct ResonatorWorld
     float    voicing, decay, coil;
 
     static constexpr uint32_t kHeader = 4 + 8 + 8;
+    /* version 7 carries the instrument's own radiation envelope after the
+       header: eight octave-band gains in dB from 62.5 Hz up, 0 at its
+       loudest band (ModalBake's tools/body.py measures it over every mode
+       of every note in the set, separating what depends on the partial
+       number — the string's own rolloff — from what depends on absolute
+       frequency, which is the body). A body radiates and absorbs where it
+       is, not where the note is, so a point carried to another note is
+       re-weighted by this curve's ratio between where each mode now
+       sounds and where it was fitted. Measured, the curves are nothing
+       like each other: a double bass peaks at 88 Hz and is 12 dB down by
+       177, a banjo peaks at 707 Hz and falls 7 dB an octave above it, a
+       mandolin is within 12 dB everywhere. */
+    uint32_t HeaderBytes() const { return ver >= 7 ? kHeader + 32u : kHeader; }
+    float    body[8];
+    bool     has_body;
     uint32_t FixedBytes() const { return 4 + 8 * 4 + 5u * N; }
+    /* the curve at a frequency, interpolated in log frequency between the
+       band centres (88.4 Hz x 2^k), flat outside them */
+    float Body(float hz) const
+    {
+        if(!has_body || !(hz > 0.f)) return 0.f;
+        const float x = std::log2(hz / 88.388f);
+        if(x <= 0.f) return body[0];
+        if(x >= 7.f) return body[7];
+        const int k = (int)x; const float t = x - (float)k;
+        return body[k] + t * (body[k + 1] - body[k]);
+    }
 
     /* where each point starts, and its parameter, tabled at Attach: a
        point is fixed bytes then its burst block, and walking to point i
@@ -940,7 +968,7 @@ struct ResonatorWorld
     }
     void TablePoints()
     {
-        const uint8_t* q = blob + kHeader;
+        const uint8_t* q = blob + HeaderBytes();
         for(int i = 0; i < P && i < kMaxPoints; i++)
         {
             poff_[i] = (uint32_t)(q - blob);
@@ -963,7 +991,7 @@ struct ResonatorWorld
         return q;
     }
 
-    void Init() { blob = nullptr; size = 0; N = P = 0; form = kind = 0; ver = 0; lo = hi = 0.f; voicing = 0.f; decay = coil = 1.f; M = 0; for(int m = 0; m < kMaxMembers; m++) member_off[m] = member_len[m] = 0; poff_[0] = kHeader; pparam_[0] = 0.f; }
+    void Init() { blob = nullptr; size = 0; N = P = 0; form = kind = 0; ver = 0; lo = hi = 0.f; voicing = 0.f; decay = coil = 1.f; M = 0; for(int m = 0; m < kMaxMembers; m++) member_off[m] = member_len[m] = 0; poff_[0] = kHeader; pparam_[0] = 0.f; has_body = false; for(int k = 0; k < 8; k++) body[k] = 0.f; }
 
     bool Attach(const void* data, uint32_t bytes)
     {
@@ -973,10 +1001,18 @@ struct ResonatorWorld
         std::memcpy(&N, blob + 6, 2); std::memcpy(&P, blob + 8, 2);
         form = blob[10]; kind = blob[11];      /* version 4 wrote an unread body count here, always 0: a note */
         std::memcpy(&lo, blob + 12, 4); std::memcpy(&hi, blob + 16, 4);
+        has_body = false;
+        for(int k = 0; k < 8; k++) body[k] = 0.f;
+        if(v >= 7 && kind != 2)
+        {
+            if(size < kHeader + 32u) return false;
+            std::memcpy(body, blob + kHeader, 32);
+            has_body = true;
+        }
         M = 0;
         if(kind == 2)
         {
-            if(v < 6 || size < kHeader + 1) return false;
+            if(v < 6 || v > 7 || size < kHeader + 1) return false;
             const uint8_t m = blob[kHeader];
             if(m == 0 || m > kMaxMembers || size < kHeader + 1 + 24u * m) return false;
             for(int i = 0; i < m; i++)
@@ -990,7 +1026,7 @@ struct ResonatorWorld
             M = m;
             return N <= ResonatorBank::kMax;
         }
-        if(!((v == 4 || v == 5 || v == 6) && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes())) return false;
+        if(!((v >= 4 && v <= 7) && N <= ResonatorBank::kMax && size >= HeaderBytes() + (uint32_t)P * FixedBytes())) return false;
         TablePoints();
         return true;
     }
@@ -1121,16 +1157,35 @@ struct ResonatorWorld
                naturally reflects lower tones and slowly absorbs higher
                ones, so you don't get that super high ring"). A body's
                radiation is a function of absolute frequency, not of the
-               note, so each mode is re-weighted by that function at where
-               it now sounds over where it was fitted: a one-pole at 2 kHz,
-               which is nothing at all at r = 1 and takes 8 dB off a 2 kHz
-               partial carried to 8 kHz. */
-            const bool body = std::fabs(r - 1.f) > 1e-4f;
+               note, so each mode is re-weighted by the instrument's own
+               measured envelope (Body(), version 7) at where it now sounds
+               over where it was fitted. Nothing at all at the point
+               itself. A world with no curve keeps its levels. */
+            const bool bend = has_body && std::fabs(r - 1.f) > 1e-4f;
+            float dbk[ResonatorBank::kMax];
+            float wsum = 0.f, dmean = 0.f;
             for(int k = 0; k < nd; k++)
             {
                 const float f0_ = ha[k];
                 ha[k] *= r; ga[k] *= st[7];
-                if(body) ga[k] *= (1.f + f0_ * (1.f / 2000.f)) / (1.f + ha[k] * (1.f / 2000.f));
+                if(bend)
+                {
+                    dbk[k] = Body(ha[k]) - Body(f0_);
+                    const float w = ga[k] * ga[k];
+                    wsum += w; dmean += w * dbk[k];
+                }
+            }
+            /* the curve changes the balance, not the level: its
+               energy-weighted mean is taken back out, so a note carried
+               up the keyboard keeps its loudness and only its shape moves
+               — the double bass's own envelope is 35 dB down by 1.4 kHz
+               and applied whole it silenced the top two octaves of its
+               range, which is true of a double bass and useless as an
+               instrument */
+            if(bend && wsum > 0.f)
+            {
+                dmean /= wsum;
+                for(int k = 0; k < nd; k++) ga[k] *= std::pow(10.f, 0.05f * (dbk[k] - dmean));
             }
             t = 0.f;
         }
@@ -1248,6 +1303,14 @@ struct ResonatorWorld
             v.burst_rate = kind == 1 ? 1.f : std::exp2((param - Param(near)) / 12.f);
             v.burst_head = BurstHead();
             v.sr = sr;
+            /* where this instrument's envelope has fallen 12 dB from its
+               loudest band: the corner a transposed attack is filtered at */
+            v.body_top = 0.f;
+            if(has_body)
+            {
+                int pk = 0; for(int k = 1; k < 8; k++) if(body[k] > body[pk]) pk = k;
+                for(int k = pk; k < 8; k++) if(body[k] <= body[pk] - 12.f) { v.body_top = 88.388f * std::exp2((float)k); break; }
+            }
             uint16_t nb; std::memcpy(&nb, v.bursts, 2);
             v.burst_len = 0; v.burst_fade = 0;
             if(nb)
