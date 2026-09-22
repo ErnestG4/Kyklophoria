@@ -36,9 +36,34 @@ def track_t60(x, sr, hz, start=0.05):
     return 6.91 / (-p[0] / 2)
 
 
+def band_envelope(x, sr, modes, ratio=1.5, pct=80):
+    """Each octave band's longest honest decay in the recording: the pct-th
+    percentile of the per-mode track decays in that band, so one partial
+    that really does ring is not cut to its neighbours' length, and a band
+    where the recording has only noise (a flat track, 60 s) is left alone.
+    A body reflects its low tones and absorbs its high ones — the double
+    bass's fitted modes at 300-2000 Hz rang 8-16 dB over the recording at
+    one second — so the envelope is what the recording says at each
+    frequency, not a curve chosen for it."""
+    import collections
+    per = collections.defaultdict(list)
+    for hz, zeta, g, li in modes:
+        m = track_t60(x, sr, hz)
+        if m is None or m >= 59.9:
+            continue
+        per[int(math.floor(math.log2(max(hz, 1.0))))].append(m)
+    env = {}
+    for k, v in per.items():
+        if len(v) >= 2:
+            env[k] = float(np.percentile(v, pct))
+    return env
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('recdir'); ap.add_argument('--ratio', type=float, default=3.0)
+    ap.add_argument('--envelope', action='store_true',
+                    help="cap every mode at --ratio x its octave band's own decay in the recording: a body absorbs high tones faster than low ones and a fit that does not is a high ring the instrument has not (Combust, on the double bass)")
     ap.add_argument('--fix', action='store_true', help='cap a ringer\'s T60 at the recording\'s, for modes under a tenth of the loudest with no neighbour within 1%%; writes the records')
     a = ap.parse_args()
     rows = [l.split('\t') for l in open(os.path.join(a.recdir, 'fits.tsv')).read().splitlines()[1:]]
@@ -69,10 +94,30 @@ def main():
                     w = lines[li].split(); w[5] = '%.6g' % (6.91 / (m * 2 * math.pi * hz)); lines[li] = ' '.join(w); fixed += 1
         if a.fix and fixed:
             open(rp, 'w').write('\n'.join(lines) + '\n')
+        if a.envelope:
+            env = band_envelope(x, sr, modes)
+            capped = 0; worst_cap = 0.0
+            for hz, zeta, g, li in modes:
+                k = int(math.floor(math.log2(max(hz, 1.0))))
+                if k not in env:
+                    continue
+                cap = a.ratio * env[k]
+                t60 = 6.91 / (zeta * 2 * math.pi * hz)
+                if t60 > cap:
+                    worst_cap = max(worst_cap, t60 / cap)
+                    w = lines[li].split(); w[5] = '%.6g' % (6.91 / (cap * 2 * math.pi * hz)); lines[li] = ' '.join(w)
+                    capped += 1
+            if capped:
+                open(rp, 'w').write('\n'.join(lines) + '\n')
+                print('  %-12s %2d of %2d modes capped at the band envelope (worst x%.1f)' % (rid, capped, len(modes), worst_cap))
+            continue
         worst.sort(reverse=True)
         if worst:
             print('  %-12s %2d ringers%s: %s' % (rid, len(worst), ' (%d capped)' % fixed if fixed else '', '  '.join('%.0fHz fit %.1fs rec %.2fs (x%.0f, gain %.3f)' % (h, t, m, q, g) for q, h, t, m, g in worst[:3])))
-    print('%s: %d of %d modes ring more than x%.0f longer than the recording at their frequency' % (a.recdir, ring, tot, a.ratio))
+    if a.envelope:
+        print('%s: capped at x%.1f of each octave band\'s own decay in the recording' % (a.recdir, a.ratio))
+    else:
+        print('%s: %d of %d modes ring more than x%.0f longer than the recording at their frequency' % (a.recdir, ring, tot, a.ratio))
 
 
 if __name__ == '__main__':

@@ -867,13 +867,18 @@ struct ResonatorVoice
            corner from 1 kHz at nothing to 13 kHz at full — the hammer's felt
            and the finger's pad are softer the slower they arrive. Takes
            carry this themselves, so a layered world gets no filter */
-        float lp = 0.f;
+        float fc = 1e9f;
         if(!(swing_hard > swing_soft))
         {
             const float v = velocity01 < 0.f ? 0.f : velocity01 > 1.f ? 1.f : velocity01;
-            const float fc = 1000.f * std::exp2(3.7f * v);
-            lp = v >= 1.f ? 0.f : 1.f - std::exp(-6.2831853f * fc / sr);
+            if(v < 1.f) fc = 1000.f * std::exp2(3.7f * v);
         }
+        /* and the attack of a point carried up the keyboard is read faster,
+           which moves its own spectrum up with it: the same body curve,
+           as far as a one-pole can carry it — 6 kHz at the point itself,
+           3 kHz an octave above, 1.5 kHz two octaves above */
+        if(burst_rate > 1.05f) { const float c = 6000.f / burst_rate; if(c < fc) fc = c; }
+        const float lp = fc > 0.4f * sr ? 0.f : 1.f - std::exp(-6.2831853f * fc / sr);
         burst.Strike(bursts, s, burst_rate, lp, burst_head);
         wash.Strike(s, lead + ramp);
     }
@@ -1109,7 +1114,24 @@ struct ResonatorWorld
             else Decode(near, ha, za, ga, fa);
             std::memcpy(st, Stage(near), 32);
             const float r = std::exp2((param - Param(near)) / 12.f);
-            for(int k = 0; k < nd; k++) { ha[k] *= r; ga[k] *= st[7]; }
+            /* the body stays where it is. A point played at another note is
+               transposed, which moves its whole spectrum — a double bass
+               played two octaves up put its 2 kHz partials at 8 kHz at the
+               same level, a bright hash no bass makes (Combust: "the wood
+               naturally reflects lower tones and slowly absorbs higher
+               ones, so you don't get that super high ring"). A body's
+               radiation is a function of absolute frequency, not of the
+               note, so each mode is re-weighted by that function at where
+               it now sounds over where it was fitted: a one-pole at 2 kHz,
+               which is nothing at all at r = 1 and takes 8 dB off a 2 kHz
+               partial carried to 8 kHz. */
+            const bool body = std::fabs(r - 1.f) > 1e-4f;
+            for(int k = 0; k < nd; k++)
+            {
+                const float f0_ = ha[k];
+                ha[k] *= r; ga[k] *= st[7];
+                if(body) ga[k] *= (1.f + f0_ * (1.f / 2000.f)) / (1.f + ha[k] * (1.f / 2000.f));
+            }
             t = 0.f;
         }
         else
