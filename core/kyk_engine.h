@@ -83,7 +83,13 @@ public:
         rstriking_ = true;
         Retune();          /* the pitch is taken here, locked or not */
         rstriking_ = false; rsince_ = 0;
-        rvoices_[ractive_].Strike(velocity01);
+        /* the strike a little harder up the keyboard, when asked: vtrack_
+           of velocity an octave above middle C, and softer below. Off by
+           default; Combust: "an option where the strike velocity gets
+           slightly harder as the strike frequency increases" */
+        float v = velocity01;
+        if(vtrack_ != 0.f) { v += vtrack_ * (NoteOf(f0_) - 60.f) / 12.f; v = v < 0.f ? 0.f : v > 1.f ? 1.f : v; }
+        rvoices_[ractive_].Strike(v);
     }
     /* 1, 2 or 4 voices. Changing it cuts nothing: a voice past the new
        count rings out and is then skipped, and the round goes on from the
@@ -136,6 +142,8 @@ public:
        pitch by the semitone, which is a quantiser. Unlocked, the ring
        follows the pitch by the cent: a bend, for whoever wants one. */
     void SetPitchLock(bool on) { if(pitch_lock_ != on) { pitch_lock_ = on; rvnote_[ractive_] = 1e9f; } }   /* re-read: locked, the nearest semitone; free, the cent */
+    void SetVelocityTrack(float per_octave) { vtrack_ = per_octave; }   /* velocity added an octave above middle C; 0 for none */
+    float VelocityTrack() const { return vtrack_; }
     bool PitchLock() const { return pitch_lock_; }
     /* the voice follows its parameter with its state ringing on; an index
        world follows the pot every block, a note world its pitch */
@@ -741,6 +749,7 @@ private:
     bool           rframe_ = false;  /* a resonate world's one silent frame has been rendered */
     bool           tune_from_control_ = false;
     bool           pitch_lock_ = true;   /* the nearest semitone, taken at the strike; off, a bend */
+    float          vtrack_ = 0.f;        /* velocity per octave above middle C, added at the strike */
     bool           rstriking_ = false;
     uint32_t       rsince_ = 0xFFFFFFu;  /* samples since the last strike, for the late-CV window */
     const float*   exciter_ = nullptr;   /* this block's drive, or null */

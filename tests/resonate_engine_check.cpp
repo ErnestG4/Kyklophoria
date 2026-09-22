@@ -453,6 +453,25 @@ int main()
         printf("  polyphony shares the modes: %d at one voice, at most %d each at four, the fundamental kept on all\n", one, most);
     }
 
+    /* 14. the velocity track: off, a C5 and a C3 struck at 0.5 are struck
+       at 0.5; at 0.2 an octave, the C5 is struck at 0.7 and the C3 at
+       0.3 — read off the ring's level 100 ms in, against the same
+       strikes made at those velocities directly */
+    {
+        auto level = [&](float hz, float vel, float track) {
+            Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetVelocityTrack(track);
+            e.SetF0(hz); e.Strike(vel);
+            std::vector<float> y; Run(e, y, 100);
+            double s = 0; for(float v : y) s += v * v; return s; };
+        const double hi_t = level(523.25f, 0.5f, 0.2f), hi_d = level(523.25f, 0.7f, 0.f);
+        const double lo_t = level(130.81f, 0.5f, 0.2f), lo_d = level(130.81f, 0.3f, 0.f);
+        const double off = level(523.25f, 0.5f, 0.f), off2 = level(523.25f, 0.5f, 0.f);
+        CHECK(std::fabs(hi_t / hi_d - 1) < 1e-3, "tracked C5 at 0.5 is not the direct 0.7: %.3g against %.3g", hi_t, hi_d);
+        CHECK(std::fabs(lo_t / lo_d - 1) < 1e-3, "tracked C3 at 0.5 is not the direct 0.3: %.3g against %.3g", lo_t, lo_d);
+        CHECK(off == off2, "the track off is not repeatable");
+        printf("  velocity track: at 0.2 an octave a C5 struck at 0.5 is the 0.7 strike, a C3 the 0.3\n");
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }

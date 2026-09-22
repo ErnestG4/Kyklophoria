@@ -1400,6 +1400,7 @@ function renderMuteChips() {
  * greyed there and live over the bridge, where they are the only hand. */
 let poly = 1, lock = true;       /* voices and the pitch lock, as last sent or read */
 let vel = 200;                   /* the strike pad's velocity, 0..255 */
+let velTrack = 0;                /* velocity per octave up the keyboard, 0..255, as last sent */
 const moduleOwns = () => !!(panel && panel.pots);
 const chip = (label, on, title, fn) => {
   const b = document.createElement('button');
@@ -1489,6 +1490,13 @@ function renderModelChips() {
     s.oninput = () => { vel = s.value | 0; };
     const pad = chip('strike', false, 'strike at the slider', () => strikeAt(vel)); pad.classList.add('pad'); pad.disabled = !link || !live;
     box.appendChild(lab); box.appendChild(s); box.appendChild(pad);
+    /* the strike a little harder up the keyboard: 0 for none, at full a
+       fifth of the velocity an octave above middle C, softer below */
+    const tlab = dimText('track', '0 0 0 8px');
+    const t = document.createElement('input'); t.type = 'range'; t.min = 0; t.max = 255; t.value = velTrack; t.title = 'velocity added per octave above middle C, up to 0.2 at full; the strike softer below middle C by the same';
+    t.disabled = !link || !live;
+    t.oninput = () => { velTrack = t.value | 0; act(MVL.ACT.velTrack, [velTrack], 'track'); };
+    box.appendChild(tlab); box.appendChild(t);
   }
   /* body: the instrument of a family, the row of bodies, or the voicing */
   {

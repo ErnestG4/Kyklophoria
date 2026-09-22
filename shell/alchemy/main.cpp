@@ -1040,6 +1040,14 @@ struct ModuleSource : ExtSource
                 gEng.SetPitchLock(args[0] != 0);   /* a flag and a float, as the tune is */
                 return 0u;
             }
+            case kActVelTrack:
+            {
+                if(len < 1) return 2u;
+                const World* w = gEng.L.WorldPtr();
+                if(!w || !w->IsResonate()) return 3u;
+                gEng.SetVelocityTrack(0.2f * args[0] / 255.f);
+                return 0u;
+            }
             case kActRenderDiv: (void)args; (void)len; return 1u;   /* the pot owns it on the module */
             case kActSelectWorld:
                 if(len < 1 || args[0] >= worlds::kCount) return 2u;

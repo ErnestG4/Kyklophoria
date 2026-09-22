@@ -182,7 +182,13 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              follows by the semitone. Unlocked, the ring
                              follows the pitch by the cent: a bend. BAD_STATE
                              when what is playing is not a resonator. */
-                          kActPitchLock  = 20 };
+                          kActPitchLock  = 20,
+                          /* u8 track, 0..255: the strike a little harder up
+                             the keyboard — track / 255 x 0.2 of velocity
+                             per octave above middle C, and softer below;
+                             0 (the default) for none. BAD_STATE when what
+                             is playing is not a resonator. */
+                          kActVelTrack   = 21 };
 /* the tune byte to its value, shared by the host and the module so a page
    sees one mapping */
 inline float TuneValue(uint8_t which, uint8_t v)
