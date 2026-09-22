@@ -537,11 +537,23 @@ struct BurstPlayer
        strike's, which play to their end rather than being cut — a cut
        burst was a click on every fast note */
     static constexpr int kSlots = 4;
-    struct Slot { const int16_t* s; uint32_t n; float pos, rate, gain, lp, z; };
+    /* g: a gain the slot's samples are multiplied by, d: what g is
+       multiplied by each sample — 1 for a burst that plays as recorded,
+       under 1 for one fading (the old note choked, or a muted decay) */
+    struct Slot { const int16_t* s; uint32_t n; float pos, rate, gain, lp, z, g, d; };
     Slot slot[kSlots];
     int  active;
+    float damp;                       /* the per-sample multiplier a new burst starts with: 1, or under it when the decay is muted */
 
-    void Init() { active = 0; for(auto& q : slot) { q.s = nullptr; q.n = 0; q.pos = q.rate = q.gain = q.lp = q.z = 0.f; } }
+    void Init() { active = 0; damp = 1.f; for(auto& q : slot) { q.s = nullptr; q.n = 0; q.pos = q.rate = q.gain = q.lp = q.z = 0.f; q.g = q.d = 1.f; } }
+    /* every burst playing fades out over ms: the old note's attack, when
+       a strike at another note has choked its ring — a burst that played
+       to its end was the old note going on for up to 390 ms under the new */
+    void Choke(float ms, float sr)
+    {
+        const float d = std::pow(1e-3f, 1.f / (ms * 0.001f * sr));
+        for(int a = 0; a < active; a++) if(slot[a].d > d) slot[a].d = d;
+    }
     bool Playing() const
     {
         for(int a = 0; a < active; a++) if(slot[a].s && slot[a].pos + 1.f < (float)slot[a].n) return true;
@@ -597,6 +609,7 @@ struct BurstPlayer
                     q2.s = (const int16_t*)(pick[i] + head);
                     q2.n = n; q2.pos = 0.0f; q2.rate = rate > 0.0f ? rate : 1.0f; q2.lp = lp; q2.z = 0.0f;
                     q2.gain = wgt[i] * sc / 32767.f * (ref[i] > 0.f ? swing / ref[i] : 1.f);
+                    q2.g = 1.f; q2.d = damp;
                 }
             }
         }
@@ -616,9 +629,11 @@ struct BurstPlayer
                 int16_t v0, v1; std::memcpy(&v0, q.s + i0, 2); std::memcpy(&v1, q.s + i0 + 1, 2);   /* the blob may be unaligned */
                 float v = (float)v0 + f * ((float)v1 - (float)v0);
                 if(q.lp > 0.0f) { q.z += q.lp * (v - q.z); v = q.z; }
-                io[k] += q.gain * v;
+                io[k] += q.gain * q.g * v;
+                q.g *= q.d;
                 q.pos += q.rate;
             }
+            if(q.g < 1e-4f) q.pos = (float)q.n;      /* faded out: done */
         }
     }
 };
@@ -810,13 +825,32 @@ struct ResonatorWorld
     static constexpr uint32_t kHeader = 4 + 8 + 8;
     uint32_t FixedBytes() const { return 4 + 8 * 4 + 5u * N; }
 
-    /* a point is fixed bytes then its burst block, so the points are walked
-       — at note-on, over a couple of hundred at most */
+    /* where each point starts, and its parameter, tabled at Attach: a
+       point is fixed bytes then its burst block, and walking to point i
+       read i points' burst lengths out of SDRAM. At() searched the
+       parameters with that walk inside its loop — P^2 walks, each a cache
+       miss, some 650 000 cycles on the EP's 85 points, three blocks — so
+       every strike on a large world was an overrun (the pop at note-on)
+       and a decay pot turning was a continuous one. */
+    static constexpr int kMaxPoints = 128;
+    uint32_t poff_[kMaxPoints];
+    float    pparam_[kMaxPoints];
     const uint8_t* Point(int i) const
     {
-        const uint8_t* q = blob + kHeader;
-        for(int j = 0; j < i; j++) q = BurstEnd(NoiseEnd(q + FixedBytes()));
+        if(i < kMaxPoints) return blob + poff_[i];
+        const uint8_t* q = blob + poff_[kMaxPoints - 1];
+        for(int j = kMaxPoints - 1; j < i; j++) q = BurstEnd(NoiseEnd(q + FixedBytes()));
         return q;
+    }
+    void TablePoints()
+    {
+        const uint8_t* q = blob + kHeader;
+        for(int i = 0; i < P && i < kMaxPoints; i++)
+        {
+            poff_[i] = (uint32_t)(q - blob);
+            std::memcpy(&pparam_[i], q, 4);
+            q = BurstEnd(NoiseEnd(q + FixedBytes()));
+        }
     }
     /* after the fixed part: u8 nbands + nbands x (f32 level, f32 t60), then the bursts */
     const uint8_t* Noise(int i) const { return Point(i) + FixedBytes(); }
@@ -833,7 +867,7 @@ struct ResonatorWorld
         return q;
     }
 
-    void Init() { blob = nullptr; size = 0; N = P = 0; form = kind = 0; ver = 0; lo = hi = 0.f; voicing = 0.f; decay = coil = 1.f; M = 0; for(int m = 0; m < kMaxMembers; m++) member_off[m] = member_len[m] = 0; }
+    void Init() { blob = nullptr; size = 0; N = P = 0; form = kind = 0; ver = 0; lo = hi = 0.f; voicing = 0.f; decay = coil = 1.f; M = 0; for(int m = 0; m < kMaxMembers; m++) member_off[m] = member_len[m] = 0; poff_[0] = kHeader; pparam_[0] = 0.f; }
 
     bool Attach(const void* data, uint32_t bytes)
     {
@@ -860,7 +894,9 @@ struct ResonatorWorld
             M = m;
             return N <= ResonatorBank::kMax;
         }
-        return (v == 4 || v == 5 || v == 6) && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes();
+        if(!((v == 4 || v == 5 || v == 6) && N <= ResonatorBank::kMax && size >= kHeader + (uint32_t)P * FixedBytes())) return false;
+        TablePoints();
+        return true;
     }
     /* the m-th instrument of a family, as a world of its own with this
        family's spin; a plain world is its own only member */
@@ -879,7 +915,7 @@ struct ResonatorWorld
         return (const char*)(blob + kHeader + 1 + 24 * m + 8);   /* 16 bytes, zero padded by the export */
     }
 
-    float Param(int i) const { float p; std::memcpy(&p, Point(i), 4); return p; }
+    float Param(int i) const { if(i < kMaxPoints) return pparam_[i]; float p; std::memcpy(&p, Point(i), 4); return p; }
     const uint8_t* Stage(int i) const { return Point(i) + 4; }
     const uint8_t* Modes(int i) const { return Point(i) + 4 + 32; }
 
@@ -953,11 +989,25 @@ struct ResonatorWorld
            notes, a body row's none; a first build has nothing to carry */
         const float ratio = (keep && kind != 1 && v.param < 1e8f) ? std::exp2((param - v.param) / 12.f) : 1.f;
         v.bank.Set(ha, za, ga, N, sr, fa, keep, ratio);
-        /* a strike at another note on this voice: the old note choked
-           over 5 ms (ResonatorBank::Choke); a glide or a tune change
-           carries it on */
-        if(keep && strike && v.param < 1e8f && std::fabs(param - v.param) > 1e-4f) v.bank.Choke(5.f, sr);
+        /* a strike at another note on this voice: the old note choked —
+           its ring over 2 ms (ResonatorBank::Choke; the 5 ms it was gave
+           the carried ring, which sits at the new note's frequencies, long
+           enough to be heard as the old note bending up: Combust, "it's
+           just pitch shifting"), its attack, which is the recording of the
+           old note and played to its end, over 5 ms (BurstPlayer::Choke).
+           A glide or a tune change carries it on; a strike at the same
+           note is a hammer on a ringing tine and adds. */
+        if(keep && strike && v.param < 1e8f && std::fabs(param - v.param) > 1e-4f) { v.bank.Choke(2.f, sr); v.burst.Choke(5.f, sr); }
         v.param = param;
+        /* the decay axis reaches the burst too: under a muted decay the
+           recording's attack fades with the loudest mode's shortened T60,
+           so the bottom of the axis is a thonk on damped strings and not
+           the same 300 ms of attack over a silent bank */
+        {
+            int loud = 0; for(int k = 1; k < N; k++) if(std::fabs(ga[k]) > std::fabs(ga[loud])) loud = k;
+            const float t60 = ha[loud] > 0.f && za[loud] > 0.f ? 6.91f / (za[loud] * 6.2831853f * ha[loud]) : 1e9f;
+            v.burst.damp = decay < 1.f && t60 < 1e8f ? std::exp(-6.91f / (t60 * sr)) : 1.f;
+        }
         st[0] += voicing * st[1];                                /* h moves by widths */
         st[3] *= coil;
         {
