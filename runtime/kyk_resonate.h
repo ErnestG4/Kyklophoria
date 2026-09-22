@@ -981,14 +981,42 @@ struct ResonatorWorld
     void Decode(int i, float* hz, float* zeta, float* gain, float* phase) const
     {
         const uint8_t* m = Modes(i);
+        for(int k = 0; k < N; k++) DecodeMode(m, k, k, hz, zeta, gain, phase);
+    }
+    void DecodeMode(const uint8_t* m, int k, int at, float* hz, float* zeta, float* gain, float* phase) const
+    {
+        uint16_t c; std::memcpy(&c, m + 5 * k, 2);
+        hz[at]    = 20.0f * std::exp2(ver >= 6 ? c / 6000.0f : c / 1200.0f);   /* fifths of a cent from version 6 */
+        zeta[at]  = std::exp(-0.1f * m[5 * k + 2]);
+        gain[at]  = (ver >= 6 && m[5 * k + 3] == 255) ? 0.f : std::exp(-0.25f * m[5 * k + 3] * 0.1151293f);   /* dB -> linear; 255 is silence */
+        phase[at] = m[5 * k + 4] * (6.2831853f / 256.0f);
+    }
+    /* the cap loudest modes of a point, chosen on the bytes — the log of
+       gain^2 over zeta x hz is linear in the level, decay and cents bytes
+       — so a capped voice decodes only the modes it will play: twelve
+       exps, not forty-eight, on every At() at four voices. Returns how
+       many, their indices ascending (frequency order) in idx */
+    int Loudest(int i, int cap, int* idx) const
+    {
+        const uint8_t* m = Modes(i);
+        float score[ResonatorBank::kMax]; bool take[ResonatorBank::kMax];
         for(int k = 0; k < N; k++)
         {
             uint16_t c; std::memcpy(&c, m + 5 * k, 2);
-            hz[k]    = 20.0f * std::exp2(ver >= 6 ? c / 6000.0f : c / 1200.0f);   /* fifths of a cent from version 6 */
-            zeta[k]  = std::exp(-0.1f * m[5 * k + 2]);
-            gain[k]  = (ver >= 6 && m[5 * k + 3] == 255) ? 0.f : std::exp(-0.25f * m[5 * k + 3] * 0.1151293f);   /* dB -> linear; 255 is silence */
-            phase[k] = m[5 * k + 4] * (6.2831853f / 256.0f);
+            const uint8_t d = m[5 * k + 2], l = m[5 * k + 3];
+            score[k] = (ver >= 6 && l == 255) ? -1e9f : -0.0575647f * (float)l + 0.1f * (float)d - (ver >= 6 ? c / 6000.0f : c / 1200.0f) * 0.6931472f;
+            take[k] = false;
         }
+        for(int c = 0; c < cap && c < N; c++)
+        {
+            int best = -1;
+            for(int k = 0; k < N; k++) if(!take[k] && (best < 0 || score[k] > score[best])) best = k;
+            if(best < 0 || score[best] <= -1e8f) break;
+            take[best] = true;
+        }
+        int n = 0;
+        for(int k = 0; k < N; k++) if(take[k]) idx[n++] = k;
+        return n;
     }
 
     /* the world at a parameter value, into a voice. A note world (kind 0)
@@ -1015,12 +1043,22 @@ struct ResonatorWorld
         float ha[ResonatorBank::kMax], za[ResonatorBank::kMax], ga[ResonatorBank::kMax], fa[ResonatorBank::kMax];
         float hb[ResonatorBank::kMax], zb[ResonatorBank::kMax], gb[ResonatorBank::kMax], fb[ResonatorBank::kMax];
         float st[8], sb[8];
+        int nd = N;                   /* modes decoded */
+        bool capped = false;          /* the voice's cap already applied, on the bytes */
         if(kind != 1)
         {
-            Decode(near, ha, za, ga, fa);
+            if(v.cap > 0 && v.cap < N)
+            {
+                int idx[ResonatorBank::kMax];
+                nd = Loudest(near, v.cap, idx);
+                const uint8_t* m = Modes(near);
+                for(int k = 0; k < nd; k++) DecodeMode(m, idx[k], k, ha, za, ga, fa);
+                capped = true;
+            }
+            else Decode(near, ha, za, ga, fa);
             std::memcpy(st, Stage(near), 32);
             const float r = std::exp2((param - Param(near)) / 12.f);
-            for(int k = 0; k < N; k++) { ha[k] *= r; ga[k] *= st[7]; }
+            for(int k = 0; k < nd; k++) { ha[k] *= r; ga[k] *= st[7]; }
             t = 0.f;
         }
         else
@@ -1042,14 +1080,16 @@ struct ResonatorWorld
             }
             for(int k = 0; k < 7; k++) st[k] += t * (sb[k] - st[k]);
         }
-        for(int k = 0; k < N; k++) za[k] /= decay;            /* T60 x decay */
+        for(int k = 0; k < nd; k++) za[k] /= decay;           /* T60 x decay */
         /* a voice with a cap keeps its cap loudest modes — by the energy a
            mode carries, gain^2 over its decay rate, the export's own rank
            — in frequency order, and the rest are silent. Rings does this
            for its polyphony (64 / voices - 4 modes each): four voices
-           stacked are as rich as one, and cost the same block */
-        int n = N;
-        if(v.cap > 0 && v.cap < N)
+           stacked are as rich as one, and cost the same block. A note
+           world's cap was applied on the bytes above (Loudest); a body
+           row's, interpolated, is applied here on the decoded modes */
+        int n = nd;
+        if(!capped && v.cap > 0 && v.cap < N)
         {
             float score[ResonatorBank::kMax]; bool take[ResonatorBank::kMax];
             for(int k = 0; k < N; k++) { score[k] = ga[k] * ga[k] / (za[k] * ha[k] > 1e-12f ? za[k] * ha[k] : 1e-12f); take[k] = false; }
