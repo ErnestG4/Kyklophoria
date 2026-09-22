@@ -202,7 +202,7 @@ int main()
         CHECK(!blob.empty(), "tests/data/wurli.kykm missing");
         ResonatorWorld w; w.Init();
         CHECK(w.Attach(blob.data(), (uint32_t)blob.size()), "wurli.kykm did not attach");
-        CHECK(w.form == 0 && w.N >= 40 && w.P == 11, "wurli: form %d N %d P %d", w.form, w.N, w.P);
+        CHECK(w.form == 0 && w.N >= 30 && w.P == 11, "wurli: form %d N %d P %d", w.form, w.N, w.P);   /* 39 modes after the cluster penalty, 46 before */
         /* the burst: a strike with the point's burst and one without differ
            in their first 40 ms and not after 70 — the attack the modes are
            not, played once and gone. ModalBake's tools/bursts.py made them
