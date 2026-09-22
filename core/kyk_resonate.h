@@ -999,15 +999,11 @@ struct ResonatorWorld
            note is a hammer on a ringing tine and adds. */
         if(keep && strike && v.param < 1e8f && std::fabs(param - v.param) > 1e-4f) { v.bank.Choke(2.f, sr); v.burst.Choke(5.f, sr); }
         v.param = param;
-        /* the decay axis reaches the burst too: under a muted decay the
-           recording's attack fades with the loudest mode's shortened T60,
-           so the bottom of the axis is a thonk on damped strings and not
-           the same 300 ms of attack over a silent bank */
-        {
-            int loud = 0; for(int k = 1; k < N; k++) if(std::fabs(ga[k]) > std::fabs(ga[loud])) loud = k;
-            const float t60 = ha[loud] > 0.f && za[loud] > 0.f ? 6.91f / (za[loud] * 6.2831853f * ha[loud]) : 1e9f;
-            v.burst.damp = decay < 1.f && t60 < 1e8f ? std::exp(-6.91f / (t60 * sr)) : 1.f;
-        }
+        /* the decay axis is the ring's alone: the strike — the recorded
+           attack — plays as it is at every setting (Combust: "turning the
+           ring decay fully muted shouldn't impact the strike"). It was
+           made to fade with the muted T60 for an afternoon. */
+        v.burst.damp = 1.f;
         st[0] += voicing * st[1];                                /* h moves by widths */
         st[3] *= coil;
         {

@@ -804,18 +804,20 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
             if(jumped && sinceTrig > 4000u && sinceStrum > 20u && gStrike < 0)
             { gStrike = (int16_t)(255.f * Velocity01()); sinceStrum = 0u; }
             /* Rings' note filter, the part of it this needs: a strike waits
-               for the pitch to settle. The CV input is a one-pole that
-               takes about 7 ms to a step, so a sequencer's trigger — or
-               the jump rule above, which fires on the first block of the
-               step — found the pitch a tenth of the way there: the attack
-               played at the wrong note and the ring slid up after it,
-               "drunk, sliding into position at the last second". Two blocks
-               within two cents, or 12 ms, whichever comes first */
+               for the pitch to settle. Every strike waits 4 ms at least,
+               because a sequencer whose gate leads its CV by a few
+               milliseconds found the pitch still at the last step —
+               "stable" at the wrong note — and struck there: the attack
+               at the old pitch and the ring snapping to the new one
+               under the late-CV window, "the resonance lagging around
+               the strike". Then three blocks within two cents, or 30 ms
+               for a CV that slews, whichever comes first. The CV input
+               itself has no slew (the SDK builds it with none). */
             stable = std::fabs(note - lastNote) <= 0.02f ? stable + 1u : 0u;
             if(gStrike >= 0)
             {
                 held++;
-                if(stable < 2u && held < 24u) gStrikeHeld = true; else gStrikeHeld = false;
+                if(held < 8u || (stable < 3u && held < 60u)) gStrikeHeld = true; else gStrikeHeld = false;
             }
             else { held = 0u; gStrikeHeld = false; }
             lastNote = note;
