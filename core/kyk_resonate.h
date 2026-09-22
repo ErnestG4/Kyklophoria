@@ -439,11 +439,21 @@ struct ResonatorBank
                 }
                 float* o_ = out + d;
                 const int mm = m - d;
+                /* the raised cosine for the run as a rotating phasor: one
+                   cos and one sin, then a multiply a sample, where it was a
+                   cos a sample — two banks' worth on each of four voices
+                   was a tenth of the block in cosf */
                 float w[64];
-                for(int k = 0; k < mm; k++)
                 {
-                    const float u = ramp_n[q] + (float)k - ramp_lead[q];
-                    w[k] = u <= 0.f ? 0.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len[q]);
+                    const float u0 = ramp_n[q] - ramp_lead[q];
+                    const float step = 3.1415927f / ramp_len[q];
+                    float c = std::cos(step * u0), s_ = std::sin(step * u0);
+                    const float dc_ = std::cos(step), ds_ = std::sin(step);
+                    for(int k = 0; k < mm; k++)
+                    {
+                        w[k] = u0 + (float)k <= 0.f ? 0.f : 0.5f - 0.5f * c;
+                        const float c2 = c * dc_ - s_ * ds_; s_ = s_ * dc_ + c * ds_; c = c2;
+                    }
                 }
                 const float sc = damp_left > 0 && damp_bank[q] ? dc : 1.f, sc2 = sc * sc;
                 int i = 0;
