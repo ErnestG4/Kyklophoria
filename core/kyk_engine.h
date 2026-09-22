@@ -202,7 +202,7 @@ public:
             if(!move && !rvdirty_[ractive_]) return;
             /* a tune change under the lock rebuilds the voice at the note
                it holds, not at wherever the pitch has gone since */
-            Tuned().At(move ? p : note, rvoices_[ractive_], sr_, true, rstriking_); at_count_++;
+            Tuned().At(move ? p : note, rvoices_[ractive_], sr_, true, rstriking_); at_count_++; rdid_ = true;
             if(move) note = p;
             rvdirty_[ractive_] = false;
             return;
@@ -211,11 +211,16 @@ public:
            block, round-robin, so a decay or coil that an orbit keeps
            moving costs one At() a block whatever the voice count, and a
            voice lags by a few blocks, which nobody can hear decay do */
+        /* and never two in one block: a strike already costs a build, and
+           a pot crossing its deadband in the same block cost a second —
+           the module reported an overrun about once a note (Combust). The
+           other voices wait a block; nobody hears decay do that. */
+        if(rdid_) return;
         for(int k = 1; k < kPoly; k++)
         {
             const int v = (ractive_ + k) % kPoly;
             if(!rvdirty_[v]) continue;
-            if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { Tuned().At(rvnote_[v], rvoices_[v], sr_, true); at_count_++; rvdirty_[v] = false; return; }
+            if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { Tuned().At(rvnote_[v], rvoices_[v], sr_, true); at_count_++; rdid_ = true; rvdirty_[v] = false; return; }
             rvdirty_[v] = false;              /* silent, or never built: its next strike builds it */
         }
     }
@@ -420,6 +425,7 @@ public:
                 SetTune(Tune::Decay, DecayOf(c_[2]));
                 SetTune(Tune::Coil, CoilOf(c_[3]));
             }
+            rdid_ = false;                 /* one voice built a block at most (see Retune) */
             Retune();
             if(rbend_ < 64) rbend_++;
             if(rsince_ < 0xFFFFFFu) rsince_ += (uint32_t)n;
@@ -779,6 +785,7 @@ private:
     bool           rstriking_ = false;
     uint32_t       rsince_ = 0xFFFFFFu;  /* samples since the last strike, for the late-CV window */
     int            rbend_ = 64;          /* blocks since the last bend */
+    bool           rdid_ = false;        /* a voice was built this block */
     const float*   exciter_ = nullptr;   /* this block's drive, or null */
     float          exgain_ = 0.f;
 

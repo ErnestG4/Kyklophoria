@@ -65,12 +65,92 @@
 
 namespace kyk {
 
+/* The strike's arithmetic, without the library.
+ *
+ * A note-to-note strike measured 470-odd calls into libm — decode, pole,
+ * phase — and on the M7 each is a hundred cycles or more of software
+ * float, which is where "an overrun about once a note" (Combust) came
+ * from. Three of those are not calls at all: the format stores a mode's
+ * decay, its level and its phase as BYTES, so 256 values each, and a
+ * table is exact where the call was. The two that remain are a bounded
+ * exponential and a sine, and a polynomial is as good as the library at
+ * the precision a mode needs (a frequency to a fifth of a cent, a level
+ * to a quarter of a dB).
+ */
+namespace fastmath {
+
+struct Tables
+{
+    float zeta[256];     /* exp(-0.1 k): the decay byte */
+    float level[256];    /* exp(-0.25 k / 8.6859): the level byte, 255 silent */
+    float psin[256], pcos[256];   /* the phase byte over a turn */
+    bool  ready;
+    void Build()
+    {
+        if(ready) return;
+        for(int i = 0; i < 256; i++)
+        {
+            zeta[i]  = std::exp(-0.1f * (float)i);
+            level[i] = i == 255 ? 0.f : std::exp(-0.25f * (float)i * 0.1151293f);
+            const float ph = (float)i * (6.2831853f / 256.f);
+            psin[i] = std::sin(ph); pcos[i] = std::cos(ph);
+        }
+        ready = true;
+    }
+};
+inline Tables& T() { static Tables t{}; t.Build(); return t; }
+
+/* 2^x over the range the runtime uses (a mode's cents, a transposition,
+   a level in dB): the integer part by the exponent bits, the fraction by
+   a quartic within 1.3e-5 over [0,1] — a hundredth of a cent */
+inline float Exp2(float x)
+{
+    if(x < -126.f) return 0.f;
+    if(x > 127.f) return 3.4e38f;
+    const int k = (int)std::floor(x);
+    const float f = x - (float)k;
+    /* seven terms of 2^f = e^(f ln2): within 2e-8 over [0,1], where the
+       quartic's 1e-5 was enough to move a mode by a fifth of a cent and
+       the format's own round trip noticed */
+    const float p = 1.f + f * (0.69314718f + f * (0.24022651f + f * (0.05550411f + f * (0.00961813f + f * (0.00133336f + f * 0.00015403f)))));
+    union { float f; uint32_t u; } s;
+    s.u = (uint32_t)((127 + k) << 23);
+    return p * s.f;
+}
+
+/* exp(-x) for the pole radius, where x = zeta w is at most about 0.06:
+   the series to five terms is exact to 1e-9 there */
+inline float ExpNegSmall(float x)
+{
+    if(x > 0.2f) return Exp2(-1.44269504f * x);        /* a ghost's zeta is 1: still no call */
+    return 1.f - x * (1.f - x * (0.5f - x * (0.16666667f - x * (0.041666667f - x * 0.0083333333f))));
+}
+
+/* sin and cos of w = 2 pi f / sr, |w| <= pi (f up to Nyquist): quintic
+   and sextic minimax, within 2e-7 — a mode's phase to a millionth of a
+   turn, where the format stores it to a 256th */
+inline void SinCos(float w, float& s, float& c)
+{
+    const float x2 = w * w;
+    /* far enough along the series that pi is still accurate: the sine to
+       x^13 and the cosine to x^14, within 1e-7 over [-pi, pi] (four terms
+       each left the cosine a fortieth out at pi, which is a click) */
+    s = w * (1.f - x2 * (0.16666667f - x2 * (0.00833333f - x2 * (0.00019841270f - x2 * (0.0000027557319f - x2 * (2.5052108e-8f - x2 * 1.6059044e-10f))))));
+    c = 1.f - x2 * (0.5f - x2 * (0.041666667f - x2 * (0.0013888889f - x2 * (0.0000248016f - x2 * (2.7557319e-7f - x2 * (2.0876757e-9f - x2 * 1.1470746e-11f))))));
+}
+
+} // namespace fastmath
+
 struct ResonatorBank
 {
     static constexpr int kMax = 48;
 
     int   n;
     float c1[kMax], c2[kMax];            /* 2 r cos w, -r^2 */
+    /* each mode's pole as it was built, kept so a retune does not have to
+       recover it: acos(c1 / 2r) per mode was the costliest call in a
+       strike, and a sin of it another */
+    float wq[kMax], cwq[kMax], swq[kMax], rq[kMax], lrq[kMax];   /* lrq: log r, so advancing k samples is an exp rather than a pow */
     float p1[kMax], p2[kMax];            /* the state a unit strike starts from: A sin(phi-w)/r, A sin(phi-2w)/r^2 */
     float g[kMax];                       /* each mode's gain at a unit strike, for the carry's level */
     float y1[kMax], y2[kMax];
@@ -88,6 +168,11 @@ struct ResonatorBank
     float s1[kStrikes][kMax], s2[kStrikes][kMax];
     float ramp_n[kStrikes], ramp_len[kStrikes], ramp_lead[kStrikes];
     bool  ramping[kStrikes];
+    /* the raised cosine as a rotating phasor, carried across the runs it
+       is drawn in: seeding it per run was a sine and a cosine every block
+       for as long as a strike was coming in, which on a piano is fifty
+       blocks a note */
+    float ramp_c[kStrikes], ramp_s[kStrikes];
     float held[kStrikes];     /* samples a strike bank has sat out of its lead, its state not yet advanced by them */
     /* the choke: for damp_left samples every mode decays by damp_c a
        sample more than its own pole says — the main state and the strike
@@ -105,7 +190,7 @@ struct ResonatorBank
     {
         damp_left = (int)(ms * 0.001f * sr);
         if(damp_left < 1) damp_left = 1;
-        damp_c = std::pow(1e-3f, 1.f / (float)damp_left);
+        damp_c = fastmath::Exp2(-9.9657843f / (float)damp_left);   /* 1e-3 over the window */
         for(int k = 0; k < kStrikes; k++)
         {
             damp_bank[k] = true;
@@ -118,8 +203,8 @@ struct ResonatorBank
     void Init()
     {
         n = 0;
-        for(int q = 0; q < kStrikes; q++) { ramp_n[q] = 0.f; ramp_len[q] = 144.f; ramp_lead[q] = 0.f; ramping[q] = false; damp_bank[q] = false; held[q] = 0.f; }
-        for(int i = 0; i < kMax; i++) { c1[i] = c2[i] = p1[i] = p2[i] = g[i] = y1[i] = y2[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; }
+        for(int q = 0; q < kStrikes; q++) { ramp_n[q] = 0.f; ramp_len[q] = 144.f; ramp_lead[q] = 0.f; ramping[q] = false; damp_bank[q] = false; held[q] = 0.f; ramp_c[q] = 1.f; ramp_s[q] = 0.f; }
+        for(int i = 0; i < kMax; i++) { c1[i] = c2[i] = p1[i] = p2[i] = g[i] = y1[i] = y2[i] = 0.f; wq[i] = cwq[i] = swq[i] = rq[i] = lrq[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; }
         damp_left = 0; damp_c = 1.f;
     }
     bool Ringing() const
@@ -182,12 +267,10 @@ struct ResonatorBank
             float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
             for(int i = 0; i < n0; i++)
             {
-                has[i] = false; claimed[i] = false; g0[i] = g[i];
+                has[i] = false; claimed[i] = false; g0[i] = g[i]; w0[i] = wq[i];
                 if(!(c2[i] < 0.f)) continue;
-                const float r0 = std::sqrt(-c2[i]);
-                float cw = c1[i] / (2.0f * r0); cw = cw > 1.0f ? 1.0f : cw < -1.0f ? -1.0f : cw;
-                w0[i] = std::acos(cw);
-                const float sw0 = std::sin(w0[i]) > 1e-6f ? std::sin(w0[i]) : 1e-6f;
+                const float r0 = rq[i], cw = cwq[i];
+                const float sw0 = swq[i] > 1e-6f ? swq[i] : 1e-6f;
                 float e = 0.f;
                 for(int q = 0; q < 1 + kStrikes; q++)
                 {
@@ -200,7 +283,7 @@ struct ResonatorBank
         for(int i = 0; i < n; i++)
         {
             const float w = 6.2831853f * hz[i] / sr;
-            const float r = std::exp(-zeta[i] * w);
+            const float r = fastmath::ExpNegSmall(zeta[i] * w);
             const float ph = phase ? phase[i] : 0.f;
             int from = -1;
             if(keep)
@@ -214,14 +297,20 @@ struct ResonatorBank
                     if(q < best) { best = q; from = j; }
                 }
             }
-            c1[i] = 2.0f * r * std::cos(w);
+            float cwn, swn; fastmath::SinCos(w, swn, cwn);
+            c1[i] = 2.0f * r * cwn;
             c2[i] = -r * r;
-            p1[i] = gain[i] * std::sin(ph - w) / r;
-            p2[i] = gain[i] * std::sin(ph - 2.0f * w) / (r * r);
+            wq[i] = w; cwq[i] = cwn; swq[i] = swn; rq[i] = r; lrq[i] = -zeta[i] * w;
+            /* sin(ph - w) and sin(ph - 2w) from the angle sum: one cos and
+               one sin a mode rather than three */
+            float sph, cph; fastmath::SinCos(ph > 3.1415927f ? ph - 6.2831853f : ph, sph, cph);
+            const float s1w = sph * cwn - cph * swn;
+            const float c1w = cph * cwn + sph * swn;
+            p1[i] = gain[i] * s1w / r;
+            p2[i] = gain[i] * (s1w * cwn - c1w * swn) / (r * r);
             if(from >= 0)
             {
                 claimed[from] = true;
-                const float cwn = std::cos(w), swn = std::sin(w);
                 const float go = std::fabs(g0[from]), gn = std::fabs(gain[i]);
                 const float lv = go > 1e-9f ? (gn / go > lv_max ? lv_max : gn / go) : 1.f;
                 float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
@@ -264,6 +353,7 @@ struct ResonatorBank
         held[q] = 0.f;
         for(int i = 0; i < n; i++) { s1[q][i] = swing * p1[i]; s2[q][i] = swing * p2[i]; }
         damp_bank[q] = false;                  /* a choke under way is the old note's, not this strike's */
+        ramp_c[q] = 1.f; ramp_s[q] = 0.f;      /* the ramp's phasor at u = 0 */
         ramp_n[q] = 0.f;
         ramp_lead[q] = lead;
         if(ramp > 0.f) ramp_len[q] = ramp;
@@ -283,9 +373,11 @@ struct ResonatorBank
         for(int i = 0; i < nn; i++)
         {
             const float w = 6.2831853f * hz[i] / sr;
-            const float r = std::exp(-zeta[i] * w);
-            c1[i] = 2.0f * r * std::cos(w);
+            const float r = fastmath::ExpNegSmall(zeta[i] * w);
+            float sw, cw; fastmath::SinCos(w, sw, cw);
+            c1[i] = 2.0f * r * cw;
             c2[i] = -r * r;
+            wq[i] = w; cwq[i] = cw; swq[i] = sw; rq[i] = r; lrq[i] = -zeta[i] * w;
         }
     }
 
@@ -299,11 +391,10 @@ struct ResonatorBank
         for(int i = 0; i < n; i++)
         {
             if(!(c2[i] < 0.f)) continue;
-            const float r = std::sqrt(-c2[i]);
-            float cw = c1[i] / (2.0f * r); cw = cw > 1.0f ? 1.0f : cw < -1.0f ? -1.0f : cw;
-            const float w = std::acos(cw), sw = std::sin(w) > 1e-6f ? std::sin(w) : 1e-6f;
+            const float r = rq[i], cw = cwq[i], w = wq[i];
+            const float sw = swq[i] > 1e-6f ? swq[i] : 1e-6f;
             const float sp = y1s[i], cp = (y1s[i] * cw - b[i] * r) / sw;     /* A sin phi, A cos phi */
-            const float g = std::pow(r, k), th = k * w;
+            const float g = fastmath::Exp2(1.4426950f * k * lrq[i]), th = k * w;   /* r^k, without a pow */
             const float sp2 = g * (sp * std::cos(th) + cp * std::sin(th));    /* A r^k sin(phi + k w) */
             const float cp2 = g * (cp * std::cos(th) - sp * std::sin(th));    /* A r^k cos(phi + k w) */
             a[i] = sp2;
@@ -318,6 +409,16 @@ struct ResonatorBank
        pop on every fast note that the old 3 ms ramp never showed */
     void Fold(int q)
     {
+        /* a bank still inside its lead is heard at weight zero, so folding
+           it adds nothing at all — and bringing it up to date first was a
+           pow and a sincos a mode for nothing, which is most of what a
+           fast repeat cost */
+        if(ramp_n[q] + held[q] <= ramp_lead[q])
+        {
+            for(int i = 0; i < n; i++) s1[q][i] = s2[q][i] = 0.f;
+            ramping[q] = false; held[q] = 0.f;
+            return;
+        }
         if(held[q] > 0.f) { Advance(q, held[q]); held[q] = 0.f; }
         const float u = ramp_n[q] - ramp_lead[q];
         const float w = u <= 0.f ? 0.f : u >= ramp_len[q] ? 1.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len[q]);
@@ -466,13 +567,18 @@ struct ResonatorBank
                 {
                     const float u0 = ramp_n[q] - ramp_lead[q];
                     const float step = 3.1415927f / ramp_len[q];
-                    float c = std::cos(step * u0), s_ = std::sin(step * u0);
-                    const float dc_ = std::cos(step), ds_ = std::sin(step);
+                    float dc_, ds_; fastmath::SinCos(step, ds_, dc_);
+                    float c = ramp_c[q], s_ = ramp_s[q];
+                    /* one Newton step against the drift a carried phasor
+                       accumulates over a long ramp */
+                    const float k2 = 1.5f - 0.5f * (c * c + s_ * s_);
+                    c *= k2; s_ *= k2;
                     for(int k = 0; k < mm; k++)
                     {
                         w[k] = u0 + (float)k <= 0.f ? 0.f : 0.5f - 0.5f * c;
                         const float c2 = c * dc_ - s_ * ds_; s_ = s_ * dc_ + c * ds_; c = c2;
                     }
+                    ramp_c[q] = c; ramp_s[q] = s_;
                 }
                 const float sc = damp_left > 0 && damp_bank[q] ? dc : 1.f, sc2 = sc * sc;
                 int i = 0;
@@ -638,7 +744,7 @@ struct BurstPlayer
        to its end was the old note going on for up to 390 ms under the new */
     void Choke(float ms, float sr)
     {
-        const float d = std::pow(1e-3f, 1.f / (ms * 0.001f * sr));
+        const float d = fastmath::Exp2(-9.9657843f / (ms * 0.001f * sr));
         for(int a = 0; a < active; a++) if(slot[a].d > d) slot[a].d = d;
     }
     /* a bend: what is still playing is read faster or slower from where
@@ -762,9 +868,9 @@ struct NoiseLayer
         for(int k = 0; k < kBands; k++)
         {
             const float lo = 62.5f * (float)(1 << k), hi = lo * 2.f, fc = std::sqrt(lo * hi);
-            const float w0 = 6.2831853f * fc / sr, alpha = std::sin(w0) / (2.f * 1.41421f);
+            const float w0 = 6.2831853f * fc / sr; float s0, c0; fastmath::SinCos(w0, s0, c0); const float alpha = s0 / (2.f * 1.41421f);
             const float a0 = 1.f + alpha;
-            b0[k] = alpha / a0; a1[k] = -2.f * std::cos(w0) / a0; a2[k] = (1.f - alpha) / a0;
+            b0[k] = alpha / a0; a1[k] = -2.f * c0 / a0; a2[k] = (1.f - alpha) / a0;
             /* the filter's own noise power gain, measured from its impulse
                response — the octave's share of the spectrum, (hi - lo) / (sr / 2),
                was the guess before and it was 2 dB hot in the low bands and
@@ -789,7 +895,7 @@ struct NoiseLayer
             }
             const float share = gain[k];
             level[k] = lvl[k] > 0.f && t60[k] > 0.f ? lvl[k] / (share > 1e-6f ? share : 1e-6f) : 0.f;
-            fall[k]  = t60[k] > 0.f ? std::exp(-6.91f / (t60[k] * sr)) : 0.f;
+            fall[k]  = t60[k] > 0.f ? fastmath::ExpNegSmall(6.91f / (t60[k] * sr)) : 0.f;
             env[k]   = 0.f;
             x1[k] = x2[k] = y1[k] = y2[k] = 0.f;
             if(level[k] > 0.f) on = true;
@@ -1059,9 +1165,9 @@ struct ResonatorWorld
     void DecodeMode(const uint8_t* m, int k, int at, float* hz, float* zeta, float* gain, float* phase) const
     {
         uint16_t c; std::memcpy(&c, m + 5 * k, 2);
-        hz[at]    = 20.0f * std::exp2(ver >= 6 ? c / 6000.0f : c / 1200.0f);   /* fifths of a cent from version 6 */
-        zeta[at]  = std::exp(-0.1f * m[5 * k + 2]);
-        gain[at]  = (ver >= 6 && m[5 * k + 3] == 255) ? 0.f : std::exp(-0.25f * m[5 * k + 3] * 0.1151293f);   /* dB -> linear; 255 is silence */
+        hz[at]    = 20.0f * fastmath::Exp2(ver >= 6 ? c / 6000.0f : c / 1200.0f);   /* fifths of a cent from version 6 */
+        zeta[at]  = fastmath::T().zeta[m[5 * k + 2]];
+        gain[at]  = (ver >= 6 && m[5 * k + 3] == 255) ? 0.f : fastmath::T().level[m[5 * k + 3]];   /* dB -> linear; 255 is silence */
         phase[at] = m[5 * k + 4] * (6.2831853f / 256.0f);
     }
     /* the cap loudest modes of a point, chosen on the bytes — the log of
@@ -1185,7 +1291,7 @@ struct ResonatorWorld
             if(bend && wsum > 0.f)
             {
                 dmean /= wsum;
-                for(int k = 0; k < nd; k++) ga[k] *= std::pow(10.f, 0.05f * (dbk[k] - dmean));
+                for(int k = 0; k < nd; k++) ga[k] *= fastmath::Exp2(0.16609640f * (dbk[k] - dmean));   /* 10^(x/20) */
             }
             t = 0.f;
         }
@@ -1267,6 +1373,14 @@ struct ResonatorWorld
         }
         for(int k = 0; k < n; k++) { v.hz[k] = ha[k]; v.zeta[k] = za[k]; v.gain[k] = ga[k]; }
         for(int k = n; k < N; k++) { v.hz[k] = 0.f; v.zeta[k] = 0.f; v.gain[k] = 0.f; }
+        /* a strike at another note on this voice: the old note choked —
+           its ring over 2 ms (ResonatorBank::Choke), its attack, which is
+           the recording of the old note, over 5 (BurstPlayer::Choke).
+           Before the carry, not after: a strike bank inside its lead is
+           let go by the choke, and then the carry has nothing to bring up
+           to date. A glide or a tune change carries it on; a strike at the
+           same note is a hammer on a ringing tine and adds. */
+        if(keep && strike && v.param < 1e8f && std::fabs(param - v.param) > 1e-4f) { v.bank.Choke(2.f, sr); v.burst.Choke(5.f, sr); }
         /* the pitch change this retune is, for the carry: a note world's
            notes, a body row's none; a first build has nothing to carry */
         const float ratio = (keep && kind != 1 && v.param < 1e8f) ? std::exp2((param - v.param) / 12.f) : 1.f;
@@ -1286,7 +1400,6 @@ struct ResonatorWorld
            old note and played to its end, over 5 ms (BurstPlayer::Choke).
            A glide or a tune change carries it on; a strike at the same
            note is a hammer on a ringing tine and adds. */
-        if(keep && strike && v.param < 1e8f && std::fabs(param - v.param) > 1e-4f) { v.bank.Choke(2.f, sr); v.burst.Choke(5.f, sr); }
         v.param = param;
         /* the decay axis is the ring's alone: the strike — the recorded
            attack — plays as it is at every setting (Combust: "turning the

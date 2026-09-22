@@ -309,6 +309,51 @@ int main()
         printf("  the carry goes by frequency: after a retune that puts a new mode at index 0, 50 Hz %.1f dB, 105 Hz %.1f, 210 Hz %.1f\n", at50, at105, at210);
     }
 
+    /* the strike's arithmetic against the library it replaced. A
+       note-to-note strike made about 470 calls into libm — on the M7 a
+       hundred cycles or more each, in one block — and the format's own
+       fields make most of them unnecessary: a decay, a level and a phase
+       are bytes. What is left is a polynomial, and this is what it costs
+       in accuracy. */
+    {
+        /* measured where it matters: what the polynomial does to a mode's
+           frequency in cents, and to its level in dB, rather than to the
+           bare value of a sine */
+        double we = 0; float wat = 0;
+        for(int i = 0; i <= 16000; i++)
+        {
+            const float x = -20.f + i * (40.f / 16000.f);
+            const double r = std::fabs(kyk::fastmath::Exp2(x) / std::exp2((double)x) - 1.0);
+            if(r > we) { we = r; wat = x; }
+        }
+        CHECK(we * 1731.2 < 0.05, "Exp2 moves a frequency by %.3f cents at %.2f", we * 1731.2, wat);
+        /* the sine and cosine against the library's, in float, over the
+           poles a mode can have: what a float can hold at 20 Hz is a few
+           cents whichever of the two computes it — that is the type, not
+           the polynomial — so what is asked is that this is no worse than
+           the call it replaced */
+        double wsc = 0; float wf = 0;
+        for(int i = 1; i <= 20000; i++)
+        {
+            const float hz = 20.f * std::exp2(i * (10.f / 20000.f));
+            if(hz > 23000.f) break;
+            const float w = 6.2831853f * hz / 48000.f;
+            float sf, cf; kyk::fastmath::SinCos(w, sf, cf);
+            const double d = std::fmax(std::fabs(sf - std::sin(w)), std::fabs(cf - std::cos(w)));
+            if(d > wsc) { wsc = d; wf = hz; }
+        }
+        CHECK(wsc < 3e-6, "SinCos differs from the library by %.3g (at %.0f Hz)", wsc, wf);
+        double wz = 0;
+        for(int i = 0; i <= 2000; i++)
+        {
+            const float x = i * (0.6f / 2000.f);
+            const double e = std::exp(-(double)x);
+            wz = std::fmax(wz, std::fabs(kyk::fastmath::ExpNegSmall(x) / e - 1.0));
+        }
+        CHECK(wz * 8.686 < 0.01, "ExpNegSmall moves a decay by %.4f dB", wz * 8.686);
+        printf("  the strike's own arithmetic: at most %.3f cents from Exp2, %.1e from SinCos (the library's own float), %.4f dB from exp(-x)\n", we * 1731.2, wsc, wz * 8.686);
+    }
+
     printf(fails ? "resonate_check: %d FAILED\n" : "resonate_check: ok\n", fails);
     return fails ? 1 : 0;
 }
