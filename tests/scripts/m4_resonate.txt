@@ -1,4 +1,4 @@
-# a resonate world (the Wurlitzer, tests/data/wurli.kykm) through the real
+# a resonate world (the Wurlitzer, tests/data/piano.kykm) through the real
 # engine: a keyboard of strikes, then a retune under a ringing note, then a
 # soft-to-hard run on one note. Rendered by kykdesk --resonate.
 9.0  dur

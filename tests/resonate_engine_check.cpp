@@ -50,11 +50,11 @@ static void Run(Engine& e, std::vector<float>& out, int blocks, int n = 48)
 int main()
 {
     const float sr = 48000.f;
-    auto blob = slurp("tests/data/ep-vel.kykm");
-    CHECK(!blob.empty(), "tests/data/ep-vel.kykm missing");
+    auto blob = slurp("tests/data/tine.kykm");
+    CHECK(!blob.empty(), "tests/data/tine.kykm missing");
     World rw; rw.UseResonate(blob.data(), (uint32_t)blob.size());
-    auto wblob = slurp("tests/data/wurli.kykm");
-    World wurli; wurli.UseResonate(wblob.data(), (uint32_t)wblob.size());
+    auto wblob = slurp("tests/data/piano.kykm");
+    World piano; piano.UseResonate(wblob.data(), (uint32_t)wblob.size());
     CHECK(rw.Ready() && rw.IsResonate() && rw.N() == 4, "the world did not attach as Resonate with its four axes");
 
     /* 1. engine == voice */
@@ -120,13 +120,13 @@ int main()
             }
             return 20 * std::log10(best + 1e-12);
         };
-        Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetF0(261.63f); e.Strike(0.7f);
+        Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetF0(261.63f); e.Strike(0.7f);
         std::vector<float> y2; Run(e, y2, 200);
         const double l131 = level_at(y2, 130.81), top = std::fmax(level_at(y2, 261.63), level_at(y2, 523.25));
         CHECK(l131 < top - 30.0, "a C4 strike carries a C3 fundamental: %.1f dB against the C4 series at %.1f", l131, top);
         /* a pitch change under the ringing note keeps it ringing (retuned),
            and a re-strike adds rather than restarting from silence */
-        Engine g; g.Init(&wurli, sr); g.gain = 1.f; g.SetF0(130.81f); g.Strike(0.7f);
+        Engine g; g.Init(&piano, sr); g.gain = 1.f; g.SetF0(130.81f); g.Strike(0.7f);
         std::vector<float> a1; Run(g, a1, 100);
         g.SetPitchLock(false); g.SetF0(146.83f);  /* a retune with no strike: the pitch moved under a free ring (a strike at another note chokes it) */
         std::vector<float> a2; Run(g, a2, 5);
@@ -151,17 +151,17 @@ int main()
        positions are two bodies; and the position moving under a ringing
        body retunes it rather than cutting it */
     {
-        auto pblob = slurp("tests/data/perc.kykm");
-        CHECK(!pblob.empty(), "tests/data/perc.kykm missing");
-        World perc; perc.UseResonate(pblob.data(), (uint32_t)pblob.size());
-        CHECK(perc.IsResonate() && perc.Res().kind == 1 && perc.Res().lo == 0.f && perc.Res().hi == 18.f,
-              "perc.kykm did not attach as an index world (kind %d, %g..%g)", perc.Res().kind, perc.Res().lo, perc.Res().hi);
-        const float at0[kMaxN] = {0.f}, at1[kMaxN] = {1.f}, mid[kMaxN] = {0.5f};
-        Engine a; a.Init(&perc, sr); a.gain = 1.f; a.SetPosition(at0, 1); a.SetF0(261.63f); a.Strike(0.7f);
-        Engine b; b.Init(&perc, sr); b.gain = 1.f; b.SetPosition(at0, 1); b.SetF0(130.81f); b.Strike(0.7f);
-        Engine c; c.Init(&perc, sr); c.gain = 1.f; c.SetPosition(at1, 1); c.SetF0(261.63f); c.Strike(0.7f);
+        auto pblob = slurp("tests/data/bodies.kykm");
+        CHECK(!pblob.empty(), "tests/data/bodies.kykm missing");
+        World bodies; bodies.UseResonate(pblob.data(), (uint32_t)pblob.size());
+        CHECK(bodies.IsResonate() && bodies.Res().kind == 1 && bodies.Res().lo == 0.f && bodies.Res().hi == 3.f,
+              "bodies.kykm did not attach as an index world (kind %d, %g..%g)", bodies.Res().kind, bodies.Res().lo, bodies.Res().hi);
+        const float at0[kMaxN] = {0.f}, at1[kMaxN] = {1.f}, nudge[kMaxN] = {0.05f};
+        Engine a; a.Init(&bodies, sr); a.gain = 1.f; a.SetPosition(at0, 1); a.SetF0(261.63f); a.Strike(0.7f);
+        Engine b; b.Init(&bodies, sr); b.gain = 1.f; b.SetPosition(at0, 1); b.SetF0(130.81f); b.Strike(0.7f);
+        Engine c; c.Init(&bodies, sr); c.gain = 1.f; c.SetPosition(at1, 1); c.SetF0(261.63f); c.Strike(0.7f);
         std::vector<float> ya, yb, yc; Run(a, ya, 100); Run(b, yb, 100); Run(c, yc, 100);
-        ResonatorVoice v; v.Init(); perc.Res().At(0.f, v, sr); v.Strike(0.7f);
+        ResonatorVoice v; v.Init(); bodies.Res().At(0.f, v, sr); v.Strike(0.7f);
         std::vector<float> yv(4800); for(int k = 0; k < 100; k++) v.Process(yv.data() + k * 48, 48);
         double dab = 0, dav = 0, dac = 0, en = 0;
         for(int i = 0; i < 4800; i++)
@@ -174,12 +174,19 @@ int main()
         CHECK(en > 0 && dab == 0.0, "an index world changed with the pitch: %.3g of the energy", dab / en);
         CHECK(dav < 1e-10 * en, "an index world at position 0 differs from the voice at index 0: %.3g of the energy", dav / en);
         CHECK(dac > 0.1 * en, "position 0 and position 1 are the same body: %.3g of the energy apart", dac / en);
-        /* the pot moves under the ring: the sound goes on, and it is now the
-           body at the new position (the same as one struck there, in
-           frequency content, not in phase — so compared on a spectrum) */
-        Engine g; g.Init(&perc, sr); g.gain = 1.f; g.SetPosition(at0, 1); g.SetF0(261.63f); g.Strike(0.7f);
+        /* the pot moves under the ring: the sound goes on. A twentieth of
+           the travel, which is ten times the deadband and stays inside one
+           body's neighbourhood — a row folds its points mode for mode and
+           slides each one geometrically, so a nudge moves every mode a few
+           per cent and the ring follows it. Crossing to the next body is
+           not this question and does not keep the ring: two bodies an
+           octave apart in their partials have nothing to carry between
+           them, and the carry is capped at the level the new mode's own
+           strike would give it, which for a bell taking a bass marimba's
+           ring is near zero. That is the cap working. */
+        Engine g; g.Init(&bodies, sr); g.gain = 1.f; g.SetPosition(at0, 1); g.SetF0(261.63f); g.Strike(0.7f);
         std::vector<float> g1; Run(g, g1, 100);
-        g.SetPosition(mid, 1);
+        g.SetPosition(nudge, 1);
         std::vector<float> g2; Run(g, g2, 5);
         double e_before = 0, e_after = 0;
         for(int i = 4560; i < 4800; i++) e_before += g1[i] * g1[i];
@@ -193,15 +200,15 @@ int main()
        (it has a pickup), and the change lands with the state ringing on */
     {
         auto energy = [](const std::vector<float>& v, size_t a, size_t b) { double e = 0; for(size_t i = a; i < b; i++) e += v[i] * v[i]; return e; };
-        Engine e0; e0.Init(&wurli, sr); e0.gain = 1.f; e0.SetF0(261.63f);
+        Engine e0; e0.Init(&piano, sr); e0.gain = 1.f; e0.SetF0(261.63f);
         Engine e1 = e0; e1.SetTune(Engine::Tune::Voicing, 0.f); e1.SetTune(Engine::Tune::Decay, 1.f); e1.SetTune(Engine::Tune::Coil, 1.f);
         e0.Strike(0.7f); e1.Strike(0.7f);
         std::vector<float> y0, y1; Run(e0, y0, 100); Run(e1, y1, 100);
         double d = 0; for(size_t i = 0; i < y0.size(); i++) d += (y0[i] - y1[i]) * (y0[i] - y1[i]);
         CHECK(d == 0.0, "a tune at its centre changed the sound: %.3g", d);
-        Engine e4; e4.Init(&wurli, sr); e4.gain = 1.f; e4.SetF0(261.63f); e4.SetTune(Engine::Tune::Decay, 4.f); e4.Strike(0.7f);
+        Engine e4; e4.Init(&piano, sr); e4.gain = 1.f; e4.SetF0(261.63f); e4.SetTune(Engine::Tune::Decay, 4.f); e4.Strike(0.7f);
         std::vector<float> y4; Run(e4, y4, 1000);
-        Engine e5; e5.Init(&wurli, sr); e5.gain = 1.f; e5.SetF0(261.63f); e5.Strike(0.7f);
+        Engine e5; e5.Init(&piano, sr); e5.gain = 1.f; e5.SetF0(261.63f); e5.Strike(0.7f);
         std::vector<float> y5; Run(e5, y5, 1000);
         const double late4 = energy(y4, 40000, 48000), late1 = energy(y5, 40000, 48000);
         CHECK(late4 > 2.0 * late1, "decay x4 did not ring longer: %.3g against %.3g at 0.9 s", late4, late1);
@@ -236,7 +243,7 @@ int main()
            burst, which is the recording's first 390 ms and plays to its
            end whatever the voice count (a cut burst was a click) */
         auto two = [&](int poly) {
-            Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetPolyphony(poly);
+            Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(poly);
             e.SetF0(130.81f); e.Strike(0.7f);
             std::vector<float> a; Run(e, a, 50);
             e.SetF0(196.f); e.Strike(0.7f);
@@ -260,11 +267,11 @@ int main()
             for(int i = 0; i < n; i++) { const double ph = 6.2831853 * hz * i / 48000.0; re += y[i] * std::cos(ph); im -= y[i] * std::sin(ph); }
             return 20 * std::log10(std::sqrt(re * re + im * im) / n + 1e-12);
         };
-        Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetF0(130.81f);
+        Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetF0(130.81f);
         std::vector<float> noise(4800), y(4800), quiet(4800);
         uint32_t r = 12345u; for(auto& v : noise) { r ^= r << 13; r ^= r >> 17; r ^= r << 5; v = ((int32_t)r) * (0.3f / 2147483648.f); }
         for(int b = 0; b < 100; b++) { e.SetExciter(noise.data() + b * 48, 0.02f); e.Process(y.data() + b * 48, 48); }
-        Engine q; q.Init(&wurli, sr); q.gain = 1.f; q.SetF0(130.81f);
+        Engine q; q.Init(&piano, sr); q.gain = 1.f; q.SetF0(130.81f);
         for(int b = 0; b < 100; b++) q.Process(quiet.data() + b * 48, 48);
         double eq = 0; for(float v : quiet) eq += v * v;
         const double at = level_at(y, 130.81f), off = level_at(y, 150.f);
@@ -285,7 +292,7 @@ int main()
         auto u32 = [&](uint32_t v) { u16(v & 65535); u16(v >> 16); };
         auto f32 = [&](float v) { uint32_t u; std::memcpy(&u, &v, 4); u32(u); };
         const std::vector<uint8_t>* mem[2] = { &wblob, &blob };
-        const char* names[2] = { "wurli", "ep-vel" };
+        const char* names[2] = { "piano", "tine" };
         uint16_t Nmax = 0; for(auto* b : mem) { uint16_t nn; std::memcpy(&nn, b->data() + 6, 2); Nmax = std::max(Nmax, nn); }
         fam.insert(fam.end(), {'K', 'Y', 'K', 'M'}); u16(6); u16(Nmax); u16(0); u8(0); u8(2); f32(0.f); f32(1.f);
         u8(2);
@@ -302,13 +309,13 @@ int main()
         fam.insert(fam.end(), body.begin(), body.end());
         World f; f.UseResonate(fam.data(), (uint32_t)fam.size());
         CHECK(f.IsResonate() && f.Res().kind == 2 && f.Res().M == 2, "the family did not attach (kind %d, %d members)", f.Res().kind, f.Res().M);
-        CHECK(std::strcmp(f.Res().MemberName(1), "ep-vel") == 0, "member 1 is named '%s'", f.Res().MemberName(1));
+        CHECK(std::strcmp(f.Res().MemberName(1), "tine") == 0, "member 1 is named '%s'", f.Res().MemberName(1));
         const float at0[kMaxN] = {0.f}, at1[kMaxN] = {1.f}, at45[kMaxN] = {0.45f};
         auto render = [&](const World& w, const float* pos) {
             Engine e; e.Init(&w, sr); e.gain = 1.f; e.SetPosition(pos, 1); e.SetF0(130.81f); e.Strike(0.6f);
             std::vector<float> y; Run(e, y, 100); return y;
         };
-        const auto fw = render(f, at0), ww = render(wurli, at0), fe = render(f, at1), ee = render(rw, at0), fm = render(f, at45);
+        const auto fw = render(f, at0), ww = render(piano, at0), fe = render(f, at1), ee = render(rw, at0), fm = render(f, at45);
         double d0 = 0, d1 = 0, dm = 0, en = 0;
         for(size_t i = 0; i < fw.size(); i++) { d0 += (fw[i] - ww[i]) * (fw[i] - ww[i]); d1 += (fe[i] - ee[i]) * (fe[i] - ee[i]); dm += (fm[i] - ww[i]) * (fm[i] - ww[i]); en += ww[i] * ww[i]; }
         CHECK(d0 == 0.0, "the family at position 0 is not the Wurlitzer: %.3g of the energy", d0 / en);
@@ -326,7 +333,7 @@ int main()
        built it at. */
     {
         auto f0_of = [](const Engine& e) { return e.Voice().hz[0]; };
-        Engine e; e.Init(&wurli, sr); e.gain = 1.f;
+        Engine e; e.Init(&piano, sr); e.gain = 1.f;
         CHECK(e.PitchLock(), "the lock is not on by default");
         e.SetF0(131.8f); e.Strike(0.7f);
         const float struck = f0_of(e);
@@ -338,7 +345,7 @@ int main()
         CHECK(std::fabs(struck - 130.81f) < 0.2f, "a strike 13 cents sharp of C3 was built at %.2f Hz, not C3", struck);
         CHECK(moved == struck, "locked, the ring followed the pitch: %.2f Hz after C3 was struck", moved);
         CHECK(std::fabs(again - 196.f) < 0.3f, "the next strike did not take the new pitch: %.2f Hz", again);
-        Engine u; u.Init(&wurli, sr); u.gain = 1.f; u.SetPitchLock(false);
+        Engine u; u.Init(&piano, sr); u.gain = 1.f; u.SetPitchLock(false);
         u.SetF0(131.8f); u.Strike(0.7f);
         const float ustruck = f0_of(u);
         u.SetF0(196.f); Run(u, y, 20);
@@ -348,7 +355,7 @@ int main()
         printf("  pitch lock: 131.8 Hz strikes C3 (%.2f), holds it under a G3 pitch, takes the G3 at the strike; unlocked %.1f then %.1f\n", struck, ustruck, umoved);
         /* a sequencer whose CV lands after its gate: a jump within 30 ms of
            the strike is the strike's note; one at 100 ms is not */
-        Engine l; l.Init(&wurli, sr); l.gain = 1.f;
+        Engine l; l.Init(&piano, sr); l.gain = 1.f;
         l.SetF0(130.81f); l.Strike(0.7f); Run(l, y, 10);
         l.SetF0(196.f); Run(l, y, 10);
         const float late = f0_of(l);
@@ -371,7 +378,7 @@ int main()
             float m = 0.f; for(size_t i = from + 1; i < to && i < y.size(); i++) m = std::fmax(m, std::fabs(y[i] - y[i - 1])); return m; };
         auto more = [](Engine& e, std::vector<float>& y, int blocks) {
             std::vector<float> part; Run(e, part, blocks); y.insert(y.end(), part.begin(), part.end()); };
-        Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetPolyphony(2);
+        Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(2);
         std::vector<float> y;
         /* half a second between, past the Wurlitzer's 390 ms burst, so
            what rings at the third strike is the bank and not the recording */
@@ -402,7 +409,7 @@ int main()
        the tune change (it used to be re-read at the pitch, which under
        the lock is the one thing a tune change must not do). */
     {
-        Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetPolyphony(4);
+        Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4);
         std::vector<float> y;
         const float notes[4] = {130.81f, 164.81f, 196.f, 261.63f};
         for(int v = 0; v < 4; v++) { e.SetF0(notes[v]); e.Strike(0.7f); Run(e, y, 5); }
@@ -414,7 +421,7 @@ int main()
         int after5 = 0; for(int v = 0; v < 4; v++) if(std::fabs(e.VoiceAt(v).zeta[0] / z0[v] - 0.25f) < 0.01f) after5++;
         CHECK(after1 >= 1 && after1 <= 2, "after one block %d voices had the new decay (one or two: the active one, and one more)", after1);
         CHECK(after5 == 4, "after five blocks %d of 4 voices had the new decay", after5);
-        Engine l; l.Init(&wurli, sr); l.gain = 1.f;
+        Engine l; l.Init(&piano, sr); l.gain = 1.f;
         l.SetF0(130.81f); l.Strike(0.7f); Run(l, y, 50);
         l.SetF0(196.f); Run(l, y, 10);
         const float before = l.Voice().hz[0];
@@ -430,8 +437,8 @@ int main()
        the fundamental is among them. */
     {
         auto live = [](const ResonatorVoice& v, int N) { int n = 0; for(int k = 0; k < N; k++) if(v.gain[k] != 0.f) n++; return n; };
-        const int N = wurli.Res().N;
-        Engine e; e.Init(&wurli, sr); e.gain = 1.f;
+        const int N = piano.Res().N;
+        Engine e; e.Init(&piano, sr); e.gain = 1.f;
         e.SetF0(130.81f); e.Strike(0.7f);
         const int one = live(e.Voice(), N);
         e.SetPolyphony(4);
@@ -461,7 +468,7 @@ int main()
        second's rest lets the density leak back */
     {
         auto run10 = [&](float track) {
-            Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetVelocityTrack(track); e.SetF0(261.63f);
+            Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetVelocityTrack(track); e.SetF0(261.63f);
             std::vector<float> y; float first = 0.f, tenth = 0.f;
             for(int k = 0; k < 10; k++) { e.Strike(0.5f); if(k == 0) first = e.LastStrikeVelocity(); if(k == 9) tenth = e.LastStrikeVelocity(); Run(e, y, 100); }
             Run(e, y, 3000); e.Strike(0.5f);
@@ -486,7 +493,7 @@ int main()
             for(int i = 0; i < n; i++) { const double ph = 6.2831853 * hz * i / 48000.0; re += y[i] * std::cos(ph); im -= y[i] * std::sin(ph); }
             return 20 * std::log10(std::sqrt(re * re + im * im) / n + 1e-12); };
         auto ring = [&](float voicing, float coil) {
-            Engine e; e.Init(&wurli, sr); e.gain = 1.f;
+            Engine e; e.Init(&piano, sr); e.gain = 1.f;
             e.SetTune(Engine::Tune::Voicing, voicing); e.SetTune(Engine::Tune::Coil, coil);
             e.SetF0(130.81f); e.Strike(0.7f);
             std::vector<float> y; Run(e, y, 200); return std::vector<float>(y.begin() + 4800, y.end()); };

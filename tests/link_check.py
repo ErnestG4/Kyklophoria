@@ -412,8 +412,8 @@ def card_tests():
     print('card')
     import shutil, tempfile
     d = tempfile.mkdtemp(prefix='kyk-card-')
-    src = os.path.join(ROOT, 'tests/data/wurli.kykm')
-    shutil.copy(src, os.path.join(d, 'wurli.kykm'))
+    src = os.path.join(ROOT, 'tests/data/piano.kykm')
+    shutil.copy(src, os.path.join(d, 'piano.kykm'))
     with open(src, 'rb') as f: head = f.read(1000)
     with open(os.path.join(d, 'cut.kykm'), 'wb') as f: f.write(head)       # truncated: refused
     with open(os.path.join(d, 'notes.txt'), 'w') as f: f.write('not a world\n')
@@ -423,17 +423,17 @@ def card_tests():
     n = r[1]; names = []; at = 2
     for _ in range(n):
         ln = r[at]; names.append(r[at + 1:at + 1 + ln].decode()); at += 1 + ln
-    check('wurli.kykm' in names and 'cut.kykm' in names and 'notes.txt' not in names,
+    check('piano.kykm' in names and 'cut.kykm' in names and 'notes.txt' not in names,
           f'the card lists .kykm files ({names})')
     ty, seq, r, ok = link.request(0x64, bytes([15, names.index('cut.kykm'), 3]))
     check(r[0] == 1, 'a truncated .kykm is refused into a slot')
-    ty, seq, r, ok = link.request(0x64, bytes([15, names.index('wurli.kykm'), 3]))
+    ty, seq, r, ok = link.request(0x64, bytes([15, names.index('piano.kykm'), 3]))
     check(r[0] == 0, 'a whole one goes into a slot')
     ty, seq, r, ok = link.request(0x6A)
     slots = {}; at = 4
     while at < len(r):
         i, ln = r[at], r[at + 1]; slots[i] = r[at + 2:at + 2 + ln].decode(); at += 2 + ln
-    check(slots.get(3) == 'wurli', f'and the slot is named by its file ({slots})')
+    check(slots.get(3) == 'piano', f'and the slot is named by its file ({slots})')
     t = telemetry(link, 7)
     check(t['n'] == 4, f"the generated space is live before ({t['n']}-D)")
     ty, seq, r, ok = link.request(0x64, bytes([11, 3]))

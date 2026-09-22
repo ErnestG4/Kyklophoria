@@ -127,9 +127,9 @@ for script in tests/scripts/*.txt; do
         m3_pulse*) args="--gen --seed 1 --world 19";;
         m3_edge*) args="--gen --seed 1 --world 20";;
         m3_grit*) args="--gen --seed 1 --world 21";;
-        m4_resonate*) args="--gen --seed 1 --resonate tests/data/wurli.kykm";;
-        m4_sweep_note*) args="--gen --seed 1 --resonate tests/data/ep-vel.kykm";;
-        m4_sweep_index*) args="--gen --seed 1 --resonate tests/data/perc.kykm";;
+        m4_resonate*) args="--gen --seed 1 --resonate tests/data/piano.kykm";;
+        m4_sweep_note*) args="--gen --seed 1 --resonate tests/data/tine.kykm";;
+        m4_sweep_index*) args="--gen --seed 1 --resonate tests/data/bodies.kykm";;
     esac
     build/host/kykdesk $args --script "$script" --out "$OUT/$name.wav" --telemetry "$OUT/$name.csv" || { fail=1; continue; }
     # the resonate renders are graded by ear as well as by bit: a rail, a
@@ -140,6 +140,21 @@ for script in tests/scripts/*.txt; do
         echo "  wrote tests/golden/$name.wav"
     else
         "$OUT/wavdiff" "$OUT/$name.wav" "tests/golden/$name.wav" 1e-6 || fail=1
+    fi
+done
+
+# Every fitted world carries burst audio — a window of the recording it was
+# fitted from — so publishing one publishes that. tests/data/SOURCES.md is the
+# record of which recording, and a fixture that is not in it is one nobody has
+# said we may redistribute. The check is a reminder, not an audit: it cannot
+# tell whether an entry is true, only that somebody had to write one.
+echo "== fixture sources =="
+for f in tests/data/*.kykm; do
+    [ -e "$f" ] || continue
+    if grep -q "\`$(basename "$f")\`" tests/data/SOURCES.md; then
+        echo "  ok   $(basename "$f") is in SOURCES.md"
+    else
+        echo "  FAIL $f has no entry in tests/data/SOURCES.md — say where its audio came from"; fail=1
     fi
 done
 

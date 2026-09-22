@@ -1,7 +1,8 @@
 /* earcheck — grades a render the way an ear would before a person has to:
  * a rail (samples at full scale), a click (a burst above 12 kHz twenty
  * dB over its surroundings that is gone again within 3 ms on both sides,
- * and broadband — a bright partial dying is not one), and silence (more
+ * and broadband — a bright partial dying is not one, and neither is the
+ * start of a note the waveform rose into; see Onset), and silence (more
  * than half the file under -80 dB). A port of ModalBake's tools/earcheck.py
  * to the standard library, since the suite runs on python3 with nothing
  * installed; the filters are cascaded RBJ biquads rather than scipy's
@@ -64,6 +65,30 @@ std::vector<double> Env(const std::vector<double>& x, int hop)
     return e;
 }
 
+/* is this millisecond the start of a note rather than a fault in one? A
+   hard mallet's attack is a burst above 12 kHz that is gone again in three
+   milliseconds, and so is a coefficient step; what tells them apart is what
+   came before. A step interrupts a signal that was already there. An attack
+   starts from nothing — the broadband envelope itself rises out of the floor
+   at that frame — and it *rises*: the waveform grows into it over a few
+   dozen samples rather than leaping, which is what a burst read from the
+   wrong sample of its recording would do. Both halves are needed: the first
+   alone would excuse a spliced attack, which is a real defect and audible.
+   Measured on tests/data/bodies.kykm: an Iowa mallet's strike is a 161x
+   onset whose first sample past a hundredth of its peak sits at 1.1% of it;
+   a step spliced into the same render leaps straight to 100%. */
+bool Onset(const std::vector<double>& x, const std::vector<double>& env, size_t n, int hop)
+{
+    double pre = 0;
+    for(size_t j = n >= 5 ? n - 5 : 0; j < n; j++) pre = std::max(pre, env[j]);
+    if(n < 5 || !(env[n] > 20 * pre)) return false;
+    const size_t a = n * hop > 3 * (size_t)hop ? n * hop - 3 * hop : 0, b = std::min(x.size(), (n + 3) * (size_t)hop);
+    double pk = 0; for(size_t i = a; i < b; i++) pk = std::max(pk, std::fabs(x[i]));
+    if(pk <= 0) return false;
+    for(size_t i = a; i < b; i++) if(std::fabs(x[i]) > 0.01 * pk) return std::fabs(x[i]) < 0.1 * pk;
+    return false;
+}
+
 double Median(std::vector<double> v)
 {
     if(v.empty()) return 0;
@@ -103,7 +128,7 @@ int main(int argc, char** argv)
             for(size_t j = n + 1; j < std::min(henv.size(), n + 4); j++) after = std::min(after, henv[j]);
             for(size_t j = n >= 3 ? n - 3 : 0; j < n; j++) before = std::min(before, henv[j]);
             const bool ends = after < 0.1 * henv[n] && (n == 0 || before < 0.1 * henv[n]);
-            if(ends && henv[n] > 0.1 * menv[n]) { clicks++; if(clicks <= 6) { char b[32]; snprintf(b, sizeof b, "%s%.3fs", clicks > 1 ? "," : "", (double)n * hop / sr); when += b; } }
+            if(ends && henv[n] > 0.1 * menv[n] && !Onset(xd, env, n, hop)) { clicks++; if(clicks <= 6) { char b[32]; snprintf(b, sizeof b, "%s%.3fs", clicks > 1 ? "," : "", (double)n * hop / sr); when += b; } }
         }
         size_t quiet = 0; for(double e : env) if(e < 1e-4) quiet++;
         const double silence = env.empty() ? 1.0 : (double)quiet / env.size();

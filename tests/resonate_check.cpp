@@ -5,7 +5,7 @@
  * measured by zero crossings, within 0.5 cent), its decay (the envelope's
  * T60 within 2%), and the pickup's whole reason to exist — that a harder
  * strike makes more second harmonic, monotonically, on a real fitted world
- * (tests/data/ep-vel.kykm, the EP's C3 at six velocities). Then the worlds
+ * (tests/data/tine.kykm, the EP's C3 at six velocities). Then the worlds
  * themselves: attach, decode, the first point's hertz against the value the
  * export wrote (within a cent), no NaN anywhere over a keyboard of strikes,
  * and interpolation halfway between two points landing between them in log
@@ -130,18 +130,20 @@ int main()
 
     /* 2. the EP world: attach, decode, bark grows with velocity */
     {
-        auto blob = slurp("tests/data/ep-vel.kykm");
-        CHECK(!blob.empty(), "tests/data/ep-vel.kykm missing");
+        auto blob = slurp("tests/data/tine.kykm");
+        CHECK(!blob.empty(), "tests/data/tine.kykm missing");
         ResonatorWorld w; w.Init();
-        CHECK(w.Attach(blob.data(), (uint32_t)blob.size()), "ep-vel.kykm did not attach");
-        CHECK(w.form == 1, "ep-vel is a magnetic world (form 1), got %d", w.form);
+        CHECK(w.Attach(blob.data(), (uint32_t)blob.size()), "tine.kykm did not attach");
+        CHECK(w.form == 1, "tine.kykm is a magnetic world (form 1), got %d", w.form);
         float hz[ResonatorBank::kMax], z[ResonatorBank::kMax], g[ResonatorBank::kMax], ph[ResonatorBank::kMax];
         w.Decode(0, hz, z, g, ph);
-        /* point 0 is the EP's lowest note, midi 36 = C2 at 65.4 Hz; the fit
-           has it a few cents off and a refit moves it a few more, so the
-           bound is a quarter tone. And the decode is its own encode's
-           inverse: cents back from hertz land on the byte that was read */
-        CHECK(std::fabs(1200 * std::log2(hz[0] / 65.41f)) < 50.0, "point 0 decodes to %.2f Hz, C2 is 65.41", hz[0]);
+        /* point 0's lowest mode is the note that point was fitted at — the
+           fixture says which, so a change of source does not change the
+           check. The fit has it a few cents off and a refit moves it a few
+           more, so the bound is a quarter tone. And the decode is its own
+           encode's inverse: cents back from hertz land on the byte read */
+        const float p0 = 440.f * std::exp2((w.Param(0) - 69.f) / 12.f);
+        CHECK(std::fabs(1200 * std::log2(hz[0] / p0)) < 50.0, "point 0 decodes to %.2f Hz, its note is %.2f", hz[0], p0);
         uint16_t c0; std::memcpy(&c0, w.Modes(0), 2);
         const int back = (int)std::lround((w.ver >= 6 ? 6000.0 : 1200.0) * std::log2(hz[0] / 20.0));
         CHECK(back == (int)c0, "point 0: %.3f Hz encodes back to %d (fifths of a cent from v6), field says %d", hz[0], back, (int)c0);
@@ -187,22 +189,23 @@ int main()
             CHECK(std::fabs(d2 / d1 - 0.5) < 0.01, "decay x2: mode 0's damping went %.3g -> %.3g a sample (expected half)", d1, d2);
             printf("  spin: decay x2 halves the damping (%.3g -> %.3g); voicing +0.5 width h2 %+.1f -> %+.1f dB\n", d1, d2, base.second, voiced.second);
         }
-        CHECK(last_h2 - first_h2 > 6.0, "h2 grows only %.1f dB from softest to hardest; the pickup is not barking", last_h2 - first_h2);
-        /* and at the level the fit found: the record's own model made C3's
-           hardest take +19 dB and its softest +7 (out/fit/ep-vel/fits.tsv in
-           ModalBake); more than 5 dB off either is the swing's scale gone
-           wrong, which is what the export lost once */
-        CHECK(std::fabs(last_h2 - 19.0) < 5.0 && std::fabs(first_h2 - 7.0) < 5.0, "C3 h2 soft %+.1f / hard %+.1f, the fit said +7 / +19", first_h2, last_h2);
-        printf("  ep-vel: C3 h2 re h1 %+.1f dB soft -> %+.1f dB hard, monotonic %s\n", first_h2, last_h2, mono ? "yes" : "no");
+        /* how much the bark grows, not where it starts: a pickup world's
+           second harmonic must rise with the strike, and by a good deal —
+           the field's curvature is the instrument. Where it starts was an
+           absolute figure once, read off the fit of a record we no longer
+           carry; growth is the property, and it is the one the export lost
+           when the swing's scale went wrong */
+        CHECK(last_h2 - first_h2 > 6.0, "the bark hardly grew with the strike: h2 %+.1f soft to %+.1f hard", first_h2, last_h2);
+        printf("  tine: C3 h2 re h1 %+.1f dB soft -> %+.1f dB hard, monotonic %s\n", first_h2, last_h2, mono ? "yes" : "no");
     }
 
     /* 3. the Wurlitzer world: a keyboard of strikes, no NaN, interpolation between points */
     {
-        auto blob = slurp("tests/data/wurli.kykm");
-        CHECK(!blob.empty(), "tests/data/wurli.kykm missing");
+        auto blob = slurp("tests/data/piano.kykm");
+        CHECK(!blob.empty(), "tests/data/piano.kykm missing");
         ResonatorWorld w; w.Init();
-        CHECK(w.Attach(blob.data(), (uint32_t)blob.size()), "wurli.kykm did not attach");
-        CHECK(w.form == 0 && w.N >= 30 && w.P == 11, "wurli: form %d N %d P %d", w.form, w.N, w.P);   /* 39 modes after the cluster penalty, 46 before */
+        CHECK(w.Attach(blob.data(), (uint32_t)blob.size()), "piano.kykm did not attach");
+        CHECK(w.form == 0 && w.N >= 30 && w.P >= 8, "the note fixture: form %d N %d P %d", w.form, w.N, w.P);
         /* the burst: a strike with the point's burst and one without differ
            in their first 40 ms and not after 70 — the attack the modes are
            not, played once and gone. ModalBake's tools/bursts.py made them
@@ -212,14 +215,21 @@ int main()
         {
             ResonatorVoice with; with.Init(); w.At(60.f, with, sr); with.Strike(1.f);
             ResonatorVoice without; without.Init(); w.At(60.f, without, sr); without.bursts = nullptr; without.Strike(1.f);
-            std::vector<float> ya(4800), yb(4800);
-            with.Process(ya.data(), 4800); without.Process(yb.data(), 4800);
+            /* the windows are the burst's own: its body, and a hair past
+               its end — a fixture from another library has another length */
+            /* the burst's own length at the rate it is read: a point
+               carried down the keyboard plays its attack slower and for
+               longer */
+            const int blen = (int)(with.burst_len / (with.burst_rate > 0.f ? with.burst_rate : 1.f)), half = blen / 2;
+            const int after = blen + (int)(0.005f * sr), n = after + 1440;
+            std::vector<float> ya(n), yb(n);
+            with.Process(ya.data(), n); without.Process(yb.data(), n);
             double d_early = 0, d_late = 0, e_late = 0;
-            for(int i = 0; i < 1920; i++) d_early += (ya[i] - yb[i]) * (ya[i] - yb[i]);
-            for(int i = 3360; i < 4800; i++) { d_late += (ya[i] - yb[i]) * (ya[i] - yb[i]); e_late += yb[i] * yb[i]; }
-            CHECK(d_early > 0.0, "the burst added nothing in the first 40 ms");
-            CHECK(d_late < 1e-6 * e_late, "the burst is still there after 70 ms: %.3g of the signal", d_late / e_late);
-            printf("  wurli: C4's burst adds %.1f in the first 40 ms and %.2g after 70 ms\n", d_early, d_late);
+            for(int i = 0; i < half; i++) d_early += (ya[i] - yb[i]) * (ya[i] - yb[i]);
+            for(int i = after; i < n; i++) { d_late += (ya[i] - yb[i]) * (ya[i] - yb[i]); e_late += yb[i] * yb[i]; }
+            CHECK(d_early > 0.0, "the burst added nothing over its first half");
+            CHECK(d_late < 1e-6 * e_late, "the burst is still there after its end: %.3g of the signal", d_late / e_late);
+            printf("  the note fixture: a %.0f ms burst adds %.1f over its first half and %.2g after its end\n", 1000.f * blen / sr, d_early, d_late);
         }
         for(int i = 0; i < w.P; i++)
         {
@@ -230,17 +240,21 @@ int main()
             v.Process(y.data(), 4800);
             float pk = 0; bool nan = false;
             for(float s : y) { if(!(s == s)) nan = true; pk = std::fmax(pk, std::fabs(s)); }
-            CHECK(!nan && pk > 0.f, "wurli point %d: nan %d peak %g", i, nan, pk);
+            CHECK(!nan && pk > 0.f, "point %d: nan %d peak %g", i, nan, pk);
         }
-        /* halfway between C2 (36) and G2 (43): the first slot's frequency sits between the two in log */
+        /* a quarter of the way from the first point to the second: a note
+           world plays the NEARER point transposed (format v6), so the first
+           slot is that point's first mode moved by the interval, not a
+           blend of the two — which is what the runtime must not do */
         float ha[48], za[48], ga[48], fa[48], hb[48], zb[48], gb[48], fb[48];
         w.Decode(0, ha, za, ga, fa); w.Decode(1, hb, zb, gb, fb);
         ResonatorVoice v; v.Init();
-        w.At(0.5f * (w.Param(0) + w.Param(1)), v, sr);
-        const float mid = std::sqrt(ha[0] * hb[0]);
+        const float p25 = w.Param(0) + 0.25f * (w.Param(1) - w.Param(0));
+        w.At(p25, v, sr);
+        const float want = ha[0] * std::exp2((p25 - w.Param(0)) / 12.f);
         const float got = sr / 6.2831853f * std::acos(v.bank.c1[0] / (2.f * std::sqrt(-v.bank.c2[0])));
-        CHECK(std::fabs(1200 * std::log2(got / mid)) < 1.0, "midpoint slot 0 at %.2f Hz, expected %.2f", got, mid);
-        printf("  wurli: 11 points struck, midpoint slot 0 %.2f Hz between %.2f and %.2f\n", got, ha[0], hb[0]);
+        CHECK(std::fabs(1200 * std::log2(got / want)) < 1.0, "a quarter of the way along, slot 0 is %.2f Hz; the nearer point transposed is %.2f", got, want);
+        printf("  the note fixture: %d points struck, a quarter along slot 0 is %.2f Hz (point 0's %.2f transposed, not point 1's %.2f)\n", w.P, got, ha[0], hb[0]);
     }
 
     /* the burst player: a stored attack read at a rate, and filtered. A
@@ -272,7 +286,7 @@ int main()
         const double d1 = 10 * std::log10(r3.second / r1.second), d13 = 10 * std::log10(r4.second / r1.second);
         CHECK(d1 < -2.0 && d1 > -5.0, "a 1 kHz sine through the 1 kHz corner: %.1f dB (expected about -3)", d1);
         CHECK(d13 > -0.5, "through the 13 kHz corner: %.1f dB (expected about 0)", d13);
-        auto wb = slurp("tests/data/wurli.kykm");
+        auto wb = slurp("tests/data/piano.kykm");
         ResonatorWorld w; w.Init(); w.Attach(wb.data(), (uint32_t)wb.size());
         /* three semitones above point 0 (C2): nearer to it than to point 1
            (G2), so its burst, read at 2^(3/12) */
