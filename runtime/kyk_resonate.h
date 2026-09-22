@@ -270,6 +270,25 @@ struct ResonatorBank
         ramping[q] = true;
     }
 
+    /* a bend: every mode's frequency multiplied by ratio, the state left
+       as it stands. The pole moves by a few cents and the state is read
+       under the new one as very nearly the same sinusoid — no amplitude
+       and phase solve, no decode, two transcendentals a mode against a
+       hundred for a rebuild, and nothing of the point's but its pitch
+       changes, which is what a bend is: the note keeps the timbre it was
+       struck with and slides. */
+    void Bend(const float* hz, const float* zeta, int count, float sr)
+    {
+        const int nn = count > n ? n : count;
+        for(int i = 0; i < nn; i++)
+        {
+            const float w = 6.2831853f * hz[i] / sr;
+            const float r = std::exp(-zeta[i] * w);
+            c1[i] = 2.0f * r * std::cos(w);
+            c2[i] = -r * r;
+        }
+    }
+
     /* a strike bank moved on by k samples without running: each mode's
        state read as an amplitude and a phase under its pole, the
        amplitude decayed by r^k, the phase advanced by k w, and the pair
@@ -622,6 +641,9 @@ struct BurstPlayer
         const float d = std::pow(1e-3f, 1.f / (ms * 0.001f * sr));
         for(int a = 0; a < active; a++) if(slot[a].d > d) slot[a].d = d;
     }
+    /* a bend: what is still playing is read faster or slower from where
+       it has got to, as a sampler's pitch wheel does */
+    void Bend(float ratio) { for(int a = 0; a < active; a++) slot[a].rate *= ratio; }
     bool Playing() const
     {
         for(int a = 0; a < active; a++) if(slot[a].s && slot[a].pos + 1.f < (float)slot[a].n) return true;
@@ -1041,6 +1063,25 @@ struct ResonatorWorld
        body row (kind 1) is still interpolated along the row — the glide
        from gong to woodblock is the point of it — on absolute gains, so a
        quiet slot is not lifted by the neighbour's louder loudest. */
+    /* the voice bent to a new parameter: the modes it was built with,
+       transposed, and the burst read faster or slower. Nothing else of
+       the point changes — not the pickup, not the wash, not which point
+       it came from — so a bend across a midpoint keeps the note's own
+       timbre instead of stepping into the next point's, and costs a
+       twentieth of a rebuild. Note worlds only; a body row's axis is a
+       position, not a pitch. */
+    void Bend(float param, ResonatorVoice& v, float sr) const
+    {
+        if(kind == 1 || v.param > 1e8f) return;
+        const float ratio = std::exp2((param - v.param) / 12.f);
+        int n = 0;
+        for(int k = 0; k < N; k++) { if(v.gain[k] == 0.f && v.hz[k] == 0.f) break; v.hz[k] *= ratio; n = k + 1; }
+        v.bank.Bend(v.hz, v.zeta, n, sr);
+        v.burst_rate *= ratio;
+        v.burst.Bend(ratio);
+        v.param = param;
+    }
+
     void At(float param, ResonatorVoice& v, float sr, bool keep = false, bool strike = false) const
     {
         if(P == 0) return;
