@@ -514,6 +514,7 @@ public:
                    no other way to read: on the module a pot sets the one
                    and a button the other */
                 w.U8((uint8_t)en->Polyphony()); w.U8(en->PitchLock() ? 1u : 0u);
+                w.U8(r.form);   /* 0 no pickup (the voicing and coil axes are position and brightness), 1 a bell field, 2 a gap */
                 return;
             }
             case kCmdSlots:

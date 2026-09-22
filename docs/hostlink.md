@@ -270,9 +270,11 @@ f32 zeta, f32 gain`) — the modes the voice was built from, `u32 burst`
 (samples of recorded attack at swing 1, 0 for none), `u8 m` then m × `f32`
 (the points, up to 64), `u8 M` (members of a family, 0 for a plain world),
 `u8 member`, `char[16] name` (the member playing), M × `char[16]` (every
-member's name), then `u8 voices` (1, 2 or 4) and `u8 lock` (the pitch lock,
-op 20). A host reads to the length it has: firmware before the family fields
-stopped at the points, and before the last two at the names.
+member's name), then `u8 voices` (1, 2 or 4), `u8 lock` (the pitch lock,
+op 20) and `u8 form` (0 no pickup — axes 0 and 3 are then the strike position
+and brightness — 1 a bell field, 2 a gap). A host reads to the length it has:
+firmware before the family fields stopped at the points, and before the last
+three at the names.
 
 ### 0x6E SET_CONTROL (desktop bridge only)
 Request: `f32 f0, u8 n, f32 c[n], u8 planes, f32 angle[planes], f32 spread`.

@@ -474,6 +474,33 @@ int main()
         printf("  dig in: ten strikes a second take the tenth from 0.5 to %.2f; rested, %.2f; off, %.2f\n", std::get<1>(on), std::get<2>(on), std::get<1>(off));
     }
 
+    /* 15. on a world with no pickup, axes 0 and 3 are the strike position
+       and brightness. The Wurlitzer file here is form 0: voicing at the
+       centre is the world as fitted (bit for bit); at the right end
+       (position 0.5, the middle of the string) the second harmonic is
+       cut against the fundamental; coil x2 lifts the top by 3 dB an
+       octave, coil x1/2 drops it. */
+    {
+        auto lvl = [](const std::vector<float>& y, float hz) {
+            double re = 0, im = 0; const int n = (int)y.size();
+            for(int i = 0; i < n; i++) { const double ph = 6.2831853 * hz * i / 48000.0; re += y[i] * std::cos(ph); im -= y[i] * std::sin(ph); }
+            return 20 * std::log10(std::sqrt(re * re + im * im) / n + 1e-12); };
+        auto ring = [&](float voicing, float coil) {
+            Engine e; e.Init(&wurli, sr); e.gain = 1.f;
+            e.SetTune(Engine::Tune::Voicing, voicing); e.SetTune(Engine::Tune::Coil, coil);
+            e.SetF0(130.81f); e.Strike(0.7f);
+            std::vector<float> y; Run(e, y, 200); return std::vector<float>(y.begin() + 4800, y.end()); };
+        const auto c = ring(0.f, 1.f), c2 = ring(0.f, 1.f), mid = ring(2.f, 1.f), bright = ring(0.f, 2.f), dull = ring(0.f, 0.5f);
+        CHECK(c == c2, "the centre is not repeatable");
+        const double h2c = lvl(c, 261.6f) - lvl(c, 130.81f), h2m = lvl(mid, 261.6f) - lvl(mid, 130.81f);
+        CHECK(h2m < h2c - 6.0, "position at the middle of the string did not cut the second harmonic: %.1f dB against %.1f at the centre", h2m, h2c);
+        const double tiltb = (lvl(bright, 1046.f) - lvl(bright, 130.81f)) - (lvl(c, 1046.f) - lvl(c, 130.81f));
+        const double tiltd = (lvl(dull, 1046.f) - lvl(dull, 130.81f)) - (lvl(c, 1046.f) - lvl(c, 130.81f));
+        CHECK(tiltb > 6.0 && tiltb < 12.0, "brightness x2 tilted three octaves by %.1f dB (9 wanted)", tiltb);
+        CHECK(tiltd < -6.0 && tiltd > -12.0, "brightness x1/2 tilted three octaves by %.1f dB (-9 wanted)", tiltd);
+        printf("  no pickup: position at the middle cuts h2 by %.1f dB; brightness tilts three octaves %+.1f / %+.1f dB\n", h2c - h2m, tiltb, tiltd);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }

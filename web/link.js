@@ -600,8 +600,9 @@ async function fetchResonate(link) {
   }
   /* the voice count and the pitch lock, from firmware that reports them;
      null from firmware that does not, which is not the same as 1 and off */
-  out.voices = null; out.lock = null;
+  out.voices = null; out.lock = null; out.form = null;
   if (at + 2 <= b.length) { out.voices = b[at]; out.lock = b[at + 1] !== 0; at += 2; }
+  if (at < b.length) { out.form = b[at]; at += 1; }   /* 0 no pickup: axes 0 and 3 are position and brightness there */
   return out;
 }
 
