@@ -84,12 +84,17 @@ def phase8(ph):
     return int(round((ph % (2 * math.pi)) / (2 * math.pi) * 256)) % 256
 
 
-def write(path, N, points, form=0, kind=0):
+def write(path, N, points, form=0, kind=0, body=None):
     """points: [(param, modes, stage[, bursts])] with stage = (h, w, K, fc, Q, swing_soft, swing_hard) or None,
-    bursts = [(swing, samples_at_48k)]"""
+    bursts = [(swing, samples_at_48k)]; body = 8 octave-band gains in dB
+    (tools/body.py), the instrument's own radiation envelope, which the
+    runtime applies across a transposition"""
     params = [p[0] for p in points]
-    out = b'KYKM' + struct.pack('<HHHBB', 6, N, len(points), form, kind)
+    ver = 7 if body is not None else 6
+    out = b'KYKM' + struct.pack('<HHHBB', ver, N, len(points), form, kind)
     out += struct.pack('<ff', min(params), max(params))
+    if body is not None:
+        out += struct.pack('<8f', *body)
     for pt in points:
         p, modes, stage = pt[0], pt[1], pt[2]
         bursts = pt[3] if len(pt) > 3 else []
@@ -296,7 +301,29 @@ def scale_points(pts, form, k):
     return out
 
 
-def runtime_headroom(path, pts, N, form, kind, target=3.0):
+def body_curve(fitdir, kind):
+    """The set's own radiation envelope (tools/body.py), eight octave-band
+    gains in dB, 0 at its loudest band, with any band the set has too few
+    modes in filled from its nearest measured neighbour. A row of bodies
+    (kind 1) has no keyboard to measure one over and no transposition to
+    apply it across, so it gets none."""
+    if kind == 1:
+        return None
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        import body as bodymod
+    except Exception:
+        return None
+    b, n = bodymod.measure(fitdir)
+    if b is None:
+        print('  body: too little to measure a curve (%d modes)' % n); return None
+    seen = [k for k in range(8) if not math.isnan(b[k])]
+    v = [float(b[k]) if not math.isnan(b[k]) else float(b[min(seen, key=lambda j: abs(j - k))]) for k in range(8)]
+    print('  body: %s (dB, %d modes)' % (' '.join('%.0fHz %+.1f' % (math.sqrt(bodymod.EDGES[k] * bodymod.EDGES[k + 1]), v[k]) for k in range(8)), n))
+    return v
+
+
+def runtime_headroom(path, pts, N, form, kind, target=3.0, body=None):
     """The convention checked against the runtime itself: the written
     world's keyboard at full velocity through build/modaltest (which is
     Kyklophoria's kyk_resonate.h), its peak read back, and the world
@@ -319,7 +346,7 @@ def runtime_headroom(path, pts, N, form, kind, target=3.0):
     if abs(k - 1.0) < 0.05:
         print('  headroom: the runtime agrees, peak %.2f at full velocity' % peak); return pts
     out = scale_points(pts, form, k)
-    write(path, N, out, form, kind)
+    write(path, N, out, form, kind, body)
     print('  headroom: the runtime peaked at %.2f at full velocity where the model said %.1f; every point scaled by %.3f (%+.1f dB) and the world rewritten' % (peak, target, k, 20 * math.log10(k)))
     return out
 
@@ -539,8 +566,9 @@ def main():
         pts = align(pts, kind)
         pts = headroom(pts, form)
         N = max(len(pt[1]) for pt in pts)
-        write(sys.argv[3], N, pts, form, kind)
-        runtime_headroom(sys.argv[3], pts, N, form, kind)
+        body = body_curve(d, kind)
+        write(sys.argv[3], N, pts, form, kind, body)
+        runtime_headroom(sys.argv[3], pts, N, form, kind, body=body)
     return 0
 
 
