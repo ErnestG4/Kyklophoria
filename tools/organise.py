@@ -25,7 +25,11 @@ def midi_of(tok):
     m = re.fullmatch(r'([A-Ga-g])([b#s]?)(-?\d)', tok)
     if not m:
         return None
-    v = NOTE[m.group(1).upper()] + (1 if m.group(2) in '#s' else -1 if m.group(2) == 'b' else 0)
+    # not `in '#s'`: the empty string is a substring of everything, so every
+    # natural came out a semitone sharp and then collided with the flat above
+    # it — 36 of every 88 Iowa piano files were dropped without a word
+    acc = m.group(2)
+    v = NOTE[m.group(1).upper()] + (1 if acc in ('#', 's') else -1 if acc == 'b' else 0)
     return v + 12 * (int(m.group(3)) + 1)
 
 
@@ -33,7 +37,9 @@ def parse(name):
     base = re.sub(r'\.(aif|aiff|wav|flac|mp3)$', '', os.path.basename(name), flags=re.I)
     toks = re.split(r'[._\- ]+', base)
     midi = next((midi_of(t) for t in toks if midi_of(t) is not None), None)
-    dyn = next((t.lower() for t in toks if t.lower() in ORDER), None)
+    # the first token is the instrument in every library seen so far, and
+    # "Piano.ff.A0.aiff" reads its own name as a dynamic if you let it
+    dyn = next((t.lower() for t in toks[1:] if t.lower() in ORDER), None)
     return midi, dyn
 
 

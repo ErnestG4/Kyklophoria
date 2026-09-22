@@ -114,6 +114,7 @@ def main():
     ap.add_argument('--max-seconds', type=float, default=4.0)
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--only', default='', help='comma-separated record ids to fit again in place, the rest of fits.tsv kept')
+    ap.add_argument('--resume', action='store_true', help='skip records whose .mmr is already there, keeping their manifest rows: a long set survives a machine going down')
     ap.add_argument('--polish', type=int, default=-1,
                     help='steps of a second fit from the surviving modes after validation (default steps/2, 0 for none)')
     ap.add_argument('--keep-ids', action='store_true', help='name records after their files rather than family+index')
@@ -149,6 +150,12 @@ def main():
     if only:
         for l in open(os.path.join(a.outdir, 'fits.tsv')).read().splitlines()[1:]:
             old[l.split('\t')[0]] = l
+    # what a previous run of this same set already fitted, by id
+    done = {}
+    if a.resume and os.path.exists(os.path.join(a.outdir, 'fits.tsv')):
+        for l in open(os.path.join(a.outdir, 'fits.tsv')).read().splitlines()[1:]:
+            done[l.split('\t')[0]] = l
+        print('  resuming: %d records already in %s' % (len(done), a.outdir))
     with open(os.path.join(a.outdir, 'fits.tsv' if not only else 'fits.new.tsv'), 'w') as man:
         man.write('id\tfamily\tparam\tvalue\tdynamic\tsource\tmodes\tloss\texcess_db\tdecay_ratio\n')
         for n, (path, midi, dyn, f) in enumerate(rows):
@@ -156,6 +163,9 @@ def main():
             if only and mid not in only:
                 if mid in old:
                     man.write(old[mid] + '\n')
+                continue
+            if a.resume and mid in done and os.path.exists(os.path.join(a.outdir, mid + '.mmr')):
+                man.write(done[mid] + '\n')
                 continue
             f0 = 440.0 * 2 ** ((midi + 12 * a.octave - 69) / 12) if param == 'midi' else None
             raw, sr = sf.read(path, always_2d=True)
