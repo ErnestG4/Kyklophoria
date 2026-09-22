@@ -745,6 +745,7 @@ struct ResonatorVoice
     float          swing_soft, swing_hard;
     float          burst_rate;        /* the burst's read step: the played note over the burst's own, 1 on an index world */
     float          param;             /* what the voice was built at: a note, or a position on a row; 1e9 for not yet */
+    int            cap;               /* modes this voice may have, 0 for all: Rings' rule for polyphony — the bank's 48 shared out, so four voices stacked are as rich as one, and cost the same */
     float          sr;
     uint32_t       burst_head;        /* bytes before a burst's samples in this world's version */
     uint32_t       burst_fade;        /* samples the modes come in over, under the burst's fade; 0 for no burst */
@@ -756,7 +757,7 @@ struct ResonatorVoice
 
     void Init()
     {
-        bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0; burst_head = 10; burst_fade = 0; param = 1e9f;
+        bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0; burst_head = 10; burst_fade = 0; param = 1e9f; cap = 0;
         for(int k = 0; k < ResonatorBank::kMax; k++) hz[k] = zeta[k] = gain[k] = 0.f;
     }
 
@@ -984,11 +985,32 @@ struct ResonatorWorld
             for(int k = 0; k < 7; k++) st[k] += t * (sb[k] - st[k]);
         }
         for(int k = 0; k < N; k++) za[k] /= decay;            /* T60 x decay */
-        for(int k = 0; k < N; k++) { v.hz[k] = ha[k]; v.zeta[k] = za[k]; v.gain[k] = ga[k]; }
+        /* a voice with a cap keeps its cap loudest modes — by the energy a
+           mode carries, gain^2 over its decay rate, the export's own rank
+           — in frequency order, and the rest are silent. Rings does this
+           for its polyphony (64 / voices - 4 modes each): four voices
+           stacked are as rich as one, and cost the same block */
+        int n = N;
+        if(v.cap > 0 && v.cap < N)
+        {
+            float score[ResonatorBank::kMax]; bool take[ResonatorBank::kMax];
+            for(int k = 0; k < N; k++) { score[k] = ga[k] * ga[k] / (za[k] * ha[k] > 1e-12f ? za[k] * ha[k] : 1e-12f); take[k] = false; }
+            for(int c = 0; c < v.cap; c++)
+            {
+                int best = -1;
+                for(int k = 0; k < N; k++) if(!take[k] && (best < 0 || score[k] > score[best])) best = k;
+                if(best < 0) break;
+                take[best] = true;
+            }
+            n = 0;
+            for(int k = 0; k < N; k++) if(take[k]) { ha[n] = ha[k]; za[n] = za[k]; ga[n] = ga[k]; fa[n] = fa[k]; n++; }
+        }
+        for(int k = 0; k < n; k++) { v.hz[k] = ha[k]; v.zeta[k] = za[k]; v.gain[k] = ga[k]; }
+        for(int k = n; k < N; k++) { v.hz[k] = 0.f; v.zeta[k] = 0.f; v.gain[k] = 0.f; }
         /* the pitch change this retune is, for the carry: a note world's
            notes, a body row's none; a first build has nothing to carry */
         const float ratio = (keep && kind != 1 && v.param < 1e8f) ? std::exp2((param - v.param) / 12.f) : 1.f;
-        v.bank.Set(ha, za, ga, N, sr, fa, keep, ratio);
+        v.bank.Set(ha, za, ga, n, sr, fa, keep, ratio);
         /* a strike at another note on this voice: the old note choked —
            its ring over 2 ms (ResonatorBank::Choke; the 5 ms it was gave
            the carried ring, which sits at the new note's frequencies, long
