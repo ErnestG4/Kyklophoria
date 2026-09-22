@@ -1045,7 +1045,7 @@ struct ModuleSource : ExtSource
                 if(len < 1) return 2u;
                 const World* w = gEng.L.WorldPtr();
                 if(!w || !w->IsResonate()) return 3u;
-                gEng.SetVelocityTrack(0.2f * args[0] / 255.f);
+                gEng.SetVelocityTrack(args[0] / 255.f);
                 return 0u;
             }
             case kActRenderDiv: (void)args; (void)len; return 1u;   /* the pot owns it on the module */

@@ -534,7 +534,7 @@ public:
             case kyk::kActVelTrack:
                 if(len < 1) return 2u;
                 if(!world || !world->IsResonate()) return 3u;
-                eng->SetVelocityTrack(0.2f * args[0] / 255.f);
+                eng->SetVelocityTrack(args[0] / 255.f);
                 return 0u;
             case kyk::kActRenderDiv: if(len < 1 || args[0] < 1) return 2u; eng->SetRenderDiv(args[0]); return 0u;
             case kyk::kActAimMorph:

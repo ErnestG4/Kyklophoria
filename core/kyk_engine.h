@@ -83,12 +83,17 @@ public:
         rstriking_ = true;
         Retune();          /* the pitch is taken here, locked or not */
         rstriking_ = false; rsince_ = 0;
-        /* the strike a little harder up the keyboard, when asked: vtrack_
-           of velocity an octave above middle C, and softer below. Off by
-           default; Combust: "an option where the strike velocity gets
-           slightly harder as the strike frequency increases" */
+        /* the strike a little harder the faster the playing, when asked —
+           Combust: "the strike velocity gets slightly harder as the strike
+           frequency increases... I meant how fast you're playing". The
+           density of strikes is a leaky count with a one-second time
+           constant, so it reads as strikes a second; at eight a second
+           and above the strike is vtrack_ x 0.2 harder, nothing at rest.
+           Off by default */
         float v = velocity01;
-        if(vtrack_ != 0.f) { v += vtrack_ * (NoteOf(f0_) - 60.f) / 12.f; v = v < 0.f ? 0.f : v > 1.f ? 1.f : v; }
+        if(vtrack_ != 0.f) { const float d = rdens_ > 8.f ? 1.f : rdens_ / 8.f; v += vtrack_ * 0.2f * d; v = v > 1.f ? 1.f : v; }
+        rdens_ += 1.f;
+        rlast_v_ = v;
         rvoices_[ractive_].Strike(v);
     }
     /* 1, 2 or 4 voices. Changing it cuts nothing: a voice past the new
@@ -142,8 +147,9 @@ public:
        pitch by the semitone, which is a quantiser. Unlocked, the ring
        follows the pitch by the cent: a bend, for whoever wants one. */
     void SetPitchLock(bool on) { if(pitch_lock_ != on) { pitch_lock_ = on; rvnote_[ractive_] = 1e9f; } }   /* re-read: locked, the nearest semitone; free, the cent */
-    void SetVelocityTrack(float per_octave) { vtrack_ = per_octave; }   /* velocity added an octave above middle C; 0 for none */
+    void SetVelocityTrack(float amount) { vtrack_ = amount; }   /* 0..1: how much harder the strike gets with fast playing (0.2 of velocity at full, at eight strikes a second) */
     float VelocityTrack() const { return vtrack_; }
+    float LastStrikeVelocity() const { return rlast_v_; }
     bool PitchLock() const { return pitch_lock_; }
     /* the voice follows its parameter with its state ringing on; an index
        world follows the pot every block, a note world its pitch */
@@ -400,6 +406,7 @@ public:
             }
             Retune();
             if(rsince_ < 0xFFFFFFu) rsince_ += (uint32_t)n;
+            rdens_ *= 1.f - (float)n / sr_;                   /* the strike count leaks with a one-second time constant */
             float tmp[48];
             for(int v = 0; v < kPoly; v++)
             {
@@ -749,7 +756,9 @@ private:
     bool           rframe_ = false;  /* a resonate world's one silent frame has been rendered */
     bool           tune_from_control_ = false;
     bool           pitch_lock_ = true;   /* the nearest semitone, taken at the strike; off, a bend */
-    float          vtrack_ = 0.f;        /* velocity per octave above middle C, added at the strike */
+    float          vtrack_ = 0.f;        /* how much harder the strike gets with fast playing, 0..1 */
+    float          rdens_ = 0.f;         /* strikes a second, as a leaky count with a one-second time constant */
+    float          rlast_v_ = 0.f;       /* the velocity the last strike was made at */
     bool           rstriking_ = false;
     uint32_t       rsince_ = 0xFFFFFFu;  /* samples since the last strike, for the late-CV window */
     const float*   exciter_ = nullptr;   /* this block's drive, or null */

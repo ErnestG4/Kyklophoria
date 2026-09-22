@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include <tuple>
 
 using namespace kyk;
 
@@ -453,23 +454,24 @@ int main()
         printf("  polyphony shares the modes: %d at one voice, at most %d each at four, the fundamental kept on all\n", one, most);
     }
 
-    /* 14. the velocity track: off, a C5 and a C3 struck at 0.5 are struck
-       at 0.5; at 0.2 an octave, the C5 is struck at 0.7 and the C3 at
-       0.3 — read off the ring's level 100 ms in, against the same
-       strikes made at those velocities directly */
+    /* 14. the strike harder with fast playing: ten strikes at ten a
+       second at velocity 0.5 — with the track at full the tenth is made
+       harder (0.5 + 0.2 x the density's share of eight a second), the
+       first not at all; with the track off every one is 0.5. And a
+       second's rest lets the density leak back */
     {
-        auto level = [&](float hz, float vel, float track) {
-            Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetVelocityTrack(track);
-            e.SetF0(hz); e.Strike(vel);
-            std::vector<float> y; Run(e, y, 100);
-            double s = 0; for(float v : y) s += v * v; return s; };
-        const double hi_t = level(523.25f, 0.5f, 0.2f), hi_d = level(523.25f, 0.7f, 0.f);
-        const double lo_t = level(130.81f, 0.5f, 0.2f), lo_d = level(130.81f, 0.3f, 0.f);
-        const double off = level(523.25f, 0.5f, 0.f), off2 = level(523.25f, 0.5f, 0.f);
-        CHECK(std::fabs(hi_t / hi_d - 1) < 1e-3, "tracked C5 at 0.5 is not the direct 0.7: %.3g against %.3g", hi_t, hi_d);
-        CHECK(std::fabs(lo_t / lo_d - 1) < 1e-3, "tracked C3 at 0.5 is not the direct 0.3: %.3g against %.3g", lo_t, lo_d);
-        CHECK(off == off2, "the track off is not repeatable");
-        printf("  velocity track: at 0.2 an octave a C5 struck at 0.5 is the 0.7 strike, a C3 the 0.3\n");
+        auto run10 = [&](float track) {
+            Engine e; e.Init(&wurli, sr); e.gain = 1.f; e.SetVelocityTrack(track); e.SetF0(261.63f);
+            std::vector<float> y; float first = 0.f, tenth = 0.f;
+            for(int k = 0; k < 10; k++) { e.Strike(0.5f); if(k == 0) first = e.LastStrikeVelocity(); if(k == 9) tenth = e.LastStrikeVelocity(); Run(e, y, 100); }
+            Run(e, y, 3000); e.Strike(0.5f);
+            return std::make_tuple(first, tenth, e.LastStrikeVelocity()); };
+        const auto on = run10(1.f), off = run10(0.f);
+        CHECK(std::fabs(std::get<0>(on) - 0.5f) < 1e-6f, "the first strike was tracked: %.3f", std::get<0>(on));
+        CHECK(std::get<1>(on) > 0.62f && std::get<1>(on) <= 0.7f, "the tenth strike at ten a second is %.3f (0.62..0.7 wanted)", std::get<1>(on));
+        CHECK(std::get<2>(on) < 0.52f, "after three seconds' rest the strike is still tracked: %.3f", std::get<2>(on));
+        CHECK(std::get<1>(off) == 0.5f, "with the track off the tenth strike is %.3f", std::get<1>(off));
+        printf("  dig in: ten strikes a second take the tenth from 0.5 to %.2f; rested, %.2f; off, %.2f\n", std::get<1>(on), std::get<2>(on), std::get<1>(off));
     }
 
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
