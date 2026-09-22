@@ -15,3 +15,6 @@ out/fit/*-vel/*-resynth.wav
 out/fit/*/*-burst.wav
 __pycache__/
 out/overnight/
+out/fit/*-AB.wav
+out/fit/**/*-AB.wav
+out/wav/
