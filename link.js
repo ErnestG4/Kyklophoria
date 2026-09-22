@@ -746,7 +746,10 @@ function parseCell(b) {
 /* 0x63 GET_STATS */
 function parseStats(b) {
   if (b.length < 1 + 12 + 4 + 1 + 4) return null;
-  return { cyclesLast: u32(b, 1), cyclesMax: u32(b, 5), cyclesAvg: u32(b, 9), overruns: u16(b, 13), dropped: u16(b, 15), renderDiv: b[17], cyclesBudget: u32(b, 18) };
+  const s = { cyclesLast: u32(b, 1), cyclesMax: u32(b, 5), cyclesAvg: u32(b, 9), overruns: u16(b, 13), dropped: u16(b, 15), renderDiv: b[17], cyclesBudget: u32(b, 18) };
+  /* the engine's own peak and the voices built a second, from firmware that says (null before it) */
+  s.engineMax = b.length >= 30 ? u32(b, 22) : null; s.atPerS = b.length >= 30 ? u32(b, 26) : null;
+  return s;
 }
 /* 0x64 ACTION */
 function actionReq(op, args = []) { return Uint8Array.of(op & 0xff, ...args); }
