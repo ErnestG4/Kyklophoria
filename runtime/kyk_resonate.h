@@ -1091,6 +1091,40 @@ struct ResonatorWorld
             for(int k = 0; k < 7; k++) st[k] += t * (sb[k] - st[k]);
         }
         for(int k = 0; k < nd; k++) za[k] /= decay;           /* T60 x decay */
+        /* on a world with no pickup the voicing and coil axes had nothing
+           to move — two of a guitar's four axes did nothing (Combust: "it
+           doesn't seem to have much impact") — so there they are Rings'
+           two: the voicing axis is the strike POSITION along the string, a
+           comb over the harmonic number (2 sin(pi pos h), the middle of the
+           string losing its even partials, the bridge end thin), blended
+           in from the centre so the centre is the world as fitted; the coil
+           axis is BRIGHTNESS, a tilt of the modes' gains by up to 3 dB an
+           octave either way. Note worlds only: a row of bodies has no
+           harmonic numbers to count */
+        if(form == 0 && kind == 0 && nd > 0)
+        {
+            const float c0 = 0.5f + voicing / 4.f;                          /* the axis back from widths: 0..1 */
+            const float amount = std::fabs(c0 - 0.5f) * 2.f;
+            if(amount > 1e-3f)
+            {
+                const float pos = 0.05f + 0.45f * (c0 < 0.f ? 0.f : c0 > 1.f ? 1.f : c0);
+                int lo = 0; for(int k = 1; k < nd; k++) if(std::fabs(ga[k]) > 0.f && (std::fabs(ga[lo]) == 0.f || ha[k] < ha[lo])) lo = k;
+                const float f1 = ha[lo] > 0.f ? ha[lo] : 1.f;
+                for(int k = 0; k < nd; k++)
+                {
+                    const float h = ha[k] / f1;
+                    float w = 2.f * std::fabs(std::sin(3.1415927f * pos * h)); if(w > 1.f) w = 1.f;
+                    ga[k] *= (1.f - amount) + amount * w;
+                }
+            }
+            const float b = std::log2(coil > 1e-6f ? coil : 1e-6f);        /* -1..1 across the axis */
+            if(std::fabs(b) > 1e-3f)
+            {
+                int lo = 0; for(int k = 1; k < nd; k++) if(std::fabs(ga[k]) > 0.f && (std::fabs(ga[lo]) == 0.f || ha[k] < ha[lo])) lo = k;
+                const float f1 = ha[lo] > 0.f ? ha[lo] : 1.f;
+                for(int k = 0; k < nd; k++) ga[k] *= std::pow(ha[k] / f1, 0.5f * b);
+            }
+        }
         /* a voice with a cap keeps its cap loudest modes — by the energy a
            mode carries, gain^2 over its decay rate, the export's own rank
            — in frequency order, and the rest are silent. Rings does this
