@@ -95,6 +95,11 @@ public:
         if(n == rpoly_) return;
         rpoly_ = n;
         if(ractive_ >= n) ractive_ = n - 1;
+        /* Rings' rule: the bank's modes shared out among the voices, so
+           four voices stacked are as rich as one and cost the same —
+           Combust: "white room talk". Each voice keeps its loudest 48 / n
+           modes, rebuilt one a block */
+        for(int v = 0; v < kPoly; v++) { rvoices_[v].cap = n > 1 ? ResonatorBank::kMax / n : 0; rvdirty_[v] = true; }
     }
     int Polyphony() const { return rpoly_; }
     /* Rings' external exciter: an audio block driven into the voice that

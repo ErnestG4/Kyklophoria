@@ -384,7 +384,10 @@ int main()
         const float ringing  = max_step(y, before - 480, before - 1);
         const float at_reuse = max_step(y, before - 1, before + 48);
         const float at_turn  = max_step(y, turn - 1, turn + 48);
-        CHECK(at_reuse < 2.f * ringing, "a strike past the count cut a voice: step %.3g where the ring stepped %.3g", at_reuse, ringing);
+        /* a strike at another note chokes the old ring over 2 ms — a fade,
+           steeper than the ring's own slope but no step: a cut measured
+           6.6x the ring's step here, the choke 2.7x */
+        CHECK(at_reuse < 4.f * ringing, "a strike past the count cut a voice: step %.3g where the ring stepped %.3g", at_reuse, ringing);
         CHECK(at_turn < 2.f * ringing, "turning the count down cut a voice: step %.3g where the ring stepped %.3g", at_turn, ringing);
         double after = 0; for(size_t i = turn; i < turn + 480; i++) after += y[i] * y[i];
         CHECK(after > 0, "the voices past the count fell silent at the turn");
@@ -418,6 +421,36 @@ int main()
         const float after = l.Voice().hz[0];
         CHECK(std::fabs(after - before) < 0.01f, "a tune change moved a locked ring from %.2f to %.2f Hz", before, after);
         printf("  a tune reaches the voices one a block (%d after one, %d after five) and leaves a locked ring at %.1f Hz\n", after1, after5, after);
+    }
+
+    /* 13. Rings' rule for polyphony: the bank's modes shared out, so four
+       voices are as rich as one. At one voice the Wurlitzer's C3 has
+       every fitted mode; at four, twelve each — the loudest twelve, so
+       the fundamental is among them. */
+    {
+        auto live = [](const ResonatorVoice& v, int N) { int n = 0; for(int k = 0; k < N; k++) if(v.gain[k] != 0.f) n++; return n; };
+        const int N = wurli.Res().N;
+        Engine e; e.Init(&wurli, sr); e.gain = 1.f;
+        e.SetF0(130.81f); e.Strike(0.7f);
+        const int one = live(e.Voice(), N);
+        e.SetPolyphony(4);
+        std::vector<float> y;
+        const float notes[4] = {130.81f, 146.83f, 164.81f, 196.f};
+        for(int v = 0; v < 4; v++) { e.SetF0(notes[v]); e.Strike(0.7f); Run(e, y, 3); }
+        int most = 0, fund = 0;
+        for(int v = 0; v < 4; v++) most = std::max(most, live(e.VoiceAt(v), N));
+        for(int n = 0; n < 4; n++)          /* each note's fundamental is live on the voice that holds it, whichever the round gave it */
+        {
+            bool has = false;
+            for(int v = 0; v < 4; v++) for(int k = 0; k < N; k++) if(e.VoiceAt(v).gain[k] != 0.f && std::fabs(e.VoiceAt(v).hz[k] / notes[n] - 1.f) < 0.01f) has = true;
+            if(has) fund++;
+        }
+        CHECK(one > 12, "at one voice the C3 has only %d modes", one);
+        CHECK(most <= 12, "at four voices a voice has %d modes (12 allowed)", most);
+        CHECK(fund == 4, "the fundamental survived the cut on %d of 4 voices", fund);
+        e.SetPolyphony(1); e.SetF0(130.81f); e.Strike(0.7f);
+        CHECK(live(e.Voice(), N) == one, "back at one voice the C3 has %d modes, not %d", live(e.Voice(), N), one);
+        printf("  polyphony shares the modes: %d at one voice, at most %d each at four, the fundamental kept on all\n", one, most);
     }
 
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
