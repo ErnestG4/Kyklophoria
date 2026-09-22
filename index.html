@@ -1511,13 +1511,16 @@ function renderModelChips() {
       }
     }
     else if (r.kind === 1) { for (const e of positionSlider(0, `body 0..${r.P - 1}`, 'which body of the row: axis 0', r.P - 1)) box.appendChild(e); }
+    else if (r.form === 0) { for (const e of positionSlider(0, 'position', 'where the string is struck: the bridge end at the left, the middle at the right, as fitted at the centre — axis 0')) box.appendChild(e); }
     else { for (const e of positionSlider(0, 'voicing', 'the pickup pole off its fitted centre, ±2 widths: axis 0')) box.appendChild(e); }
   }
-  /* ring: decay and coil, axes 2 and 3 */
+  /* ring: decay and coil, axes 2 and 3 — on a world with no pickup the
+     coil axis is brightness */
   {
     const box = $('ringChips'); box.innerHTML = '';
     for (const e of positionSlider(2, 'decay', 'every mode\'s T60, ×¼ to ×4: axis 2')) box.appendChild(e);
-    for (const e of positionSlider(3, 'coil', 'the coil resonance, ×½ to ×2: axis 3')) box.appendChild(e);
+    if (r && r.form === 0) { for (const e of positionSlider(3, 'brightness', 'a tilt of the modes, ±3 dB an octave: axis 3')) box.appendChild(e); }
+    else { for (const e of positionSlider(3, 'coil', 'the coil resonance, ×½ to ×2: axis 3')) box.appendChild(e); }
     for (const e of box.children) if (e.tagName === 'INPUT') e.disabled = e.disabled || !live;
   }
   /* voices, the way Rings does it */
@@ -2287,8 +2290,8 @@ function drawResonateSpace(W, H, cx) {   /* cx: the pane it draws on, the play t
 
 /* what an axis is called: a resonator's four have names, a wavetable's are
    numbered (its own world decides what they mean) */
-const RESO_AXES = ['body', 'velocity', 'decay', 'coil'];
-const axisName = a => (tel && tel.resonate && RESO_AXES[a]) ? RESO_AXES[a] : 'axis ' + a;
+const RESO_AXES = ['body', 'velocity', 'decay', 'coil'], RESO_AXES_PLAIN = ['position', 'velocity', 'decay', 'brightness'];
+const axisName = a => (tel && tel.resonate) ? ((reso && reso.form === 0 && reso.kind === 0) ? RESO_AXES_PLAIN[a] : RESO_AXES[a]) || ('axis ' + a) : 'axis ' + a;
 function drawSpace() {
   const { w: W, h: H } = boxOf(cs);
   fit(cs);
