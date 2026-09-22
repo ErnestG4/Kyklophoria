@@ -137,7 +137,7 @@ struct ResonatorBank
     /* keep: retune the coefficients and leave the state ringing — a pitch
        change under a sounding note, which follows it as the oscillator's
        does; the strike bank's state is left too, mid-ramp */
-    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr, bool keep = false, float ratio = 1.f)
+    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr, bool keep = false, float ratio = 1.f, float lv_max = 2.f)
     {
         const int n0 = n;
         n = count > kMax ? kMax : count;
@@ -223,7 +223,7 @@ struct ResonatorBank
                 claimed[from] = true;
                 const float cwn = std::cos(w), swn = std::sin(w);
                 const float go = std::fabs(g0[from]), gn = std::fabs(gain[i]);
-                const float lv = go > 1e-9f ? (gn / go > 4.f ? 4.f : gn / go) : 1.f;
+                const float lv = go > 1e-9f ? (gn / go > lv_max ? lv_max : gn / go) : 1.f;
                 float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
                 for(int q = 0; q < 1 + kStrikes; q++)
                 {
@@ -1152,7 +1152,14 @@ struct ResonatorWorld
         /* the pitch change this retune is, for the carry: a note world's
            notes, a body row's none; a first build has nothing to carry */
         const float ratio = (keep && kind != 1 && v.param < 1e8f) ? std::exp2((param - v.param) / 12.f) : 1.f;
-        v.bank.Set(ha, za, ga, n, sr, fa, keep, ratio);
+        /* a ring about to be choked (a strike at another note) is carried
+           no louder than it was — scaled up to the new point's level and
+           pushed through the pickup for the 2 ms of its choke, the EP's C2
+           ring into an F#2 strike peaked at 8.2 where the strike alone
+           peaks at 0.4 — and a glide's carry at most twice as loud (the
+           EP's bass points, whose shaped fits are the worst, railed the
+           note sweep at four) */
+        v.bank.Set(ha, za, ga, n, sr, fa, keep, ratio, strike ? 1.f : 2.f);
         /* a strike at another note on this voice: the old note choked —
            its ring over 2 ms (ResonatorBank::Choke; the 5 ms it was gave
            the carried ring, which sits at the new note's frequencies, long

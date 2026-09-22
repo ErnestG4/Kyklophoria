@@ -114,6 +114,11 @@ def initialise(x, sr, nmodes, nfft=8192, hop=512, report=None, f0=None):
     frames = []
     for s in range(0, len(x) - nfft, hop):
         frames.append(np.fft.rfft(x[s:s + nfft] * win))
+    if len(frames) < 3:
+        # shorter than three frames: nothing to track a decay over (the
+        # viola set's last eight files stopped a lane here with a TypeError
+        # that nothing caught; fitset skips a ValueError and says so)
+        raise ValueError('%d samples is too short to analyse (%d frames of %d)' % (len(x), len(frames), nfft))
     C = np.array(frames)                       # complex, frames x bins
     S = np.abs(C)
     mean = S.mean(axis=0)

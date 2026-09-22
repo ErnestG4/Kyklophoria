@@ -118,6 +118,7 @@ static int world(const char* path, const char* out_path, float vel, int sr)
        bright attack peaks and the keyboard came out duller than its records
        (the Wurlitzer's G5 at a centroid of 699 Hz against 810) */
     float peak = 0; for(float s : out) peak = std::fmax(peak, std::fabs(s));
+    printf("  peak through the runtime %.4f\n", peak);   /* before levelling: what export.py's headroom checks against */
     if(peak > 0) for(float& s : out) s *= 0.891f / peak;
     /* the voices are still ringing at the end of the file: fade the last
        quarter second so it does not end in a step */

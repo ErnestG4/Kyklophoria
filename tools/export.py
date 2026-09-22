@@ -274,20 +274,53 @@ def headroom(pts, form, target=3.0):
     if peak <= 0:
         return pts
     k = target / peak
+    out = scale_points(pts, form, k)
+    print('  headroom: the loudest note at full velocity peaked at %.2f through the model; every point scaled by %.3f (%+.1f dB)' % (peak, k, 20 * math.log10(k)))
+    return out
+
+
+def scale_points(pts, form, k):
+    """Every point k times louder: the modes on a plain world; on a pickup
+    world the coil's gain K — the modes are the tine's displacement into
+    the field, and the field's nonlinearity, the bark that is the
+    instrument, is set by that displacement over the pole's width, so
+    scaling them would scale the physics (the EP's C3 lost 11 dB of its
+    h2 that way). The bursts always."""
     out = []
     for param, modes, stage, bursts, *rest in pts:
         if form == 0:
             modes = [(m[0], m[1], m[2] * k, m[3]) for m in modes]
         else:
-            # a pickup world's modes are the tine's displacement into the
-            # field, and the field's nonlinearity — the bark that is the
-            # instrument — is set by that displacement over the pole's
-            # width; scaling the modes would scale the physics (the EP's
-            # C3 lost 11 dB of its h2 that way). The coil's gain K is the
-            # output level, so that is what scales
             stage = tuple(stage[:2]) + (stage[2] * k,) + tuple(stage[3:])
         out.append((param, modes, stage, [(b[0], b[1] * k) + tuple(b[2:]) for b in bursts], *rest))
-    print('  headroom: the loudest note at full velocity peaked at %.2f through the model; every point scaled by %.3f (%+.1f dB)' % (peak, k, 20 * math.log10(k)))
+    return out
+
+
+def runtime_headroom(path, pts, N, form, kind, target=3.0):
+    """The convention checked against the runtime itself: the written
+    world's keyboard at full velocity through build/modaltest (which is
+    Kyklophoria's kyk_resonate.h), its peak read back, and the world
+    rescaled and rewritten when that peak is not the target. The model in
+    headroom() is a Python picture of the runtime and on a badly fitted
+    pickup note it was 3x under — the EP's G2 railed the note sweep."""
+    import subprocess, tempfile
+    mt = os.path.join(os.path.dirname(__file__), '..', 'build', 'modaltest')
+    if not os.path.exists(mt):
+        print('  headroom: no build/modaltest, the runtime peak not checked'); return pts
+    with tempfile.TemporaryDirectory() as d:
+        r = subprocess.run([mt, path, os.path.join(d, 'k.wav'), '--velocity', '1.0'], capture_output=True, text=True)
+    peak = None
+    for l in r.stdout.splitlines():
+        if 'peak through the runtime' in l:
+            peak = float(l.split()[-1])
+    if not peak or peak <= 0:
+        print('  headroom: the runtime peak could not be read (%s)' % r.stdout.strip().splitlines()[-1:]); return pts
+    k = target / peak
+    if abs(k - 1.0) < 0.05:
+        print('  headroom: the runtime agrees, peak %.2f at full velocity' % peak); return pts
+    out = scale_points(pts, form, k)
+    write(path, N, out, form, kind)
+    print('  headroom: the runtime peaked at %.2f at full velocity where the model said %.1f; every point scaled by %.3f (%+.1f dB) and the world rewritten' % (peak, target, k, 20 * math.log10(k)))
     return out
 
 
@@ -507,6 +540,7 @@ def main():
         pts = headroom(pts, form)
         N = max(len(pt[1]) for pt in pts)
         write(sys.argv[3], N, pts, form, kind)
+        runtime_headroom(sys.argv[3], pts, N, form, kind)
     return 0
 
 
