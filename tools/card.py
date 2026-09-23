@@ -21,7 +21,10 @@ of the player's own, and every world is checked before it is copied:
   - its name, the file name less .kykm, is at most 16 characters
   - it fits a 4 MB region (kResRegionBytes)
   - every set it came from passes tools/gate.py; a failing world is left
-    off unless named in --force, and the reason is printed
+    off unless named in --force, and the reason is printed. A world marked
+    `gated` in the manifest's fourth column was exported with
+    `export.py records --gate`, so its failing points are not in it: it
+    passes while each set keeps at least three good points
 
     python3 tools/card.py
     python3 tools/card.py --force xylophone-iowa
@@ -50,14 +53,15 @@ def main():
         if not l.strip() or l.startswith('#'):
             continue
         f = l.split('\t')
-        rows.append((f[0], f[1].split(',') if len(f) > 1 and f[1] else [], f[2] if len(f) > 2 else ''))
+        rows.append((f[0], f[1].split(',') if len(f) > 1 and f[1] else [], f[2] if len(f) > 2 else '',
+                     len(f) > 3 and f[3].strip() == 'gated'))
 
     dest = os.path.join(a.out, 'kyklophoria')
     if os.path.isdir(dest):
         shutil.rmtree(dest)
     os.makedirs(dest)
     kept, lines = [], []
-    for world, srcs, note in rows:
+    for world, srcs, note, gated in rows:
         path = os.path.join(ROOT, 'out', 'worlds', world + '.kykm')
         why = []
         if not os.path.exists(path):
@@ -81,9 +85,14 @@ def main():
             if not graded:
                 grades.append('%s shaped' % os.path.basename(d)); continue
             nbad = sum(1 for b in bad if b[3])
-            grades.append('%s %d/%d bad' % (os.path.basename(d), nbad, n))
-            if nbad > g.share * n:
-                why.append('%s fails the gate (%d of %d points bad)' % (os.path.basename(d), nbad, n))
+            if gated:
+                grades.append('%s %d kept, %d left out' % (os.path.basename(d), n - nbad, nbad))
+                if n - nbad < 3:
+                    why.append('%s keeps only %d good points' % (os.path.basename(d), n - nbad))
+            else:
+                grades.append('%s %d/%d bad' % (os.path.basename(d), nbad, n))
+                if nbad > g.share * n:
+                    why.append('%s fails the gate (%d of %d points bad)' % (os.path.basename(d), nbad, n))
             if os.path.getmtime(os.path.join(d, 'fits.tsv')) > os.path.getmtime(path):
                 why.append('%s refitted after this world was built' % os.path.basename(d))
         built = time.strftime('%m-%d %H:%M', time.localtime(os.path.getmtime(path)))

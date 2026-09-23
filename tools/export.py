@@ -596,10 +596,22 @@ def main():
             args = args[1:]
         write_family(args[0], [(a.split('=')[0] if '=' in a else os.path.basename(a)[:-5], a.split('=')[-1]) for a in args[1:]], by_pitch)
     elif kind in ('shaped', 'records'):
-        d = sys.argv[2]
+        # --gate leaves out the points tools/gate.py fails (a loss past 1.5,
+        # or ringing 3x longer than the recording): the note is then played
+        # by its neighbour transposed, which is better than a broken fit —
+        # the double bass's E string had an A2 at a loss of 3.15 with three
+        # modes, from a recording the splitter cut 2 of 12 notes out of
+        argv = [a for a in sys.argv if a != '--gate']
+        gated = len(argv) != len(sys.argv)
+        d = argv[2]
         pts, form, kind = [], 0, 0
-        for line in open(os.path.join(d, 'fits.tsv')).read().splitlines()[1:]:
+        lines = open(os.path.join(d, 'fits.tsv')).read().splitlines()
+        col = {k: i for i, k in enumerate(lines[0].split('\t'))}
+        for line in lines[1:]:
             c = line.split('\t')
+            if gated and 'decay_ratio' in col and (float(c[col['loss']]) > 1.5 or float(c[col['decay_ratio']]) > 3.0):
+                print('  %s: %s at midi %s left out by the gate (loss %s, rings %sx)' % (d, c[0], c[3], c[col['loss']], c[col['decay_ratio']]))
+                continue
             kind = 1 if c[2] == 'index' else 0
             modes, shaper, swings = [], None, [1e9, 0]
             for l in open(os.path.join(d, c[0] + '.mmr')):
@@ -629,9 +641,9 @@ def main():
         pts = headroom(pts, form)
         N = max(len(pt[1]) for pt in pts)
         body = body_curve(d, kind)
-        write(sys.argv[3], N, pts, form, kind, body)
-        runtime_headroom(sys.argv[3], pts, N, form, kind, body=body)
-        thin_points(sys.argv[3])
+        write(argv[3], N, pts, form, kind, body)
+        runtime_headroom(argv[3], pts, N, form, kind, body=body)
+        thin_points(argv[3])
     return 0
 
 
