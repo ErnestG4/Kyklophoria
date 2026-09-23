@@ -61,6 +61,7 @@ public:
     {
         n_ = n < 1 ? 1 : (n > kMaxN ? kMaxN : n);
         for(int p = 0; p < kMaxPlanes; p++) { angle_[p] = 0.f; base_[p] = 0.f; orbit_[p] = 0.f; rate_[p] = 0.f; }
+        base_off_ = false;
         couple_ = 0.f; lock_ = 0.f; reach_ = 5; relock_ = true;
         SetIdentity();
         dirty_ = false;
@@ -83,6 +84,19 @@ public:
         Recompute(plane);
     }
     float BaseAngle(int plane) const { return plane >= 0 && plane < kMaxPlanes ? base_[plane] : 0.f; }
+    /* The knobs' angles left out of the rotation, the orbit's kept: a
+       resonate world's four axes are body, velocity, decay and coil, and a
+       Rotate page left turned from a wavetable crossed them (Combust: "knobs
+       are crossed"; a quarter turn swaps two outright). Straight by default,
+       moved only by an orbit or Kepler the player runs. The knob values are
+       kept, so a wavetable world gets its angles back */
+    void BaseOff(bool off)
+    {
+        if(base_off_ == off) return;
+        base_off_ = off;
+        for(int p = 0; p < Planes(); p++) Recompute(p);
+    }
+    bool IsBaseOff() const { return base_off_; }
     /* Just the accumulated orbit phase, without the knob. */
     float OrbitPhase(int plane) const { return plane >= 0 && plane < kMaxPlanes ? orbit_[plane] : 0.f; }
     /* Nudge the orbit phase by hand. */
@@ -295,7 +309,7 @@ private:
 
     void Recompute(int plane)
     {
-        const float a = Fract(base_[plane] + orbit_[plane]);
+        const float a = Fract((base_off_ ? 0.f : base_[plane]) + orbit_[plane]);
         if(a != angle_[plane]) { angle_[plane] = a; dirty_ = true; }
     }
 
@@ -340,6 +354,7 @@ private:
     float angle_[kMaxPlanes];    /* effective = base + orbit */
     float base_[kMaxPlanes];
     float orbit_[kMaxPlanes];
+    bool  base_off_ = false;
     float rate_[kMaxPlanes];
     float m_[kMaxN][kMaxN];
     bool  dirty_ = false;

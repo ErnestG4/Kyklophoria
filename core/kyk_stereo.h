@@ -56,6 +56,7 @@ public:
         L.Init(world, sr);
         R.Init(world, sr);
         rot.Init(world ? world->N() : 4);
+        rot.BaseOff(world && world->IsResonate());   /* see SetWorld */
         for(int a = 0; a < kMaxN; a++) { c_[a] = 0.5f; target_[a] = 0.5f; pc_[a] = 0.5f; payAt_[a] = 1e9f; }
         for(int j = 0; j < kMaxP; j++) payload_[j] = 0.f;
         stereo_ = false;
@@ -92,6 +93,14 @@ public:
         world_ = w;
         L.SetWorld(w);
         R.SetWorld(w);
+        /* a resonate world's knobs go straight to its axes: body, velocity,
+           decay and coil, pot plus CV. The Rotate page's angles are left
+           out (Rotation::BaseOff) and an orbit's phase from a wavetable
+           world is not carried in, so arriving is as straight as starting;
+           an orbit or Kepler run on a resonator moves its axes as ever */
+        const bool res = w && w->IsResonate();
+        if(res && !rot.IsBaseOff()) rot.ResetOrbit();
+        rot.BaseOff(res);
         /* The payload cache is keyed on the position, not the world, so a
          * switch with a still hand left it holding the previous world's
          * numbers — and the payload drives CV out A and the page's lanes, so

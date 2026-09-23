@@ -1420,11 +1420,17 @@ const strikeAt = v => act(MVL.ACT.strike, [Math.max(0, Math.min(255, v | 0))], '
    over the bridge the slider is the hand (0x6E SET_CONTROL). A double
    click puts it back to the centre, which is the world as fitted. */
 const axisSliders = {};
+/* where axis a is as the voice hears it: on a resonator the position after
+   any motion (posL), which is what the engine plays; the pots' frame (ctl)
+   otherwise. The sliders showed ctl, so an orbit moving the axes left them
+   pointing somewhere the sound was not (Combust: "the sliders misrepresent") */
+const heardAxis = a => tel && tel.resonate && tel.posL && a < tel.posL.length ? tel.posL[a]
+  : tel && tel.ctl && a < tel.ctl.length ? tel.ctl[a] : 0.5;
 function positionSlider(a, label, title, steps) {
   const lab = dimText(label, '0 0 0 6px');
   const r = document.createElement('input');
   r.type = 'range'; r.min = 0; r.max = 1000; r.step = steps ? Math.round(1000 / steps) : 1; r.title = title;
-  r.value = Math.round(1000 * (tel && tel.ctl && a < tel.ctl.length ? tel.ctl[a] : 0.5));
+  r.value = Math.round(1000 * heardAxis(a));
   const owned = moduleOwns();
   r.disabled = !link || owned || (link && link.kind !== 'bridge');
   if (owned) r.title = title + ` — Play page P${a + 3} and J${a + 5} own this on the module`;
@@ -1485,11 +1491,16 @@ function renderModelChips() {
     for (const [label, v] of [['soft', 77], ['mid', 153], ['hard', 230]]) {
       const b = chip(label, false, `strike at ${(v / 255).toFixed(2)}`, () => strikeAt(v)); b.classList.add('pad'); b.disabled = !link || !live; box.appendChild(b);
     }
-    const lab = dimText('velocity', '0 0 0 8px');
-    const s = document.createElement('input'); s.type = 'range'; s.min = 0; s.max = 255; s.value = vel; s.title = 'the pad\'s velocity; on the module J4\'s trigger strikes at axis 1 (Play page P4 and J6)';
+    const lab = dimText('pad vel', '0 0 0 8px');
+    const s = document.createElement('input'); s.type = 'range'; s.min = 0; s.max = 255; s.value = vel; s.title = 'the velocity of this page\'s strike pad only; a trigger into J4 and a note jump strike at the trigger velocity (axis 1)';
     s.oninput = () => { vel = s.value | 0; };
-    const pad = chip('strike', false, 'strike at the slider', () => strikeAt(vel)); pad.classList.add('pad'); pad.disabled = !link || !live;
+    const pad = chip('strike', false, 'strike at the pad velocity', () => strikeAt(vel)); pad.classList.add('pad'); pad.disabled = !link || !live;
     box.appendChild(lab); box.appendChild(s); box.appendChild(pad);
+    /* axis 1: what J4's trigger and a note jump strike at. The page never
+       showed it, so the velocity slider above looked like the strike's
+       velocity and did nothing to a sequencer's (Combust: "strike VEL on the
+       page doesn't seem to have any impact") */
+    for (const e of positionSlider(1, 'trigger vel', 'the velocity J4\'s trigger and a note jump strike at: axis 1, Play page P4 plus J6')) box.appendChild(e);
     /* the strike a little harder the faster the playing: 0 for none, at
        full a fifth of the velocity added at eight strikes a second */
     const tlab = dimText('dig in', '0 0 0 8px');
@@ -1506,7 +1517,7 @@ function renderModelChips() {
       for (let i = 0; i < r.members.length; i++) {
         const b = chip(r.members[i], i === r.member, `position 0 at ${(i / (r.members.length - 1)).toFixed(2)}`, () => { ctl.c[0] = i / (r.members.length - 1); sendControl(); });
         b.disabled = !link || moduleOwns() || link.kind !== 'bridge';
-        if (moduleOwns()) b.title = 'the Model page\'s first pot and J5 choose the instrument on the module';
+        if (moduleOwns()) b.title = 'Play page P3 and J5 choose the instrument on the module';
         box.appendChild(b);
       }
     }
@@ -1522,6 +1533,10 @@ function renderModelChips() {
     if (r && r.form === 0) { for (const e of positionSlider(3, 'brightness', 'a tilt of the modes, ±3 dB an octave: axis 3')) box.appendChild(e); }
     else { for (const e of positionSlider(3, 'coil', 'the coil resonance, ×½ to ×2: axis 3')) box.appendChild(e); }
     for (const e of box.children) if (e.tagName === 'INPUT') e.disabled = e.disabled || !live;
+    /* the knobs are straight on a resonator (the Rotate page is left out);
+       an orbit or Kepler run on purpose still moves the axes, and says so */
+    const moving = tel && ((tel.angle && tel.angle.some(x => x !== 0)) || (tel.kepler && tel.kepler.running));
+    if (live && moving) box.appendChild(dimText('· an orbit or Kepler is moving these axes: the sliders show where they are', '0 0 0 8px'));
   }
   /* voices, the way Rings does it */
   {
@@ -1537,7 +1552,7 @@ function renderModelChips() {
     : 'on the module: J1 in, the Stereo page\'s sixth pot';
   $('modelHint').textContent = !link ? 'connect to a module or the bridge'
     : !live ? 'no resonator is playing — pick one above, or load a .kykm from the card'
-    : moduleOwns() ? 'the same hands as a wavetable: Play P3–P6 and J5–J8 are body · velocity · decay · coil, and every motion moves them  ·  J4 trigger, B2 taps a strike, B3 flips the lock  ·  World P3 voices · Stereo P6 exciter'
+    : moduleOwns() ? 'Play P3–P6 plus J5–J8 are body · velocity · decay · coil, straight: the Rotate page leaves a resonator alone, an orbit or Kepler you run moves them  ·  J4 trigger, B2 taps a strike, B3 flips the lock  ·  World P3 voices · Stereo P6 exciter'
     : 'over the bridge the pitch is the drawer\'s f0 or a press on the axis; the axes are the drawer\'s too';
 }
 let lastStrikeN = -1;
@@ -3713,7 +3728,7 @@ function drawModel() {
   { const { w: W, h: H } = boxOf(mm); fit(mm); drawModes(mmx, 30, 26, W - 60, H - 26); }
   setText('pitchNote', pitchNoteText());
   /* the axes under the module's pots: the sliders show where they are */
-  if (tel && tel.ctl && moduleOwns()) for (const a in axisSliders) { const s = axisSliders[a]; if (s.disabled && a < tel.ctl.length) s.value = Math.round(1000 * tel.ctl[a]); }
+  if (tel && tel.ctl && moduleOwns()) for (const a in axisSliders) { const s = axisSliders[a]; if (s.disabled && a < tel.ctl.length) s.value = Math.round(1000 * heardAxis(+a)); }
   /* what the module says about the voices and the lock, and which member
      it plays, can change under a pot: the chips follow */
   const r = reso;

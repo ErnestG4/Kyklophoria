@@ -508,6 +508,45 @@ int main()
         printf("  no pickup: position at the middle cuts h2 by %.1f dB; brightness tilts three octaves %+.1f / %+.1f dB\n", h2c - h2m, tiltb, tiltd);
     }
 
+    /* straight knobs on a resonator: the Rotate page's angles do not cross
+       its axes (Combust: "knobs are crossed"), an orbit run on it does move
+       them, and a wavetable world keeps its angles. A quarter turn in plane
+       (1,2) swaps velocity and decay outright when it applies */
+    {
+        auto axes = [&](const World* w, float ang, float rate, int blocks, int plane = 3) {
+            StereoEngine se; se.Init(w, sr);
+            se.rot.SetAngle(plane, ang);             /* plane 3 of four axes is (1,2): velocity and decay */
+            se.rot.SetRate(plane, rate);
+            const float c[kMaxN] = {0.2f, 0.9f, 0.1f, 0.6f};
+            se.SetControl(c, 4); se.SnapControl();
+            std::vector<float> l(48), r(48);
+            for(int b = 0; b < blocks; b++) se.Process(l.data(), r.data(), 48);
+            return std::make_tuple(se.L.ControlAt(0), se.L.ControlAt(1), se.L.ControlAt(2), se.L.ControlAt(3));
+        };
+        const auto st = axes(&piano, 0.25f, 0.f, 4);
+        CHECK(std::get<0>(st) == 0.2f && std::get<1>(st) == 0.9f && std::get<2>(st) == 0.1f && std::get<3>(st) == 0.6f,
+              "a Rotate page angle crossed a resonator's axes: body %.3f velocity %.3f decay %.3f coil %.3f (0.2 0.9 0.1 0.6 set)",
+              std::get<0>(st), std::get<1>(st), std::get<2>(st), std::get<3>(st));
+        const auto orb = axes(&piano, 0.f, 1.f, 100);
+        CHECK(std::fabs(std::get<1>(orb) - 0.9f) > 0.05f || std::fabs(std::get<2>(orb) - 0.1f) > 0.05f,
+              "an orbit run on a resonator did not move its axes: velocity %.3f decay %.3f", std::get<1>(orb), std::get<2>(orb));
+        World saw; solids::VertexTable stbl;
+        CHECK(worlds::Point(worlds::kSaw, saw, 8, nullptr, &stbl), "could not build Saw");
+        const auto wt = axes(&saw, 0.25f, 0.f, 4, 0);   /* plane 0, (0,1): Saw has fewer axes than four */
+        CHECK(std::fabs(std::get<1>(wt) - 0.9f) > 0.05f, "a wavetable world lost its Rotate page angle: axis 1 at %.3f", std::get<1>(wt));
+        /* a resonator reached from a wavetable world with an orbit phase on it
+           starts straight, as one started in */
+        StereoEngine se; se.Init(&saw, sr); se.rot.SetRate(3, 1.f);
+        std::vector<float> l(48), r(48);
+        for(int b = 0; b < 100; b++) se.Process(l.data(), r.data(), 48);
+        se.rot.SetRate(3, 0.f); se.SetWorld(&piano);
+        const float c[kMaxN] = {0.2f, 0.9f, 0.1f, 0.6f};
+        se.SetControl(c, 4); se.SnapControl(); se.Process(l.data(), r.data(), 48);
+        CHECK(se.L.ControlAt(1) == 0.9f && se.L.ControlAt(2) == 0.1f,
+              "a resonator arrived at from an orbiting wavetable world is not straight: velocity %.3f decay %.3f", se.L.ControlAt(1), se.L.ControlAt(2));
+        printf("  straight knobs: a quarter-turn Rotate angle leaves a resonator's axes as set; an orbit moves them; a wavetable keeps its angle\n");
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }
