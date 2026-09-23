@@ -27,9 +27,10 @@ guitar-strings	guitar2-sul*	guitar, position walks E A D G B E	gated
 banjo	banjo	banjo
 mandolin	mandolin	mandolin
 harp-concert	harp-concert	VCSL concert harp, 22 notes	gated
-bass-pizz	bass-pizz2-sul*	double bass pizzicato, position walks E A D G	gated
+# superseded by bass-pizz-vel (same strings, pp/mf/ff layers, more notes); still in out/worlds:
+# bass-pizz	bass-pizz2-sul*	double bass pizzicato, position walks E A D G	gated
 bass-pizz-vel	bass-pizz3-sul*	double bass pizzicato with pp/mf/ff velocity layers, E A D G	gated
-cello-pizz	cello-pizz-sul*	cello pizzicato, position walks C G D A	gated
+cello-pizz-vel	cello-pizz3-sul*	cello pizzicato with pp/mf/ff velocity layers, C G D A (replaces cello-pizz)	gated
 viola-pizz	viola-pizz-sul*	viola pizzicato, position walks C G D A	gated
 violin-pizz	violin-pizz-sul*	violin pizzicato, position walks G D A E	gated
 # mallets
