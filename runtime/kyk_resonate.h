@@ -180,6 +180,19 @@ struct ResonatorBank
     int   damp_left;
     float damp_c;
     bool  damp_bank[kStrikes];
+    /* the tail: the last note's ring at its OWN frequencies, under a damper,
+       while the new note starts from nothing. A strike at another note on
+       a voice used to carry the old ring onto the new note's modes and choke
+       it: at 5 ms that was heard as the old note bending ("it's just pitch
+       shifting"), at 2 ms as a pop wherever the ring was still loud — a
+       long decay, overlapping notes, any voice count (Combust: "a single
+       push/pull, a single harsh near vertical in the waveform right at note
+       start ... only when the resonance is up near halfway and beyond").
+       A string the next key is struck on is another string; the one before
+       is damped where it rings */
+    int   tn, tail_left;
+    float tail_c;
+    float tc1[kMax], tc2[kMax], ty1[kMax], ty2[kMax];
     /* the old note choked: down 60 dB over ms, as a damper falling on
        the string a new note is struck on. One voice is one string; a
        strike at another note on it is a new note, not the old one
@@ -200,15 +213,39 @@ struct ResonatorBank
         }
     }
 
+    /* the ring let go to the tail: what is heard of the strike banks folded
+       in first (one still in its lead is not heard yet and is dropped), the
+       main state moved over with the poles it rings at, and the damper set
+       to take it 60 dB down over ms. The bank is left silent for the new
+       note. A tail still sounding from the note before is replaced: at
+       40 ms it is a thousandth of itself by the next note at 25 a second */
+    void Release(float ms, float sr)
+    {
+        for(int q = 0; q < kStrikes; q++) if(ramping[q]) Fold(q);
+        /* a ring that is not sounding leaves no tail: a first note, or one
+           rung out, is exactly what it was before there were tails (the
+           pickup's crossfade asks Ringing(), and a silent tail said yes) */
+        bool any = false;
+        for(int i = 0; i < n; i++) if(std::fabs(y1[i]) > 1e-7f || std::fabs(y2[i]) > 1e-7f) { any = true; break; }
+        tn = any ? n : 0;
+        for(int i = 0; i < n; i++) { tc1[i] = c1[i]; tc2[i] = c2[i]; ty1[i] = y1[i]; ty2[i] = y2[i]; y1[i] = y2[i] = 0.f; }
+        tail_left = any ? (int)(ms * 0.001f * sr) : 0; if(any && tail_left < 1) tail_left = 1;
+        tail_c = fastmath::Exp2(-9.9657843f / (float)tail_left);   /* 1e-3 over the window */
+        damp_left = 0; damp_c = 1.f;
+        for(int q = 0; q < kStrikes; q++) damp_bank[q] = false;
+    }
+
     void Init()
     {
         n = 0;
         for(int q = 0; q < kStrikes; q++) { ramp_n[q] = 0.f; ramp_len[q] = 144.f; ramp_lead[q] = 0.f; ramping[q] = false; damp_bank[q] = false; held[q] = 0.f; ramp_c[q] = 1.f; ramp_s[q] = 0.f; }
-        for(int i = 0; i < kMax; i++) { c1[i] = c2[i] = p1[i] = p2[i] = g[i] = y1[i] = y2[i] = 0.f; wq[i] = cwq[i] = swq[i] = rq[i] = lrq[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; }
+        for(int i = 0; i < kMax; i++) { c1[i] = c2[i] = p1[i] = p2[i] = g[i] = y1[i] = y2[i] = 0.f; wq[i] = cwq[i] = swq[i] = rq[i] = lrq[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; tc1[i] = tc2[i] = ty1[i] = ty2[i] = 0.f; }
         damp_left = 0; damp_c = 1.f;
+        tn = 0; tail_left = 0; tail_c = 1.f;
     }
     bool Ringing() const
     {
+        if(tn > 0 && tail_left > 0) return true;
         for(int i = 0; i < n; i++) { if(std::fabs(y1[i]) > 1e-7f) return true; for(int q = 0; q < kStrikes; q++) if(std::fabs(s1[q][i]) > 1e-7f) return true; }
         return false;
     }
@@ -627,6 +664,28 @@ struct ResonatorBank
                 }
                 ramp_n[q] += (float)mm;
                 if(ramp_n[q] >= ramp_lead[q] + ramp_len[q]) Fold(q);
+            }
+            /* the tail: the last note at its own poles pulled in by the
+               damper, into the same output, so a pickup hears it as the
+               tine it is */
+            if(tn > 0)
+            {
+                const int mt = m < tail_left ? m : tail_left;
+                const float tc = tail_c, tc2_ = tail_c * tail_c;
+                for(int i = 0; i < tn; i++)
+                {
+                    const float a = tc1[i] * tc, b = tc2[i] * tc2_;
+                    float u1 = ty1[i], u2 = ty2[i];
+                    for(int k = 0; k < mt; k++)
+                    {
+                        const float y = a * u1 + b * u2;
+                        u2 = u1; u1 = y;
+                        out[k] += y;
+                    }
+                    ty1[i] = u1; ty2[i] = u2;
+                }
+                tail_left -= mt;
+                if(tail_left <= 0) tn = 0;
             }
             if(damp_left > 0) damp_left -= m;
             out += m; frames -= m;
@@ -1060,6 +1119,10 @@ struct ResonatorVoice
 /* A condensed world (ModalBake tools/export.py), attached where it lies. */
 struct ResonatorWorld
 {
+    /* how long the last note's ring takes to fall 60 dB when the next note
+       on its voice is at another pitch: a damper, not a cut (see
+       ResonatorBank::Release) */
+    static constexpr float kTailMs = 40.f;
     const uint8_t* blob;
     uint32_t size;
     uint16_t N, P;
@@ -1436,7 +1499,12 @@ struct ResonatorWorld
            let go by the choke, and then the carry has nothing to bring up
            to date. A glide or a tune change carries it on; a strike at the
            same note is a hammer on a ringing tine and adds. */
-        if(keep && strike && v.param < 1e8f && std::fabs(param - v.param) > 1e-4f) { v.bank.Choke(2.f, sr); v.burst.Choke(5.f, sr); }
+        /* now: the old ring released to the bank's tail at its own
+           frequencies under a 40 ms damper (ResonatorBank::Release) and its
+           attack faded over the same, and the new note built from silence,
+           nothing carried: no pitch shifting, and no 2 ms step to pop */
+        const bool released = keep && strike && v.param < 1e8f && std::fabs(param - v.param) > 1e-4f;
+        if(released) { v.bank.Release(kTailMs, sr); v.burst.Choke(kTailMs, sr); }
         /* the pitch change this retune is, for the carry: a note world's
            notes, a body row's none; a first build has nothing to carry */
         const float ratio = (keep && kind != 1 && v.param < 1e8f) ? std::exp2((param - v.param) / 12.f) : 1.f;
@@ -1447,7 +1515,7 @@ struct ResonatorWorld
            peaks at 0.4 — and a glide's carry at most twice as loud (the
            EP's bass points, whose shaped fits are the worst, railed the
            note sweep at four) */
-        v.bank.Set(ha, za, ga, n, sr, fa, keep, ratio, strike ? 1.f : 2.f);
+        v.bank.Set(ha, za, ga, n, sr, fa, keep && !released, ratio, strike ? 1.f : 2.f);
         /* a strike at another note on this voice: the old note choked —
            its ring over 2 ms (ResonatorBank::Choke; the 5 ms it was gave
            the carried ring, which sits at the new note's frequencies, long
