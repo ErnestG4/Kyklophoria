@@ -25,6 +25,7 @@ guitar	guitar	guitar
 guitar-strings	guitar2-sul*	guitar, position walks E A D G B E	gated
 banjo	banjo	banjo
 mandolin	mandolin	mandolin
+harp-concert	harp-concert	VCSL concert harp, 22 notes	gated
 bass-pizz	bass-pizz2-sul*	double bass pizzicato, position walks E A D G	gated
 cello-pizz	cello-pizz-sul*	cello pizzicato, position walks C G D A	gated
 viola-pizz	viola-pizz-sul*	viola pizzicato, position walks C G D A	gated
