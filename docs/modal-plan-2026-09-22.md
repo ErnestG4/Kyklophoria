@@ -204,8 +204,8 @@ and the commercial EP libraries are not redistributable, so nothing fitted from
 them ships. The three fixtures here — `piano.kykm`, `tine.kykm`, `bodies.kykm`
 — are Iowa and our own `epi` respectively.
 
-One thread open: the pre-purge commits are still served by SHA on Codeberg.
-Forgejo's `cron.git_gc_repos` is an extended cron task, off by default, and
-`git gc` holds unreachable objects for `gc.pruneExpire`, two weeks by default.
-Check whether `ff24b4d` still answers; if it matters more than that, the
-certain fix is deleting and recreating the repo.
+Closed, and not to be reopened: the pre-purge commits are still served by SHA
+on Codeberg (checked 2026-09-22 evening: `ff24b4d` and `4dd3ba9` both 200),
+because Forgejo does not garbage-collect by default. Combust's decision: the
+force-push that removed them from every branch is enough, and the repo is NOT
+to be deleted and recreated. Do not propose it again.
