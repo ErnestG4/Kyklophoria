@@ -24,7 +24,7 @@ tine-vel	tine-vel	Rhodes tine from Epi, velocity
 reed-vel	reed-vel	Wurlitzer reed from Epi, velocity
 # plucked
 guitar	guitar	guitar
-guitar-strings	guitar2-sul*	guitar, position walks E A D G B E	gated
+guitar-str-vel	guitar3-sul*	guitar with pp/mf/ff velocity layers, position walks E A D G B E (replaces guitar-strings)	gated
 banjo	banjo	banjo
 mandolin	mandolin	mandolin
 harp-concert	harp-concert	VCSL concert harp, 22 notes	gated
