@@ -17,7 +17,14 @@ ignore rules named patterns rather than a principle:
   runtime: keyboards, sweeps, glides, walks. A fitted world carries bursts,
   and a burst is a window of the recording, so these carry it too.
 
-97 MB of it, across the whole history. This repository has no remote and
+- `out/worlds/*.kykm` — 17 worlds. A fitted world carries a burst per point,
+  so these ARE recordings, however much they look like numbers. Among them
+  `wurli`, `ep`, `ep-vel`, `perc` and the families built from them
+  (`electric`, `pianos`, `strings`) — the whole restricted set. Missed on the
+  first pass, which swept `.wav` and forgot that the rule written directly
+  below applies to `.kykm` first of all. Found by re-reading it.
+
+104 MB of it, across the whole history. This repository has no remote and
 never had one, so none of it was published — but a push would have published
 all of it, and one of those worlds came from a Wurlitzer library that is
 licensed for non-commercial use with no redistribution at all.

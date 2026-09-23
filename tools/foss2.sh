@@ -80,14 +80,18 @@ for d in out/fit/*-iowa out/fit/guitar-sul* out/fit/violin-sul* out/fit/viola-su
   $PY tools/bursts.py "$d" --ms auto >> $L/foss2.log 2>&1
   $PY tools/export.py records "$d" out/worlds/$n.kykm >> $L/foss2.log 2>&1
 done
+# --by-pitch orders the members by their lowest fitted note and names them
+# for it, so the position axis walks the neck low string to high instead of
+# following the filenames' alphabet — which put the guitar's low E between
+# its B and its G. The names come out as the open strings: the violin's four
+# are G3 D4 A4 E5 exactly.
 for inst in guitar violin viola cello bass; do
   args=""
   for w in out/worlds/$inst-sul*.kykm; do
     [ -f "$w" ] || continue
-    s=$(basename "$w" .kykm); s=${s#$inst-sul}
-    args="$args $s=$w"
+    args="$args $w"
   done
-  [ -n "$args" ] && $PY tools/export.py family out/worlds/$inst-strings.kykm $args >> $L/foss2.log 2>&1
+  [ -n "$args" ] && $PY tools/export.py family --by-pitch out/worlds/$inst-strings.kykm $args >> $L/foss2.log 2>&1
 done
 for w in out/worlds/piano-iowa.kykm out/worlds/guitar-strings.kykm; do
   [ -f "$w" ] && $PY tools/notecheck.py "$w" 36 96 >> $L/foss2.log 2>&1

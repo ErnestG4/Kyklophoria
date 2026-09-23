@@ -18,3 +18,5 @@ out/overnight/
 out/fit/*-AB.wav
 out/fit/**/*-AB.wav
 out/wav/
+out/worlds/
+*.kykm

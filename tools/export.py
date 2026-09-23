@@ -447,7 +447,50 @@ def align(pts, kind, cap=48):
     return out
 
 
-def write_family(path, members):
+def thin_points(path, floor=8):
+    """Read back what was written and say which points came out too thin to
+    be an instrument. A point whose modes all encode as silence but one is a
+    sine, and a sine does not sound like a violin: violin-suld's B4 and D5
+    came out with the fundamental alone, because the FIT found twelve modes
+    at 1.00x, 6.01x, 7.02x, 8.70x... and skipped harmonics two through five.
+    The export was faithful to a bad fit, which is why this warns rather than
+    repairs — the fix is a refit, and a silent world on the card is worse
+    than a noisy build. Mode count does fall honestly with register (a
+    xylophone bar at 2 kHz has few partials under Nyquist at all), so this
+    is a shortlist to look at and not a verdict."""
+    b = open(path, 'rb').read()
+    ver, N, P = struct.unpack_from('<HHH', b, 4)
+    o = 20 + (32 if ver >= 7 else 0)
+    thin = []
+    for p in range(P):
+        param = struct.unpack_from('<f', b, o)[0]; o += 4 + 32
+        n = 0
+        for m in range(N):
+            if b[o + 3] != 255:            # fifth-cents u16, decay u8, LEVEL u8, phase u8
+                n += 1
+            o += 5
+        nb = b[o]; o += 1 + nb * 8
+        nbur = struct.unpack_from('<H', b, o)[0]; o += 2
+        for k in range(nbur):
+            ln = struct.unpack_from('<H', b, o + 8)[0]; o += 12 + 2 * ln
+        if n < floor:
+            thin.append((param, n))
+    if thin:
+        print('  WARNING %s: %d of %d points under %d live modes — %s'
+              % (path, len(thin), P, floor,
+                 ', '.join('%g=%d' % (pm, n) for pm, n in thin)))
+    return thin
+
+
+NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+
+
+def note_name(midi):
+    m = int(round(midi))
+    return NOTE_NAMES[m % 12] + str(m // 12 - 1)
+
+
+def write_family(path, members, by_pitch=False):
     """A family: one world that is a row of instruments that work the same
     way, position 0 choosing among them and v/oct the note within each —
     strings, pianos, the percussion row as it already is. Combust, after
@@ -468,6 +511,20 @@ def write_family(path, members):
         b = open(f, 'rb').read()
         assert b[:4] == b'KYKM', f
         blobs.append((name[:15], b))
+    # An instrument's strings are not an editorial order, they are a ladder:
+    # the position axis IS the neck, and sweeping it should walk from the
+    # lowest string to the highest rather than jump about. A note world's lo
+    # is the lowest note fitted on that string, which for an open-string
+    # recording is the open string itself — measured, not assumed: violin
+    # g/d/a/e came out 55/62/69/76, which is G3 D4 A4 E5 exactly. So sorting
+    # by lo gives the physical order and names each member at the same time,
+    # which also settles the guitar's two E strings ('e' and '_e' from the
+    # filenames, alphabetically four apart, with the low E landing between B
+    # and G). Opt-in, because a family of different INSTRUMENTS — the piano
+    # row, the electrics — is an order somebody chose and not a ladder.
+    if by_pitch:
+        blobs.sort(key=lambda nb: struct.unpack_from('<f', nb[1], 12)[0])
+        blobs = [(note_name(struct.unpack_from('<f', b, 12)[0]), b) for _, b in blobs]
     N = max(struct.unpack_from('<H', b, 6)[0] for _, b in blobs)
     head = b'KYKM' + struct.pack('<HHHBB', 6, N, 0, 0, 2) + struct.pack('<ff', 0.0, float(len(blobs) - 1))
     table_at = len(head) + 1
@@ -531,8 +588,13 @@ def main():
             print('no family', fam); return 1
         write(sys.argv[4], N, pts)
     elif kind == 'family':
-        # export.py family out/worlds/strings.kykm violin=out/worlds/violin.kykm viola=... 
-        write_family(sys.argv[2], [(a.split('=')[0], a.split('=')[1]) for a in sys.argv[3:]])
+        # export.py family out/worlds/strings.kykm violin=out/worlds/violin.kykm viola=...
+        # export.py family --by-pitch out/worlds/guitar-strings.kykm out/worlds/guitar-sul*.kykm
+        args = sys.argv[2:]
+        by_pitch = args and args[0] == '--by-pitch'
+        if by_pitch:
+            args = args[1:]
+        write_family(args[0], [(a.split('=')[0] if '=' in a else os.path.basename(a)[:-5], a.split('=')[-1]) for a in args[1:]], by_pitch)
     elif kind in ('shaped', 'records'):
         d = sys.argv[2]
         pts, form, kind = [], 0, 0
@@ -569,6 +631,7 @@ def main():
         body = body_curve(d, kind)
         write(sys.argv[3], N, pts, form, kind, body)
         runtime_headroom(sys.argv[3], pts, N, form, kind, body=body)
+        thin_points(sys.argv[3])
     return 0
 
 
