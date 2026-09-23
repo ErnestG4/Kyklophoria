@@ -1244,6 +1244,22 @@ const parsed = P.parsePanel(DESC);
   P.setTel(tel({ n: 4, world: 0 })); P.setReso(null); P.renderModelChips();
   T(els.lockChips.children.every(c => c.disabled) && /no resonator/.test(els.modelHint.textContent), 'with a wavetable playing the planes stand down and the hint says why');
   P.drawModel();
+  /* the sliders follow the knobs on the module (Combust: "Moving knobs does
+     the right thing but doesn't change sliders on the model page"): over a
+     serial link, with the panel's descriptor and without it, the axes moved
+     in telemetry must move the sliders the next frame */
+  for (const withPanel of [true, false]) {
+    P.setLink({ kind: 'serial', request: async () => new Uint8Array([0]) });
+    P.setPanel(withPanel ? parsed : null);
+    P.setReso({ ...fam, members: [], name: 'wurli' });
+    P.setTel(tel({ ...RES, ctl: Float32Array.from([0.5, 0.5, 0.5, 0.5]), posL: Float32Array.from([0.5, 0.5, 0.5, 0.5]) }));
+    P.renderModelChips();
+    const inputs = () => [...els.bodyChips.children, ...els.strikeChips.children, ...els.ringChips.children].filter(c => c.tagName === 'input' && c.max === 1000);
+    P.setTel(tel({ ...RES, ctl: Float32Array.from([0.1, 0.2, 0.8, 0.9]), posL: Float32Array.from([0.1, 0.2, 0.8, 0.9]) }));
+    P.drawModel();
+    const vals = inputs().map(s => +s.value);
+    T(vals.length === 4 && vals.join() === '100,200,800,900', `the four axis sliders follow the knobs over serial ${withPanel ? 'with' : 'without'} the panel descriptor (${vals.join()})`);
+  }
   P.setView('play'); P.setLink(null); P.setPanel(null); P.setTel(null);
 }
 console.log('');
