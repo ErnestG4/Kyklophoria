@@ -33,7 +33,7 @@ harp-concert	harp-concert	VCSL concert harp, 22 notes	gated
 bass-pizz-vel	bass-pizz3-sul*	double bass pizzicato with pp/mf/ff velocity layers, E A D G	gated
 cello-pizz-vel	cello-pizz3-sul*	cello pizzicato with pp/mf/ff velocity layers, C G D A (replaces cello-pizz)	gated
 viola-pizz-vel	viola-pizz3-sul*	viola pizzicato with pp/mf/ff velocity layers, C G D A (replaces viola-pizz)	gated
-violin-pizz	violin-pizz-sul*	violin pizzicato, position walks G D A E	gated
+violin-pizz-vel	violin-pizz3-sul*	violin pizzicato with pp/mf/ff velocity layers, G D A E (replaces violin-pizz)	gated
 # mallets
 marimba-iowa	marimba-iowa	marimba
 vibraphone-iowa	vibraphone-iowa	vibraphone
