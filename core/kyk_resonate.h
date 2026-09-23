@@ -780,8 +780,17 @@ struct BurstPlayer
        on a world with one take — a soft hit is a filtered attack, not a
        quiet copy of the hard one (commuted synthesis: the hammer does not
        commute) */
-    void Strike(const uint8_t* block, float swing, float rate = 1.0f, float lp = 0.0f, uint32_t head = 10u)
+    /* played_len / played_fade, when given, receive the length and the fade
+       (samples, at the burst's own rate) of the takes this strike plays,
+       weighted as they are mixed: the modes must come in under the fade of
+       the attack that SOUNDS, and they were timed from a point's first take
+       whichever one velocity picked — a hole at 70-80 ms on the VCSL
+       grand's C5 at full velocity, where the hardest take is shorter than
+       the softest, and the two doubling where it is longer */
+    void Strike(const uint8_t* block, float swing, float rate = 1.0f, float lp = 0.0f, uint32_t head = 10u,
+                float* played_len = nullptr, float* played_fade = nullptr)
     {
+        float plen = 0.f, pfade = 0.f, pw = 0.f;
         /* what is still playing from the last strike plays to its end —
            the two most recent slots — rather than being cut, which was a
            click on every fast note */
@@ -821,10 +830,15 @@ struct BurstPlayer
                     q2.n = n; q2.pos = 0.0f; q2.rate = rate > 0.0f ? rate : 1.0f; q2.lp = lp; q2.z = 0.0f;
                     q2.gain = wgt[i] * sc / 32767.f * (ref[i] > 0.f ? swing / ref[i] : 1.f);
                     q2.g = 1.f; q2.d = damp;
+                    uint16_t fd = (uint16_t)(n / 3);
+                    if(head >= 12u) std::memcpy(&fd, pick[i] + 10, 2);
+                    plen += wgt[i] * (float)n; pfade += wgt[i] * (float)fd; pw += wgt[i];
                 }
             }
         }
         for(int k = 0; k < keep; k++) slot[active++] = old[k];
+        if(played_len) *played_len = pw > 0.f ? plen / pw : -1.f;
+        if(played_fade) *played_fade = pw > 0.f ? pfade / pw : -1.f;
     }
 
     void Process(float* io, int frames)
@@ -999,9 +1013,6 @@ struct ResonatorVoice
            modes come in under that fade: the strike bank's ramp is the
            burst's fade, at the burst's rate, where there is a burst — 3 ms
            where there is none. Nothing to cancel (docs/holistic-math.md) */
-        const float ramp = burst_fade ? (float)burst_fade / (burst_rate > 0.f ? burst_rate : 1.f) : 0.003f * sr;
-        const float lead = burst_fade ? (float)(burst_len - burst_fade) / (burst_rate > 0.f ? burst_rate : 1.f) : 0.f;
-        bank.Strike(s, lead, ramp);
         /* one take: the attack is filtered by velocity, a one-pole with its
            corner from 1 kHz at nothing to 13 kHz at full — the hammer's felt
            and the finger's pad are softer the slower they arrive. Takes
@@ -1019,7 +1030,20 @@ struct ResonatorVoice
            divided by the read rate */
         if(burst_rate > 1.05f && body_top > 0.f) { const float c = body_top / burst_rate; if(c < fc) fc = c; }
         const float lp = fc > 0.4f * sr ? 0.f : 1.f - std::exp(-6.2831853f * fc / sr);
-        burst.Strike(bursts, s, burst_rate, lp, burst_head);
+        float plen = -1.f, pfade = -1.f;
+        burst.Strike(bursts, s, burst_rate, lp, burst_head, &plen, &pfade);
+        /* the modes come in under the fade of the attack that is playing
+           (BurstPlayer::Strike): the length and fade of the takes it picked,
+           weighted as it mixes them. One take alone — every world fitted
+           from one, and a layered one at a take's own swing — is exactly
+           that take's; the point's first take, which this used to take
+           whatever played, is kept only where nothing did */
+        const float blen = burst_fade && plen >= 0.f ? plen : (float)burst_len;
+        const float bfade = burst_fade && pfade >= 0.f ? pfade : (float)burst_fade;
+        const float rr = burst_rate > 0.f ? burst_rate : 1.f;
+        const float ramp = burst_fade ? bfade / rr : 0.003f * sr;
+        const float lead = burst_fade ? (blen - bfade) / rr : 0.f;
+        bank.Strike(s, lead, ramp);
         wash.Strike(s, lead + ramp);
     }
     void Process(float* out, int frames, const float* drive = nullptr, float g = 0.f)
