@@ -149,7 +149,13 @@ done
 # said we may redistribute. The check is a reminder, not an audit: it cannot
 # tell whether an entry is true, only that somebody had to write one.
 echo "== fixture sources =="
-for f in tests/data/*.kykm; do
+# every TRACKED .kykm, not only the ones in tests/data. Tracked is the scope
+# because tracked is what gets published, and a world dropped anywhere else
+# in the tree would have gone out with it: ModalBake's first pass at this
+# swept .wav and left seventeen worlds committed, because a world looks like
+# numbers and is a recording. Without git (a tarball) it falls back to the
+# whole tree, which over-reports rather than under-reports.
+for f in $(git ls-files '*.kykm' 2>/dev/null || find . -name '*.kykm' -not -path './build/*'); do
     [ -e "$f" ] || continue
     if grep -q "\`$(basename "$f")\`" tests/data/SOURCES.md; then
         echo "  ok   $(basename "$f") is in SOURCES.md"
