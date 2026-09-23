@@ -17,7 +17,8 @@ word, and after a night of re-exports nobody could say which bass was on it.
 So the card gets at most --max (24) resonator worlds, leaving room for eight
 of the player's own, and every world is checked before it is copied:
 
-  - it exists and was built after every set it came from was fitted
+  - it exists (a set refitted after the world was built is noted, not
+    a reason to leave a world the player knows off the card)
   - its name, the file name less .kykm, is at most 16 characters
   - it fits a 4 MB region (kResRegionBytes)
   - every set it came from passes tools/gate.py; a failing world is left
@@ -28,6 +29,12 @@ of the player's own, and every world is checked before it is copied:
 
     python3 tools/card.py
     python3 tools/card.py --force xylophone-iowa
+    python3 tools/card.py --out out/card-clean --prefer out/worlds-clean \
+        --prefer-only bass-pizz,cello-pizz,viola-pizz,violin-pizz,guitar-strings,piano-salamander,piano-vcsl,wurli
+
+--prefer takes the named worlds (all of them, without --prefer-only) from
+another folder, such as the export --clean results in out/worlds-clean, and
+the rest from out/worlds: a second card to A/B against the first.
 """
 import argparse, glob, os, shutil, sys, time
 
@@ -44,6 +51,8 @@ def main():
     ap.add_argument('--out', default=os.path.join(ROOT, 'out', 'card'))
     ap.add_argument('--force', default='', help='comma-separated worlds to copy even if a source fails the gate')
     ap.add_argument('--max', type=int, default=24)
+    ap.add_argument('--prefer', default='', help='a folder to take worlds from first (e.g. out/worlds-clean)')
+    ap.add_argument('--prefer-only', default='', help='comma-separated worlds --prefer applies to (default all)')
     a = ap.parse_args()
     force = set(w for w in a.force.split(',') if w)
     g = argparse.Namespace(loss=1.5, ring=3.0, modes=8, share=0.10)
@@ -63,6 +72,11 @@ def main():
     kept, lines = [], []
     for world, srcs, note, gated in rows:
         path = os.path.join(ROOT, 'out', 'worlds', world + '.kykm')
+        pref = [w for w in a.prefer_only.split(',') if w]
+        alt = os.path.join(ROOT, a.prefer, world + '.kykm') if a.prefer else ''
+        from_alt = bool(alt) and os.path.exists(alt) and (not pref or world in pref)
+        if from_alt:
+            path = alt
         why = []
         if not os.path.exists(path):
             print('  %-18s not built yet' % world)
@@ -77,7 +91,7 @@ def main():
                           if os.path.exists(os.path.join(d, 'fits.tsv'))))
         if srcs and not dirs:
             why.append('no fitted set matches %s' % ','.join(srcs))
-        grades = []
+        grades, notes = [], []
         for d in dirs:
             n, bad, graded = gate.grade(d, g)
             if graded is None:
@@ -93,8 +107,12 @@ def main():
                 grades.append('%s %d/%d bad' % (os.path.basename(d), nbad, n))
                 if nbad > g.share * n:
                     why.append('%s fails the gate (%d of %d points bad)' % (os.path.basename(d), nbad, n))
-            if os.path.getmtime(os.path.join(d, 'fits.tsv')) > os.path.getmtime(path):
-                why.append('%s refitted after this world was built' % os.path.basename(d))
+            # said, not left off: a world the player has been playing is
+            # not dropped because its set has moved on since (tonight's
+            # refits left the pianos off the card that way); CONTENTS says
+            # a re-export would differ
+            if not from_alt and os.path.getmtime(os.path.join(d, 'fits.tsv')) > os.path.getmtime(path):
+                notes.append('%s refitted since' % os.path.basename(d))
         built = time.strftime('%m-%d %H:%M', time.localtime(os.path.getmtime(path)))
         if why and world not in force:
             print('  %-18s LEFT OFF: %s' % (world, '; '.join(why)))
@@ -105,12 +123,12 @@ def main():
             continue
         shutil.copy2(path, os.path.join(dest, world + '.kykm'))
         kept.append(world)
-        flag = '  (forced past: %s)' % '; '.join(why) if why else ''
+        flag = ('  (forced past: %s)' % '; '.join(why) if why else '') + ('  (%s)' % '; '.join(notes) if notes else '')
         print('  %-18s %7.0f KB  built %s  %s%s' % (world, size / 1e3, built, note, flag))
-        lines.append('%-18s %7.0f KB  built %s  %s  [%s]%s' % (world, size / 1e3, built, note, ', '.join(grades) or 'no sets named', flag))
+        lines.append('%-18s %7.0f KB  built %s  %s%s  [%s]%s' % (world, size / 1e3, built, note, '  (CLEANED: from ' + a.prefer + ')' if from_alt else '', ', '.join(grades) or 'no sets named', flag))
 
     with open(os.path.join(a.out, 'CONTENTS.txt'), 'w') as c:
-        c.write('Kyklophoria card worlds, assembled %s by tools/card.py from manifests/card.tsv\n' % time.strftime('%Y-%m-%d %H:%M'))
+        c.write('Kyklophoria card worlds, assembled %s by tools/card.py from manifests/card.tsv%s\n' % (time.strftime('%Y-%m-%d %H:%M'), ('; worlds marked CLEANED come from ' + a.prefer) if a.prefer else ''))
         c.write('Copy kyklophoria/*.kykm into the card\'s /kyklophoria, replacing the .kykm files there.\n\n')
         c.write('\n'.join(lines) + '\n')
     print('%d worlds in %s' % (len(kept), dest))
