@@ -17,6 +17,38 @@
 
 namespace kyk {
 
+/* The last thing before the codec: a stereo-linked peak limiter and a hard
+ * clamp. Transparent below its ceiling — the gain is exactly 1 there, so
+ * every world that fitted inside full scale renders bit for bit as it did
+ * (the wavetable worlds' headroom is still the gain's job; see Engine). It
+ * exists for what does not fit: a resonator struck at audio rate is a
+ * hammer three hundred times a second, and the ring piles up past full
+ * scale — 1.6 on the cello, measured with J4 and v/oct both at audio rate —
+ * which the module turned into a scream "at very unsafe levels" (Combust).
+ * Instant attack (the gain falls to the ceiling over the sample that would
+ * cross it, so nothing overshoots), 80 ms release; a sample that is not a
+ * number is silence. */
+struct Limiter
+{
+    float g, rel, ceil;
+    void Init(float sr) { g = 1.f; rel = 1.f - std::exp(-1.f / (0.08f * (sr > 0.f ? sr : 48000.f))); ceil = 0.98f; }
+    void Process(float* l, float* r, int n)
+    {
+        for(int i = 0; i < n; i++)
+        {
+            float a = l[i], b = r[i];
+            if(!(a == a) || !(b == b)) { l[i] = r[i] = 0.f; continue; }   /* NaN */
+            const float fa = std::fabs(a), fb = std::fabs(b), pk = fa > fb ? fa : fb;
+            if(g < 1.f) { g += (1.f - g) * rel; if(g > 1.f - 1e-6f) g = 1.f; }
+            if(pk * g > ceil) g = ceil / pk;
+            if(g < 1.f) { a *= g; b *= g; }
+            l[i] = a > 1.f ? 1.f : a < -1.f ? -1.f : a;
+            r[i] = b > 1.f ? 1.f : b < -1.f ? -1.f : b;
+        }
+    }
+    float Reduction() const { return g; }   /* 1 = untouched */
+};
+
 class StereoEngine
 {
 public:
@@ -60,6 +92,7 @@ public:
         for(int a = 0; a < kMaxN; a++) { c_[a] = 0.5f; target_[a] = 0.5f; pc_[a] = 0.5f; payAt_[a] = 1e9f; }
         for(int j = 0; j < kMaxP; j++) payload_[j] = 0.f;
         stereo_ = false;
+        lim.Init(sr);
     }
 
     void SetControl(const float* c, int n)
@@ -234,6 +267,12 @@ public:
             }
         }
         stereo_ = stereo;
+        /* a resonator sits 6 dB up: its peaks are a struck note's, 0.2 to
+           0.4 at the wavetables' gain, some 10 dB under them ("a bit quiet
+           usually compared to other modules" — Combust), and what a pile of
+           strikes pushes past full scale the limiter now takes */
+        if(world_->IsResonate()) for(int i = 0; i < n; i++) { outL[i] *= kResTrim; outR[i] *= kResTrim; }
+        lim.Process(outL, outR, n);
     }
 
     /* ── telemetry ──────────────────────────────────────────────────────── */
@@ -255,6 +294,11 @@ private:
     float        kc_[kMaxN] = {0,0,0,0,0,0};   /* c_ plus the falling body */
     float        payload_[kMaxP];
     bool         stereo_ = false;
+    Limiter      lim;
+public:
+    static constexpr float kResTrim = 2.f;
+    float LimiterGain() const { return lim.Reduction(); }
+private:
 };
 
 } // namespace kyk

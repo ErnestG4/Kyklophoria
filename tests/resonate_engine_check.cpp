@@ -596,6 +596,30 @@ int main()
         printf("  exciter: nothing in, the ring keeps C3 (%.0f); driven, it follows (%.0f); a strike waiting, it holds (%.0f)\n", quiet, driven, held);
     }
 
+    /* 18. the output never passes the ceiling: struck at audio rate — J4
+       and v/oct both driven by oscillators, a strike every five blocks at
+       wherever the pitch is, the decay near its top — the ring piles up
+       past full scale, and the limiter takes it (it has to: its gain falls
+       below 1, so the check is not passing on a render that fitted anyway) */
+    {
+        StereoEngine se; se.Init(&piano, sr); se.L.TuneFromControl(true); se.L.SetPolyphony(4);
+        const float c[kMaxN] = {0.5f, 1.f, 0.95f, 0.5f};
+        se.SetControl(c, 4); se.SnapControl();
+        std::vector<float> l(24), r(24);
+        float pk = 0.f, gmin = 1.f; bool finite = true;
+        for(int b = 0; b < 4000; b++)
+        {
+            se.SetF0(261.63f * std::exp2(2.f * std::sin(6.2831853f * 100.f * b * 24 / sr)));
+            if(b % 5 == 0) se.Strike(1.f);
+            se.Process(l.data(), r.data(), 24);
+            for(int i = 0; i < 24; i++) { finite = finite && std::isfinite(l[i]); pk = std::fmax(pk, std::fabs(l[i])); }
+            gmin = std::fmin(gmin, se.LimiterGain());
+        }
+        CHECK(finite && pk <= 0.98f + 1e-6f, "the output passed the ceiling under audio-rate strikes: %.3f", pk);
+        CHECK(gmin < 0.9f, "the audio-rate strikes never reached the limiter (gain %.3f): the check proves nothing", gmin);
+        printf("  limiter: audio-rate strikes peak %.3f with the gain down to %.2f\n", pk, gmin);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }

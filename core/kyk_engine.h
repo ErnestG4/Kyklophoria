@@ -488,6 +488,19 @@ public:
                     const int m = n - i < 48 ? n - i : 48;
                     const bool drive = v == ractive_ && exciter_ && exgain_ > 0.f;
                     rvoices_[v].Process(tmp, m, drive ? exciter_ + i : nullptr, exgain_);
+                    /* a voice that has gone to infinity or NaN stays there —
+                       a linear bank's state is fed back forever — so it is
+                       reset, not played: silent until its next strike builds
+                       it, where a NaN left in reached the codec every block */
+                    float sum = 0.f;
+                    for(int k = 0; k < m; k++) sum += tmp[k];
+                    if(!(sum - sum == 0.f))
+                    {
+                        rvoices_[v].Init();
+                        rvoices_[v].cap = rpoly_ > 1 ? ResonatorBank::kMax / rpoly_ : 0;
+                        rvnote_[v] = 1e9f; rvdirty_[v] = false;
+                        continue;
+                    }
                     for(int k = 0; k < m; k++) out[i + k] += tmp[k];
                 }
             }
