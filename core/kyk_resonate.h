@@ -293,7 +293,22 @@ struct ResonatorBank
                 {
                     if(!has[j] || claimed[j]) continue;
                     const float wj = w0[j] * ratio;
-                    const float q = wj > w ? wj / w : w / wj;
+                    /* most candidates are nowhere near: rejected on two
+                       multiplies, where every one of them was a divide.
+                       On the M7 a divide is fourteen cycles the compare
+                       then waits on, and the loop the compiler emits is
+                       some thirty cycles a candidate with it and under
+                       twenty without — 44 x 44 on a piano point, about a
+                       quarter of a block's budget at every strike before
+                       this (an estimate from the emitted code, not a
+                       measurement on the module). The margin is a
+                       hundred times the float's rounding, so what it
+                       rejects has hi / lo > best exactly and the divide
+                       would have rejected it too: the same mode is
+                       chosen, bit for bit */
+                    const float hi = wj > w ? wj : w, lo = wj > w ? w : wj;
+                    if(hi > best * lo * 1.0001f) continue;
+                    const float q = hi / lo;
                     if(q < best) { best = q; from = j; }
                 }
             }
@@ -850,6 +865,11 @@ struct NoiseLayer
     float x1[kBands], x2[kBands], y1[kBands], y2[kBands];
     float env[kBands], fall[kBands], level[kBands];
     float gain[kBands], gain_sr;   /* each band-pass's noise gain, measured once per sample rate */
+    /* the gains depend on the sample rate alone, so every voice shares one
+       measurement (Set). Constant-initialised, as fastmath::T() is: no
+       guard, no constructor, nothing written before main() */
+    struct SharedGains { float gain[kBands]; float sr; };
+    static SharedGains& Shared() { static SharedGains s{}; return s; }
     float rise_n, rise_len;        /* the rise at a strike, in samples */
     uint32_t rng;
     bool  on;
@@ -880,17 +900,29 @@ struct NoiseLayer
                note-on, on the control thread */
             if(gain_sr != sr)
             {
-                /* once per sample rate, not per Set: 8 x 2048 MACs is 35 us
-                   on the M7, and Set runs on the audio thread at a retune */
-                float g = 0.f, u1 = 0.f, u2 = 0.f, v1 = 0.f, v2 = 0.f;
-                for(int i = 0; i < 2048; i++)
+                /* once per sample rate, not per Set, and not per voice
+                   either: the filters are the same eight on every voice,
+                   so the gains are measured once and shared. Per voice it
+                   was 8 x 2048 MACs on each voice's first build after
+                   every world load — the first strike on voices two to
+                   four, on the audio thread, some 200 000 instructions
+                   counted on the desktop where the block's own work is
+                   15 000: an overrun each, however the M7 schedules it */
+                SharedGains& sh = Shared();
+                if(sh.sr != sr)
                 {
-                    const float u = i == 0 ? 1.f : 0.f;
-                    const float v = b0[k] * (u - u2) - a1[k] * v1 - a2[k] * v2;
-                    u2 = u1; u1 = u; v2 = v1; v1 = v;
-                    g += v * v;
+                    float g = 0.f, u1 = 0.f, u2 = 0.f, v1 = 0.f, v2 = 0.f;
+                    for(int i = 0; i < 2048; i++)
+                    {
+                        const float u = i == 0 ? 1.f : 0.f;
+                        const float v = b0[k] * (u - u2) - a1[k] * v1 - a2[k] * v2;
+                        u2 = u1; u1 = u; v2 = v1; v1 = v;
+                        g += v * v;
+                    }
+                    sh.gain[k] = std::sqrt(g);
+                    if(k == kBands - 1) sh.sr = sr;
                 }
-                gain[k] = std::sqrt(g);
+                gain[k] = sh.gain[k];
                 if(k == kBands - 1) gain_sr = sr;
             }
             const float share = gain[k];
