@@ -87,11 +87,13 @@ public:
            Combust: "the strike velocity gets slightly harder as the strike
            frequency increases... I meant how fast you're playing". The
            density of strikes is a leaky count with a one-second time
-           constant, so it reads as strikes a second; at eight a second
-           and above the strike is vtrack_ x 0.2 harder, nothing at rest.
-           Off by default */
+           constant, so it reads as strikes a second; at six a second and
+           above the strike is vtrack_ x 0.5 harder, nothing at rest. It was
+           0.2 at eight: at four notes a second that was 0.1 of velocity at
+           full, 2 dB on a layered world, and "doesn't seem to be doing
+           anything" (Combust). Off by default */
         float v = velocity01;
-        if(vtrack_ != 0.f) { const float d = rdens_ > 8.f ? 1.f : rdens_ / 8.f; v += vtrack_ * 0.2f * d; v = v > 1.f ? 1.f : v; }
+        if(vtrack_ != 0.f) { const float d = rdens_ > 6.f ? 1.f : rdens_ / 6.f; v += vtrack_ * 0.5f * d; v = v > 1.f ? 1.f : v; }
         rdens_ += 1.f;
         rlast_v_ = v;
         rvoices_[ractive_].Strike(v);
@@ -147,7 +149,7 @@ public:
        pitch by the semitone, which is a quantiser. Unlocked, the ring
        follows the pitch by the cent: a bend, for whoever wants one. */
     void SetPitchLock(bool on) { if(pitch_lock_ != on) { pitch_lock_ = on; rvnote_[ractive_] = 1e9f; } }   /* re-read: locked, the nearest semitone; free, the cent */
-    void SetVelocityTrack(float amount) { vtrack_ = amount; }   /* 0..1: how much harder the strike gets with fast playing (0.2 of velocity at full, at eight strikes a second) */
+    void SetVelocityTrack(float amount) { vtrack_ = amount; }   /* 0..1: how much harder the strike gets with fast playing (0.5 of velocity at full, at six strikes a second) */
     float VelocityTrack() const { return vtrack_; }
     float LastStrikeVelocity() const { return rlast_v_; }
     bool PitchLock() const { return pitch_lock_; }

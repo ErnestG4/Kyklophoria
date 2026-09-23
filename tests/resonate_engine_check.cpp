@@ -463,9 +463,9 @@ int main()
 
     /* 14. the strike harder with fast playing: ten strikes at ten a
        second at velocity 0.5 — with the track at full the tenth is made
-       harder (0.5 + 0.2 x the density's share of eight a second), the
-       first not at all; with the track off every one is 0.5. And a
-       second's rest lets the density leak back */
+       harder (0.5 + 0.5 x the density's share of six a second), the
+       first not at all; with the track off every one is 0.5. And three
+       seconds' rest lets the density leak back to a trace */
     {
         auto run10 = [&](float track) {
             Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetVelocityTrack(track); e.SetF0(261.63f);
@@ -475,8 +475,8 @@ int main()
             return std::make_tuple(first, tenth, e.LastStrikeVelocity()); };
         const auto on = run10(1.f), off = run10(0.f);
         CHECK(std::fabs(std::get<0>(on) - 0.5f) < 1e-6f, "the first strike was tracked: %.3f", std::get<0>(on));
-        CHECK(std::get<1>(on) > 0.62f && std::get<1>(on) <= 0.7f, "the tenth strike at ten a second is %.3f (0.62..0.7 wanted)", std::get<1>(on));
-        CHECK(std::get<2>(on) < 0.52f, "after three seconds' rest the strike is still tracked: %.3f", std::get<2>(on));
+        CHECK(std::get<1>(on) > 0.9f && std::get<1>(on) <= 1.f, "the tenth strike at ten a second is %.3f (0.9..1 wanted)", std::get<1>(on));
+        CHECK(std::get<2>(on) < 0.54f, "after three seconds' rest the strike is still tracked: %.3f", std::get<2>(on));
         CHECK(std::get<1>(off) == 0.5f, "with the track off the tenth strike is %.3f", std::get<1>(off));
         printf("  dig in: ten strikes a second take the tenth from 0.5 to %.2f; rested, %.2f; off, %.2f\n", std::get<1>(on), std::get<2>(on), std::get<1>(off));
     }

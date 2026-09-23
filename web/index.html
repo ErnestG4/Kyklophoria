@@ -1502,9 +1502,9 @@ function renderModelChips() {
        page doesn't seem to have any impact") */
     for (const e of positionSlider(1, 'trigger vel', 'the velocity J4\'s trigger and a note jump strike at: axis 1, Play page P4 plus J6')) box.appendChild(e);
     /* the strike a little harder the faster the playing: 0 for none, at
-       full a fifth of the velocity added at eight strikes a second */
+       full half the velocity added at six strikes a second */
     const tlab = dimText('dig in', '0 0 0 8px');
-    const t = document.createElement('input'); t.type = 'range'; t.min = 0; t.max = 255; t.value = velTrack; t.title = 'the strike harder the faster the playing: up to 0.2 of velocity added at eight strikes a second and above, nothing at rest';
+    const t = document.createElement('input'); t.type = 'range'; t.min = 0; t.max = 255; t.value = velTrack; t.title = 'the strike harder the faster the playing: at full, up to 0.5 of velocity added at six strikes a second and above, nothing at rest';
     t.disabled = !link || !live;
     t.oninput = () => { velTrack = t.value | 0; act(MVL.ACT.velTrack, [velTrack], 'track'); };
     box.appendChild(tlab); box.appendChild(t);
@@ -3727,8 +3727,12 @@ function drawModel() {
   { const { w: W, h: H } = boxOf(ma); fit(ma); drawResonateSpace(W, H, max); }
   { const { w: W, h: H } = boxOf(mm); fit(mm); drawModes(mmx, 30, 26, W - 60, H - 26); }
   setText('pitchNote', pitchNoteText());
-  /* the axes under the module's pots: the sliders show where they are */
-  if (tel && tel.ctl && moduleOwns()) for (const a in axisSliders) { const s = axisSliders[a]; if (s.disabled && a < tel.ctl.length) s.value = Math.round(1000 * heardAxis(+a)); }
+  /* the axes under the module's pots: a slider the page does not own is a
+     readout, and follows the telemetry every frame. This waited on the
+     panel's descriptor (moduleOwns), and where that did not arrive the
+     sliders never moved (Combust: "Moving knobs does the right thing but
+     doesn't change sliders on the model page") */
+  if (tel && tel.ctl) for (const a in axisSliders) { const s = axisSliders[a]; if (s.disabled && +a < tel.ctl.length) s.value = Math.round(1000 * heardAxis(+a)); }
   /* what the module says about the voices and the lock, and which member
      it plays, can change under a pot: the chips follow */
   const r = reso;
