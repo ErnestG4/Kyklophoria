@@ -27,7 +27,7 @@ banjo	banjo	banjo
 mandolin	mandolin	mandolin
 bass-pizz	bass-pizz-sul*	double bass pizzicato, position walks E A D G	gated
 cello-pizz	cello-pizz-sul*	cello pizzicato, position walks C G D A	gated
-viola-pizz	viola-pizz-sul*	viola pizzicato, position walks the strings
+viola-pizz	viola-pizz-sul*	viola pizzicato, position walks C G D A	gated
 violin-pizz	violin-pizz-sul*	violin pizzicato, position walks G D A E	gated
 # mallets
 marimba-iowa	marimba-iowa	marimba
