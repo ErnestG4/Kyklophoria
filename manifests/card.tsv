@@ -26,7 +26,7 @@ guitar-strings	guitar-sul*	guitar, position walks the six strings
 banjo	banjo	banjo
 mandolin	mandolin	mandolin
 bass-pizz	bass-pizz-sul*	double bass pizzicato, position walks E A D G	gated
-cello-pizz	cello-pizz-sul*	cello pizzicato, position walks the strings
+cello-pizz	cello-pizz-sul*	cello pizzicato, position walks C G D A	gated
 viola-pizz	viola-pizz-sul*	viola pizzicato, position walks the strings
 violin-pizz	violin-pizz-sul*	violin pizzicato, position walks G D A E	gated
 # mallets
