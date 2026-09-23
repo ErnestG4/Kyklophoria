@@ -464,6 +464,11 @@ world*.
 
 ## What is not done, and why
 
+See `docs/modal-plan-2026-09-22.md` for the current state and the jobs in
+order — the string families (built), the thin-point refit (the blocker), the
+mandolin and banjo as they actually are, the three-way render, the waveguide
+prototype, and two runtime changes that were tried and measured worse.
+
 The oscillator into the bank, above; the waveguide above the modes for
 the bass notes' cliff (`lit-runtime.md`); a body row transposed by v/oct
 (a question for Combust); the fitter's refit (`roadmap.md` step 8); the
