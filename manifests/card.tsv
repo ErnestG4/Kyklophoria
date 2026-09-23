@@ -1,0 +1,36 @@
+# What goes on the module's SD card: world <tab> the out/fit sets it was
+# built from (globs, comma-separated) <tab> a note for CONTENTS.txt.
+# tools/card.py assembles out/card/ from this; see its docstring.
+#
+# Off the card, and why (2026-09-22): the ARCO string worlds (violin-, viola-,
+# cello-sul* and their -strings families; tools/gate.py fails 162 of their 210
+# points: a bow is not a strike) and the 12-note Philharmonia bass (the
+# "chimes inside the bass"), all replaced by the pizzicato fits below; perc
+# (10 of 19 points past the gate). pianos, electric, strings: families being
+# re-levelled (they peaked 1.2-1.8 at four voices), back when they pass.
+#
+# keys
+piano	piano	the grand that was "heavenly" (34 points)
+piano-iowa	piano-iowa	Iowa grand, 88 notes, ff
+piano-salamander	piano-salamander	Salamander grand, 4 of its 16 velocity layers
+piano-vcsl	piano-vcsl	VCSL grand, 3 velocity layers
+wurli	wurli	Wurlitzer
+ep	ep	electric piano
+ep-vel	ep-vel	electric piano, velocity through the pickup
+tine-vel	tine-vel	Rhodes tine from Epi, velocity
+reed-vel	reed-vel	Wurlitzer reed from Epi, velocity
+# plucked
+guitar	guitar	guitar
+# guitar-strings	guitar-sul*	guitar, position walks the six strings (back when re-levelled: it peaked 1.78 at four voices)
+banjo	banjo	banjo
+mandolin	mandolin	mandolin
+bass-pizz	bass-pizz-sul*	double bass pizzicato, position walks the strings
+cello-pizz	cello-pizz-sul*	cello pizzicato, position walks the strings
+viola-pizz	viola-pizz-sul*	viola pizzicato, position walks the strings
+violin-pizz	violin-pizz-sul*	violin pizzicato, position walks the strings
+# mallets
+marimba-iowa	marimba-iowa	marimba
+vibraphone-iowa	vibraphone-iowa	vibraphone
+bells-iowa	bells-iowa	orchestra bells
+crotales-iowa	crotales-iowa	crotales
+xylophone-iowa	xylophone-iowa	xylophone
