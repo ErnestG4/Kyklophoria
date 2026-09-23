@@ -22,10 +22,10 @@ tine-vel	tine-vel	Rhodes tine from Epi, velocity
 reed-vel	reed-vel	Wurlitzer reed from Epi, velocity
 # plucked
 guitar	guitar	guitar
-guitar-strings	guitar-sul*	guitar, position walks the six strings
+guitar-strings	guitar2-sul*	guitar, position walks E A D G B E	gated
 banjo	banjo	banjo
 mandolin	mandolin	mandolin
-bass-pizz	bass-pizz-sul*	double bass pizzicato, position walks E A D G	gated
+bass-pizz	bass-pizz2-sul*	double bass pizzicato, position walks E A D G	gated
 cello-pizz	cello-pizz-sul*	cello pizzicato, position walks C G D A	gated
 viola-pizz	viola-pizz-sul*	viola pizzicato, position walks C G D A	gated
 violin-pizz	violin-pizz-sul*	violin pizzicato, position walks G D A E	gated
