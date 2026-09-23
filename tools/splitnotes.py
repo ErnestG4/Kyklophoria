@@ -53,6 +53,39 @@ def parse(name):
     return lo, hi, string, dyn
 
 
+def articulation(name):
+    """arco, pizz, or None: Iowa's strings say which in the name, and a
+    directory that mixes them plays a bowed note beside a plucked one"""
+    parts = os.path.basename(name).lower().split('.')
+    return next((p for p in parts if p in ('arco', 'pizz')), None)
+
+
+def true_start(x, sr, s0, lo, drop_db=40.0):
+    """Back from a detected onset to where the note begins. The onset is
+    wherever the envelope rose fastest — up a bow's attack that is 10-120 ms
+    in, and when the pluck's own segment was let go (too short, or sharp at
+    the attack) it is a swell in the ring, up to a second after the pluck.
+    Walk back in 10 ms frames to the last one under the note's peak less
+    drop_db (the silence before it), and failing that — legato, the last note
+    still sounding — to the quietest frame on the way, which is the change
+    of note. Never before lo."""
+    hop = int(0.01 * sr)
+    seg = x[s0:s0 + sr]
+    if len(seg) < hop:
+        return s0
+    pk = max(np.sqrt(np.mean(seg[i:i + hop] ** 2)) for i in range(0, len(seg) - hop + 1, hop))
+    floor = pk * 10 ** (-drop_db / 20)
+    j, best, at = s0, float('inf'), s0
+    while j - hop >= lo:
+        lv = np.sqrt(np.mean(x[j - hop:j] ** 2))
+        if lv < floor:
+            return j - hop                       # one quiet frame kept as the margin
+        if lv < best:
+            best, at = lv, j - hop
+        j -= hop
+    return at
+
+
 def onsets(x, sr, floor_db=-50.0, rise_db=2.5, min_gap=0.18):
     """Where the notes start: every rise in the envelope above the floor,
     at least min_gap apart. Generous on purpose — the labels come from the
@@ -80,6 +113,7 @@ def main():
     ap.add_argument('outdir'); ap.add_argument('files', nargs='+')
     ap.add_argument('--per-string', action='store_true', help='a directory per string')
     ap.add_argument('--dynamic', default='', help='only this dynamic (pp, mf, ff)')
+    ap.add_argument('--articulation', default='', help='only this articulation (arco, pizz)')
     ap.add_argument('--max-seconds', type=float, default=6.0)
     a = ap.parse_args()
     made = bad = 0
@@ -88,6 +122,9 @@ def main():
         if lo is None:
             print('  %-44s no note range in the name' % os.path.basename(path)); bad += 1; continue
         if a.dynamic and (dyn or '').lower() != a.dynamic.lower():
+            continue
+        art = articulation(path)
+        if a.articulation and (art or '') != a.articulation.lower():
             continue
         want = hi - lo + 1
         x, sr = sf.read(path, always_2d=True); x = x.mean(axis=1)
@@ -115,16 +152,32 @@ def main():
                 continue
             if picked and m <= picked[-1][0]:
                 continue
-            picked.append((m, seg))
+            picked.append((m, seg, s0, e0))
         off = []
         if len(picked) != want:
             off.append('%d of %d notes found' % (len(picked), want))
-        for m, seg in picked:
+        prev = 0
+        for m, seg, s0, e0 in picked:
             nm = '%s%s.%s.wav' % (NAMES[m % 12].replace('s', '#'), m // 12 - 1, dyn or 'x')
             out = os.path.join(d, nm)
+            # the note's own start: back over the attack the onset skipped,
+            # at most 1.5 s and never into the last note kept
+            st = true_start(x, sr, s0, max(prev, s0 - int(1.5 * sr)))
+            prev = s0 + int(0.25 * sr)
+            seg = x[st:min(e0, st + int(a.max_seconds * sr))]
+            # one articulation a directory: a note already there from another
+            # take is said, not silently kept (stage two filled the arco sets'
+            # gaps with pizzicato this way: 22 of 70 violin points)
+            man = os.path.join(d, 'splits.tsv')
+            rows = dict(l.rstrip('\n').split('\t', 1) for l in open(man)) if os.path.exists(man) else {}
             if os.path.exists(out):
+                was = rows.get(nm, '')
+                if was and was.split('\t')[-1] != (art or '-'):
+                    print('  %-44s %s is already there from %s; not mixed in' % (os.path.basename(path), nm, was))
                 continue
             sf.write(out, seg, sr)
+            with open(man, 'a') as o:
+                o.write('%s\t%s\t%d\t%d\t%s\n' % (nm, os.path.basename(path), st, st - (s0 - int(0.01 * sr)), art or '-'))
             made += 1
         if off:
             print('  %-44s %s' % (os.path.basename(path), '; '.join(off)))
