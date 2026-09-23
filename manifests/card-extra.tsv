@@ -16,3 +16,4 @@ tubular	tubular2	tubular bells, 7 notes; clicks	gated
 handchimes	handchimes2	hand chimes, 19 notes; clicks	gated
 upright-yamaha	upright-yamaha2	Yamaha upright piano, 10 notes, three layers; clicks	gated
 piano-vcsl-nosus	piano-vcsl-nosus	the VCSL Steinway with the sustain pedal UP (piano-vcsl is pedal down): no sympathetic strings, so the notes that died early there hold their ring (D5 within 2 dB of its recording to 4 s)	gated
+xylophone-vel	xylophone-vel	xylophone, rosewood, pp/mf/ff layers: every note in tune, no clicks (the old xylophone-iowa failed the gate)	gated

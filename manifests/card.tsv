@@ -35,8 +35,7 @@ cello-pizz-vel	cello-pizz3-sul*	cello pizzicato with pp/mf/ff velocity layers, C
 viola-pizz-vel	viola-pizz3-sul*	viola pizzicato with pp/mf/ff velocity layers, C G D A (replaces viola-pizz)	gated
 violin-pizz-vel	violin-pizz3-sul*	violin pizzicato with pp/mf/ff velocity layers, G D A E (replaces violin-pizz)	gated
 # mallets
-marimba-iowa	marimba-iowa	marimba
-vibraphone-iowa	vibraphone-iowa	vibraphone
-bells-iowa	bells-iowa	orchestra bells
+marimba-vel	marimba-vel	marimba, yarn mallets, pp/mf/ff layers (replaces marimba-iowa, which mixed rolls and dead strokes in)	gated
+vibraphone-vel	vibraphone-vel	vibraphone, sustained, pp/mf/ff layers (replaces vibraphone-iowa)	gated
+bells-vel	bells-vel	orchestra bells, plastic mallet, pp/mf/ff layers (replaces bells-iowa)	gated
 crotales-iowa	crotales-iowa	crotales
-xylophone-iowa	xylophone-iowa	xylophone
