@@ -6,8 +6,8 @@
 # cello-sul* and their -strings families; tools/gate.py fails 162 of their 210
 # points: a bow is not a strike) and the 12-note Philharmonia bass (the
 # "chimes inside the bass"), all replaced by the pizzicato fits below; perc
-# (10 of 19 points past the gate). pianos, electric, strings: families being
-# re-levelled (they peaked 1.2-1.8 at four voices), back when they pass.
+# (10 of 19 points past the gate). The families pianos, electric and strings
+# are left off only for room: each member is already here on its own.
 #
 # keys
 piano	piano	the grand that was "heavenly" (34 points)
@@ -21,7 +21,7 @@ tine-vel	tine-vel	Rhodes tine from Epi, velocity
 reed-vel	reed-vel	Wurlitzer reed from Epi, velocity
 # plucked
 guitar	guitar	guitar
-# guitar-strings	guitar-sul*	guitar, position walks the six strings (back when re-levelled: it peaked 1.78 at four voices)
+guitar-strings	guitar-sul*	guitar, position walks the six strings
 banjo	banjo	banjo
 mandolin	mandolin	mandolin
 bass-pizz	bass-pizz-sul*	double bass pizzicato, position walks the strings
