@@ -13,6 +13,7 @@
 # keys
 piano	piano	the grand that was "heavenly" (34 points)
 piano-iowa	piano-iowa	Iowa grand, 88 notes, ff
+piano-iowa-vel	piano-iowa3	Iowa grand with its mf and ff recordings as velocity layers (pp too quiet to fit: next)	gated
 piano-salamander	piano-salamander	Salamander grand, 4 of its 16 velocity layers	gated
 piano-vcsl	piano-vcsl	VCSL grand, 3 velocity layers
 wurli	wurli	Wurlitzer
