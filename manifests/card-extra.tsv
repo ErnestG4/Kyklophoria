@@ -1,0 +1,17 @@
+# Extra worlds that passed their checks but do not fit the main card (24):
+# tools/card.py --manifest manifests/card-extra.tsv --out out/card-extra
+# Swap any of them for a main-card world; the module lists only the first 32
+# world files in /kyklophoria. All VCSL (CC0), labels corrected an octave up
+# (stage seven), exported --gate --clean. "clicks" = the note-change click at
+# one voice that the -clickfix firmware addresses.
+harpsi-flemish	harpsi-flemish2	Flemish harpsichord, 32 notes; clean	gated
+harpsi-english	harpsi-english2	English harpsichord, 26 notes; clean	gated
+strumstick	strumstick2	strumstick (a fretted dulcimer), 15 notes, three layers; clean	gated
+kalimba-ke	kalimba-ke2	Kenyan kalimba, 9 notes; clean	gated
+glock	glock2	glockenspiel, 7 notes; clean	gated
+balafon	balafon2	balafon, 6 notes, three layers; clean	gated
+harp-folk	harp-folk2	folk harp, 19 notes; clicks at note changes	gated
+kalimba-tz	kalimba-tz2	Tanzanian kalimba, 14 notes, its own tuning pulled to twelve steps; clicks	gated
+tubular	tubular2	tubular bells, 7 notes; clicks	gated
+handchimes	handchimes2	hand chimes, 19 notes; clicks	gated
+upright-yamaha	upright-yamaha2	Yamaha upright piano, 10 notes, three layers; clicks	gated
