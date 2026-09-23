@@ -633,6 +633,13 @@ def main():
             takes = monotonic(takes, c[0])
             if swings[1] <= 0:
                 swings = [1.0, 1.0]
+            if not modes:
+                # a record the manifest calls fitted and that holds no modes:
+                # piano-iowa's A#1 lost all 44 of its lines to an interrupted
+                # rewrite and exported as a burst and then silence. Never
+                # silently: the neighbour plays the note, and this says so
+                print('  WARNING %s: %s at midi %s has NO modes (a damaged record) — left out; refit it' % (d, c[0], c[3]))
+                continue
             pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes), noise_of(d, c[0]), c[0]))
         pts = layer(d, pts)
         pts.sort(key=lambda p: p[0])
