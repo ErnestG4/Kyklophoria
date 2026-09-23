@@ -351,7 +351,54 @@ def runtime_headroom(path, pts, N, form, kind, target=3.0, body=None):
     return out
 
 
-def intune(pts, kind, max_cents=120.0):
+def settled_cents(path, midi):
+    """Where the recording itself settles, in cents re the note: 50-300 ms
+    past its loudest sample, the f0 whose first six harmonics carry the most
+    magnitude, searched +-150 c around the label in 2 c steps (each harmonic
+    the largest bin within 0.3%%, and a third of the magnitude in the odd
+    ones so a subharmonic cannot win), then +-4 c in 0.25 c steps within
+    0.1%%. None when the file is gone or the search ends on its edge (a
+    detector failure, not a tuning). The note-start audit's own measure,
+    tightened for pulling rather than flagging."""
+    import soundfile as sf
+    if not os.path.exists(path):
+        return None
+    x, sr = sf.read(path, always_2d=True)
+    x = x.mean(axis=1)
+    pk = int(np.abs(x).argmax())
+    seg = x[pk + int(0.05 * sr):pk + int(0.30 * sr)]
+    if len(seg) < int(0.2 * sr):
+        return None
+    # a window that is mostly silence reads noise as a pitch: the plucked
+    # viola's E3 is 90 ms of sound and then -73 dB, and read +132 c
+    head = x[pk:pk + int(0.05 * sr)]
+    if np.sqrt(np.mean(seg ** 2)) < 0.03 * np.sqrt(np.mean(head ** 2)):
+        return None
+    n = 1 << 18
+    X = np.abs(np.fft.rfft(seg * np.hanning(len(seg)), n))
+    fr = sr / n
+    f_lab = 440.0 * 2 ** ((midi - 69) / 12)
+
+    def score(c, w):
+        f0 = f_lab * 2 ** (c / 1200)
+        tot = odd = 0.0
+        for k in range(1, 7):
+            f = k * f0
+            if f > 0.45 * sr:
+                break
+            v = X[int(f * (1 - w) / fr):int(f * (1 + w) / fr) + 2].max()
+            tot += v
+            odd += v if k % 2 else 0.0
+        return tot if odd >= 0.33 * tot else 0.0
+    grid = np.arange(-150, 151, 2.0)
+    best = grid[int(np.argmax([score(c, 0.003) for c in grid]))]
+    if abs(best) >= 150:
+        return None
+    fine = np.arange(best - 4, best + 4.01, 0.25)
+    return float(fine[int(np.argmax([score(c, 0.001) for c in fine]))])
+
+
+def intune(pts, kind, max_cents=120.0, sources=None):
     """Each point pulled to its nominal note. A point played at the pitch
     the recording had — the Philharmonia's within a few cents, a sampler's
     top octave 40 cents out and two files 67 cents apart — so a world was in
@@ -369,34 +416,50 @@ def intune(pts, kind, max_cents=120.0):
     corr = []
     for param, modes, *rest in pts:
         f = 440.0 * 2 ** ((param - 69) / 12)
-        loud = max((abs(m[2]) for m in modes), default=0.0)
-        cands = [m for m in modes if abs(m[2]) > 0.2 * loud and 0.9 < m[0] / f < 1.1]
+
+        # each mode by the energy it has 50-300 ms into the note, which is
+        # what the ear takes the pitch from: by gain alone a loud mode that
+        # dies in 70 ms set the pull, and moved the ring that holds the note
+        # off it (the plucked cello's F#3 to +126 c, the viola's G#3 to -102)
+        def heard(m):
+            a = 4 * math.pi * m[1] * m[0]              # 2 zeta w
+            return m[2] ** 2 * ((math.exp(-a * 0.05) - math.exp(-a * 0.30)) / a if a > 1e-9 else 0.25)
+        loud = max((heard(m) for m in modes), default=0.0)
+        cands = [m for m in modes if heard(m) > 0.04 * loud and 0.9 < m[0] / f < 1.1]
         ratio = 1.0
         if not cands:
-            cands = [m for m in modes if abs(m[2]) > 0.2 * loud and 1.8 < m[0] / f < 2.2]
+            cands = [m for m in modes if heard(m) > 0.04 * loud and 1.8 < m[0] / f < 2.2]
             ratio = 2.0
         if not cands:
             corr.append((param, None)); out.append((param, modes, *rest)); continue
-        # the fundamental's frequency is the energy-weighted centre of the
-        # modes within 6% of the loudest candidate, not the loudest alone: a
-        # pizzicato's pitch settles after the pluck and the fit spends two
-        # or three modes on it, and the loudest is any one of them
-        top = max(cands, key=lambda m: abs(m[2]))[0]
+        # the energy-weighted centre of the modes within 6% of the most heard
+        # candidate: a pizzicato's pitch settles after the pluck and the fit
+        # spends two or three modes on it
+        top = max(cands, key=heard)[0]
         clus = [m for m in cands if abs(m[0] / top - 1) < 0.06]
-        fm = sum(m[0] * m[2] ** 2 for m in clus) / sum(m[2] ** 2 for m in clus) / ratio
+        fm = sum(m[0] * heard(m) for m in clus) / sum(heard(m) for m in clus) / ratio
         cents = 1200 * math.log2(f / fm)
         if abs(cents) > max_cents:
             corr.append((param, cents)); out.append((param, modes, *rest)); continue
+        # the burst IS the recording, so it is pulled by the recording's own
+        # settled pitch where that can be read and is plausibly in tune
+        # (within 50 c; past that it is as likely the measure as the player),
+        # and otherwise by the modes' k, as before
+        rec = settled_cents(sources[param], int(round(param))) if sources and param in sources else None
         k = f / fm
         rest = list(rest)                 # stage, bursts, noise[, id]
         if len(rest) > 1 and rest[1]:
-            # the burst pulled by the same k, or it plays at the recorded
+            # the burst pulled onto the note too, or it plays at the recorded
             # pitch under modes at the note (up to 110 cents apart on the
-            # piano): a linear read at step k, as the runtime's own
+            # piano): a linear read at step kb, as the runtime's own
+            kb = 2 ** (-rec / 1200) if rec is not None and abs(rec) <= 50.0 else k
+            if abs(1200 * math.log2(kb / k)) > 30:
+                print('  intune: midi %g, the burst pulled %+.0f c by the recording and the modes %+.0f c by their ring'
+                      % (param, 1200 * math.log2(kb), 1200 * math.log2(k)))
             nb = []
             for b in rest[1]:
-                x = b[1]; m = int(len(x) / k)
-                nb.append((b[0], np.interp(np.arange(m) * k, np.arange(len(x)), x).astype(np.float32), int(b[2] / k) if len(b) > 2 else m // 3))
+                x = b[1]; m = int(len(x) / kb)
+                nb.append((b[0], np.interp(np.arange(m) * kb, np.arange(len(x)), x).astype(np.float32), int(b[2] / kb) if len(b) > 2 else m // 3))
             rest[1] = nb
         out.append((param, [(m[0] * k, m[1], m[2], m[3]) for m in modes], *rest))
         corr.append((param, cents))
@@ -641,9 +704,15 @@ def main():
                 print('  WARNING %s: %s at midi %s has NO modes (a damaged record) — left out; refit it' % (d, c[0], c[3]))
                 continue
             pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes), noise_of(d, c[0]), c[0]))
+        sources = {}
+        for line in lines[1:]:
+            c = line.split('\t')
+            for l in open(os.path.join(d, c[0] + '.mmr')):
+                if l.startswith('source '):
+                    sources.setdefault(float(c[3]), l.split(' ', 1)[1].strip()); break
         pts = layer(d, pts)
         pts.sort(key=lambda p: p[0])
-        pts = intune(pts, kind)
+        pts = intune(pts, kind, sources=sources)
         pts = align(pts, kind)
         pts = headroom(pts, form)
         N = max(len(pt[1]) for pt in pts)
