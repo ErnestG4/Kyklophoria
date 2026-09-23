@@ -2,6 +2,7 @@
 """export.py — a fitted world, condensed for the module.
 
     export.py records out/fit/wurli out/worlds/wurli.kykm
+    export.py records out/fit/piano out/worlds-clean/piano.kykm --clean [--level-of=out/card/kyklophoria/piano.kykm]
     export.py shaped out/fit/ep-vel out/worlds/ep-vel.kykm
     export.py corpus out/corpus.mdb wurli out/worlds/wurli-slots.kykm
 
@@ -545,6 +546,447 @@ def thin_points(path, floor=8):
     return thin
 
 
+# ── --clean: what the world plays and its recording does not ─────────────
+#
+# tools/specaudit.py plays every point through the runtime and holds it
+# against the note's own recording: a render peak more than 10 dB over the
+# recording within 1.5% is a stray, and the late windows are where one sings
+# alone — the piano's top octave rang a mode at 0.04 x f0 22 dB over its
+# recording from 0.3 s on, the whole of what was left of the note there, and
+# the plucked violin's D6 a mode 5% under f0 at +35 dB. `records --clean`
+# takes those out here, from the same comparison, on each record before it
+# becomes a point: the record's modes are played as the runtime plays them
+# at their own note (decaying sines at their phases from the strike, silent
+# for the burst's lead and in under the burst's fade, the burst itself on
+# top) and every mode's level at its frequency is set beside the recording's
+# over the windows the audit uses. A mode is changed only where that model
+# stands more than CLEAN_DB over the recording in a window where the mode is
+# heard (its own level within 12 dB of the model's peak there, and that peak
+# within 60 dB of the window's loudest); everything else is written exactly
+# as it would have been. A flagged mode (a cluster of them within 1%, as
+# one) that rings longer than the recording does at its frequency
+# (ringers.py's track, generalised to every mode the comparison flags) has
+# its T60 cut to the recording's, or to the rate that closes the growth of
+# its excess through the note; one still over after that is brought down to
+# the recording's level in its worst window. Neither may take a window where
+# it matches the recording out of the match (CLEAN_MATCH_DB), and one that
+# would have to come down 30 dB or more has nothing in the recording to be
+# and is dropped. A wash band whose floor between the partials stands over
+# the recording's by more than CLEAN_DB is turned down by the excess. The
+# decisions are the recording's, never a taste: a mode the recording holds
+# at its level is never touched however odd it looks.
+
+# CLEAN_DB, measured (tools/specaudit.py --selftest and the note-by-note
+# numbers behind it): the same comparison made between a recording and
+# itself 100 ms later stands a peak more than 10 dB over itself at 0.01% of
+# the recording's partials and 0.04% of its other peaks (250 ms: 0.05% and
+# 0.2%), where 6 dB is 0.1% and 0.2% (250 ms: 0.3% and 0.7%). The fit's own
+# spread at the strongest partials in the first window is +5 dB at the 95th
+# percentile. So 10 dB is a stray and not the comparison's noise or the
+# fit's ordinary error, and it is the audit's own line for one
+CLEAN_DB = 10.0
+# and what a match is: the same comparison of a recording with itself 100 ms
+# on stands within 2 dB of itself at 99% of its partials, 4.4 dB at its
+# loudest. A correction may take no heard window more than this under the
+# recording (or under where it already was)
+CLEAN_MATCH_DB = 3.0
+CLEAN_WINDOWS = ((0.05, 0.3), (0.3, 1.0), (1.0, 2.0), (2.0, 4.0), (4.0, 6.0))
+CLEAN_DROP_DB = 30.0
+
+
+def _clean_spec(seg):
+    from scipy.signal import windows as sw
+    n = len(seg)
+    w = sw.blackmanharris(n)
+    nfft = 1 << int(math.ceil(math.log2(4 * n)))
+    return 20 * np.log10(np.abs(np.fft.rfft(seg * w, nfft)) + 1e-20), w, nfft
+
+
+def _track_t60s(x, sr, hzs, start=0.05):
+    """ringers.track_t60 for many frequencies over one STFT: the recording's
+    own T60 at each, None where it cannot be read, 60 where the track is flat"""
+    n, hop = 2048, 512
+    w = np.hanning(n)
+    starts = range(int(start * sr), len(x) - n, hop)
+    if len(starts) < 4:
+        return [None] * len(hzs)
+    S = np.abs(np.array([np.fft.rfft(x[s:s + n] * w) for s in starts]))
+    t = np.arange(len(starts)) * hop / sr
+    out = []
+    for hz in hzs:
+        k = int(round(hz * n / sr))
+        if k < 1 or k >= n // 2:
+            out.append(None); continue
+        e = S[:, max(0, k - 1):k + 2].max(axis=1) ** 2 + 1e-20
+        le = np.log(e)
+        floor = np.log(e[-3:].mean() * 2)
+        ok = (le > floor) & (le > le.max() - math.log(1e4))
+        if ok.sum() < 3:
+            out.append(None); continue
+        p = np.polyfit(t[ok], le[ok], 1)
+        out.append(60.0 if p[0] >= 0 else 6.91 / (-p[0] / 2))
+    return out
+
+
+def _burst_line(recdir, rid):
+    """(samples, fade) of a plain record's burst at its own rate, or (None, 0)"""
+    import soundfile as sf
+    for w in (l.split() for l in open(os.path.join(recdir, rid + '.mmr'))):
+        if w and w[0] == 'burst' and len(w) in (2, 3):
+            b, _ = sf.read(os.path.join(recdir, w[1]))
+            if b.ndim > 1:
+                b = b.mean(axis=1)
+            return b, int(w[2]) if len(w) == 3 else len(b) // 3
+    return None, 0
+
+
+def clean_record(recdir, rid, modes, noise=None, over=CLEAN_DB, report=None):
+    """A plain record's modes (and wash) with what its recording does not
+    have taken out: (modes, noise, notes). Modes the recording holds are
+    returned as they came, the same tuples."""
+    import soundfile as sf
+    tp = os.path.join(recdir, rid + '-target.wav')
+    if not os.path.exists(tp) or not modes:
+        return modes, noise, []
+    x, sr = sf.read(tp, always_2d=True)
+    x = x.mean(axis=1) / 0.5                        # the target is written at half scale
+    n = len(x)
+    t = np.arange(n) / sr
+    b, fade = _burst_line(recdir, rid)
+    # the modes as the runtime brings them in: nothing for the burst's
+    # lead, then 1 - its fade; 3 ms up from the strike with no burst
+    if b is not None and len(b) > fade > 0:
+        lead = len(b) - fade
+        u = np.clip((np.arange(n) - lead) / fade, 0.0, 1.0)
+    else:
+        u = np.clip(np.arange(n) / (0.003 * sr), 0.0, 1.0)
+    ramp = 0.5 - 0.5 * np.cos(np.pi * u)
+    base = np.zeros(n)
+    if b is not None:
+        base[:min(n, len(b))] = b[:n]
+    f = np.array([m[0] for m in modes]); z = np.array([m[1] for m in modes])
+    g = np.array([m[2] for m in modes]); ph = np.array([m[3] if len(m) > 3 else 0.0 for m in modes])
+
+    def floor_g():
+        # the format's quietest level: 63.5 dB under the point's loudest
+        # (level8 clips there), so a mode written quieter plays at that —
+        # a pizzicato's 1.7 s ringer at -88 dB came back at -63.5 and was
+        # the whole of the note from 0.3 s on
+        return float(np.abs(g).max()) * 10 ** (-254 / 80.0)
+
+    def comp(i):
+        # at the decay and the level the world will play: the decay byte is
+        # a tenth of a neper of zeta, a T60 in steps of 10%, which is 2 dB
+        # at a second and a half; the level byte stops 63.5 dB down
+        if g[i] == 0.0:
+            return np.zeros(n)
+        zq = math.exp(-0.1 * decay8(z[i]))
+        gi = math.copysign(max(abs(g[i]), floor_g()), g[i])
+        return gi * np.exp(-zq * 2 * math.pi * f[i] * t) * np.sin(2 * math.pi * f[i] * t + ph[i]) * ramp
+
+    comps = np.array([comp(i) for i in range(len(f))])
+    wins = []
+    for a, e in CLEAN_WINDOWS:
+        a_, e_ = int(a * sr), min(int(e * sr), n - int(0.01 * sr))
+        if e_ - a_ < max(0.04 * sr, 0.4 * (e - a) * sr):      # the audit's rule: 40% of the window, 40 ms at least
+            continue
+        X, w, nfft = _clean_spec(x[a_:e_])
+        fr = np.fft.rfftfreq(nfft, 1.0 / sr)
+        df = sr / (e_ - a_)
+        wins.append(dict(a=a_, e=e_, X=X, w=w, nfft=nfft, fr=fr, df=df, hw=int(math.ceil(2 * df / (fr[1] - fr[0])))))
+    if not wins:
+        return modes, noise, []
+    t60_rec = None
+    z0, g0 = z.copy(), g.copy()
+    # clusters: modes within 1% (the fitter's own cluster, MB_CLUSTER) and
+    # 8 Hz (two bins of the shortest window, 250 ms: closer than that the
+    # comparison cannot tell them apart anyway), chained
+    order = np.argsort(f)
+    clus = np.zeros(len(f), int)
+    c = 0
+    for a_, b_ in zip(order[:-1], order[1:]):
+        clus[b_] = c = c + (0 if f[b_] - f[a_] <= min(0.01 * f[a_], 8.0) else 1)
+    clus[order[0]] = 0
+    members = [[i for i in range(len(f)) if clus[i] == k] for k in range(c + 1)]
+    capped = np.zeros(c + 1, bool)
+    decayed = np.zeros(c + 1, bool)
+    notes = {}
+    active = np.zeros(len(f), bool)       # shown to stand over the recording: corrected until it does not
+    stuck = np.zeros(len(f), bool)        # as close as it can come without going under the recording elsewhere
+    fl = floor_g()
+    for _pass in range(8):
+        if abs(floor_g() / fl - 1) > 0.01:
+            # the loudest came down: the quiet modes' floor with it
+            lo_ = min(fl, floor_g()); hi_ = max(fl, floor_g()); fl = floor_g()
+            for i in range(len(f)):
+                if 0 < abs(g[i]) < hi_ * 1.01:
+                    comps[i] = comp(i)
+        y = base + comps.sum(axis=0)
+        exc = np.full((len(f), len(wins)), np.nan)
+        rel = np.full((len(f), len(wins)), np.nan)
+        for j, W in enumerate(wins):
+            Y, w, nfft = _clean_spec(y[W['a']:W['e']])
+            fr = W['fr']
+            top = Y[fr > 25].max()
+            tt = t[W['a']:W['e']]
+            # each mode's own peak in this window: A/2 sum(w env)
+            zq = np.exp(-0.1 * np.array([decay8(v) for v in z]))
+            env = np.exp(-np.outer(zq * 2 * math.pi * f, tt)) * ramp[W['a']:W['e']]
+            own = 20 * np.log10(np.maximum(np.abs(g), floor_g()) / 2 * (env * w).sum(axis=1) + 1e-20)
+            del env
+            for i in range(len(f)):
+                if g[i] == 0.0 or f[i] <= 25 or f[i] >= 0.45 * sr:
+                    continue
+                k = int(round(f[i] / (fr[1] - fr[0])))
+                lm = Y[max(0, k - W['hw']):k + W['hw'] + 1].max()
+                if own[i] < lm - 12.0 or lm < top - 60.0:
+                    continue
+                tol = max(0.015 * f[i], 2 * W['df'])
+                lo_, hi_ = np.searchsorted(fr, f[i] - tol), np.searchsorted(fr, f[i] + tol) + 1
+                exc[i, j] = lm - W['X'][lo_:hi_].max()
+                rel[i, j] = lm - top
+        worst = np.nanmax(np.where(np.isnan(exc), -np.inf, exc), axis=1)
+        if _pass == 0:
+            exc0 = exc.copy()                     # where each mode stood before anything was changed
+        if report is not None and _pass == 0:
+            report.extend([(float(f[i]), [None if np.isnan(v) else float(v) for v in exc[i]], [None if np.isnan(v) else float(v) for v in rel[i]]) for i in range(len(f))])
+        # a mode is taken up when it stands more than `over` above the
+        # recording — past what the comparison does to the recording held
+        # against itself — and once taken up it is brought all the way
+        # down to the recording, not to just under the threshold
+        active |= worst > over
+        # a cluster is corrected as one: the fit's pairs and triplets (a
+        # doublet's beat, a double decay) cancel in part by their balance,
+        # and turning one member down or its decay up alone breaks that —
+        # the VCSL grand's D5 came out 2 dB louder at its attack with its
+        # 552 Hz triplet's members capped one by one. Every member takes
+        # the same cut and the same extra decay, so the sum is scaled and
+        # damped and its inside is left as fitted
+        todo = sorted(set(clus[i] for i in range(len(f)) if active[i] and not stuck[i] and worst[i] > 0.5))
+        if not todo:
+            break
+        if t60_rec is None:
+            t60_rec = _track_t60s(x, sr, f)
+        tc = [(W['a'] + W['e']) / 2 / sr for W in wins]
+        for c in todo:
+            mem = [i for i in members[c] if g[i] != 0.0]
+            if not mem:
+                continue
+            ex_c = np.nanmax(np.where(np.isnan(exc[mem]), -np.inf, exc[mem]), axis=0)
+            js = [j for j in range(len(wins)) if np.isfinite(ex_c[j])]
+            if not js:
+                continue
+            jw = max(js, key=lambda j: ex_c[j]); jb = min(js, key=lambda j: ex_c[j])
+            wc = ex_c[jw]
+            # how far each window may still come down: to CLEAN_MATCH_DB
+            # under the recording, or under where it stood before any
+            # correction if that was lower — counted from the first
+            # measurement, so repeated passes cannot ratchet a match away
+            e0 = np.nanmax(np.where(np.isnan(exc0[mem]), -np.inf, exc0[mem]), axis=0)
+            room = {j: ex_c[j] - (min(e0[j] if np.isfinite(e0[j]) else ex_c[j], 0.0) - CLEAN_MATCH_DB) for j in js}
+            # the member that carries the cluster: the most ring energy
+            r = max(mem, key=lambda i: g[i] ** 2 / max(z[i] * f[i], 1e-12))
+            t60 = 6.91 / (z[r] * 2 * math.pi * f[r])
+            tr = t60_rec[r]
+            label = '+'.join('%.1f' % f[i] for i in mem) + 'Hz'
+            tl = max(6.91 / (z[i] * 2 * math.pi * f[i]) for i in mem)     # the longest ring, for the note
+            ds = 0.0
+            if not capped[c] and tr is not None and tr < 59.9 and t60 > tr:
+                # it rings longer than the recording does here: the
+                # recording's decay, and the level is looked at again
+                ds = 6.91 / tr - 6.91 / t60                  # nepers a second more
+                capped[c] = True
+                notes.setdefault(label, []).append('T60 %.2fs->%.2fs' % (tl, 6.91 / (6.91 / tl + ds)))
+            elif not decayed[c] and jw > jb and ex_c[jw] - ex_c[jb] > 6.0:
+                # the excess still grows through the note, by more than
+                # the comparison's own noise (6 dB): the recording falls
+                # faster here than its track could say — a partial that
+                # sinks into the floor in a few frames. The rate that
+                # closes the growth between those windows, from their
+                # centres, and the level is looked at again
+                capped[c] = decayed[c] = True
+                ds = (ex_c[jw] - ex_c[jb]) / (tc[jw] - tc[jb]) / 8.686
+                notes.setdefault(label, []).append('T60 %.2fs->%.2fs (the growth of its excess)' % (tl, 6.91 / (6.91 / tl + ds)))
+            if ds > 0:
+                # and never so much that a window where the cluster matches
+                # the recording stops matching it: no heard window is taken
+                # more than CLEAN_MATCH_DB under the recording, or further
+                # under than it already was. A recording that falls fast and
+                # then rings on (a string's prompt sound and its aftersound)
+                # is one decay in the fit, and taking the fall's rate for it
+                # left a guitar's A#4 20-40 dB under its recording from
+                # 0.3 s on. The extra decay takes a window centred at t down
+                # by 8.7 ds t dB
+                lim = min(room[j] / (8.686 * tc[j]) for j in js)
+                if lim < ds:
+                    notes[label][-1] += ' (held to %.2fs: the recording has it at %s)' % (
+                        6.91 / (6.91 / tl + max(lim, 0.0)), ', '.join('%+.0f' % ex_c[j] for j in js))
+                    ds = max(lim, 0.0)
+            if ds > 0:
+                for i in mem:
+                    z[i] += ds / (2 * math.pi * f[i])
+                    comps[i] = comp(i)
+                continue
+            capped[c] = decayed[c] = True
+            # down to the recording in its worst window, but a window where
+            # it matches the recording is left matching (no more than
+            # CLEAN_MATCH_DB under it): a mode the recording holds in one
+            # window is not taken out for another
+            cut = min(wc, min(room.values()))
+            if cut >= CLEAN_DROP_DB:
+                for i in mem:
+                    g[i] = 0.0; comps[i] = 0.0
+                notes.setdefault(label, []).append('dropped (+%.0f dB)' % wc)
+                stuck[mem] = True
+            elif cut > 0.25:
+                gone = 0
+                for i in mem:
+                    g[i] *= 10 ** (-cut / 20)
+                    if abs(g[i]) < floor_g():
+                        g[i] = 0.0                       # under the format's floor it would play at the floor
+                        gone += 1
+                    comps[i] = comp(i)
+                notes.setdefault(label, []).append('-%.1f dB (+%.0f)%s' % (cut, wc, ', under the floor: dropped' if gone else ''))
+            else:
+                stuck[mem] = True
+    out = []
+    for i, m in enumerate(modes):
+        if g[i] == 0.0:
+            continue
+        if z[i] == z0[i] and g[i] == g0[i]:
+            out.append(m)                                    # as it came, the same tuple
+        else:
+            out.append((float(f[i]), float(z[i]), float(g[i])) + tuple(m[3:]))
+    lines = ['%s %s' % (k, ', '.join(v)) for k, v in sorted(notes.items(), key=lambda kv: float(kv[0].split('+')[0].rstrip('Hz')))]
+    if noise and any(l > 0 for l, _ in noise):
+        noise, wl = _clean_wash(x, sr, base + comps.sum(axis=0), noise, wins, over)
+        lines += wl
+    return out, noise, lines
+
+
+def _clean_wash(x, sr, y, noise, wins, over):
+    """the wash's bands turned down where the model's floor between the
+    partials stands over the recording's: the wash simulated as the runtime
+    plays it (washcheck.py's), the floor the 20th percentile of the band's
+    spectrum a main lobe away from any peak of either, as the audit reads
+    it, and a band's excess the median over the windows — one band's floor
+    wanders by 10 dB between two stretches of the same recording (1% of
+    band-windows), and a wash too loud is too loud in every window"""
+    from scipy.signal import lfilter, find_peaks
+    edges = [62.5 * 2 ** k for k in range(9)]
+    n = len(x)
+    rng = np.random.default_rng(0x9E3779B9)
+    wn = rng.uniform(-math.sqrt(3), math.sqrt(3), n)
+    yy = y.copy()
+    for k in range(8):
+        lvl, t60 = noise[k] if k < len(noise) else (0.0, 0.0)
+        if lvl <= 0 or t60 <= 0:
+            continue
+        fc = math.sqrt(edges[k] * edges[k + 1])
+        w0 = 2 * math.pi * fc / sr; al = math.sin(w0) / (2 * 1.41421); a0 = 1 + al
+        bb = [al / a0, 0, -al / a0]; aa = [1, -2 * math.cos(w0) / a0, (1 - al) / a0]
+        gn = math.sqrt((lfilter(bb, aa, np.eye(1, 2048)[0]) ** 2).sum())
+        yy += (lvl / gn) * np.exp(-6.91 * np.arange(n) / (t60 * sr)) * lfilter(bb, aa, wn)
+    diffs = [[] for _ in range(8)]
+    for W in wins:
+        Y, _, _ = _clean_spec(yy[W['a']:W['e']])
+        fr = W['fr']; hw = 2 * W['hw']
+        near = np.zeros(len(fr), bool)
+        for D in (Y, W['X']):
+            p, _ = find_peaks(D, prominence=6.0)
+            for q in p:
+                near[max(0, q - hw):q + hw + 1] = True
+        for k in range(8):
+            if k >= len(noise) or noise[k][0] <= 0:
+                continue
+            sel = (fr >= edges[k]) & (fr < edges[k + 1]) & ~near
+            if sel.sum() < 16:
+                continue
+            diffs[k].append(np.percentile(Y[sel], 20) - np.percentile(W['X'][sel], 20))
+    out, lines = list(noise), []
+    for k in range(8):
+        if not diffs[k]:
+            continue
+        d = float(np.median(diffs[k]))
+        if d > over:
+            out[k] = (noise[k][0] * 10 ** (-d / 20), noise[k][1])
+            lines.append('wash %.0f Hz -%.1f dB' % (math.sqrt(edges[k] * edges[k + 1]), d))
+    return out, lines
+
+
+def _quiet(fn, *a, **kw):
+    """fn(*a, **kw) with its printing kept to itself"""
+    import contextlib, io
+    with contextlib.redirect_stdout(io.StringIO()):
+        return fn(*a, **kw)
+
+
+def _headroom_k(pts, form, target=3.0):
+    """headroom()'s number without applying it: (k, peak)"""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import playvel
+    peak = 0.0
+    for param, modes, stage, bursts, *rest in pts:
+        sh = ({0: 'none', 1: 'bell', 2: 'gap'}[form],) + tuple(stage[:5])
+        swing = stage[6] if len(stage) > 6 else 1.0
+        lit = [m for m in modes if m[2] != 0.0]
+        if lit:
+            y = playvel.note(lit, sh, swing, 0.15, 48000)
+            b = bursts[-1][1] if bursts else np.zeros(1)
+            n = min(len(y), len(b))
+            y = y.copy(); y[:n] += b[:n]
+            peak = max(peak, float(np.max(np.abs(y))))
+    return (target / peak if peak > 0 else 1.0), peak
+
+
+def _runtime_peak(path):
+    """the written world's keyboard at full velocity through build/modaltest: its peak, or None"""
+    import subprocess, tempfile
+    mt = os.path.join(os.path.dirname(__file__), '..', 'build', 'modaltest')
+    if not os.path.exists(mt):
+        return None
+    with tempfile.TemporaryDirectory() as d:
+        r = subprocess.run([mt, path, os.path.join(d, 'k.wav'), '--velocity', '1.0'], capture_output=True, text=True)
+    for l in r.stdout.splitlines():
+        if 'peak through the runtime' in l:
+            return float(l.split()[-1])
+    return None
+
+
+def _burst_levels(path):
+    """{param: the loudest burst's peak} of a written world, for --level-of"""
+    b = open(path, 'rb').read()
+    ver, N, P, form, kind = struct.unpack_from('<HHHBB', b, 4)
+    o = 20 + (32 if ver >= 7 else 0)
+    head = 12 if ver >= 6 else 10
+    out = {}
+    for p in range(P):
+        param = struct.unpack_from('<f', b, o)[0]; o += 4 + 32 + 5 * N
+        nb = b[o]; o += 1 + 8 * nb
+        nbur = struct.unpack_from('<H', b, o)[0]; o += 2
+        top = 0.0
+        for k in range(nbur):
+            sc = struct.unpack_from('<f', b, o + 4)[0]; ln = struct.unpack_from('<H', b, o + 8)[0]
+            top = max(top, sc); o += head + 2 * ln
+        if top > 0:
+            out[round(param, 3)] = top
+    return out
+
+
+def level_of(pts, ref):
+    """the one factor that puts a world's attacks where a reference world's
+    are: the median over the points both have of the loudest burst's peak,
+    ref over this. The bursts are the recordings and --clean never touches
+    them, so this is the reference's level and nothing of its cleaning"""
+    rl = _burst_levels(ref)
+    r = []
+    for param, modes, stage, bursts, *rest in pts:
+        top = max((float(np.max(np.abs(bb[1]))) for bb in bursts if len(bb[1])), default=0.0)
+        if top > 0 and round(param, 3) in rl:
+            r.append(rl[round(param, 3)] / top)
+    return float(np.median(r)) if r else None
+
+
 NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 
@@ -622,6 +1064,70 @@ def read_corpus(path):
     return N, rows
 
 
+
+def export_clean(d, path, raw, pts, sources, form, kind, over, ref=None, target=3.0, cleaned=True):
+    """records --clean: the cleaned points through the same chain as the
+    raw ones, at the level the raw world would have had — the model's
+    headroom and the runtime's check taken on the raw points — so that
+    what an A/B hears is the cleaning and not a rescale (taking a loud
+    stray out of the loudest note would otherwise lift the whole world).
+    Only if the cleaned world then peaks over the target by more than the
+    runtime check's 5% is it brought down to it. --level-of moves it to a
+    reference world's level instead (the median of the attacks' peaks, which
+    the cleaning never touches), under the same ceiling, or under the
+    reference's own peak through the runtime where that is higher: never
+    louder than the world it is held against."""
+    import tempfile
+    raw = _quiet(layer, d, raw)
+    raw.sort(key=lambda p: p[0])
+    raw = _quiet(intune, raw, kind, sources=sources)
+    raw = align(raw, kind)
+    pts = layer(d, pts)
+    pts.sort(key=lambda p: p[0])
+    pts = intune(pts, kind, sources=sources)
+    pts = align(pts, kind)
+    body = body_curve(d, kind)
+    k, peak = _headroom_k(raw, form, target)
+    raw = scale_points(raw, form, k)
+    with tempfile.TemporaryDirectory() as td:
+        rp = os.path.join(td, 'raw.kykm')
+        _quiet(write, rp, max(len(pt[1]) for pt in raw), raw, form, kind, body)
+        rpk = _runtime_peak(rp)
+    if rpk and abs(target / rpk - 1.0) >= 0.05:
+        k *= target / rpk
+    what = 'cleaned world' if cleaned else 'world'
+    print('  headroom: the world without --clean is scaled by %.3f (%+.1f dB: the model peaked at %.2f, the runtime at %s)%s'
+          % (k, 20 * math.log10(k), peak, '%.2f' % rpk if rpk else '?', '; the cleaned one takes the same' if cleaned else ''))
+    pts = scale_points(pts, form, k)
+    if ref:
+        kr = level_of(pts, ref)
+        if kr:
+            pts = scale_points(pts, form, kr)
+            print('  level: %+.2f dB to %s\'s attacks (the median over the points both have)' % (20 * math.log10(kr), ref))
+        else:
+            print('  level: no point shared with %s, left as it is' % ref)
+    N = max(len(pt[1]) for pt in pts)
+    write(path, N, pts, form, kind, body)
+    pk = _runtime_peak(path)
+    # the ceiling: the runtime check's own 5% over the target, or, beside a
+    # reference that already peaks higher, the reference's peak — the A/B
+    # is then at the level the reference is played at, and never louder
+    ceil, dest = target * 1.05, target
+    rpk = _runtime_peak(ref) if ref else None
+    if rpk and rpk > ceil:
+        ceil = dest = rpk
+        print('  headroom: %s itself peaks at %.2f through the runtime at full velocity; that is the ceiling' % (ref, rpk))
+    if pk and pk > ceil:
+        pts = scale_points(pts, form, dest / pk)
+        write(path, N, pts, form, kind, body)
+        print('  headroom: the %s peaked at %.2f through the runtime at full velocity; every point scaled by %.3f (%+.1f dB) and the world rewritten'
+              % (what, pk, dest / pk, 20 * math.log10(dest / pk)))
+    else:
+        print('  headroom: the %s peaks at %s through the runtime at full velocity (target %.1f, held)' % (what, '%.2f' % pk if pk else '?', target))
+    thin_points(path)
+    return 0
+
+
 def main():
     kind = sys.argv[1]
     if kind == 'corpus':
@@ -664,10 +1170,19 @@ def main():
         # by its neighbour transposed, which is better than a broken fit —
         # the double bass's E string had an A2 at a loss of 3.15 with three
         # modes, from a recording the splitter cut 2 of 12 notes out of
-        argv = [a for a in sys.argv if a != '--gate']
-        gated = len(argv) != len(sys.argv)
+        # --clean[=DB] takes out what the recordings do not have (see
+        # clean_record); --level-of=WORLD.kykm puts the world's level where
+        # that world's is, for an A/B of the cleaning alone. Neither changes
+        # a byte of a world exported without them
+        flags = [a for a in sys.argv[2:] if a.startswith('--clean') or a.startswith('--level-of=')]
+        argv = [a for a in sys.argv if a != '--gate' and a not in flags]
+        gated = '--gate' in sys.argv
+        clean = next((a for a in flags if a.startswith('--clean')), None)
+        over = float(clean.split('=', 1)[1]) if clean and '=' in clean else CLEAN_DB
+        ref = next((a.split('=', 1)[1] for a in flags if a.startswith('--level-of=')), None)
         d = argv[2]
         pts, form, kind = [], 0, 0
+        cpts = []
         lines = open(os.path.join(d, 'fits.tsv')).read().splitlines()
         col = {k: i for i, k in enumerate(lines[0].split('\t'))}
         for line in lines[1:]:
@@ -704,12 +1219,24 @@ def main():
                 print('  WARNING %s: %s at midi %s has NO modes (a damaged record) — left out; refit it' % (d, c[0], c[3]))
                 continue
             pts.append((float(c[3]), sorted(modes), (shaper or (0, 1, 1, 0, 1)) + tuple(swings), bursts_of(d, c[0], takes), noise_of(d, c[0]), c[0]))
+            if clean:
+                if shaper is None:
+                    cm, cn, notes = clean_record(d, c[0], sorted(modes), pts[-1][4], over)
+                    if notes:
+                        print('  clean %s (midi %s): %s' % (c[0], c[3], '; '.join(notes)))
+                else:
+                    cm, cn = sorted(modes), pts[-1][4]    # the pickup's output is not the modes': nothing to hold a mode against
+                cpts.append(pts[-1][:1] + (sorted(cm),) + pts[-1][2:4] + (cn,) + pts[-1][5:])
         sources = {}
         for line in lines[1:]:
             c = line.split('\t')
             for l in open(os.path.join(d, c[0] + '.mmr')):
                 if l.startswith('source '):
                     sources.setdefault(float(c[3]), l.split(' ', 1)[1].strip()); break
+        if clean or ref:
+            # --level-of alone is the same chain with nothing cleaned: the
+            # world as it would be exported, at the reference's level
+            return export_clean(d, argv[3], pts, cpts if clean else list(pts), sources, form, kind, over, ref, cleaned=bool(clean))
         pts = layer(d, pts)
         pts.sort(key=lambda p: p[0])
         pts = intune(pts, kind, sources=sources)
