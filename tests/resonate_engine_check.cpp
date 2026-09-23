@@ -547,6 +547,55 @@ int main()
         printf("  straight knobs: a quarter-turn Rotate angle leaves a resonator's axes as set; an orbit moves them; a wavetable keeps its angle\n");
     }
 
+    /* 16. which voice a strike takes: a note struck again goes back to the
+       voice ringing at it, and the other notes ring on; a new note takes a
+       silent voice, and failing that the one struck longest ago */
+    {
+        Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4);
+        std::vector<float> y;
+        auto hit = [&](float hz) { e.SetF0(hz); e.Strike(0.8f); Run(e, y, 50); };
+        auto slot = [&]() { for(int v = 0; v < 4; v++) if(&e.Voice() == &e.VoiceAt(v)) return v; return -1; };
+        hit(130.81f); const int vc = slot();
+        hit(164.81f); const int ve = slot();
+        hit(196.f);   const int vg = slot();
+        CHECK(vc != ve && ve != vg && vc != vg, "three notes did not take three voices: %d %d %d", vc, ve, vg);
+        hit(130.81f); const int vc2 = slot(); hit(130.81f); hit(130.81f);       /* C3 three more times */
+        CHECK(vc2 == vc && slot() == vc, "a C3 struck again did not go back to the C3's voice (%d, then %d; it was %d)", vc2, slot(), vc);
+        CHECK(std::fabs(e.VoiceAt(ve).param - 52.f) < 0.01f && std::fabs(e.VoiceAt(vg).param - 55.f) < 0.01f,
+              "a repeated C3 took the E3's or the G3's voice: they hold %.2f and %.2f", e.VoiceAt(ve).param, e.VoiceAt(vg).param);
+        hit(220.f); const int va = slot();                      /* A3: the one silent voice */
+        CHECK(va != vc && va != ve && va != vg && !(va < 0), "a new note did not take the silent voice: %d", va);
+        hit(246.94f);                                           /* B3: all four ring; the oldest strike is the E3's */
+        CHECK(slot() == ve, "a note past the count did not take the voice struck longest ago: %d, the E3's is %d", slot(), ve);
+        printf("  voices: a repeated note keeps its voice and the others ring on; a new note takes a silent one, then the oldest\n");
+    }
+
+    /* 17. the exciter's amount up with nothing coming in is not a drive:
+       the note still ringing keeps its pitch when the CV moves — the pot
+       is the Stereo page's sixth, left wherever a wavetable world had it,
+       and a lock that let go for it retuned the ringing note to the next
+       one in the milliseconds a strike waits, a pop at every note start.
+       With a signal in, the bank follows the pitch by the semitone, except
+       while a strike is waiting (HoldPitch) */
+    {
+        auto run = [&](const float* drive, bool hold) {
+            Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4);
+            e.SetF0(130.81f); e.Strike(0.8f);
+            std::vector<float> y(48);
+            for(int b = 0; b < 250; b++) e.Process(y.data(), 48);
+            e.SetF0(196.f); e.HoldPitch(hold);
+            for(int b = 0; b < 8; b++) { e.SetExciter(drive ? drive + b * 48 : nullptr, 0.02f); e.Process(y.data(), 48); }
+            return e.ResParamNow();
+        };
+        std::vector<float> silent(8 * 48, 0.f), noise(8 * 48);
+        uint32_t r = 777u; for(auto& v : noise) { r ^= r << 13; r ^= r >> 17; r ^= r << 5; v = ((int32_t)r) * (0.3f / 2147483648.f); }
+        const float quiet = run(silent.data(), false), driven = run(noise.data(), false), held = run(noise.data(), true);
+        CHECK(std::fabs(quiet - 48.f) < 0.01f, "an exciter amount with nothing in retuned the ringing C3 to %.2f", quiet);
+        CHECK(std::fabs(driven - 55.f) < 0.01f, "a driven bank did not follow the pitch: %.2f", driven);
+        CHECK(std::fabs(held - 48.f) < 0.01f, "a driven bank followed the pitch while a strike was waiting: %.2f", held);
+        printf("  exciter: nothing in, the ring keeps C3 (%.0f); driven, it follows (%.0f); a strike waiting, it holds (%.0f)\n", quiet, driven, held);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }

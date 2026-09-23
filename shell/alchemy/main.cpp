@@ -826,6 +826,7 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     }
     /* after SetF0: a strike retunes the bank to the pitch it is struck at */
     if(gStrike >= 0 && !gStrikeHeld) { gEng.Strike((float)gStrike / 255.0f); gStrike = -1; gStrikeFromJack = false; }
+    gEng.L.HoldPitch(gStrike >= 0);   /* a strike still waiting: the ringing note keeps its pitch meanwhile */
     /* Rings' external exciter: J1's audio driven into the resonate world's
        bank, the amount on the Stereo page's sixth pot, which under a
        resonator has no CV out A to be the depth of (J4 is the trigger).

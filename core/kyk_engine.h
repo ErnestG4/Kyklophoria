@@ -53,8 +53,8 @@ public:
         dirty_ = true;
         for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
-        ractive_ = 0; rpoly_ = 1; rmember_ = 0;
-        for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; }
+        ractive_ = 0; rpoly_ = 1; rmember_ = 0; rdriven_ = 0; rhold_ = false;
+        for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
         rframe_ = false;
         if(world && world->IsResonate()) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
     }
@@ -71,15 +71,35 @@ public:
         if(!world_ || !world_->IsResonate()) return;
         if(rpoly_ > 1)
         {
-            /* polyphony the way Rings does it: a strike takes the next voice
-               round-robin and the ones before ring on at the notes they
-               were struck at; only the newest follows the pitch. A voice
-               taken again carries whatever still rings in it to the new
-               note, as Rings' filters do — cutting it (which is what
-               "reused" first meant here) was a click at every strike past
-               the count, measured in the note sweep */
-            ractive_ = (ractive_ + 1) % rpoly_;
+            /* which voice: the one already ringing at this note, if any —
+               a key struck again is the same string struck again, and the
+               hammer adds to what rings (Combust: "playing the same note
+               repeatedly shouldn't 'steal' another voice but restart the
+               last one right?"). Round-robin gave a note repeated four
+               times all four voices and damped three other notes to do it.
+               Otherwise a voice that is silent, and failing that the one
+               struck longest ago; only the newest follows the pitch */
+            rstriking_ = true;
+            const float p = ResParam();
+            rstriking_ = false;
+            const ResonatorWorld& r = world_->Res();
+            const float same = r.kind == 1 ? 0.005f * (r.hi - r.lo) : 0.5f;
+            int pick = -1;
+            for(int v = 0; v < rpoly_ && pick < 0; v++)
+                if(rvnote_[v] != 1e9f && std::fabs(rvnote_[v] - p) < same && rvoices_[v].Active()) pick = v;
+            for(int k = 1; k <= rpoly_ && pick < 0; k++)
+            {
+                const int v = (ractive_ + k) % rpoly_;
+                if(!rvoices_[v].Active()) pick = v;
+            }
+            if(pick < 0)
+            {
+                pick = 0;
+                for(int v = 1; v < rpoly_; v++) if(rvstruck_[v] < rvstruck_[pick]) pick = v;
+            }
+            ractive_ = pick;
         }
+        rvstruck_[ractive_] = ++rstrikes_;
         rstriking_ = true;
         Retune();          /* the pitch is taken here, locked or not */
         rstriking_ = false; rsince_ = 0;
@@ -120,6 +140,9 @@ public:
        resonant filter bank for whatever is patched in. Set per block; the
        pointer is read by the Process that follows and then dropped. */
     void SetExciter(const float* x, float gain) { exciter_ = x; exgain_ = gain; }
+    /* a strike is waiting (the module holds one for the CV to settle): the
+       pitch is not taken by the voice still ringing meanwhile */
+    void HoldPitch(bool on) { rhold_ = on; }
     static float NoteOf(float hz) { return 69.f + 12.f * std::log2(hz > 1.f ? hz / 440.f : 1.f / 440.f); }
     /* Where on its axis the world is played: a note world at the pitch, an
      * index world — a row of bodies, gong to woodblock — where position 0
@@ -182,7 +205,12 @@ public:
         else
         {
             const bool late = rsince_ < 0.03f * sr_ && std::fabs(p - note) > 0.4f;
-            move = !(pitch_lock_ && r.kind != 1 && !rstriking_ && !late && !(exciter_ && exgain_ > 0.f));
+            /* driven: something is actually coming in (Process), and no
+               strike is waiting — the shell holds a strike for the CV to
+               settle, and in those milliseconds the pitch belongs to the
+               strike coming, not to the note still ringing */
+            const bool driven = rdriven_ > 0 && !rhold_;
+            move = !(pitch_lock_ && r.kind != 1 && !rstriking_ && !late && !driven);
         }
         if(move || rvdirty_[ractive_])
         {
@@ -428,6 +456,24 @@ public:
                 SetTune(Tune::Coil, CoilOf(c_[3]));
             }
             rdid_ = false;                 /* one voice built a block at most (see Retune) */
+            /* the bank counts as driven — its pitch following the CV under
+               the lock, as a quantiser — only while something is coming in:
+               J1 over -54 dBFS with the amount over 1 %, held 100 ms past
+               the last of it. It was any amount over zero, and the amount
+               is the Stereo page's sixth pot, which a wavetable world uses
+               as CV out A's depth and which keeps whatever it was left at:
+               with nothing patched the lock was off, and every CV step
+               retuned the note still ringing to the next note in the four
+               milliseconds the strike waits — the pop at the note start that
+               grew with the resonance (Combust). +13 to +26 dB of edge in
+               that window at an amount of 0.01 %, measured; none at 0 */
+            if(exciter_ && exgain_ >= 2e-4f)
+            {
+                float pk = 0.f;
+                for(int i = 0; i < n; i++) { const float a = std::fabs(exciter_[i]); if(a > pk) pk = a; }
+                if(pk >= 0.002f) rdriven_ = (uint32_t)(0.1f * sr_);
+            }
+            if(rdriven_ > 0) rdriven_ = rdriven_ > (uint32_t)n ? rdriven_ - (uint32_t)n : 0u;
             Retune();
             if(rbend_ < 64) rbend_++;
             if(rsince_ < 0xFFFFFFu) rsince_ += (uint32_t)n;
@@ -585,7 +631,7 @@ public:
         for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rmember_ = 0;
-        for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; }
+        for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
         rframe_ = false;
         if(w && w->IsResonate()) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
     }
@@ -776,6 +822,8 @@ private:
     int            rtuned_member_ = -1;
     float          rvnote_[kPoly];  /* the note each voice was built at; 1e9 for not yet */
     bool           rvdirty_[kPoly]; /* the voice is to be rebuilt at that note: the tune or the member changed */
+    uint32_t       rvstruck_[kPoly] = {};   /* the strike count when each voice was last struck: the oldest is the one taken */
+    uint32_t       rstrikes_ = 0;
     uint32_t       at_count_ = 0;
     float          rtune_[3] = {0.f, 1.f, 1.f};   /* voicing (widths), decay (x), coil (x) */
     bool           rframe_ = false;  /* a resonate world's one silent frame has been rendered */
@@ -790,6 +838,8 @@ private:
     bool           rdid_ = false;        /* a voice was built this block */
     const float*   exciter_ = nullptr;   /* this block's drive, or null */
     float          exgain_ = 0.f;
+    uint32_t       rdriven_ = 0;         /* samples the bank still counts as driven: something came in at J1 */
+    bool           rhold_ = false;       /* a strike is waiting for the CV (HoldPitch) */
 
     const World*   morph_world_ = nullptr;
 
