@@ -43,6 +43,8 @@ GIT_DIRTY := $(shell git diff --quiet 2>/dev/null || echo -dirty)
 C_DEFS += -DKYK_GIT_HASH=\"$(GIT_HASH)$(GIT_DIRTY)\"
 # Core determinism: no FMA contraction (docs/spec.md §2).
 C_DEFS += -ffp-contract=off
+# extra defines for a variant build, e.g. make KYK_DEFS=-DKYK_RES_NEAREST
+C_DEFS += $(KYK_DEFS)
 
 APP_TYPE = BOOT_SRAM
 LDSCRIPT = kyklophoria.lds
