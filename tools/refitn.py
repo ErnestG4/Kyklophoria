@@ -115,10 +115,46 @@ def main():
     ap.add_argument('--onset', type=float, default=-40.0)
     ap.add_argument('--t60-cap', type=float, default=8.0)
     ap.add_argument('--dry', action='store_true', help='fit and report, write nothing')
+    ap.add_argument('--sync', action='store_true', help='only bring fits.tsv up to date with the records refitn has written (a run that died before writing it)')
     a = ap.parse_args()
     polish = a.steps // 2 if a.polish < 0 else a.polish
     head, rows = read_manifest(a.fitdir)
     byid = {r['id']: r for r in rows}
+
+    def write_manifest():
+        # after every record, not once at the end: the Iowa pilot died on its
+        # 49th record and left 48 refitted records under a manifest that
+        # described the fits they replaced
+        tmp = os.path.join(a.fitdir, 'fits.new.tsv')
+        with open(tmp, 'w') as f:
+            f.write('\t'.join(head) + '\n')
+            for r in rows:
+                f.write('\t'.join(r.get(h, '') for h in head) + '\n')
+        os.replace(tmp, os.path.join(a.fitdir, 'fits.tsv'))
+
+    def refitted_already(mid):
+        try:
+            with open(os.path.join(a.fitdir, mid + '.mmr')) as f:
+                first = f.readline()
+        except OSError:
+            return None
+        if 'via refitn' not in first:
+            return None
+        m = re.search(r'loss ([\d.]+), excess ([-\d.]+) dB, decay ratio ([\d.]+)', first)
+        with open(os.path.join(a.fitdir, mid + '.mmr')) as f:
+            n = sum(1 for line in f if line.startswith('mode '))
+        return (float(m.group(1)), float(m.group(2)), float(m.group(3)), n) if m else None
+
+    if a.sync:
+        fixed = 0
+        for r in rows:
+            got = refitted_already(r['id'])
+            if got:
+                r['loss'], r['excess_db'], r['decay_ratio'], r['modes'] = '%.4f' % got[0], '%.3f' % got[1], '%.3f' % got[2], str(got[3])
+                fixed += 1
+        write_manifest()
+        print('  %d rows brought up to date from their refitn records' % fixed)
+        return
     targets = [t for t in a.only.split(',') if t]
     if a.auto:
         targets += [r['id'] for r in rows if not good(r) and r['id'] not in targets]
@@ -129,6 +165,9 @@ def main():
     changed = 0
     for mid in targets:
         row = byid.get(mid)
+        if row is not None and refitted_already(mid):
+            print('  %-10s refitted already, skipped' % mid)
+            continue
         if row is None or row.get('param') != 'midi':
             print('  %-10s not a note record, skipped' % mid)
             continue
@@ -150,7 +189,18 @@ def main():
         below = max((r for r in same if float(r['value']) < midi), key=lambda r: float(r['value']), default=None)
         above = min((r for r in same if float(r['value']) > midi), key=lambda r: float(r['value']), default=None)
         secs = secs or 4.0
-        x, sr = modalfit.load(src, secs, a.onset)
+        # the quiet takes: a pp at -65 dBFS has no onset above -40 (the Iowa
+        # grand's pp layer was fitted at -65, and the pilot died there)
+        x = None
+        for on in (a.onset, -65.0, -80.0):
+            try:
+                x, sr = modalfit.load(src, secs, on)
+                break
+            except ValueError:
+                continue
+        if x is None:
+            print('  %-10s no onset above -80 dBFS, skipped' % mid)
+            continue
         cap = a.t60_cap * secs
         old = score(float(row['loss']), float(row['decay_ratio']))
         best = None
@@ -188,14 +238,8 @@ def main():
                 o.write('mode %d hz %.6f zeta %.9g phase %.5f gains %s\n' % (kk, fr[i], r[i] / w, ph[i], ' '.join('%.9g' % amp[i] for _ in range(12))))
         sf.write(os.path.join(a.fitdir, mid + '-resynth.wav'), np.clip(y / (np.max(np.abs(y)) or 1) * 0.5, -1, 1), sr)
         row['modes'], row['loss'], row['excess_db'], row['decay_ratio'] = str(len(order)), '%.4f' % loss, '%.3f' % ex, '%.3f' % dr
+        write_manifest()
         print('  %-10s refitted from %s: score %.3f -> %.3f' % (mid, seed, old, s))
-    if changed and not a.dry:
-        tmp = os.path.join(a.fitdir, 'fits.new.tsv')
-        with open(tmp, 'w') as f:
-            f.write('\t'.join(head) + '\n')
-            for r in rows:
-                f.write('\t'.join(r.get(h, '') for h in head) + '\n')
-        os.replace(tmp, os.path.join(a.fitdir, 'fits.tsv'))
     print('  %d of %d refitted%s' % (changed, len(targets), ' (dry run)' if a.dry else ''))
 
 
