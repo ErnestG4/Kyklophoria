@@ -643,6 +643,25 @@ int main()
         }
     }
 
+    /* 20. the recorded intro follows the velocity: at full the whole take
+       plays, softer a share of it (a quarter at the bottom, 30 ms at least)
+       sloping off, and the modes come in under the shorter seam */
+    {
+        auto playing_for = [&](float vel, uint32_t& len) {
+            ResonatorVoice v; v.Init(); piano.Res().At(49.f, v, sr); v.Strike(vel);   /* a point: the take read at its own rate */
+            len = v.burst_len;
+            std::vector<float> y(48); int n = 0;
+            while(v.burst.Playing() && n < 96000) { v.Process(y.data(), 48); n += 48; }
+            return n;
+        };
+        uint32_t len = 0;
+        const int full = playing_for(1.f, len), soft = playing_for(0.f, len);
+        const float want = std::fmax(0.25f * (float)len, std::fmin(1440.f, (float)len));
+        CHECK(std::abs(full - (int)len) <= 96, "a full-velocity strike did not play its whole intro: %d of %u samples", full, len);
+        CHECK(std::fabs((float)soft - want) <= 96.f, "the softest strike's intro ran %d samples, not a quarter of %u", soft, len);
+        printf("  intro by velocity: full plays %d of %u samples, the softest %d\n", full, len, soft);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }
