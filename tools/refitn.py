@@ -114,6 +114,9 @@ def main():
     ap.add_argument('--polish', type=int, default=-1)
     ap.add_argument('--onset', type=float, default=-40.0)
     ap.add_argument('--t60-cap', type=float, default=8.0)
+    ap.add_argument('--neighbours', type=int, default=1, help='good records to seed from on each side (the nearest first)')
+    ap.add_argument('--tries', type=int, default=1, help='fits from each seed, the later ones from its frequencies jittered by a tenth of a per cent: the fitter lands in a different place run to run, and a stubborn record wants several')
+    ap.add_argument('--redo', action='store_true', help='fit records refitn already wrote again, the current one competing too')
     ap.add_argument('--dry', action='store_true', help='fit and report, write nothing')
     ap.add_argument('--sync', action='store_true', help='only bring fits.tsv up to date with the records refitn has written (a run that died before writing it)')
     a = ap.parse_args()
@@ -165,7 +168,7 @@ def main():
     changed = 0
     for mid in targets:
         row = byid.get(mid)
-        if row is not None and refitted_already(mid):
+        if row is not None and refitted_already(mid) and not a.redo:
             print('  %-10s refitted already, skipped' % mid)
             continue
         if row is None or row.get('param') != 'midi':
@@ -186,8 +189,8 @@ def main():
         dyn = row.get('dynamic', '')
         # the same dynamic's nearest good records either side
         same = [r for r in rows if r.get('dynamic', '') == dyn and r['id'] != mid and good(r)]
-        below = max((r for r in same if float(r['value']) < midi), key=lambda r: float(r['value']), default=None)
-        above = min((r for r in same if float(r['value']) > midi), key=lambda r: float(r['value']), default=None)
+        belows = sorted((r for r in same if float(r['value']) < midi), key=lambda r: -float(r['value']))[:a.neighbours]
+        aboves = sorted((r for r in same if float(r['value']) > midi), key=lambda r: float(r['value']))[:a.neighbours]
         secs = secs or 4.0
         # the quiet takes: a pp at -65 dBFS has no onset above -40 (the Iowa
         # grand's pp layer was fitted at -65, and the pilot died there)
@@ -204,20 +207,24 @@ def main():
         cap = a.t60_cap * secs
         old = score(float(row['loss']), float(row['decay_ratio']))
         best = None
-        for nb in (below, above):
-            if nb is None:
+        seeds = [(nb['id'], float(nb['value'])) for nb in belows + aboves]
+        if a.redo:
+            seeds.append((mid, midi))                   # the record as it stands, polished again
+        rng = np.random.default_rng(int(midi * 1000) % 2 ** 31)
+        for sid, sval in seeds:
+            nm, _, _, _ = read_record(os.path.join(a.fitdir, sid + '.mmr'))
+            k = f0 / (440.0 * 2 ** ((sval - 69) / 12))
+            base = [(hz * k, zeta * 2 * math.pi * hz * k, g, ph) for hz, zeta, ph, g in nm if hz * k < 0.45 * sr]
+            if not base:
                 continue
-            nm, _, _, _ = read_record(os.path.join(a.fitdir, nb['id'] + '.mmr'))
-            k = f0 / (440.0 * 2 ** ((float(nb['value']) - 69) / 12))
-            init = [(hz * k, zeta * 2 * math.pi * hz * k, g, ph) for hz, zeta, ph, g in nm if hz * k < 0.45 * sr]
-            if not init:
-                continue
-            res = fit_from(x, sr, f0, init, a.steps, polish, cap, device)
-            s = score(res[5], res[7])
-            print('  %-10s midi %3d %-3s from %-10s (midi %3d): %2d modes loss %.3f decay x%.2f score %.3f (was %.3f)'
-                  % (mid, midi, dyn, nb['id'], float(nb['value']), len(res[0]), res[5], res[7], s, old))
-            if len(res[0]) >= 1 and (best is None or s < best[0]):
-                best = (s, nb['id'], res)
+            for t in range(a.tries):
+                init = base if t == 0 else [(f * (1 + 0.001 * rng.standard_normal()), r_, g, ph) for f, r_, g, ph in base]
+                res = fit_from(x, sr, f0, init, a.steps, polish, cap, device)
+                s = score(res[5], res[7])
+                print('  %-10s midi %3d %-3s from %-10s (midi %3d) try %d: %2d modes loss %.3f decay x%.2f score %.3f (was %.3f)'
+                      % (mid, midi, dyn, sid, sval, t + 1, len(res[0]), res[5], res[7], s, old))
+                if len(res[0]) >= 1 and (best is None or s < best[0]):
+                    best = (s, sid, res)
         if best is None or best[0] > 0.95 * old:
             print('  %-10s kept as it was' % mid)
             continue

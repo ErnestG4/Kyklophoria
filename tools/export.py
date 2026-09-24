@@ -302,6 +302,53 @@ def scale_points(pts, form, k):
     return out
 
 
+def voice(pts, form, kind, strength=1.0, cap_db=9.0, reach=3, tol_db=3.0):
+    """Voicing, as a piano technician does it: each note's loudness evened
+    against its neighbours'. Loudness here is the note as it plays at full
+    velocity — modes (through the pickup where there is one) plus the
+    hardest take's burst — as RMS over its first 300 ms, in dB. Its target
+    is the median of the `reach` notes either side of it, itself left out.
+    Within tol_db of it a note is left alone — that much is the instrument's
+    character, and every note is its own (Combust: "some of the difference
+    ... is character ... but some of the largest jumps are indicative of
+    some kind of error in our process or in the recordings themselves"); past
+    it, the excess is taken back, times `strength`, at most cap_db: the whole
+    point, attack and ring by one number (scale_points), so the seam stays
+    where it was and each note keeps its own timbre and decay.
+
+    The Iowa grand's recordings are uneven where the keyboard seesawed —
+    G5 10 dB under its neighbours 150 ms in at ff and at mf alike, A#5 6 dB
+    — and a fit can only be as even as its recording (Combust: "huge jumps
+    in the output spectra", "smooth across each note"). Not on a row of
+    bodies (kind 1), whose points are different objects on purpose."""
+    if kind == 1 or len(pts) < 3 or strength <= 0:
+        return pts
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import playvel
+    loud = []
+    for param, modes, stage, bursts, *rest in pts:
+        sh = ({0: 'none', 1: 'bell', 2: 'gap'}[form],) + tuple(stage[:5])
+        swing = stage[6] if len(stage) > 6 else 1.0
+        lit = [m for m in modes if m[2] != 0.0]
+        y = playvel.note(lit, sh, swing, 0.3, 48000) if lit else np.zeros(14400)
+        b = bursts[-1][1] if bursts else np.zeros(1)
+        n = min(len(y), len(b))
+        y = y.copy(); y[:n] += b[:n]
+        loud.append(10 * math.log10(float(np.mean(y[:14400] ** 2)) + 1e-20))
+    out, moved = [], []
+    for i, pt in enumerate(pts):
+        near = [loud[j] for j in range(max(0, i - reach), min(len(pts), i + reach + 1)) if j != i]
+        dv = float(np.median(near)) - loud[i]
+        c = strength * math.copysign(max(0.0, abs(dv) - tol_db), dv)
+        c = max(-cap_db, min(cap_db, c))
+        if abs(c) >= 1.0:
+            moved.append('%s %+.1f' % (note_name(pt[0]) if kind == 0 else '%g' % pt[0], c))
+        out.extend(scale_points([pt], form, 10 ** (c / 20)))
+    print('  voice: %d of %d notes moved toward their neighbours by what they stray past %.0f dB (%.0f%% of it, at most %.0f dB)%s'
+          % (len(moved), len(pts), tol_db, 100 * strength, cap_db, (': ' + ', '.join(moved)) if moved else ''))
+    return out
+
+
 def body_curve(fitdir, kind):
     """The set's own radiation envelope (tools/body.py), eight octave-band
     gains in dB, 0 at its loudest band, with any band the set has too few
@@ -1065,7 +1112,7 @@ def read_corpus(path):
 
 
 
-def export_clean(d, path, raw, pts, sources, form, kind, over, ref=None, target=3.0, cleaned=True):
+def export_clean(d, path, raw, pts, sources, form, kind, over, ref=None, target=3.0, cleaned=True, voicing=0.0):
     """records --clean: the cleaned points through the same chain as the
     raw ones, at the level the raw world would have had — the model's
     headroom and the runtime's check taken on the raw points — so that
@@ -1086,6 +1133,9 @@ def export_clean(d, path, raw, pts, sources, form, kind, over, ref=None, target=
     pts.sort(key=lambda p: p[0])
     pts = intune(pts, kind, sources=sources)
     pts = align(pts, kind)
+    if voicing:
+        raw = _quiet(voice, raw, form, kind, voicing)
+        pts = voice(pts, form, kind, voicing)
     body = body_curve(d, kind)
     k, peak = _headroom_k(raw, form, target)
     raw = scale_points(raw, form, k)
@@ -1174,7 +1224,12 @@ def main():
         # clean_record); --level-of=WORLD.kykm puts the world's level where
         # that world's is, for an A/B of the cleaning alone. Neither changes
         # a byte of a world exported without them
-        flags = [a for a in sys.argv[2:] if a.startswith('--clean') or a.startswith('--level-of=')]
+        flags = [a for a in sys.argv[2:] if a.startswith('--clean') or a.startswith('--level-of=') or a.startswith('--voice')]
+        # --voice[=S]: a note straying more than 3 dB from its neighbours'
+        # loudness brought back by S of the excess (all of it by default);
+        # see voice()
+        vflag = next((a for a in flags if a.startswith('--voice')), None)
+        voicing = (float(vflag.split('=', 1)[1]) if '=' in vflag else 1.0) if vflag else 0.0
         argv = [a for a in sys.argv if a != '--gate' and a not in flags]
         gated = '--gate' in sys.argv
         clean = next((a for a in flags if a.startswith('--clean')), None)
@@ -1236,11 +1291,13 @@ def main():
         if clean or ref:
             # --level-of alone is the same chain with nothing cleaned: the
             # world as it would be exported, at the reference's level
-            return export_clean(d, argv[3], pts, cpts if clean else list(pts), sources, form, kind, over, ref, cleaned=bool(clean))
+            return export_clean(d, argv[3], pts, cpts if clean else list(pts), sources, form, kind, over, ref, cleaned=bool(clean), voicing=voicing)
         pts = layer(d, pts)
         pts.sort(key=lambda p: p[0])
         pts = intune(pts, kind, sources=sources)
         pts = align(pts, kind)
+        if voicing:
+            pts = voice(pts, form, kind, voicing)
         pts = headroom(pts, form)
         N = max(len(pt[1]) for pt in pts)
         body = body_curve(d, kind)
