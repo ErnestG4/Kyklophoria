@@ -118,6 +118,19 @@ inline float Exp2(float x)
     return p * s.f;
 }
 
+/* log2 of a positive float: the exponent from its bits, the mantissa's by a
+   quintic on [1, 2) within 3e-5 (a five-thousandth of a dB) — for blending
+   decays and levels between two points on the scale they are heard on,
+   without a libm call */
+inline float Log2(float x)
+{
+    union { float f; uint32_t u; } v; v.f = x;
+    const int e = (int)((v.u >> 23) & 255u) - 127;
+    v.u = (v.u & 0x007FFFFFu) | 0x3F800000u;
+    const float y = v.f - 1.f;
+    return (float)e + y * (1.441825795f + y * (-0.708682101f + y * (0.415421949f + y * (-0.194422672f + y * 0.045885527f))));
+}
+
 /* exp(-x) for the pole radius, where x = zeta w is at most about 0.06:
    the series to five terms is exact to 1e-9 there */
 inline float ExpNegSmall(float x)
@@ -260,7 +273,7 @@ struct ResonatorBank
     /* keep: retune the coefficients and leave the state ringing — a pitch
        change under a sounding note, which follows it as the oscillator's
        does; the strike bank's state is left too, mid-ramp */
-    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr, bool keep = false, float ratio = 1.f, float lv_max = 2.f)
+    void Set(const float* hz, const float* zeta, const float* gain, int count, float sr, const float* phase = nullptr, bool keep = false, float ratio = 1.f, float lv_max = 2.f, bool by_slot = false)
     {
         const int n0 = n;
         n = count > kMax ? kMax : count;
@@ -318,6 +331,68 @@ struct ResonatorBank
                 has[i] = e > 1e-20f;
             }
         }
+        /* who carries what, decided first and loudest first: a new mode
+           takes the unclaimed old mode nearest by ratio, within a fifth,
+           in the order of its own level. In index order a quiet mode came
+           first wherever it sat below a loud one — and a blend of two
+           points (At) puts quiet partials beside loud ones — claimed the
+           loud ring and scaled it to its own level: a glide through a
+           blend lost 90 dB of ring in 0.4 s, one rebuild at a time */
+        int from_of[kMax];
+        for(int i = 0; i < n; i++) from_of[i] = -1;
+        if(keep)
+        {
+            /* by the energy a mode carries, gain^2 over its decay rate (the
+               export's own rank): the modes that ring longest claim first,
+               so a long ring goes on in a long mode and not in a loud
+               short one beside it */
+            /* unless the caller says the slots correspond (by_slot): a
+               row of bodies folds its neighbours mode for mode, and slot
+               order is the one it always had — taken in energy order a
+               nudge along the row let a loud mode take its neighbour's
+               ring, 20 dB of it lost. A note world's modes are a blend of
+               two points and have no such order */
+            int ord[kMax]; float en[kMax];
+            const bool slots = by_slot;
+            for(int i = 0; i < n; i++)
+            {
+                const float d = zeta[i] * hz[i];
+                en[i] = slots ? (float)(n - i) : gain[i] * gain[i] / (d > 1e-12f ? d : 1e-12f);
+                int k = i;
+                while(k > 0 && en[ord[k - 1]] < en[i]) { ord[k] = ord[k - 1]; k--; }
+                ord[k] = i;
+            }
+            for(int o = 0; o < n; o++)
+            {
+                const int i = ord[o];
+                const float w = 6.2831853f * hz[i] / sr;
+                if(!(w < kWMax)) continue;
+                float best = 1.4f;                      /* within a fifth either way */
+                int from = -1;
+                for(int j = 0; j < n0; j++)
+                {
+                    if(!has[j] || claimed[j]) continue;
+                    const float wj = w0[j] * ratio;
+                    /* most candidates are nowhere near: rejected on two
+                       multiplies, where every one of them was a divide.
+                       On the M7 a divide is fourteen cycles the compare
+                       then waits on, and the loop the compiler emits is
+                       some thirty cycles a candidate with it and under
+                       twenty without — 44 x 44 on a piano point, about a
+                       quarter of a block's budget at every strike before
+                       this (an estimate from the emitted code, not a
+                       measurement on the module). The margin is a
+                       hundred times the float's rounding, so what it
+                       rejects has hi / lo > best exactly and the divide
+                       would have rejected it too */
+                    const float hi = wj > w ? wj : w, lo = wj > w ? w : wj;
+                    if(hi > best * lo * 1.0001f) continue;
+                    const float q = hi / lo;
+                    if(q < best) { best = q; from = j; }
+                }
+                if(from >= 0) { claimed[from] = true; from_of[i] = from; }
+            }
+        }
         for(int i = 0; i < n; i++)
         {
             const float w = 6.2831853f * hz[i] / sr;
@@ -338,33 +413,7 @@ struct ResonatorBank
             }
             const float r = fastmath::ExpNegSmall(zeta[i] * w);
             const float ph = phase ? phase[i] : 0.f;
-            int from = -1;
-            if(keep)
-            {
-                float best = 1.4f;                      /* within a fifth either way */
-                for(int j = 0; j < n0; j++)
-                {
-                    if(!has[j] || claimed[j]) continue;
-                    const float wj = w0[j] * ratio;
-                    /* most candidates are nowhere near: rejected on two
-                       multiplies, where every one of them was a divide.
-                       On the M7 a divide is fourteen cycles the compare
-                       then waits on, and the loop the compiler emits is
-                       some thirty cycles a candidate with it and under
-                       twenty without — 44 x 44 on a piano point, about a
-                       quarter of a block's budget at every strike before
-                       this (an estimate from the emitted code, not a
-                       measurement on the module). The margin is a
-                       hundred times the float's rounding, so what it
-                       rejects has hi / lo > best exactly and the divide
-                       would have rejected it too: the same mode is
-                       chosen, bit for bit */
-                    const float hi = wj > w ? wj : w, lo = wj > w ? w : wj;
-                    if(hi > best * lo * 1.0001f) continue;
-                    const float q = hi / lo;
-                    if(q < best) { best = q; from = j; }
-                }
-            }
+            const int from = from_of[i];
             float cwn, swn; fastmath::SinCos(w, swn, cwn);
             c1[i] = 2.0f * r * cwn;
             c2[i] = -r * r;
@@ -378,7 +427,6 @@ struct ResonatorBank
             p2[i] = gain[i] * (s1w * cwn - c1w * swn) / (r * r);
             if(from >= 0)
             {
-                claimed[from] = true;
                 const float go = std::fabs(g0[from]), gn = std::fabs(gain[i]);
                 const float lv = go > 1e-9f ? (gn / go > lv_max ? lv_max : gn / go) : 1.f;
                 float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
@@ -1366,11 +1414,69 @@ struct ResonatorWorld
         if(kind == 1 || v.param > 1e8f) return;
         const float ratio = std::exp2((param - v.param) / 12.f);
         int n = 0;
-        for(int k = 0; k < N; k++) { if(v.gain[k] == 0.f && v.hz[k] == 0.f) break; v.hz[k] *= ratio; n = k + 1; }
+        for(int k = 0; k < ResonatorBank::kMax; k++) { if(v.gain[k] == 0.f && v.hz[k] == 0.f) break; v.hz[k] *= ratio; n = k + 1; }   /* the voice's own modes: a blend can hold more than the world's N */
         v.bank.Bend(v.hz, v.zeta, n, sr);
         v.burst_rate *= ratio;
         v.burst.Bend(ratio);
         v.param = param;
+    }
+
+    /* one point as it sounds at param: its modes (all, or the cap's
+       loudest, on the bytes), transposed, at the point's level, and
+       re-weighted by the body curve; its stage into stage when asked */
+    int Transposed(int near, float param, int cap, float* ha, float* za, float* ga, float* fa, float* stage) const
+    {
+        int nd = N;
+        if(cap > 0 && cap < N)
+        {
+            int idx[ResonatorBank::kMax];
+            nd = Loudest(near, cap, idx);
+            const uint8_t* m = Modes(near);
+            for(int k = 0; k < nd; k++) DecodeMode(m, idx[k], k, ha, za, ga, fa);
+        }
+        else Decode(near, ha, za, ga, fa);
+        float st[8];
+        std::memcpy(st, Stage(near), 32);
+        if(stage) std::memcpy(stage, st, 32);
+        const float r = std::exp2((param - Param(near)) / 12.f);
+        /* the body stays where it is. A point played at another note is
+           transposed, which moves its whole spectrum — a double bass
+           played two octaves up put its 2 kHz partials at 8 kHz at the
+           same level, a bright hash no bass makes (Combust: "the wood
+           naturally reflects lower tones and slowly absorbs higher
+           ones, so you don't get that super high ring"). A body's
+           radiation is a function of absolute frequency, not of the
+           note, so each mode is re-weighted by the instrument's own
+           measured envelope (Body(), version 7) at where it now sounds
+           over where it was fitted. Nothing at all at the point
+           itself. A world with no curve keeps its levels. */
+        const bool bend = has_body && std::fabs(r - 1.f) > 1e-4f;
+        float dbk[ResonatorBank::kMax];
+        float wsum = 0.f, dmean = 0.f;
+        for(int k = 0; k < nd; k++)
+        {
+            const float f0_ = ha[k];
+            ha[k] *= r; ga[k] *= st[7];
+            if(bend)
+            {
+                dbk[k] = Body(ha[k]) - Body(f0_);
+                const float w = ga[k] * ga[k];
+                wsum += w; dmean += w * dbk[k];
+            }
+        }
+        /* the curve changes the balance, not the level: its
+           energy-weighted mean is taken back out, so a note carried
+           up the keyboard keeps its loudness and only its shape moves
+           — the double bass's own envelope is 35 dB down by 1.4 kHz
+           and applied whole it silenced the top two octaves of its
+           range, which is true of a double bass and useless as an
+           instrument */
+        if(bend && wsum > 0.f)
+        {
+            dmean /= wsum;
+            for(int k = 0; k < nd; k++) ga[k] *= fastmath::Exp2(0.16609640f * (dbk[k] - dmean));   /* 10^(x/20) */
+        }
+        return nd;
     }
 
     void At(float param, ResonatorVoice& v, float sr, bool keep = false, bool strike = false) const
@@ -1389,53 +1495,152 @@ struct ResonatorWorld
         bool capped = false;          /* the voice's cap already applied, on the bytes */
         if(kind != 1)
         {
-            if(v.cap > 0 && v.cap < N)
+            /* between two points, both of them: each as it sounds at this
+               note (Transposed), partial matched to partial, and the
+               frequency, decay and level of each pair blended by where the
+               note lies between them; a partial only one point has comes in
+               by the same share. It was the nearest point alone, carried:
+               a flip in timbre at every midpoint, 3 to 6 dB of spectral
+               shape in one semitone where the notes either side of it moved
+               0.3 to 0.9 (tools: keywalk) — Combust: "huge jumps in the
+               output spectra ... as you play up the keyboard", "smoothed
+               between known points to never get thinned out or weird".
+               The blend of v5, which this is not, lerped slot k with slot k
+               and summed antiphase pairs into +19 dB bumps: here the pairs
+               are found by frequency, each keeps one phase (the nearer
+               point's), and nothing is summed with its own opposite. At a
+               point it is that point exactly. Linear throughout — the
+               strike's arithmetic stays off libm */
+            const float w = a == b ? 0.f : (near == a ? t : 1.f - t);    /* the far point's share: 0 at a point, 1/2 at the midpoint */
+#ifndef KYK_RES_NEAREST
+            if(w >= 1e-3f)
             {
-                int idx[ResonatorBank::kMax];
-                nd = Loudest(near, v.cap, idx);
-                const uint8_t* m = Modes(near);
-                for(int k = 0; k < nd; k++) DecodeMode(m, idx[k], k, ha, za, ga, fa);
-                capped = true;
-            }
-            else Decode(near, ha, za, ga, fa);
-            std::memcpy(st, Stage(near), 32);
-            const float r = std::exp2((param - Param(near)) / 12.f);
-            /* the body stays where it is. A point played at another note is
-               transposed, which moves its whole spectrum — a double bass
-               played two octaves up put its 2 kHz partials at 8 kHz at the
-               same level, a bright hash no bass makes (Combust: "the wood
-               naturally reflects lower tones and slowly absorbs higher
-               ones, so you don't get that super high ring"). A body's
-               radiation is a function of absolute frequency, not of the
-               note, so each mode is re-weighted by the instrument's own
-               measured envelope (Body(), version 7) at where it now sounds
-               over where it was fitted. Nothing at all at the point
-               itself. A world with no curve keeps its levels. */
-            const bool bend = has_body && std::fabs(r - 1.f) > 1e-4f;
-            float dbk[ResonatorBank::kMax];
-            float wsum = 0.f, dmean = 0.f;
-            for(int k = 0; k < nd; k++)
-            {
-                const float f0_ = ha[k];
-                ha[k] *= r; ga[k] *= st[7];
-                if(bend)
+                float hA[ResonatorBank::kMax], zA[ResonatorBank::kMax], gA[ResonatorBank::kMax], fA[ResonatorBank::kMax];
+                float hB[ResonatorBank::kMax], zB[ResonatorBank::kMax], gB[ResonatorBank::kMax], fB[ResonatorBank::kMax];
+                /* a capped voice (polyphony) blends each point's loudest
+                   half again its share, not all of them: the share is all it
+                   keeps, and decoding and pairing 48 a side cost a strike
+                   five times what the nearest point alone did */
+                const int sc = v.cap > 0 && v.cap < N ? (v.cap + v.cap / 2 < N ? v.cap + v.cap / 2 : N) : 0;
+                const int nA = Transposed(a, param, sc, hA, zA, gA, fA, nullptr);
+                const int nB = Transposed(b, param, sc, hB, zB, gB, fB, nullptr);
+                const float wa = 1.f - t, wb = t;
+                constexpr int M2 = 2 * ResonatorBank::kMax;
+                float h[M2], z[M2], g[M2], f[M2];
+                bool used[ResonatorBank::kMax];
+                float lgB[ResonatorBank::kMax];
+                for(int j = 0; j < nB; j++) { used[j] = !(gB[j] != 0.f); lgB[j] = used[j] ? 0.f : fastmath::Log2(std::fabs(gB[j])); }   /* a silent slot pairs with nothing */
+                /* A's partials loudest first, each taking the partner that
+                   is loudest for how close it is — a partial is several
+                   close modes (a tine's beating pair, a piano's unison), and
+                   taken in frequency order a mode at a hundredth of the level
+                   took the other point's strongest and the blend lost 8 dB of
+                   fundamental */
+                int ord[ResonatorBank::kMax], no = 0;
+                for(int i = 0; i < nA; i++) if(gA[i] != 0.f)
                 {
-                    dbk[k] = Body(ha[k]) - Body(f0_);
-                    const float w = ga[k] * ga[k];
-                    wsum += w; dmean += w * dbk[k];
+                    int k = no++;
+                    while(k > 0 && std::fabs(gA[ord[k - 1]]) < std::fabs(gA[i])) { ord[k] = ord[k - 1]; k--; }
+                    ord[k] = i;
                 }
+                bool pairedA[ResonatorBank::kMax]; int partner[ResonatorBank::kMax];
+                for(int i = 0; i < nA; i++) { pairedA[i] = false; partner[i] = -1; }
+                /* B by frequency, so each of A's partials looks only at the
+                   sixth of a tone around it: a binary search, not all of B */
+                int byf[ResonatorBank::kMax];
+                for(int j = 0; j < nB; j++)
+                {
+                    int k = j;
+                    while(k > 0 && hB[byf[k - 1]] > hB[j]) { byf[k] = byf[k - 1]; k--; }
+                    byf[k] = j;
+                }
+                for(int o = 0; o < no; o++)
+                {
+                    const int i = ord[o];
+                    int best = -1; float bs = -1e30f;
+                    const float flo = hA[i] * (1.f / 1.035f);
+                    int l = 0, r = nB;
+                    while(l < r) { const int mid = (l + r) >> 1; if(hB[byf[mid]] < flo) l = mid + 1; else r = mid; }
+                    for(int q = l; q < nB; q++)
+                    {
+                        const int j = byf[q];
+                        if(hB[j] > hA[i] * 1.035f) break;
+                        if(used[j]) continue;
+                        const float hi = hA[i] > hB[j] ? hA[i] : hB[j], lo = hA[i] > hB[j] ? hB[j] : hA[i];
+                        if(hi > 1.035f * lo) continue;                    /* within a sixth of a tone, both at this note */
+                        const float sc = lgB[j] - 40.f * (hi / lo - 1.f);   /* a per cent away costs 2.4 dB */
+                        if(sc > bs) { bs = sc; best = j; }
+                    }
+                    if(best >= 0) { used[best] = true; pairedA[i] = true; partner[i] = best; }
+                }
+                int m = 0;
+                for(int i = 0; i < nA; i++)
+                {
+                    if(!(gA[i] != 0.f)) continue;
+                    const int best = partner[i];
+                    if(pairedA[i])
+                    {
+                        used[best] = true;
+                        /* the frequency linearly (the pair is within a
+                           sixth of a tone); the decay and the level
+                           geometrically, in the ratios they are heard in —
+                           linearly, a neighbour ringing a tenth as long
+                           nearly tripled the damping at a fifth of its share,
+                           13.8 dB of shape one semitone off a point */
+                        const float ma = std::fabs(gA[i]), mb = std::fabs(gB[best]);
+                        const float mg = ma > 0.f && mb > 0.f ? ma * fastmath::Exp2(wb * (fastmath::Log2(mb) - fastmath::Log2(ma))) : wa * ma + wb * mb;
+                        h[m] = wa * hA[i] + wb * hB[best];
+                        z[m] = zA[i] > 0.f && zB[best] > 0.f ? zA[i] * fastmath::Exp2(wb * (fastmath::Log2(zB[best]) - fastmath::Log2(zA[i]))) : wa * zA[i] + wb * zB[best];
+                        g[m] = near == a ? (gA[i] < 0.f ? -mg : mg) : (gB[best] < 0.f ? -mg : mg);
+                        f[m] = near == a ? fA[i] : fB[best];
+                    }
+                    else { h[m] = hA[i]; z[m] = zA[i]; g[m] = wa * gA[i]; f[m] = fA[i]; }
+                    m++;
+                }
+                for(int j = 0; j < nB; j++) if(!used[j]) { h[m] = hB[j]; z[m] = zB[j]; g[m] = wb * gB[j]; f[m] = fB[j]; m++; }
+                /* at most the bank, or the voice's cap: the loudest by the
+                   energy they carry (the export's own rank) */
+                const int lim = v.cap > 0 && v.cap < ResonatorBank::kMax ? v.cap : ResonatorBank::kMax;
+                if(m > lim)
+                {
+                    /* the lim-th largest score by quickselect, then every
+                       mode over it: a pass or two over m, where picking the
+                       loudest lim times over was lim passes */
+                    float sc[M2], w2[M2];
+                    for(int k = 0; k < m; k++) { const float d = z[k] * h[k]; sc[k] = w2[k] = g[k] * g[k] / (d > 1e-12f ? d : 1e-12f); }
+                    int lo = 0, hi = m - 1; const int want = lim - 1;           /* descending: w2[want] is the cut */
+                    while(lo < hi)
+                    {
+                        const float piv = w2[(lo + hi) >> 1];
+                        int i2 = lo, j2 = hi;
+                        while(i2 <= j2)
+                        {
+                            while(w2[i2] > piv) i2++;
+                            while(w2[j2] < piv) j2--;
+                            if(i2 <= j2) { const float tmp = w2[i2]; w2[i2] = w2[j2]; w2[j2] = tmp; i2++; j2--; }
+                        }
+                        if(want <= j2) hi = j2; else if(want >= i2) lo = i2; else break;
+                    }
+                    const float cut = w2[want];
+                    int q = 0, ties = 0;
+                    for(int k = 0; k < m; k++) if(sc[k] > cut) ties++;
+                    ties = lim - ties;                                           /* how many at exactly the cut still fit */
+                    for(int k = 0; k < m && q < lim; k++)
+                        if(sc[k] > cut || (sc[k] == cut && ties-- > 0)) { h[q] = h[k]; z[q] = z[k]; g[q] = g[k]; f[q] = f[k]; q++; }
+                    m = q;
+                }
+                for(int k = 0; k < m; k++) { ha[k] = h[k]; za[k] = z[k]; ga[k] = g[k]; fa[k] = f[k]; }
+                nd = m; capped = true;
+                const uint8_t* sa_ = Stage(a); const uint8_t* sb_ = Stage(b);
+                float s0[8], s1[8]; std::memcpy(s0, sa_, 32); std::memcpy(s1, sb_, 32);
+                for(int k = 0; k < 8; k++) st[k] = wa * s0[k] + wb * s1[k];
+                st[7] = 1.f;                                                   /* each side's level is in its gains already */
             }
-            /* the curve changes the balance, not the level: its
-               energy-weighted mean is taken back out, so a note carried
-               up the keyboard keeps its loudness and only its shape moves
-               — the double bass's own envelope is 35 dB down by 1.4 kHz
-               and applied whole it silenced the top two octaves of its
-               range, which is true of a double bass and useless as an
-               instrument */
-            if(bend && wsum > 0.f)
+            else
+#endif
             {
-                dmean /= wsum;
-                for(int k = 0; k < nd; k++) ga[k] *= fastmath::Exp2(0.16609640f * (dbk[k] - dmean));   /* 10^(x/20) */
+                nd = Transposed(near, param, v.cap > 0 && v.cap < N ? v.cap : 0, ha, za, ga, fa, st);
+                capped = v.cap > 0 && v.cap < N;
             }
             t = 0.f;
         }
@@ -1516,7 +1721,7 @@ struct ResonatorWorld
             for(int k = 0; k < N; k++) if(take[k]) { ha[n] = ha[k]; za[n] = za[k]; ga[n] = ga[k]; fa[n] = fa[k]; n++; }
         }
         for(int k = 0; k < n; k++) { v.hz[k] = ha[k]; v.zeta[k] = za[k]; v.gain[k] = ga[k]; }
-        for(int k = n; k < N; k++) { v.hz[k] = 0.f; v.zeta[k] = 0.f; v.gain[k] = 0.f; }
+        for(int k = n; k < ResonatorBank::kMax; k++) { v.hz[k] = 0.f; v.zeta[k] = 0.f; v.gain[k] = 0.f; }
         /* a strike at another note on this voice: the old note choked —
            its ring over 2 ms (ResonatorBank::Choke), its attack, which is
            the recording of the old note, over 5 (BurstPlayer::Choke).
@@ -1540,7 +1745,7 @@ struct ResonatorWorld
            peaks at 0.4 — and a glide's carry at most twice as loud (the
            EP's bass points, whose shaped fits are the worst, railed the
            note sweep at four) */
-        v.bank.Set(ha, za, ga, n, sr, fa, keep && !released, ratio, strike ? 1.f : 2.f);
+        v.bank.Set(ha, za, ga, n, sr, fa, keep && !released, ratio, strike ? 1.f : 2.f, kind == 1);
         /* a strike at another note on this voice: the old note choked —
            its ring over 2 ms (ResonatorBank::Choke; the 5 ms it was gave
            the carried ring, which sits at the new note's frequencies, long

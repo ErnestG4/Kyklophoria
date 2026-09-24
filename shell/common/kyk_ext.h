@@ -500,8 +500,12 @@ public:
                 const ResonatorWorld& fam = wd->Res(); const ResonatorVoice& v = en->Voice();
                 ResonatorWorld r; fam.Member(en->ResMember(), r);
                 auto f32 = [&](float x) { uint32_t u; std::memcpy(&u, &x, 4); w.U32(u); };
-                w.U8(0u); w.U8(r.kind); f32(r.lo); f32(r.hi); f32(en->ResParamNow()); w.U16(r.P); w.U8((uint8_t)r.N);
-                for(int k = 0; k < r.N; k++) { f32(v.hz[k]); f32(v.zeta[k]); f32(v.gain[k]); }
+                /* the voice's own modes: between two points it holds the
+                   blend of both, which can be more than the world's N */
+                int vn = 0; while(vn < ResonatorBank::kMax && !(v.gain[vn] == 0.f && v.hz[vn] == 0.f)) vn++;
+                if(r.kind == 1 && vn < r.N) vn = r.N;
+                w.U8(0u); w.U8(r.kind); f32(r.lo); f32(r.hi); f32(en->ResParamNow()); w.U16(r.P); w.U8((uint8_t)vn);
+                for(int k = 0; k < vn; k++) { f32(v.hz[k]); f32(v.zeta[k]); f32(v.gain[k]); }
                 w.U32(v.burst_len);
                 const int m = r.P < 64 ? r.P : 64;
                 w.U8((uint8_t)m);
