@@ -880,12 +880,15 @@ struct BurstPlayer
     /* g: a gain the slot's samples are multiplied by, d: what g is
        multiplied by each sample — 1 for a burst that plays as recorded,
        under 1 for one fading (the old note choked, or a muted decay) */
-    struct Slot { const int16_t* s; uint32_t n; float pos, rate, gain, lp, z, g, d; };
+    /* ts: where in the burst its velocity taper starts (past n: none);
+       tc, tn: the taper's raised cosine as a rotating phasor; tcs, tsn: its
+       step a sample */
+    struct Slot { const int16_t* s; uint32_t n; float pos, rate, gain, lp, z, g, d, ts, tc, tn, tcs, tsn; };
     Slot slot[kSlots];
     int  active;
     float damp;                       /* the per-sample multiplier a new burst starts with: 1, or under it when the decay is muted */
 
-    void Init() { active = 0; damp = 1.f; for(auto& q : slot) { q.s = nullptr; q.n = 0; q.pos = q.rate = q.gain = q.lp = q.z = 0.f; q.g = q.d = 1.f; } }
+    void Init() { active = 0; damp = 1.f; for(auto& q : slot) { q.s = nullptr; q.n = 0; q.pos = q.rate = q.gain = q.lp = q.z = 0.f; q.g = q.d = 1.f; q.ts = 3e9f; q.tc = 1.f; q.tn = 0.f; q.tcs = 1.f; q.tsn = 0.f; } }
     /* every burst playing fades out over ms: the old note's attack, when
        a strike at another note has choked its ring — a burst that played
        to its end was the old note going on for up to 390 ms under the new */
@@ -919,8 +922,12 @@ struct BurstPlayer
        whichever one velocity picked — a hole at 70-80 ms on the VCSL
        grand's C5 at full velocity, where the hardest take is shorter than
        the softest, and the two doubling where it is longer */
+    /* share: how much of each take plays, 1 for all of it. Under 1 the take
+       ends at that share of its length (30 ms at least) and slopes off over
+       its fade scaled the same, a raised cosine; played_len and played_fade
+       report what is kept, so the modes come in under the new seam */
     void Strike(const uint8_t* block, float swing, float rate = 1.0f, float lp = 0.0f, uint32_t head = 10u,
-                float* played_len = nullptr, float* played_fade = nullptr)
+                float* played_len = nullptr, float* played_fade = nullptr, float share = 1.f)
     {
         float plen = 0.f, pfade = 0.f, pw = 0.f;
         /* what is still playing from the last strike plays to its end —
@@ -964,7 +971,18 @@ struct BurstPlayer
                     q2.g = 1.f; q2.d = damp;
                     uint16_t fd = (uint16_t)(n / 3);
                     if(head >= 12u) std::memcpy(&fd, pick[i] + 10, 2);
-                    plen += wgt[i] * (float)n; pfade += wgt[i] * (float)fd; pw += wgt[i];
+                    float ln = (float)n, lf = (float)fd;
+                    q2.ts = 3e9f; q2.tc = 1.f; q2.tn = 0.f; q2.tcs = 1.f; q2.tsn = 0.f;
+                    if(share < 1.f && n > 0)
+                    {
+                        const float mn = 1440.f < (float)n ? 1440.f : (float)n;   /* 30 ms of the take at least */
+                        ln = share * (float)n; if(ln < mn) ln = mn;
+                        lf = (float)fd * ln / (float)n; if(lf < 48.f) lf = 48.f; if(lf > ln) lf = ln;
+                        q2.n = (uint32_t)ln + 1u < n ? (uint32_t)ln + 1u : n;
+                        q2.ts = ln - lf;
+                        fastmath::SinCos(3.1415927f * q2.rate / lf, q2.tsn, q2.tcs);
+                    }
+                    plen += wgt[i] * ln; pfade += wgt[i] * lf; pw += wgt[i];
                 }
             }
         }
@@ -986,7 +1004,14 @@ struct BurstPlayer
                 int16_t v0, v1; std::memcpy(&v0, q.s + i0, 2); std::memcpy(&v1, q.s + i0 + 1, 2);   /* the blob may be unaligned */
                 float v = (float)v0 + f * ((float)v1 - (float)v0);
                 if(q.lp > 0.0f) { q.z += q.lp * (v - q.z); v = q.z; }
-                io[k] += q.gain * q.g * v;
+                float tw = 1.f;
+                if(q.pos >= q.ts)
+                {
+                    tw = q.tc > -1.f ? 0.5f + 0.5f * q.tc : 0.f;
+                    const float c2 = q.tc * q.tcs - q.tn * q.tsn; q.tn = q.tn * q.tcs + q.tc * q.tsn; q.tc = c2;
+                    if(q.tn < 0.f) q.tc = -1.f;          /* past pi: the taper is done */
+                }
+                io[k] += q.gain * q.g * tw * v;
                 q.g *= q.d;
                 q.pos += q.rate;
             }
@@ -1162,8 +1187,20 @@ struct ResonatorVoice
            divided by the read rate */
         if(burst_rate > 1.05f && body_top > 0.f) { const float c = body_top / burst_rate; if(c < fc) fc = c; }
         const float lp = fc > 0.4f * sr ? 0.f : 1.f - std::exp(-6.2831853f * fc / sr);
+        /* and the recorded intro follows the velocity: all of it at the
+           top, a quarter at the bottom (30 ms at least), sloping off rather
+           than playing through — Combust: "dampen the intro with the
+           Velocity, so it doesn't play all the way through and instead
+           slopes off". A piano's bass take is up to 400 ms of recording, and
+           a soft note played every millisecond of the hard one's intro */
+        const float vk = velocity01 < 0.f ? 0.f : velocity01 > 1.f ? 1.f : velocity01;
+#ifndef KYK_BURST_FULL
+        const float keep = 0.25f + 0.75f * vk;
+#else
+        const float keep = 1.f; (void)vk;
+#endif
         float plen = -1.f, pfade = -1.f;
-        burst.Strike(bursts, s, burst_rate, lp, burst_head, &plen, &pfade);
+        burst.Strike(bursts, s, burst_rate, lp, burst_head, &plen, &pfade, keep);
         /* the modes come in under the fade of the attack that is playing
            (BurstPlayer::Strike): the length and fade of the takes it picked,
            weighted as it mixes them. One take alone — every world fitted
