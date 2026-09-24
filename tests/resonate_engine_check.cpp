@@ -620,6 +620,29 @@ int main()
         printf("  limiter: audio-rate strikes peak %.3f with the gain down to %.2f\n", pk, gmin);
     }
 
+    /* 19. nothing passes Nyquist: a note far over a world's top puts its
+       partials past half the rate, where the pole's cos is a polynomial
+       outside its range and the mode grew without end — 1e32 on the guitar
+       from a 4 kHz fundamental, the codec railed. Every such mode is
+       silent now: struck from C4 to 200 kHz (v/oct can ask for that), each note stays under four
+       times the C4's own peak and finite */
+    {
+        auto peak_at = [&](const World& w, float hz) {
+            Engine e; e.Init(&w, sr); e.gain = 1.f; e.SetF0(hz); e.Strike(1.f);
+            std::vector<float> y; Run(e, y, 500);
+            float pk = 0.f; for(float v : y) pk = std::isfinite(v) ? std::fmax(pk, std::fabs(v)) : 1e30f;
+            return pk;
+        };
+        for(const World* w : {&piano, &rw})
+        {
+            const float ref = peak_at(*w, 261.63f);
+            float worst = 0.f, at = 0.f;
+            for(float hz = 523.25f; hz < 200000.f; hz *= 1.4142f) { const float p = peak_at(*w, hz); if(p > worst) { worst = p; at = hz; } }
+            CHECK(worst < 4.f * ref, "a note over the world's top blew up: %.3g at %.0f Hz, against %.3g at C4", worst, at, ref);
+            printf("  over the top: struck up to 200 kHz, the loudest %.2fx the C4 (at %.0f Hz)\n", worst / ref, at);
+        }
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }

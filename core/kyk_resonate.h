@@ -144,6 +144,7 @@ inline void SinCos(float w, float& s, float& c)
 struct ResonatorBank
 {
     static constexpr int kMax = 48;
+    static constexpr float kWMax = 3.0f;      /* a mode's w past this (0.95 of Nyquist) is not played */
 
     int   n;
     float c1[kMax], c2[kMax];            /* 2 r cos w, -r^2 */
@@ -320,6 +321,21 @@ struct ResonatorBank
         for(int i = 0; i < n; i++)
         {
             const float w = 6.2831853f * hz[i] / sr;
+            /* a mode at or past Nyquist cannot sound at this rate, and
+               SinCos is a polynomial for |w| <= pi: past it cos(10) came out
+               -356, the pole far outside the unit circle, and the mode grew
+               until the codec railed — the scream Combust recorded with
+               v/oct at audio rate, which lands notes octaves over a world's
+               top (a cello from a 4 kHz fundamental, a guitar from 2 kHz).
+               Silent, its state and its strike cleared: the note keeps what
+               the rate can hold */
+            if(!(w < kWMax))
+            {
+                c1[i] = c2[i] = 0.f; wq[i] = cwq[i] = swq[i] = rq[i] = lrq[i] = 0.f;
+                p1[i] = p2[i] = 0.f; g[i] = 0.f; y1[i] = y2[i] = 0.f;
+                for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f;
+                continue;
+            }
             const float r = fastmath::ExpNegSmall(zeta[i] * w);
             const float ph = phase ? phase[i] : 0.f;
             int from = -1;
@@ -425,6 +441,12 @@ struct ResonatorBank
         for(int i = 0; i < nn; i++)
         {
             const float w = 6.2831853f * hz[i] / sr;
+            if(!(w < kWMax))     /* bent past Nyquist: silent, as Set has it */
+            {
+                c1[i] = c2[i] = 0.f; wq[i] = cwq[i] = swq[i] = rq[i] = lrq[i] = 0.f; y1[i] = y2[i] = 0.f;
+                for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f;
+                continue;
+            }
             const float r = fastmath::ExpNegSmall(zeta[i] * w);
             float sw, cw; fastmath::SinCos(w, sw, cw);
             c1[i] = 2.0f * r * cw;
@@ -724,7 +746,10 @@ struct Pickup
     void Set(float h_, float w_, float K_, float fc, float Q, float sr)
     {
         on = true; gap = false; h = h_t = h_; inv_w = inv_w_t = 1.f / w_; K = K_t = K_;
-        const float w0 = 6.2831853f * fc / sr;
+        /* the coil's corner under Nyquist: a coil spun up (x2) on a point
+           fitted high put it past, and a biquad there has a negative
+           alpha — unstable */
+        const float w0 = 6.2831853f * (fc < 0.45f * sr ? fc : 0.45f * sr) / sr;
         const float alpha = std::sin(w0) / (2.f * Q);
         const float cw = std::cos(w0), a0 = 1.f + alpha;
         b0 = (1.f - cw) * 0.5f / a0; b1 = (1.f - cw) / a0; b2 = b0;
