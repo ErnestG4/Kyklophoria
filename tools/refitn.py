@@ -35,6 +35,7 @@ import soundfile as sf
 
 sys.path.insert(0, os.path.dirname(__file__))
 import modalfit  # noqa: E402
+import fitcheck  # noqa: E402
 
 GOOD_DR = (0.4, 2.5)
 GOOD_LOSS = 1.3
@@ -85,8 +86,14 @@ def good(row):
     return GOOD_DR[0] <= dr <= GOOD_DR[1] and loss <= GOOD_LOSS and n >= 4
 
 
-def score(loss, dr):
-    return loss * (1.0 + abs(math.log(max(dr, 1e-3))))
+def score(loss, env_db):
+    """the fitter's loss, times how far the resynthesised ring's loudness is
+    from the recording's (tools/fitcheck.envelope_error, dB, 0.1 s on). It
+    was the decay ratio — the top partial tracks — which read fine on the Iowa
+    grand's A5 while refit2 chose a fit whose ring as a whole was off; the
+    envelope is the ring as played, against the one reference that cannot
+    move"""
+    return loss * (1.0 + env_db / 3.0)
 
 
 def fit_from(x, sr, f0, init, steps, polish, cap, device):
@@ -102,7 +109,8 @@ def fit_from(x, sr, f0, init, steps, polish, cap, device):
     y = modalfit.resynth(fr, r, amp, len(x), sr, ph)
     ex = modalfit.excess_db(y, x, sr)
     dr = modalfit.decay_ratio(fr, r, amp, x, sr) if len(fr) else 0.0
-    return fr, r, amp, ph, y, loss, ex, dr
+    env = fitcheck.envelope_error(y, x, sr) if len(fr) else 99.0
+    return fr, r, amp, ph, y, loss, ex, dr, (env if env == env else 99.0)
 
 
 def main():
@@ -205,7 +213,8 @@ def main():
             print('  %-10s no onset above -80 dBFS, skipped' % mid)
             continue
         cap = a.t60_cap * secs
-        old = score(float(row['loss']), float(row['decay_ratio']))
+        env_old = fitcheck.check_record(path)
+        old = score(float(row['loss']), env_old if env_old == env_old else 99.0)
         best = None
         seeds = [(nb['id'], float(nb['value'])) for nb in belows + aboves]
         if a.redo:
@@ -220,15 +229,15 @@ def main():
             for t in range(a.tries):
                 init = base if t == 0 else [(f * (1 + 0.001 * rng.standard_normal()), r_, g, ph) for f, r_, g, ph in base]
                 res = fit_from(x, sr, f0, init, a.steps, polish, cap, device)
-                s = score(res[5], res[7])
-                print('  %-10s midi %3d %-3s from %-10s (midi %3d) try %d: %2d modes loss %.3f decay x%.2f score %.3f (was %.3f)'
-                      % (mid, midi, dyn, sid, sval, t + 1, len(res[0]), res[5], res[7], s, old))
+                s = score(res[5], res[8])
+                print('  %-10s midi %3d %-3s from %-10s (midi %3d) try %d: %2d modes loss %.3f envelope %.1f dB decay x%.2f score %.3f (was %.3f)'
+                      % (mid, midi, dyn, sid, sval, t + 1, len(res[0]), res[5], res[8], res[7], s, old))
                 if len(res[0]) >= 1 and (best is None or s < best[0]):
                     best = (s, sid, res)
         if best is None or best[0] > 0.95 * old:
             print('  %-10s kept as it was' % mid)
             continue
-        s, seed, (fr, r, amp, ph, y, loss, ex, dr) = best
+        s, seed, (fr, r, amp, ph, y, loss, ex, dr, env) = best
         changed += 1
         if a.dry:
             print('  %-10s would take the fit from %s: score %.3f -> %.3f' % (mid, seed, old, s))

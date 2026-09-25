@@ -42,7 +42,7 @@ using namespace kyk;
 static constexpr int kBands = 10;
 static const float kEdge[kBands + 1] = {0.75f, 1.5f, 2.5f, 3.5f, 5.5f, 7.5f, 10.5f, 14.5f, 20.5f, 28.5f, 40.5f};
 
-struct Prof { float note; float band[kBands]; float level; float ring; float cents; bool weak; };
+struct Prof { float note; float band[kBands]; float level; float ring; float cents; bool weak; float t60; };
 
 static Prof Measure(const ResonatorWorld& R, float note)
 {
@@ -61,6 +61,21 @@ static Prof Measure(const ResonatorWorld& R, float note)
         lt += en * std::log2(t60); wt += en;
         for(int b = 0; b < kBands; b++) if(h >= kEdge[b] && h < kEdge[b + 1]) { e[b] += en; break; }
         if(h > 0.89 && h < 1.12 && en > efund) { efund = en; hfund = h; }
+    }
+    /* and how the whole ring falls: its energy (every mode, no phases) at
+       150 and 750 ms, as a T60 — the number a recording's own decay can be
+       held against (worldaudit's ring is a mean over modes, and a loud
+       short mode beside a long one reads as a short ring) */
+    {
+        double e1 = 0, e2 = 0;
+        for(int k = 0; k < ResonatorBank::kMax; k++)
+        {
+            if(v.gain[k] == 0.f || v.hz[k] <= 0.f) continue;
+            const double w = 2 * M_PI * v.hz[k], g2 = (double)v.gain[k] * v.gain[k];
+            e1 += g2 * std::exp(-2 * v.zeta[k] * w * 0.15); e2 += g2 * std::exp(-2 * v.zeta[k] * w * 0.75);
+        }
+        const double drop = 10 * std::log10((e1 + 1e-30) / (e2 + 1e-30));
+        p.t60 = drop > 0.1 ? (float)(60.0 * 0.6 / drop) : 99.f;
     }
     for(int b = 0; b < kBands; b++) p.band[b] = (float)(10 * std::log10(e[b] + 1e-30));
     p.level = (float)(10 * std::log10(tot + 1e-30));
@@ -103,16 +118,43 @@ static const char* NoteName(float n, char* buf)
 
 int main(int argc, char** argv)
 {
-    if(argc < 2) { printf("usage: worldaudit world.kykm [--tsv out.tsv] [--walk]\n"); return 1; }
+    if(argc < 2) { printf("usage: worldaudit world.kykm [--tsv out.tsv] [--walk] [--render NOTE out.raw [velocity] [member]]\n"); return 1; }
     const char* path = argv[1]; const char* tsv = nullptr; bool walk = false;
-    for(int i = 2; i < argc; i++) { if(!strcmp(argv[i], "--tsv") && i + 1 < argc) tsv = argv[++i]; else if(!strcmp(argv[i], "--walk")) walk = true; }
+    const char* rnote = nullptr; const char* rout = nullptr; float rvel = 1.f; int rmem = 0;
+    for(int i = 2; i < argc; i++)
+    {
+        if(!strcmp(argv[i], "--tsv") && i + 1 < argc) tsv = argv[++i];
+        else if(!strcmp(argv[i], "--walk")) walk = true;
+        else if(!strcmp(argv[i], "--render") && i + 2 < argc)
+        {
+            rnote = argv[++i]; rout = argv[++i];
+            if(i + 1 < argc && argv[i + 1][0] != '-') rvel = (float)atof(argv[++i]);
+            if(i + 1 < argc && argv[i + 1][0] != '-') rmem = atoi(argv[++i]);
+        }
+    }
     FILE* f = fopen(path, "rb"); if(!f) { printf("cannot read %s\n", path); return 1; }
     fseek(f, 0, SEEK_END); const long n = ftell(f); fseek(f, 0, SEEK_SET);
     std::vector<uint8_t> blob((size_t)n); if(fread(blob.data(), 1, (size_t)n, f) != (size_t)n) { fclose(f); return 1; } fclose(f);
     ResonatorWorld W; if(!W.Attach(blob.data(), (uint32_t)n)) { printf("not a world: %s\n", path); return 1; }
     const char* base = strrchr(path, '/'); base = base ? base + 1 : path;
+    /* --render: one note through the voice as the module plays it — modes
+       with their phases, the burst, the pickup — 4 s of float32 at 48 kHz,
+       raw, for a comparison against its recording (tools/fitcheck.py
+       --worlds). An energy sum over modes ignores the pairs that cancel,
+       which is how a piano's two-stage decay is built */
+    if(rnote)
+    {
+        ResonatorWorld R = W; if(W.kind == 2) W.Member(rmem, R);
+        R.voicing = 0.f; R.decay = 1.f; R.coil = 1.f;
+        ResonatorVoice v; v.Init(); R.At((float)atof(rnote), v, 48000.f); v.Strike(rvel);
+        std::vector<float> y(192000);
+        for(size_t i = 0; i < y.size(); i += 48) v.Process(y.data() + i, 48);
+        FILE* o = fopen(rout, "wb"); if(!o) return 1;
+        fwrite(y.data(), sizeof(float), y.size(), o); fclose(o);
+        return 0;
+    }
     FILE* out = tsv ? fopen(tsv, "w") : nullptr;
-    if(out) fprintf(out, "world\tmember\tnote\tname\tcents\tweak\tshape_vs_neighbours\tlevel_vs_neighbours\tring_vs_neighbours\tscore\n");
+    if(out) fprintf(out, "world\tmember\tnote\tname\tcents\tweak\tshape_vs_neighbours\tlevel_vs_neighbours\tring_vs_neighbours\tscore\tt60\n");
     const int M = W.kind == 2 ? W.M : 1;
     for(int m = 0; m < M; m++)
     {
@@ -136,7 +178,7 @@ int main(int argc, char** argv)
             rows.push_back({i, s, l, r, score});
             if(!pts[i].weak && std::fabs(pts[i].cents) > 25.f) off++;
             if(!pts[i].weak && std::fabs(pts[i].cents) > std::fabs(worstc)) worstc = pts[i].cents;
-            if(out) { char nb[8]; fprintf(out, "%s\t%d\t%.2f\t%s\t%.1f\t%d\t%.2f\t%.2f\t%.2f\t%.2f\n", base, m, pts[i].note, NoteName(pts[i].note, nb), pts[i].cents, pts[i].weak ? 1 : 0, s, l, r, score); }
+            if(out) { char nb[8]; fprintf(out, "%s\t%d\t%.2f\t%s\t%.1f\t%d\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\n", base, m, pts[i].note, NoteName(pts[i].note, nb), pts[i].cents, pts[i].weak ? 1 : 0, s, l, r, score, pts[i].t60); }
         }
         std::vector<Row> srt = rows; std::sort(srt.begin(), srt.end(), [](const Row& a, const Row& b) { return a.score > b.score; });
         std::vector<float> sh; for(const Row& r : rows) sh.push_back(r.shape);
