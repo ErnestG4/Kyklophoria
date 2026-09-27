@@ -19,16 +19,16 @@ outside Kyklophoria and ModalBake.
    refer to the nearer recorded point's attack (v8: burst count 0xFFFF, then
    the point's index) rather than copying it — the attacks are most of a
    world and copies would not fit the 4 MB slot.
-   - [ ] runtime: v8 attack references (BurstPoint, Bursts, BurstEnd,
-         Attach accepts 8) — written, untested
-   - [ ] runtime readout: the phases a voice was built with, for the filler
-   - [ ] ModalBake tools/worldfill: a .kykm in, every missing semitone added
-         from the runtime's own At(), v8 out; families member by member
-   - [ ] tests: v8 attach and references; a filled world plays at every
-         semitone what the unfilled one blended (within quantisation); the
-         filled world's At() at a semitone costs what the nearest path did
-   - [ ] fill the A, B and C cards (out/card-abc, card-B, card-r3) and the
-         main card; check every world attaches and renders through the runtime
+   - [x] runtime: v8 attack references (505021d); Attach refuses a world
+         whose bytes run out (7fab4ae — found by the filler's own bug)
+   - [x] runtime readout: phases and stage a voice was built with
+   - [x] ModalBake tools/worldfill (c794ddc + fix): every semitone struck in
+         old and new and heard, loudness within 0.2-1.2 dB
+   - [x] tests: resonate_engine_check 21 (v8 references, refusals; clean
+         under ASan; faults / reports without the change)
+   - [x] filled: out/card8, card-B8, card-r38, card-abc8 — 102 worlds, all
+         attach and render. At() at a semitone 1.3 us (blend was 3.2-4.1,
+         nearest 1.6)
 2. **The piano world's labels**: its "G7" is a G#7, its "A#7" a damaged
    take (tools/pitchcheck). Fix the manifest, re-export `piano`.
 3. **README**: the J4–J8 map is out of date.
@@ -45,11 +45,21 @@ outside Kyklophoria and ModalBake.
 
 ## For the morning (needs Combust)
 
-- A/B/C of the refits: out/card-abc/kyklophoria (A the card as it was, B the
-  first refits and voicing, C refit against the recordings).
+- **Flash kyklophoria.bin 7fab4ae first** (version 8 worlds need it; older
+  firmware refuses them cleanly). Then the **filled** cards: out/card-abc8
+  (the A/B/C, every note a point: the pops and overruns on the pianos
+  should be gone) — the unfilled card-abc is the same sound with the pops.
+- kyklophoria-fullintro.bin (7fab4ae-fullintro): the whole recorded intro at
+  every velocity, for the A/B against the velocity-shortened one.
 - Pushes: Kyklophoria `modal` and `pages`, ModalBake `bake` (key).
 
 ## Log
 
 - 00:55 — list written; v8 references in core/kyk_resonate.h written, not
   yet tested.
+- 02:10 — item 1 done. worldfill's first check paired a piano's unison
+  pairs crosswise and failed identical worlds; now it renders and listens.
+  Its first cut stamped a version 6 world 8 and the runtime walked off the
+  end — fixed in the tool, and the runtime now refuses such a world at
+  Attach (test 21). Firmware 7fab4ae built; -nearest dropped (a filled world
+  never blends at a semitone), -fullintro rebuilt on 7fab4ae.
