@@ -74,12 +74,19 @@ outside Kyklophoria and ModalBake.
     reed through the loop, tested for its oscillation threshold (silence
     below a mouth pressure, a tone at the resonator's fundamental above) and
     boundedness.
-12. **The rough remainder's recordings** (ModalBake, CPU): banjo, mandolin,
+12. [x] **The rough remainder's recordings**: ModalBake
+    docs/rough-remainder-2026-09-27.md — of the worst twelve, four are the
+    recordings, three the cuts, four the fits. Waiting on Combust. Was: banjo, mandolin,
     viola C, bass D and violin E notes still over 3 dB from their
     recordings after refit3 (out/audit-r/fitcheck-C.tsv). Look at the
     audio and the splits (tools/splitnotes.py's cut points) of the worst
     ten: a late cut, a second note in the file, a damaged take. A list for
     Combust of what to drop or re-split; nothing refitted without it.
+
+13. **Exciter stage 3b: the lips** — the reed's loop with a mass on the
+    reed (a lip that has a frequency of its own and locks to the bore's
+    nearest resonance): tested for the lock (the lip tuned between two bore
+    resonances plays the nearer) and boundedness.
 
 ## For the morning (needs Combust)
 
@@ -101,6 +108,8 @@ outside Kyklophoria and ModalBake.
 - The page (pages branch rebuilt, stamp 1b16f04; push it): the model
   tab's BODY row has a "morph" chip on a family, VOICES a release slider —
   the same A/Bs as the -morph and -release200 builds, without reflashing.
+- ModalBake docs/rough-remainder-2026-09-27.md: which bad fits are bad
+  recordings or cuts — decide what to drop and what to re-split.
 - Pushes: Kyklophoria `modal` and `pages` (-f), ModalBake `bake` (key).
 
 ## Log
@@ -149,3 +158,6 @@ outside Kyklophoria and ModalBake.
   physics: a threshold falling toward a third of the closing pressure as
   the impedance rises, the fundamental exactly, silence when shut. Next:
   item 12, the rough remainder's recordings.
+- 08:00 — item 12: the rough remainder is mostly the recordings and the
+  cuts (seven of twelve); the report is ModalBake's
+  docs/rough-remainder-2026-09-27.md. Next: item 13, the lips.
