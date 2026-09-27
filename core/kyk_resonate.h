@@ -787,6 +787,136 @@ struct ResonatorBank
             out += m; frames -= m;
         }
     }
+
+    /* the bank heard from two places: the same modes, the same state, into
+       two outputs, each mode weighted by where that ear listens (wl, wr, one
+       a mode; Engine computes them from the stereo spread as two points along
+       the string). The strike banks ramping in take the same weights (their
+       modes are the main state's, index for index); the tail — the last
+       note's modes — goes to both as it is. Everything Process does, twice
+       at the output and once in the recursion */
+    void ProcessLR(float* outL, float* outR, int frames, const float* wl, const float* wr, const float* drive = nullptr, float g = 0.f)
+    {
+        /* most modes both ears hear whole — the comb only dips near its
+           nulls — and those run as Process runs them, two at a time into one
+           sum both ears take; only the modes the ears hear differently run
+           into two. Everything through two outputs was 2.6x the block */
+        int both[kMax], two[kMax], nb = 0, nt = 0;
+        for(int i = 0; i < n; i++) { if(wl[i] == 1.f && wr[i] == 1.f) both[nb++] = i; else two[nt++] = i; }
+        while(frames > 0)
+        {
+            int m = frames < 64 ? frames : 64;
+            for(int q = 0; q < kStrikes; q++) if(ramping[q])
+            {
+                const int left = (int)(ramp_lead[q] + ramp_len[q] - ramp_n[q]);
+                if(left > 0 && left < m) m = left;
+            }
+            if(damp_left > 0 && damp_left < m) m = damp_left;
+            const float dc = damp_left > 0 ? damp_c : 1.f, dc2 = dc * dc;
+            for(int k = 0; k < m; k++) { outL[k] = 0.f; outR[k] = 0.f; }
+            {
+                int j = 0;
+                for(; j + 1 < nb; j += 2)
+                {
+                    const int i0 = both[j], i1 = both[j + 1];
+                    const float a0 = c1[i0] * dc, b0 = c2[i0] * dc2, a1 = c1[i1] * dc, b1 = c2[i1] * dc2;
+                    float p1 = y1[i0], p2 = y2[i0], q1 = y1[i1], q2 = y2[i1];
+                    if(drive) for(int k = 0; k < m; k++) { const float dd = g * drive[k]; const float yp = a0 * p1 + b0 * p2 + dd, yq = a1 * q1 + b1 * q2 + dd; p2 = p1; p1 = yp; q2 = q1; q1 = yq; outL[k] += yp + yq; }
+                    else      for(int k = 0; k < m; k++) { const float yp = a0 * p1 + b0 * p2, yq = a1 * q1 + b1 * q2; p2 = p1; p1 = yp; q2 = q1; q1 = yq; outL[k] += yp + yq; }
+                    y1[i0] = p1; y2[i0] = p2; y1[i1] = q1; y2[i1] = q2;
+                }
+                for(; j < nb; j++)
+                {
+                    const int i = both[j];
+                    const float a = c1[i] * dc, b = c2[i] * dc2;
+                    float u1 = y1[i], u2 = y2[i];
+                    if(drive) for(int k = 0; k < m; k++) { const float y = a * u1 + b * u2 + g * drive[k]; u2 = u1; u1 = y; outL[k] += y; }
+                    else      for(int k = 0; k < m; k++) { const float y = a * u1 + b * u2; u2 = u1; u1 = y; outL[k] += y; }
+                    y1[i] = u1; y2[i] = u2;
+                }
+                for(int k = 0; k < m; k++) outR[k] = outL[k];          /* what both hear */
+            }
+            int jt = 0;
+            if(!drive) for(; jt + 1 < nt; jt += 2)                    /* in pairs, as the rest */
+            {
+                const int i0 = two[jt], i1 = two[jt + 1];
+                const float a0 = c1[i0] * dc, b0 = c2[i0] * dc2, a1 = c1[i1] * dc, b1 = c2[i1] * dc2;
+                const float l0 = wl[i0], r0 = wr[i0], l1 = wl[i1], r1 = wr[i1];
+                float p1 = y1[i0], p2 = y2[i0], q1 = y1[i1], q2 = y2[i1];
+                for(int k = 0; k < m; k++)
+                {
+                    const float yp = a0 * p1 + b0 * p2, yq = a1 * q1 + b1 * q2;
+                    p2 = p1; p1 = yp; q2 = q1; q1 = yq;
+                    outL[k] += l0 * yp + l1 * yq; outR[k] += r0 * yp + r1 * yq;
+                }
+                y1[i0] = p1; y2[i0] = p2; y1[i1] = q1; y2[i1] = q2;
+            }
+            for(int j = jt; j < nt; j++)
+            {
+                const int i = two[j];
+                const float a = c1[i] * dc, b = c2[i] * dc2, gl = wl[i], gr = wr[i];
+                float u1 = y1[i], u2 = y2[i];
+                if(drive) for(int k = 0; k < m; k++) { const float y = a * u1 + b * u2 + g * drive[k]; u2 = u1; u1 = y; outL[k] += gl * y; outR[k] += gr * y; }
+                else      for(int k = 0; k < m; k++) { const float y = a * u1 + b * u2;                u2 = u1; u1 = y; outL[k] += gl * y; outR[k] += gr * y; }
+                y1[i] = u1; y2[i] = u2;
+            }
+            if(drive) drive += m;
+            for(int q = 0; q < kStrikes; q++) if(ramping[q])
+            {
+                int d = 0;
+                if(ramp_n[q] < ramp_lead[q])
+                {
+                    const float left = ramp_lead[q] - ramp_n[q];
+                    d = (int)std::ceil(left);
+                    if(d >= m) { ramp_n[q] += (float)m; held[q] += (float)m; continue; }
+                }
+                if(held[q] > 0.f || d > 0) { Advance(q, held[q] + (float)d); held[q] = 0.f; ramp_n[q] += (float)d; }
+                const int mm = m - d;
+                float w[64];
+                {
+                    const float u0 = ramp_n[q] - ramp_lead[q];
+                    const float step = 3.1415927f / ramp_len[q];
+                    float dc_, ds_; fastmath::SinCos(step, ds_, dc_);
+                    float c = ramp_c[q], s_ = ramp_s[q];
+                    const float k2 = 1.5f - 0.5f * (c * c + s_ * s_);
+                    c *= k2; s_ *= k2;
+                    for(int k = 0; k < mm; k++)
+                    {
+                        w[k] = u0 + (float)k <= 0.f ? 0.f : 0.5f - 0.5f * c;
+                        const float c2_ = c * dc_ - s_ * ds_; s_ = s_ * dc_ + c * ds_; c = c2_;
+                    }
+                    ramp_c[q] = c; ramp_s[q] = s_;
+                }
+                const float sc = damp_left > 0 && damp_bank[q] ? dc : 1.f, sc2 = sc * sc;
+                float* oL = outL + d; float* oR = outR + d;
+                for(int i = 0; i < n; i++)
+                {
+                    const float a = c1[i] * sc, b = c2[i] * sc2, gl = wl[i], gr = wr[i];
+                    float u1 = s1[q][i], u2 = s2[q][i];
+                    for(int k = 0; k < mm; k++) { const float y = a * u1 + b * u2; u2 = u1; u1 = y; oL[k] += w[k] * gl * y; oR[k] += w[k] * gr * y; }
+                    s1[q][i] = u1; s2[q][i] = u2;
+                }
+                ramp_n[q] += (float)mm;
+                if(ramp_n[q] >= ramp_lead[q] + ramp_len[q]) Fold(q);
+            }
+            if(tn > 0)
+            {
+                const int mt = m < tail_left ? m : tail_left;
+                const float tc = tail_c, tc2_ = tail_c * tail_c;
+                for(int i = 0; i < tn; i++)
+                {
+                    const float a = tc1[i] * tc, b = tc2[i] * tc2_;
+                    float u1 = ty1[i], u2 = ty2[i];
+                    for(int k = 0; k < mt; k++) { const float y = a * u1 + b * u2; u2 = u1; u1 = y; outL[k] += y; outR[k] += y; }
+                    ty1[i] = u1; ty2[i] = u2;
+                }
+                tail_left -= mt;
+                if(tail_left <= 0) tn = 0;
+            }
+            if(damp_left > 0) damp_left -= m;
+            outL += m; outR += m; frames -= m;
+        }
+    }
 };
 
 struct Pickup
@@ -1251,6 +1381,29 @@ struct ResonatorVoice
         pickup.Process(out, frames);
         burst.Process(out, frames);
         wash.Process(out, frames);
+    }
+    /* heard from two points (ResonatorBank::ProcessLR): a world with no
+       pickup only — the pickup is one nonlinearity a voice, and a second
+       would be twice its cost — so a pickup world plays mono into both. The
+       attack and the wash, which are recordings and noise, go to both */
+    void ProcessLR(float* outL, float* outR, int frames, const float* wl, const float* wr, const float* drive = nullptr, float g = 0.f)
+    {
+        if(pickup.on)
+        {
+            Process(outL, frames, drive, g);
+            for(int k = 0; k < frames; k++) outR[k] = outL[k];
+            return;
+        }
+        bank.ProcessLR(outL, outR, frames, wl, wr, drive, g);
+        float t[64];
+        for(int i = 0; i < frames; i += 64)
+        {
+            const int m = frames - i < 64 ? frames - i : 64;
+            for(int k = 0; k < m; k++) t[k] = 0.f;
+            burst.Process(t, m);
+            wash.Process(t, m);
+            for(int k = 0; k < m; k++) { outL[i + k] += t[k]; outR[i + k] += t[k]; }
+        }
     }
     /* still making sound: a mode ringing, a burst playing or the wash falling */
     bool Active() const { return bank.Ringing() || burst.Playing() || wash.Active(); }

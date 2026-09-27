@@ -140,6 +140,15 @@ public:
        resonant filter bank for whatever is patched in. Set per block; the
        pointer is read by the Process that follows and then dropped. */
     void SetExciter(const float* x, float gain) { exciter_ = x; exgain_ = gain; }
+    /* a resonator heard from two points along the string: the next Process
+       also writes outR, the left ear at centre - 0.12 x spread and the right
+       at centre + 0.12 x spread (fractions of the string, 0.02 .. 0.5), each
+       mode weighted as a point there hears it — 2|sin(pi p h)| at harmonic h,
+       at most 1, blended in by the spread so that no spread is every mode at
+       1 and both ears the mono output exactly. The same comb the position
+       axis applies to the strike, here to the listening. A pointer for one
+       block, as the exciter's is. Note worlds only; a pickup world is mono */
+    void SetListen(float* outR, float spread01, float centre) { rout_ = outR; rlisten_s_ = spread01 < 0.f ? 0.f : spread01 > 1.f ? 1.f : spread01; rlisten_c_ = centre; }
     /* a strike is waiting (the module holds one for the CV to settle): the
        pitch is not taken by the voice still ringing meanwhile */
     void HoldPitch(bool on) { rhold_ = on; }
@@ -186,6 +195,29 @@ public:
     bool PitchLock() const { return pitch_lock_; }
     /* the voice follows its parameter with its state ringing on; an index
        world follows the pot every block, a note world its pitch */
+    /* each mode of a voice as the two listening points hear it (SetListen) */
+    void ListenWeights(const ResonatorVoice& v, float* wl, float* wr) const
+    {
+        const int n = v.bank.n;
+        const float s = rlisten_s_;
+        float pl = rlisten_c_ - 0.12f * s, pr = rlisten_c_ + 0.12f * s;
+        pl = pl < 0.02f ? 0.02f : pl > 0.5f ? 0.5f : pl;
+        pr = pr < 0.02f ? 0.02f : pr > 0.5f ? 0.5f : pr;
+        const float f0 = v.param < 1e8f ? 440.f * fastmath::Exp2((v.param - 69.f) / 12.f) : 0.f;
+        for(int k = 0; k < n; k++)
+        {
+            if(!(f0 > 0.f) || !(v.hz[k] > 0.f) || s <= 0.f) { wl[k] = wr[k] = 1.f; continue; }
+            const float h = v.hz[k] / f0;
+            float x = pl * h; x -= std::floor(x);
+            float sn, cs; fastmath::SinCos(3.1415927f * x, sn, cs);
+            float w = 2.f * (sn < 0.f ? -sn : sn); w = w > 1.f ? 1.f : w;
+            wl[k] = (1.f - s) + s * w;
+            x = pr * h; x -= std::floor(x);
+            fastmath::SinCos(3.1415927f * x, sn, cs);
+            w = 2.f * (sn < 0.f ? -sn : sn); w = w > 1.f ? 1.f : w;
+            wr[k] = (1.f - s) + s * w;
+        }
+    }
     void Retune()
     {
         /* At() is 48 modes of exp2, exp, pow, cos and sin — some 60 us on
@@ -486,22 +518,41 @@ public:
             if(rbend_ < 64) rbend_++;
             if(rsince_ < 0xFFFFFFu) rsince_ += (uint32_t)n;
             rdens_ *= 1.f - (float)n / sr_;                   /* the strike count leaks with a one-second time constant */
-            float tmp[48];
+            float tmp[48], tmpR[48];
+            const bool lr = rout_ != nullptr && world_->Res().kind != 1;
+            if(rout_) for(int i = 0; i < n; i++) rout_[i] = 0.f;
             for(int v = 0; v < kPoly; v++)
             {
                 /* a voice past the count rings out and is then skipped */
                 if(v >= rpoly_ && !rvoices_[v].Active()) continue;
+                /* the weights, again only when an ear has moved a
+                   five-hundredth of the string or the voice was rebuilt:
+                   worked out every block they were a third of the cost */
+                float* wl = rwl_[v]; float* wr = rwr_[v];
+                if(lr)
+                {
+                    const ResonatorVoice& vv = rvoices_[v];
+                    const bool moved = std::fabs(rlisten_s_ - rw_s_[v]) > 2e-3f || std::fabs(rlisten_c_ - rw_c_[v]) > 2e-3f
+                                    || vv.param != rw_param_[v] || vv.bank.n != rw_n_[v] || vv.hz[0] != rw_hz0_[v];
+                    if(moved)
+                    {
+                        ListenWeights(vv, wl, wr);
+                        rw_s_[v] = rlisten_s_; rw_c_[v] = rlisten_c_; rw_param_[v] = vv.param; rw_n_[v] = vv.bank.n; rw_hz0_[v] = vv.hz[0];
+                    }
+                }
                 for(int i = 0; i < n; i += 48)
                 {
                     const int m = n - i < 48 ? n - i : 48;
                     const bool drive = v == ractive_ && exciter_ && exgain_ > 0.f;
-                    rvoices_[v].Process(tmp, m, drive ? exciter_ + i : nullptr, exgain_);
+                    if(lr) rvoices_[v].ProcessLR(tmp, tmpR, m, wl, wr, drive ? exciter_ + i : nullptr, exgain_);
+                    else rvoices_[v].Process(tmp, m, drive ? exciter_ + i : nullptr, exgain_);
                     /* a voice that has gone to infinity or NaN stays there —
                        a linear bank's state is fed back forever — so it is
                        reset, not played: silent until its next strike builds
                        it, where a NaN left in reached the codec every block */
                     float sum = 0.f;
                     for(int k = 0; k < m; k++) sum += tmp[k];
+                    if(lr) for(int k = 0; k < m; k++) sum += tmpR[k];
                     if(!(sum - sum == 0.f))
                     {
                         rvoices_[v].Init();
@@ -511,6 +562,7 @@ public:
                         continue;
                     }
                     for(int k = 0; k < m; k++) out[i + k] += tmp[k];
+                    if(rout_) { if(lr) for(int k = 0; k < m; k++) rout_[i + k] += tmpR[k]; else for(int k = 0; k < m; k++) rout_[i + k] += tmp[k]; }
                 }
             }
             exciter_ = nullptr;
@@ -532,6 +584,7 @@ public:
            coefficients. */
         const float g = gain * PhaseTrim();
         for(int i = 0; i < n; i++) out[i] *= g;
+        if(rout_) { for(int i = 0; i < n; i++) rout_[i] *= g; rout_ = nullptr; }
         block_++;
     }
 
@@ -862,6 +915,11 @@ private:
     float          exgain_ = 0.f;
     uint32_t       rdriven_ = 0;         /* samples the bank still counts as driven: something came in at J1 */
     bool           rhold_ = false;       /* a strike is waiting for the CV (HoldPitch) */
+    float*         rout_ = nullptr;      /* this block's right channel, when a resonator is heard from two points (SetListen) */
+    float          rlisten_s_ = 0.f, rlisten_c_ = 0.25f;
+    float          rwl_[kPoly][ResonatorBank::kMax], rwr_[kPoly][ResonatorBank::kMax];   /* each voice's ears, kept while they have not moved */
+    float          rw_s_[kPoly] = {-1.f, -1.f, -1.f, -1.f}, rw_c_[kPoly] = {}, rw_param_[kPoly] = {}, rw_hz0_[kPoly] = {};
+    int            rw_n_[kPoly] = {};
     float          rrelease_ms_ = ResonatorDefaults::kReleaseMs;
 
     const World*   morph_world_ = nullptr;

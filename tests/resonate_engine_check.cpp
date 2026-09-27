@@ -780,6 +780,50 @@ int main()
         printf("  release: 200 ms sets a 200 ms fall; a steal keeps the tails still sounding (%d modes), no step (%.3g against the ring's %.3g)\n", tails, across, before);
     }
 
+    /* 23. a resonator heard from two points (the fun that synthesis buys: a
+       stereo image that is the string's own, and spins). (a) the bank: with
+       complementary weights, left plus right is the mono output exactly.
+       (b) the engine: no spread is both ears the one output; full spread is
+       two different ears whose sum is within 3 dB of the mono sound. (c) an
+       orbit on the stereo plane moves the points: the ears change with it */
+    {
+        auto six = [&](ResonatorBank& b) {
+            float hz[6], z[6], g[6], ph[6];
+            for(int k = 0; k < 6; k++) { hz[k] = 220.f * (k + 1); z[k] = 0.001f; g[k] = 0.3f / (k + 1); ph[k] = 0.2f * k; }
+            b.Set(hz, z, g, 6, sr, ph); b.Strike(1.f);
+        };
+        ResonatorBank a, m; a.Init(); m.Init(); six(a); six(m);
+        const float wl[6] = {1, 0, 1, 0, 0.25f, 0.5f}, wr[6] = {0, 1, 0, 1, 0.75f, 0.5f};
+        std::vector<float> L(9600), R(9600), M(9600);
+        for(int i = 0; i < 9600; i += 24) { a.ProcessLR(L.data() + i, R.data() + i, 24, wl, wr); m.Process(M.data() + i, 24); }
+        float dsum = 0.f, dlr = 0.f, pk = 0.f;
+        for(int i = 0; i < 9600; i++) { dsum = std::fmax(dsum, std::fabs(L[i] + R[i] - M[i])); dlr = std::fmax(dlr, std::fabs(L[i] - R[i])); pk = std::fmax(pk, std::fabs(M[i])); }
+        CHECK(dsum < 1e-4f * pk && dlr > 0.1f * pk, "two ears on the bank: L+R differs from mono by %.3g, L from R by %.3g (peak %.3g)", dsum, dlr, pk);
+
+        auto ears = [&](float spread, float rate, std::vector<float>& l, std::vector<float>& r) {
+            StereoEngine se; se.Init(&piano, sr); se.L.gain = 1.f;
+            se.spread = spread; se.spread_plane = 0; if(rate != 0.f) se.rot.SetRate(0, rate);
+            se.SetF0(261.63f); se.Strike(0.8f);
+            l.assign(24000, 0.f); r.assign(24000, 0.f);
+            for(int i = 0; i < 24000; i += 24) se.Process(l.data() + i, r.data() + i, 24);
+        };
+        std::vector<float> l0, r0, l1, r1, l2, r2;
+        ears(0.f, 0.f, l0, r0); ears(0.1f, 0.f, l1, r1); ears(0.1f, 2.f, l2, r2);
+        double same = 0, e0 = 0, e1 = 0, dif = 0, spin = 0, el = 0;
+        for(int i = 0; i < 24000; i++)
+        {
+            same = std::fmax(same, std::fabs(l0[i] - r0[i]));
+            e0 += (double)l0[i] * l0[i]; e1 += 0.25 * (double)(l1[i] + r1[i]) * (l1[i] + r1[i]);
+            dif += (double)(l1[i] - r1[i]) * (l1[i] - r1[i]); el += (double)l1[i] * l1[i];
+            if(i > 12000) spin += (double)(l2[i] - l1[i]) * (l2[i] - l1[i]);
+        }
+        const double sumdb = 10 * std::log10(e1 / e0), lrdb = 10 * std::log10(dif / el);
+        CHECK(same == 0.0, "no spread and the ears differ by %.3g", same);
+        CHECK(std::fabs(sumdb) < 3.0 && lrdb > -30.0, "full spread: the sum %+.1f dB from mono, the ears %.1f dB apart (of the left)", sumdb, lrdb);
+        CHECK(spin > 1e-3 * el, "an orbit on the stereo plane did not move the ears: %.3g of the left's energy", spin / el);
+        printf("  two ears: L+R is mono on the bank; no spread is one output, full spread two ears (sum %+.1f dB, apart %.1f dB); an orbit spins them\n", sumdb, lrdb);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }

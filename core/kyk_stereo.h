@@ -226,8 +226,19 @@ public:
         {
             L.sharp = sharp;
             L.SetPosition(pc_, N);
+            /* a resonator with a spread is heard from two points along its
+               string, the pair's centre where the stereo plane's angle puts
+               it — an orbit on that plane spins them — and the spread their
+               distance and depth (Engine::SetListen). Without one it is mono,
+               as it was: both ears the one output */
+            const bool listen = world_->IsResonate() && spread > 0.f;
+            if(listen)
+            {
+                float sn, cs; SinCosTurns(rot.Angle(spread_plane), sn, cs);
+                L.SetListen(outR, spread / 0.1f, 0.25f + 0.2f * sn);
+            }
             L.Process(outL, n);
-            for(int i = 0; i < n; i++) outR[i] = outL[i];
+            if(!listen) for(int i = 0; i < n; i++) outR[i] = outL[i];
             for(int j = 0; j < world_->P(); j++) payload_[j] = L.Payload()[j];
             R.FollowPhase(L);   /* keep the idle ear in step */
         }
