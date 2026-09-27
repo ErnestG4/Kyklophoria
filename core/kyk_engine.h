@@ -52,7 +52,7 @@ public:
         phase_dirty_ = false;
         dirty_ = true;
         for(int v = 0; v < kPoly; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
-        rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
+        rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rpoly_ = 1; rmember_ = 0; rdriven_ = 0; rhold_ = false;
         for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
         rframe_ = false;
@@ -195,6 +195,57 @@ public:
     bool PitchLock() const { return pitch_lock_; }
     /* the voice follows its parameter with its state ringing on; an index
        world follows the pot every block, a note world its pitch */
+    /* where the body axis lies in a family, as two members and the share of
+       the second: m0 and m0 + 1, t in 0..1 */
+    /* and only between two members that can be blended — the same kind and
+       the same pickup form; any other pair switches as it always did, with
+       its hysteresis */
+    bool MorphAt(int& m0, float& t)
+    {
+        const ResonatorWorld& r = world_->Res();
+        if(!rmorph_ || !rscr_ || !rmw_ || r.kind != 2 || r.M < 2) return false;
+        const float x = (c_[0] < 0.f ? 0.f : c_[0] > 1.f ? 1.f : c_[0]) * (float)(r.M - 1);
+        m0 = (int)x; if(m0 > r.M - 2) m0 = r.M - 2;
+        t = x - (float)m0;
+        const ResonatorWorld& A = MemberWorld(0, m0);
+        const ResonatorWorld& B = MemberWorld(1, m0 + 1);
+        return A.kind == 0 && B.kind == 0 && A.form == B.form;
+    }
+    /* a member attached, two cached (the pair a morph sits between) */
+    const ResonatorWorld& MemberWorld(int slot, int m)
+    {
+        if(rmw_for_[slot] != world_ || rmw_m_[slot] != m) { world_->Res().Member(m, rmw_[slot]); rmw_for_[slot] = world_; rmw_m_[slot] = m; }
+        ResonatorWorld& w = rmw_[slot];
+        w.voicing = rtune_[0]; w.decay = rtune_[1]; w.coil = rtune_[2];
+        return w;
+    }
+    /* a voice built at param: At() on the member playing, or, morphing, the
+       two members either side blended and built on the nearer */
+    void BuildVoice(float param, ResonatorVoice& v, bool keep, bool strike)
+    {
+        int m0; float t;
+        if(MorphAt(m0, t) && t > 0.02f && t < 0.98f)
+        {
+            const ResonatorWorld& A = MemberWorld(0, m0);
+            const ResonatorWorld& B = MemberWorld(1, m0 + 1);
+            {
+                ResonatorVoice& sa = rscr_[0]; ResonatorVoice& sb = rscr_[1];
+                sa.Init(); sb.Init(); sa.cap = sb.cap = v.cap;
+                A.At(param, sa, sr_); B.At(param, sb, sr_);
+                auto count = [](const ResonatorVoice& x) { int k = 0; while(k < ResonatorBank::kMax && !(x.gain[k] == 0.f && x.hz[k] == 0.f)) k++; return k; };
+                float h[ResonatorBank::kMax], z[ResonatorBank::kMax], g[ResonatorBank::kMax], f[ResonatorBank::kMax], st[8];
+                const int lim = v.cap > 0 && v.cap < ResonatorBank::kMax ? v.cap : ResonatorBank::kMax;
+                const int m = ResonatorWorld::PairBlend(sa.hz, sa.zeta, sa.gain, sa.phase, count(sa), sb.hz, sb.zeta, sb.gain, sb.phase, count(sb),
+                                                        t, t < 0.5f, lim, h, z, g, f);
+                for(int k = 0; k < 8; k++) st[k] = (1.f - t) * sa.stage[k] + t * sb.stage[k];
+                const ResonatorWorld& W = t < 0.5f ? A : B;
+                int a, b; float tt; const int near = W.NearPoint(param, a, b, tt);
+                W.Build(param, v, sr_, keep, strike, h, z, g, f, m, st, near, a, b, tt);
+                return;
+            }
+        }
+        Tuned().At(param, v, sr_, keep, strike);
+    }
     /* each mode of a voice as the two listening points hear it (SetListen) */
     void ListenWeights(const ResonatorVoice& v, float* wl, float* wr) const
     {
@@ -231,7 +282,16 @@ public:
         const float eps = r.kind == 1 ? 0.005f * (r.hi - r.lo) : (pitch_lock_ ? 0.02f : 0.03f);
         const int m = ResMemberOf(c_[0]);
         float& note = rvnote_[ractive_];
-        if(m != rmember_) { rmember_ = m; for(int v = 0; v < kPoly; v++) rvdirty_[v] = true; }   /* another instrument: every voice rebuilt, its ring carried */
+        int mm0; float mt;
+        if(MorphAt(mm0, mt))
+        {
+            /* morphing: every voice rebuilt when the axis has moved a
+               hundredth of the way between two members, one a block, rings
+               carried; the member playing is the nearer */
+            if(mm0 != rmorph_m_ || std::fabs(mt - rmorph_t_) > 0.01f) { rmorph_m_ = mm0; rmorph_t_ = mt; for(int v = 0; v < kPoly; v++) rvdirty_[v] = true; }
+            rmember_ = mt < 0.5f ? mm0 : mm0 + 1;
+        }
+        else if(m != rmember_) { rmember_ = m; for(int v = 0; v < kPoly; v++) rvdirty_[v] = true; }   /* another instrument: every voice rebuilt, its ring carried */
         /* does the active voice take the pitch? Not within the deadband;
            and locked, not at all unless this is the strike, the bank is
            being driven (the pitch is then the only thing playing it), or
@@ -272,7 +332,7 @@ public:
             if(!move && !rvdirty_[ractive_]) return;
             /* a tune change under the lock rebuilds the voice at the note
                it holds, not at wherever the pitch has gone since */
-            Tuned().At(move ? p : note, rvoices_[ractive_], sr_, true, rstriking_); at_count_++; rdid_ = true;
+            BuildVoice(move ? p : note, rvoices_[ractive_], true, rstriking_); at_count_++; rdid_ = true;
             if(move) note = p;
             rvdirty_[ractive_] = false;
             return;
@@ -290,7 +350,7 @@ public:
         {
             const int v = (ractive_ + k) % kPoly;
             if(!rvdirty_[v]) continue;
-            if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { Tuned().At(rvnote_[v], rvoices_[v], sr_, true); at_count_++; rdid_ = true; rvdirty_[v] = false; return; }
+            if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { BuildVoice(rvnote_[v], rvoices_[v], true, false); at_count_++; rdid_ = true; rvdirty_[v] = false; return; }
             rvdirty_[v] = false;              /* silent, or never built: its next strike builds it */
         }
     }
@@ -364,6 +424,18 @@ public:
         return cur;
     }
     int  ResMember() const { return rmember_; }
+    /* the family's body axis as a morph: between two members the voice is
+       both, partial paired with partial (ResonatorWorld::PairBlend) and
+       blended by where the axis lies, built on the nearer member — its
+       attack and wash. It was a switch at the midpoint, with hysteresis.
+       Members of different kinds (a pickup EP beside a plain Wurlitzer)
+       still switch: a pickup is not a thing half of a note has. Off by
+       default until it has been heard; -DKYK_MEMBER_MORPH=1 builds it on */
+    void SetMemberMorph(bool on) { if(rmorph_ != on) { rmorph_ = on; rmorph_m_ = -1; for(int v = 0; v < kPoly; v++) rvdirty_[v] = true; } }
+    bool MemberMorph() const { return rmorph_; }
+    /* two members and two voices of room for the morph (trivially
+       constructible, so SDRAM will do); null takes it away */
+    void SetMorphScratch(ResonatorVoice* two_voices, ResonatorWorld* two_worlds) { rscr_ = two_voices; rmw_ = two_worlds; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1; }
 
     /* Position moves that are smaller than this are not worth a re-render.
      * The pots and CVs are read through a 16-bit ADC, so a perfectly still
@@ -704,7 +776,7 @@ public:
          * here, silent, at the current pitch — arriving at a resonate world
          * is the same as starting in it */
         for(int v = 0; v < kPoly; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
-        rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
+        rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rmember_ = 0;
         for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
         rframe_ = false;
@@ -921,6 +993,20 @@ private:
     float          rw_s_[kPoly] = {-1.f, -1.f, -1.f, -1.f}, rw_c_[kPoly] = {}, rw_param_[kPoly] = {}, rw_hz0_[kPoly] = {};
     int            rw_n_[kPoly] = {};
     float          rrelease_ms_ = ResonatorDefaults::kReleaseMs;
+#ifndef KYK_MEMBER_MORPH
+#define KYK_MEMBER_MORPH 0
+#endif
+    bool           rmorph_ = KYK_MEMBER_MORPH != 0;   /* a family's body axis a morph, not a switch (SetMemberMorph) */
+    int            rmorph_m_ = -1;
+    float          rmorph_t_ = -1.f;
+    /* the morph's room, lent by the shell (SetMorphScratch): two members and
+       two voices, 13 KB — not the engine's own, which sits in the M7's
+       internal SRAM with no 13 KB to spare, twice over for the stereo
+       pair; on the module it is SDRAM. None lent, no morph */
+    ResonatorWorld* rmw_ = nullptr;
+    ResonatorVoice* rscr_ = nullptr;
+    const World*   rmw_for_[2] = {nullptr, nullptr};
+    int            rmw_m_[2] = {-1, -1};
 
     const World*   morph_world_ = nullptr;
 

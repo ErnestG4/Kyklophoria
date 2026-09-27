@@ -142,6 +142,8 @@ int main(int argc, char** argv)
         if(!world.Ready()) { fprintf(stderr, "%s is not a resonate world\n", resonate_path.c_str()); return 1; }
     }
     eng.Init(&world, (float)sr);
+    static ResonatorVoice morph_voices[2]; static ResonatorWorld morph_worlds[2];
+    eng.L.SetMorphScratch(morph_voices, morph_worlds);
     /* a resonate world's axes — body, velocity, decay, coil — are its
        spin here as on the module, so a script's `pos` and the bridge's
        control frame are the same hands; ACTION 18 still sets the spin

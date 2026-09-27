@@ -347,6 +347,12 @@ static uint8_t KYK_SDRAM gResArena[kResRegionsBig][kResRegionBytes];
 static uint8_t KYK_SDRAM gResSmall[kResRegionsSmall][kResSmallBytes];
 static_assert(std::is_trivially_default_constructible<decltype(gResArena)>::value && std::is_trivially_default_constructible<decltype(gResSmall)>::value,
               "gResArena is in SDRAM and must not be constructed before hw.Init()");
+/* the family morph's room (Engine::SetMorphScratch): two members and two
+   voices, 13 KB, which the engine's internal SRAM has not got */
+static ResonatorVoice KYK_SDRAM gMorphVoices[2];
+static ResonatorWorld KYK_SDRAM gMorphWorlds[2];
+static_assert(std::is_trivially_default_constructible<ResonatorVoice>::value && std::is_trivially_default_constructible<ResonatorWorld>::value,
+              "the morph's room is in SDRAM and must not be constructed before hw.Init()");
 static uint8_t* ResBase(int r) { return r < kResRegionsBig ? gResArena[r] : gResSmall[r - kResRegionsBig]; }
 struct ResCapTable { uint32_t cap[kResRegions]; };
 static constexpr ResCapTable MakeResCaps() { ResCapTable t{}; for(int r = 0; r < kResRegions; r++) t.cap[r] = r < kResRegionsBig ? kResRegionBytes : kResSmallBytes; return t; }
@@ -1887,6 +1893,7 @@ int main()
 
     hw.j4.EnableCvOutput();                 /* CV out A, until a resonate world takes the jack as its trigger */
     gEng.TuneFromControl(true);             /* the spin is jacks and pots here, not the page */
+    gEng.L.SetMorphScratch(gMorphVoices, gMorphWorlds);   /* the resonator is L's; R copies it */
 
     settings.UseBrightness();
     settings.UsePresets(presets);

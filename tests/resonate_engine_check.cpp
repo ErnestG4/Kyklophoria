@@ -824,6 +824,91 @@ int main()
         printf("  two ears: L+R is mono on the bank; no spread is one output, full spread two ears (sum %+.1f dB, apart %.1f dB); an orbit spins them\n", sumdb, lrdb);
     }
 
+    /* 24. a family's body axis as a morph (SetMemberMorph): between two
+       members of the same kind the voice is both, paired and blended, and a
+       sweep of the axis glides where the switch stepped. The fixture
+       Wurlitzer and a copy of it 12 dB down (every point's level x 1/4):
+       swept 0..1, a strike at each place, morph on — no step a fifth of the
+       switch's — and off — one step, the whole difference. At either end the morph is the
+       member itself. Two members of different kinds (the Wurlitzer and the
+       pickup EP) switch as they did */
+    {
+        auto family = [&](const std::vector<uint8_t>& m0, const std::vector<uint8_t>& m1) {
+            std::vector<uint8_t> fam;
+            auto u8 = [&](uint8_t v) { fam.push_back(v); };
+            auto u16 = [&](uint16_t v) { u8(v & 255); u8(v >> 8); };
+            auto u32 = [&](uint32_t v) { u16(v & 65535); u16(v >> 16); };
+            auto f32 = [&](float v) { uint32_t u; std::memcpy(&u, &v, 4); u32(u); };
+            const std::vector<uint8_t>* mem[2] = { &m0, &m1 };
+            uint16_t Nmax = 0; for(auto* b : mem) { uint16_t nn; std::memcpy(&nn, b->data() + 6, 2); Nmax = std::max(Nmax, nn); }
+            fam.insert(fam.end(), {'K', 'Y', 'K', 'M'}); u16(6); u16(Nmax); u16(0); u8(0); u8(2); f32(0.f); f32(1.f);
+            u8(2);
+            uint32_t off = (uint32_t)(20 + 1 + 24 * 2); off = (off + 3) & ~3u;
+            std::vector<uint8_t> body;
+            for(int i = 0; i < 2; i++)
+            {
+                u32(off + (uint32_t)body.size()); u32((uint32_t)mem[i]->size());
+                char nm[16] = {0}; std::snprintf(nm, 16, "m%d", i); for(char c : nm) u8((uint8_t)c);
+                body.insert(body.end(), mem[i]->begin(), mem[i]->end());
+                while(body.size() & 3) body.push_back(0);
+            }
+            while(fam.size() < off) fam.push_back(0);
+            fam.insert(fam.end(), body.begin(), body.end());
+            return fam;
+        };
+        /* the quieter copy: every point's level (the stage's eighth float) x 1/4 */
+        std::vector<uint8_t> dim(wblob);
+        {
+            const uint8_t* bl = dim.data();
+            auto g16 = [&](size_t at) { uint16_t v; std::memcpy(&v, bl + at, 2); return v; };
+            const uint16_t ver = g16(4), N = g16(6), P = g16(8);
+            const size_t fixed = 4 + 32 + 5u * N, bh = ver >= 6 ? 12 : 10;
+            size_t q = 20 + (ver >= 7 ? 32 : 0);
+            for(int i = 0; i < P; i++)
+            {
+                float lv; std::memcpy(&lv, &dim[q + 4 + 28], 4); lv *= 0.25f; std::memcpy(&dim[q + 4 + 28], &lv, 4);
+                q += fixed; q += 1 + 8u * dim[q];
+                const uint16_t nb = g16(q); q += 2;
+                for(uint16_t k = 0; k < nb; k++) q += bh + 2u * g16(q + 8);
+            }
+        }
+        std::vector<uint8_t> fam = family(wblob, dim), mixed = family(wblob, blob);
+        World f; f.UseResonate(fam.data(), (uint32_t)fam.size());
+        World fm; fm.UseResonate(mixed.data(), (uint32_t)mixed.size());
+        auto heard = [&](World& w, float c, bool morph, std::vector<float>* keep = nullptr) {
+            static ResonatorVoice scv[2]; static ResonatorWorld scw[2];
+            Engine e; e.Init(&w, sr); e.gain = 1.f; e.SetMemberMorph(morph); e.SetMorphScratch(scv, scw);
+            float pos[kMaxN]; for(int k = 0; k < kMaxN; k++) pos[k] = 0.5f; pos[0] = c;
+            e.SetPosition(pos, kMaxN); e.SetF0(261.63f); e.Strike(0.8f);
+            std::vector<float> y; Run(e, y, 300);
+            if(keep) *keep = y;
+            double en = 0; for(size_t i = 2400; i < y.size(); i++) en += (double)y[i] * y[i];
+            return 10 * std::log10(en + 1e-30);
+        };
+        double on_step = 0, off_step = 0, on_prev = 0, off_prev = 0, on0 = 0, on1 = 0;
+        for(int k = 0; k <= 20; k++)
+        {
+            const float c = k / 20.f;
+            const double a = heard(f, c, true), b = heard(f, c, false);
+            if(k) { on_step = std::fmax(on_step, std::fabs(a - on_prev)); off_step = std::fmax(off_step, std::fabs(b - off_prev)); }
+            if(k == 0) on0 = a;
+            if(k == 20) on1 = a;
+            on_prev = a; off_prev = b;
+        }
+        std::vector<float> ya, yb;
+        heard(f, 0.f, true, &ya); heard(f, 0.f, false, &yb);
+        const bool ends = ya == yb;
+        std::vector<float> ma, mb;
+        heard(fm, 0.5f, true, &ma); heard(fm, 0.5f, false, &mb);
+        /* the attack carries its own level and is not scaled with the
+           modes, so the two ends are 7-8 dB apart, not 12 */
+        CHECK(on_step < 0.2 * off_step && std::fabs(on0 - on1) > 5.0, "the morph: largest step %.1f dB (the switch %.1f), %.1f dB end to end", on_step, off_step, on0 - on1);
+        CHECK(off_step > 5.0, "the switch (morph off) stepped only %.1f dB: the check proves nothing", off_step);
+        CHECK(ends, "at the end of the axis the morph is not the member itself");
+        CHECK(ma == mb, "two members of different kinds did not switch as they did");
+        printf("  morph: a sweep across two members steps %.1f dB at most (%.1f end to end) where the switch stepped %.1f; the ends are the members\n", on_step, on0 - on1, off_step);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }
