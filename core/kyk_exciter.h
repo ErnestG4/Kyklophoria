@@ -143,6 +143,53 @@ struct Reed
     }
 };
 
+/* the pluck: a finger or plectrum, a stiff spring from the finger to the
+   string at the contact. The finger moves at speed v into the string's
+   plane and the string is drawn with it; when the spring's force passes
+   the threshold (the plectrum slips, the finger lets go) it is gone and the
+   string rings from where it was drawn to. A stiffer plectrum lets go of a
+   string with less time for the contact to smooth it: brighter */
+struct Pluck
+{
+    float k;          /* the plectrum's stiffness, N/m */
+    float v;          /* the finger's speed, m/s */
+    float release;    /* the force it lets go at, N */
+    float xf;         /* the finger's position */
+    bool  gone;
+    float work;       /* what the finger has put in so far, J */
+    void Init() { k = 2000.f; v = 0.2f; release = 2.f; xf = 0.f; gone = true; work = 0.f; }
+    void Start(float xc) { xf = xc; gone = false; work = 0.f; }
+};
+
+/* a bank plucked: frames samples of its displacement into out (overwrite);
+   true while the finger still holds the string */
+inline bool ProcessPlucked(ResonatorBank& b, float* out, int frames, const float* w, Pluck& pk, float sr, float m)
+{
+    const float dt = 1.f / sr, kin = dt * dt / m;
+    for(int s = 0; s < frames; s++)
+    {
+        float f = 0.f;
+        if(!pk.gone)
+        {
+            float xc = 0.f;
+            for(int k = 0; k < b.n; k++) xc += w[k] * b.y1[k];
+            pk.xf += pk.v * dt;
+            f = pk.k * (pk.xf - xc);
+            if(f >= pk.release) { pk.gone = true; f = 0.f; }
+            else pk.work += f * pk.v * dt;
+        }
+        float o = 0.f;
+        for(int k = 0; k < b.n; k++)
+        {
+            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * f * kin;
+            b.y2[k] = b.y1[k]; b.y1[k] = y;
+            o += y;
+        }
+        out[s] = o;
+    }
+    return !pk.gone;
+}
+
 /* the lips: a brass player's, a mass on a spring with a frequency of its
    own (f_lip, quality q) swung open by the pressure across it (outward
    striking), the opening its displacement past closed; the flow and the

@@ -147,6 +147,15 @@ bound). So:
    a zero-phase band-pass (u[n] - u[n-2]) in place of the first difference
    changed nothing (242 Hz either way). How far a real brass bore lets the
    lip pull is its losses', which a fitted bore will bring.
+3b. The pluck — done on the desktop, 27 September (Pluck, ProcessPlucked;
+   exciter_check 8): a plectrum's spring drawing the string with the finger
+   and letting go at a force. Plucked at the middle the even harmonics sit
+   66 dB under the odd; a stiffer plectrum lets go in 37 samples rather than
+   997 and is brighter (centroid h1.53 against h1.27); the string's energy
+   is the finger's work less what the spring still held at release, within
+   10 % — the check that fails if the force ignores where the string is (a
+   pluck's comb and brightness alone would pass a feed-forward force).
+   Every exciter of the table now runs on the desktop, tested.
 4. The module: an Exciter page (type, energy, timbre, position), the J1
    input as one more force, the contact noise; the recorded attack stays as
    the default "strike" until the synthesised one has been heard against it.

@@ -17,7 +17,9 @@
  *      holding more energy than the hammer lost;
  *   6. the reed on a bore: a blowing threshold, the bore's fundamental
  *      above it, silence with the reed pressed shut, bounded everywhere;
- *   7. the lips on a brass bore: the lip's tuning selects the resonance.
+ *   7. the lips on a brass bore: the lip's tuning selects the resonance;
+ *   8. the pluck: the midpoint's missing even harmonics, a stiffer plectrum
+ *      brighter, no more energy in the string than the finger put in.
  *
  * Without the force written back the string is silent; without the
  * velocity read it is pushed aside and never oscillates — either fails 2. */
@@ -196,6 +198,44 @@ int main()
               "the lip tuned under the 2nd, 3rd, 4th resonance played resonances %d, %d, %d (%.0f, %.0f, %.0f Hz; %.2f %.2f %.2f)", regs[0], regs[1], regs[2], pf[0], pf[1], pf[2], amp[0], amp[1], amp[2]);
         CHECK(bounded && worst < 5.0, "the lips at every tuning and pressure: finite %d, largest %.3g", bounded, worst);
         printf("  the lips: tuned under the 2nd, 3rd, 4th resonance they play %.0f, %.0f, %.0f Hz (resonances %d, %d, %d of %.1f Hz)\n", pf[0], pf[1], pf[2], regs[0], regs[1], regs[2], fb);
+    }
+    /* the pluck: a plectrum's spring draws the string with the finger and
+       lets go at a force; the string then rings free. Plucked at the middle
+       the even harmonics are gone (the middle is a node of every one); a
+       stiffer plectrum lets go sooner and is brighter; the string never holds
+       more than the finger put in */
+    {
+        auto plucked = [&](float pos, float stiff, double& even_db, double& centroid, double& e_string, double& work, int& held) {
+            ResonatorBank bk; bk.Init();
+            float hz[24], zz[24], g[24], w[24];
+            for(int k = 0; k < 24; k++) { hz[k] = f0 * (k + 1); zz[k] = 0.0005f; g[k] = 0.f; w[k] = std::sin(3.14159265f * pos * (k + 1)); }
+            bk.Set(hz, zz, g, 24, sr);
+            Pluck pk; pk.Init(); pk.k = stiff; pk.Start(0.f);
+            std::vector<float> y(48000);
+            int at = 0;
+            while(at < 48000 && ProcessPlucked(bk, y.data() + at, 1, w, pk, sr, mass)) at++;
+            held = at; work = pk.work;
+            e_string = 0; for(int k = 0; k < 24; k++) { const double om = 2 * M_PI * hz[k], x = bk.y1[k], v = (bk.y1[k] - bk.y2[k]) * sr; e_string += 0.5 * mass * (v * v + om * om * x * x); }
+            ProcessPlucked(bk, y.data() + at, 48000 - at, w, pk, sr, mass);
+            double a[9];
+            for(int h = 1; h <= 8; h++) { double re = 0, im = 0; for(int i = at + 2400; i < at + 26400 && i < 48000; i++) { const double ph = 2 * M_PI * f0 * h * i / sr; re += y[i] * std::cos(ph); im -= y[i] * std::sin(ph); } a[h] = std::sqrt(re * re + im * im); }
+            even_db = 20 * std::log10((a[2] + a[4]) / (a[1] + a[3]) + 1e-12);
+            double num = 0, den = 0; for(int h = 1; h <= 8; h++) { num += h * a[h]; den += a[h]; }
+            centroid = num / den;
+        };
+        double ev, cs, es, wk, ev2, cs2, es2, wk2; int h1, h2;
+        plucked(0.5f, 500.f, ev, cs, es, wk, h1);
+        plucked(0.5f, 20000.f, ev2, cs2, es2, wk2, h2);
+        CHECK(ev < -40.0 && ev2 < -40.0, "plucked at the middle the even harmonics are only %.1f / %.1f dB under the odd", ev, ev2);
+        CHECK(h2 < h1 && cs2 > cs + 0.1, "a stiffer plectrum: held %d samples against %d, centroid h%.2f against h%.2f", h2, h1, cs2, cs);
+        CHECK(es > 0 && es <= wk * 1.01 && es2 > 0 && es2 <= wk2 * 1.01, "the string holds more than the finger put in: %.3g of %.3g, %.3g of %.3g", es, wk, es2, wk2);
+        /* and exactly what it put in, less what the plectrum's spring still
+           held when it let go (F^2 / 2k): the balance only closes if the
+           spring pulls against where the string really is — a force that
+           ignored the string would still pluck, and fail this */
+        const double left = 0.5 * 2.f * 2.f / 500.0, bal = (wk - left - es) / es;
+        CHECK(std::fabs(bal) < 0.1, "the pluck's energy does not balance: the finger put in %.3g, the spring kept %.3g, the string has %.3g (%+.0f%%)", wk, left, es, 100 * bal);
+        printf("  the pluck: at the middle the even harmonics %.0f dB under the odd; a stiffer plectrum lets go in %d samples, not %d, centroid h%.2f against h%.2f\n", ev, h2, h1, cs2, cs);
     }
     if(fails) printf("exciter_check: %d FAILED\n", fails);
     else printf("exciter_check: ok — bowed at 196 Hz the tone is %.1f Hz; amplitude x%.2f at half the speed, x%.2f at less pressure; %.2f under the band, %.2f over it\n",

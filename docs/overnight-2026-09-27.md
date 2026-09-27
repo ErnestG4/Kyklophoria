@@ -91,6 +91,11 @@ outside Kyklophoria and ModalBake.
     nearest resonance): tested for the lock (the lip tuned between two bore
     resonances plays the nearer) and boundedness.
 
+14. [x] **The pluck** (the last exciter of the design's table): tested
+    (exciter_check 8) — the midpoint's missing even harmonics, a stiffer
+    plectrum brighter, the energy balance that only closes if the force
+    reads the string.
+
 ## For the morning (needs Combust)
 
 - **Flash kyklophoria.bin (1b16f04) first** (version 8 worlds need it; older
@@ -170,3 +175,7 @@ outside Kyklophoria and ModalBake.
 - 08:18 — the lips' sharpness: frequency pulling (2.08 -> 2.02 f0 as the
   bore's losses fall to a tenth); a zero-phase drive changes nothing. Written
   into docs/exciters.md; code unchanged.
+- 08:51 — item 14: the pluck. Its first test passed with the coupling cut
+  (a pluck's comb and brightness are feed-forward); the energy balance
+  through the plectrum's spring is the check that needs the loop. All five
+  exciters now tested on the desktop.
