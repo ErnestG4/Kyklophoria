@@ -125,7 +125,17 @@ bound). So:
    With a linear felt the contact and the brightness do not move at all
    (the mutation the test fails on). Still to do: against today's recorded
    attack on the bench (the three-way, with this as a fourth).
-3. The reed and the lips.
+3. The reed — done on the desktop, 27 September (Reed, ProcessBlown;
+   tests/exciter_check 6). Kergomard's non-dimensional reed on a bore of
+   eight odd modes whose peaks fall and losses rise with frequency: silent
+   at 0.3 of the closing pressure, the bore's fundamental exactly (147.0 Hz)
+   at 0.5 and 0.9, louder the harder it is blown (0.40, 0.72), silent again
+   pressed shut at 1.1, bounded at every impedance 5-200. Two things the
+   first cut got wrong and the tests now hold: each mode must be driven so
+   its own peak is the bore's impedance (driven raw, a lightly damped mode's
+   peak was 5000 and the loop ran away at any pressure), and a bore whose
+   peaks do not fall with frequency jumps to its upper registers. The lips
+   next, the same loop with a mass on the reed.
 4. The module: an Exciter page (type, energy, timbre, position), the J1
    input as one more force, the contact noise; the recorded attack stays as
    the default "strike" until the synthesised one has been heard against it.

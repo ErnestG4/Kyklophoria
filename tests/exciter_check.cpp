@@ -14,7 +14,9 @@
  *   4. a bow that does not move puts nothing in;
  *   5. the hammer through the same loop: its contact shortening and its
  *      tone brightening with velocity by themselves, and the string never
- *      holding more energy than the hammer lost.
+ *      holding more energy than the hammer lost;
+ *   6. the reed on a bore: a blowing threshold, the bore's fundamental
+ *      above it, silence with the reed pressed shut, bounded everywhere.
  *
  * Without the force written back the string is silent; without the
  * velocity read it is pushed aside and never oscillates — either fails 2. */
@@ -122,6 +124,42 @@ int main()
         CHECK(es1 <= 1.05 * el1 && es2 <= 1.05 * el2 && es3 <= 1.05 * el3 && es3 > 0, "the string holds more than the hammer lost: %.3g of %.3g, %.3g of %.3g, %.3g of %.3g", es1, el1, es2, el2, es3, el3);
         printf("  the hammer: contact %d, %d, %d samples at 0.5, 1, 2 m/s (x%.2f, x%.2f); centroid h%.2f -> h%.2f -> h%.2f; the string keeps %.0f-%.0f%% of what the hammer lost\n",
                c1, c2, c3, r1, r2, b1, b2, b3, 100 * std::fmin(es1 / el1, std::fmin(es2 / el2, es3 / el3)), 100 * std::fmax(es1 / el1, std::fmax(es2 / el2, es3 / el3)));
+    }
+    /* the reed on a bore (eight odd modes at 147 Hz, their peaks falling and
+       their losses rising with frequency, as a clarinet's do; impedance 20):
+       silent below the blowing threshold, above it the bore's fundamental,
+       louder the harder it is blown; silent again with the reed pressed
+       shut; bounded everywhere */
+    {
+        auto blown = [&](float gamma, float z, std::vector<float>& y) {
+            ResonatorBank bk; bk.Init();
+            float hz[8], zz[8], g[8], w[8];
+            for(int k = 0; k < 8; k++) { hz[k] = 147.f * (2 * k + 1); zz[k] = 0.01f * std::sqrt((float)(2 * k + 1)); g[k] = 0.f; w[k] = 1.f / std::sqrt((float)(2 * k + 1)); }
+            bk.Set(hz, zz, g, 8, sr);
+            Reed r; r.Init(); r.gamma = gamma;
+            y.assign(96000, 0.f);
+            ProcessBlown(bk, y.data(), 96000, w, r, z);
+        };
+        auto osc = [&](const std::vector<float>& y) { return Ac(y, 72000, 96000); };
+        auto pitch = [&](const std::vector<float>& y) {
+            double bf = 0, bp = -1, mean = 0; for(int i = 72000; i < 96000; i++) mean += y[i]; mean /= 24000;
+            for(double fq = 100; fq < 1200; fq += 0.25) { double re = 0, im = 0; for(int i = 72000; i < 96000; i += 2) { const double ph = 2 * M_PI * fq * i / sr; re += (y[i] - mean) * std::cos(ph); im -= (y[i] - mean) * std::sin(ph); } const double pw = re * re + im * im; if(pw > bp) { bp = pw; bf = fq; } }
+            return bf;
+        };
+        std::vector<float> y;
+        blown(0.3f, 20.f, y); const double quiet = osc(y);
+        blown(0.5f, 20.f, y); const double a5 = osc(y), p5 = pitch(y);
+        blown(0.9f, 20.f, y); const double a9 = osc(y), p9 = pitch(y);
+        blown(1.1f, 20.f, y); const double shut = osc(y);
+        bool bounded = true; double worst = 0;
+        for(float z : {5.f, 20.f, 50.f, 200.f}) for(float gm : {0.f, 0.2f, 0.4f, 0.6f, 0.8f, 1.f, 1.2f})
+        { blown(gm, z, y); for(float v : y) { if(!std::isfinite(v)) bounded = false; else worst = std::fmax(worst, std::fabs(v)); } }
+        const double c5 = 1200 * std::log2(p5 / 147.0), c9 = 1200 * std::log2(p9 / 147.0);
+        CHECK(quiet < 1e-3 && shut < 1e-3, "the reed sounded below the threshold (%.3g) or pressed shut (%.3g)", quiet, shut);
+        CHECK(a5 > 0.1 && a9 > a5, "blown above the threshold: %.3g at 0.5, %.3g at 0.9 of the closing pressure", a5, a9);
+        CHECK(std::fabs(c5) < 10 && std::fabs(c9) < 10, "the reed plays %.1f and %.1f Hz on a 147 Hz bore", p5, p9);
+        CHECK(bounded && worst < 3.0, "blown at every impedance and pressure: finite %d, largest pressure %.3g", bounded, worst);
+        printf("  the reed: silent at 0.3 of the closing pressure and pressed shut at 1.1; %.1f Hz at 0.5 (%.2f) and %.1f Hz at 0.9 (%.2f) on a 147 Hz bore\n", p5, a5, p9, a9);
     }
     if(fails) printf("exciter_check: %d FAILED\n", fails);
     else printf("exciter_check: ok — bowed at 196 Hz the tone is %.1f Hz; amplitude x%.2f at half the speed, x%.2f at less pressure; %.2f under the band, %.2f over it\n",

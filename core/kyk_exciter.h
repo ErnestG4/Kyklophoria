@@ -116,4 +116,66 @@ inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float*
     return !h.gone;
 }
 
+/* the reed: a clarinet's, non-dimensional (Kergomard's form). gamma is the
+   mouth pressure over the pressure that shuts the reed, zeta the embouchure
+   (how much the lip lets through); p the pressure at the mouthpiece, what
+   the bore sends back. The reed is a spring with no mass: its opening
+   1 - gamma + p, shut at zero (it beats against the lay); the flow through
+   it zeta x opening x sqrt|gamma - p|, signed as the difference is. The
+   flow's change drives the bore's modes (a bore passes no DC) and the modes'
+   sum at the mouthpiece is p: the loop. Below about a third of the closing
+   pressure it is silent, above it plays the bore's fundamental */
+struct Reed
+{
+    float gamma, zeta;
+    float u_prev;
+    void Init() { gamma = 0.f; zeta = 0.3f; u_prev = 0.f; }
+    float Flow(float p) const
+    {
+        const float open = 1.f - gamma + p;
+        if(open <= 0.f) return 0.f;
+        const float d = gamma - p;
+        /* sqrt|d| smoothed near zero, sqrt(d^2 + e^2)^(1/2): its slope there
+           is infinite, and an explicit loop through it blew up to NaN at any
+           coupling past a fifth */
+        const float r = std::sqrt(std::sqrt(d * d + 1e-4f));
+        return d < 0.f ? -zeta * open * r : zeta * open * r;
+    }
+};
+
+/* a bank blown through a reed: frames samples of the mouthpiece pressure
+   into out (overwrite); w the modes' weights at the mouthpiece, z the bore's
+   impedance at a resonance (pressure over flow at a peak, in the reed's
+   units: a clarinet's is some tens). Each mode is driven so that its own
+   peak is z: driven raw, a lightly damped mode's peak was 1 / (1 - r), five
+   thousand at 147 Hz, and the loop ran away at any pressure */
+inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* w, Reed& r, float z)
+{
+    float bk[ResonatorBank::kMax];
+    for(int k = 0; k < b.n; k++)
+    {
+        /* the recursion's gain at its own resonance, for an input that is
+           the flow's first difference: (1 - r) 2 sin w over 2 sin(w/2) */
+        const float wk = b.wq[k], rk = b.rq[k];
+        const float sh = std::sin(0.5f * wk);
+        bk[k] = sh > 1e-6f ? z * (1.f - rk) * std::sin(wk) / sh : 0.f;
+    }
+    for(int s = 0; s < frames; s++)
+    {
+        float p = 0.f;
+        for(int k = 0; k < b.n; k++) p += w[k] * b.y1[k];
+        const float u = r.Flow(p);
+        const float du = u - r.u_prev;
+        r.u_prev = u;
+        float o = 0.f;
+        for(int k = 0; k < b.n; k++)
+        {
+            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * bk[k] * du;
+            b.y2[k] = b.y1[k]; b.y1[k] = y;
+            o += w[k] * y;
+        }
+        out[s] = o;
+    }
+}
+
 } // namespace kyk
