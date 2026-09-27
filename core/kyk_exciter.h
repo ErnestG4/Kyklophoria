@@ -67,4 +67,53 @@ inline void ProcessBowed(ResonatorBank& b, float* out, int frames, const float* 
     }
 }
 
+/* the hammer: a mass on a felt spring, F = K d^alpha while the felt is
+   compressed (d, the hammer's position past the string's at the contact),
+   the hammer slowed by it and the string pushed by it — the same loop as the
+   bow, and it leaves when the felt stops pressing. Nothing is scripted: a
+   harder hit is shorter (T ~ v^-(alpha-1)/(alpha+1)) and so brighter,
+   because the felt stiffens as it compresses; a hit on a moving string meets
+   it where it is */
+struct Hammer
+{
+    float mass;       /* kg */
+    float k, alpha;   /* felt stiffness and exponent */
+    float x, v;       /* the hammer's position and velocity, toward the string (+) */
+    float xc_prev;
+    int   contact;    /* samples in contact so far; */
+    bool  gone;       /* left the string */
+    void Init() { mass = 0.008f; k = 1e8f; alpha = 2.5f; x = 0.f; v = 0.f; xc_prev = 0.f; contact = 0; gone = true; }
+    void Strike(float velocity, float xc) { v = velocity; x = xc; gone = false; contact = 0; }
+};
+
+/* a bank struck by a hammer: frames samples of its displacement into out
+   (overwrite); returns true while the hammer is still in contact */
+inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float* w, Hammer& h, float sr, float m)
+{
+    const float dt = 1.f / sr, kin = dt * dt / m;
+    for(int s = 0; s < frames; s++)
+    {
+        float f = 0.f;
+        if(!h.gone)
+        {
+            float xc = 0.f;
+            for(int k = 0; k < b.n; k++) xc += w[k] * b.y1[k];
+            const float d = h.x - xc;
+            if(d > 0.f) { f = h.k * std::pow(d, h.alpha); h.contact++; }
+            else if(h.contact > 0 && h.v <= 0.f) h.gone = true;          /* the felt has let go and the hammer is falling back */
+            h.v -= f / h.mass * dt;
+            h.x += h.v * dt;
+        }
+        float o = 0.f;
+        for(int k = 0; k < b.n; k++)
+        {
+            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * f * kin;
+            b.y2[k] = b.y1[k]; b.y1[k] = y;
+            o += y;
+        }
+        out[s] = o;
+    }
+    return !h.gone;
+}
+
 } // namespace kyk

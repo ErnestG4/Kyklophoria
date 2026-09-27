@@ -11,7 +11,10 @@
  *      fundamental whose amplitude follows the bow's speed and not its
  *      pressure;
  *   3. below the band no tone, and above it the motion breaks down;
- *   4. a bow that does not move puts nothing in.
+ *   4. a bow that does not move puts nothing in;
+ *   5. the hammer through the same loop: its contact shortening and its
+ *      tone brightening with velocity by themselves, and the string never
+ *      holding more energy than the hammer lost.
  *
  * Without the force written back the string is silent; without the
  * velocity read it is pushed aside and never oscillates — either fails 2. */
@@ -88,6 +91,38 @@ int main()
     const std::vector<float> still = Bowed(0.f, 10.f, 0.13f, 48000);
     double e = 0; for(float v : still) e += std::fabs(v);
     CHECK(e == 0.0, "a still bow put %.3g in", e);
+    /* the hammer through the same loop (Hunt-Crossley felt, alpha 2.5): the
+       contact shortens as the velocity doubles (theory against a rigid wall
+       0.74 a doubling; a string that gives, a little less), the tone
+       brightens with it (the harmonics' centroid rises), and the string
+       never holds more energy than the hammer lost */
+    {
+        auto struck = [&](float vel, int& contact, double& centroid, double& e_string, double& e_lost) {
+            ResonatorBank bk; bk.Init();
+            float hz[24], z[24], g[24], w[24];
+            for(int k = 0; k < 24; k++) { hz[k] = f0 * (k + 1); z[k] = 0.001f; g[k] = 0.f; w[k] = std::sin(3.14159265f * 0.12f * (k + 1)); }
+            bk.Set(hz, z, g, 24, sr);
+            Hammer h; h.Init(); h.Strike(vel, 0.f);
+            std::vector<float> y(24000);
+            int at = 0;
+            while(at < 24000 && ProcessStruck(bk, y.data() + at, 1, w, h, sr, mass)) at++;
+            contact = h.contact;
+            e_string = 0; for(int k = 0; k < 24; k++) { const double om = 2 * M_PI * hz[k], x = bk.y1[k], v = (bk.y1[k] - bk.y2[k]) * sr; e_string += 0.5 * mass * (v * v + om * om * x * x); }
+            e_lost = 0.5 * h.mass * ((double)vel * vel - (double)h.v * h.v);
+            ProcessStruck(bk, y.data() + at, 24000 - at, w, h, sr, mass);
+            double num = 0, den = 0;
+            for(int k = 1; k <= 24; k++) { double re = 0, im = 0; for(int i = 2400; i < 14400; i++) { const double ph = 2 * M_PI * f0 * k * i / sr; re += y[i] * std::cos(ph); im -= y[i] * std::sin(ph); } const double a = std::sqrt(re * re + im * im); num += k * a; den += a; }
+            centroid = num / den;
+        };
+        int c1, c2, c3; double b1, b2, b3, es1, el1, es2, el2, es3, el3;
+        struck(0.5f, c1, b1, es1, el1); struck(1.f, c2, b2, es2, el2); struck(2.f, c3, b3, es3, el3);
+        const double r1 = (double)c2 / c1, r2 = (double)c3 / c2;
+        CHECK(r1 > 0.7 && r1 < 0.88 && r2 > 0.7 && r2 < 0.88, "the contact at twice the velocity: x%.2f and x%.2f of it (felt: about 0.75-0.85)", r1, r2);
+        CHECK(b1 < b2 && b2 < b3, "a harder hit is not brighter: centroid h%.2f, h%.2f, h%.2f", b1, b2, b3);
+        CHECK(es1 <= 1.05 * el1 && es2 <= 1.05 * el2 && es3 <= 1.05 * el3 && es3 > 0, "the string holds more than the hammer lost: %.3g of %.3g, %.3g of %.3g, %.3g of %.3g", es1, el1, es2, el2, es3, el3);
+        printf("  the hammer: contact %d, %d, %d samples at 0.5, 1, 2 m/s (x%.2f, x%.2f); centroid h%.2f -> h%.2f -> h%.2f; the string keeps %.0f-%.0f%% of what the hammer lost\n",
+               c1, c2, c3, r1, r2, b1, b2, b3, 100 * std::fmin(es1 / el1, std::fmin(es2 / el2, es3 / el3)), 100 * std::fmax(es1 / el1, std::fmax(es2 / el2, es3 / el3)));
+    }
     if(fails) printf("exciter_check: %d FAILED\n", fails);
     else printf("exciter_check: ok — bowed at 196 Hz the tone is %.1f Hz; amplitude x%.2f at half the speed, x%.2f at less pressure; %.2f under the band, %.2f over it\n",
                 p, rb / ra, rc / ra, rw / ra, rh / ra);

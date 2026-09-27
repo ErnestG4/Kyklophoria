@@ -116,8 +116,15 @@ bound). So:
      resonator's (within a few cents) and steady; below the minimum
      pressure, no steady tone;
    - off is silent: zero bow velocity puts no energy in.
-2. The strike through the same loop, against today's recorded attack on the
-   bench (the prototype's three-way, with the coupled strike as a fourth).
+2. The strike through the same loop — done on the desktop, 27 September
+   (Hammer, ProcessStruck; tests/exciter_check 5). A Hunt-Crossley felt
+   (alpha 2.5) on a harmonic string: the contact 6.1, 4.7, 3.8 ms at 0.5,
+   1, 2 m/s (x0.78 and x0.80 a doubling, where a rigid wall gives 0.74), the
+   harmonics' centroid rising h1.06 -> 1.16 -> 1.26 with nothing but the
+   felt, and the string holding 98-100 % of the energy the hammer lost.
+   With a linear felt the contact and the brightness do not move at all
+   (the mutation the test fails on). Still to do: against today's recorded
+   attack on the bench (the three-way, with this as a fourth).
 3. The reed and the lips.
 4. The module: an Exciter page (type, energy, timbre, position), the J1
    input as one more force, the contact noise; the recorded attack stays as

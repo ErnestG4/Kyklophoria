@@ -64,9 +64,10 @@ outside Kyklophoria and ModalBake.
    actions and model-tab controls, so the A/B needs no reflash. Tests: the
    desktop shell's action path (selftest/pagecheck), and that the engine's
    setting follows the action.
-10. **Exciter stage 2**: the strike through the coupled loop (Hunt-Crossley
-    felt, the hammer a mass leaving when it stops pressing), tested for the
-    contact shortening and brightening with velocity by itself.
+10. [x] **Exciter stage 2**: the hammer through the coupled loop — contact
+    x0.78 a velocity doubling, brighter with velocity by itself, energy
+    conserved (98-100 %). Desktop only; the bench comparison against the
+    recorded attack is stage 2's second half.
 
 ## For the morning (needs Combust)
 
@@ -126,6 +127,8 @@ outside Kyklophoria and ModalBake.
   the bow's speed — Helmholtz motion. Every item on the list is done; the
   exciter's next stages (the strike through the loop, the reed and the
   lips, the module's Exciter page) are the next list.
-- 07:50 — item 9: the morph and the release as actions and page controls,
+- 07:40 — item 9: the morph and the release as actions and page controls,
   read back through the readout. Firmware 1b16f04 (+ fullintro, release200,
   morph), pages rebuilt. Next: item 10, the strike through the loop.
+- 07:55 — item 10: the hammer through the loop, tested (contact, brightness,
+  energy; a linear felt fails it). Both lists done.
