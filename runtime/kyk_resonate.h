@@ -1153,12 +1153,15 @@ struct ResonatorVoice
        what the module is playing and the module says, rather than the
        page decoding a world it never has */
     float          hz[ResonatorBank::kMax], zeta[ResonatorBank::kMax], gain[ResonatorBank::kMax];
+    float          phase[ResonatorBank::kMax];   /* and each mode's phase at the strike: the filler (ModalBake tools/worldfill) writes a built voice back as a point */
+    float          stage[8];          /* the stage it was built with, before the spin: h, w, K, fc, Q, the two swings, and 1 */
     uint32_t       burst_len;         /* samples in the burst it would play at swing 1, 0 for none */
 
     void Init()
     {
         bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0; burst_head = 10; burst_fade = 0; param = 1e9f; cap = 0; body_top = 0.f;
-        for(int k = 0; k < ResonatorBank::kMax; k++) hz[k] = zeta[k] = gain[k] = 0.f;
+        for(int k = 0; k < ResonatorBank::kMax; k++) hz[k] = zeta[k] = gain[k] = phase[k] = 0.f;
+        for(int k = 0; k < 8; k++) stage[k] = 0.f;
     }
 
     void Strike(float velocity01)
@@ -1268,6 +1271,7 @@ struct ResonatorWorld
        like each other: a double bass peaks at 88 Hz and is 12 dB down by
        177, a banjo peaks at 707 Hz and falls 7 dB an octave above it, a
        mandolin is within 12 dB everywhere. */
+    static constexpr uint8_t kNoBursts[2] = {0, 0};   /* no attacks: what a broken reference plays */
     uint32_t HeaderBytes() const { return ver >= 7 ? kHeader + 32u : kHeader; }
     float    body[8];
     bool     has_body;
@@ -1314,13 +1318,33 @@ struct ResonatorWorld
     /* after the fixed part: u8 nbands + nbands x (f32 level, f32 t60), then the bursts */
     const uint8_t* Noise(int i) const { return Point(i) + FixedBytes(); }
     static const uint8_t* NoiseEnd(const uint8_t* b) { return b + 1 + 8u * b[0]; }
-    const uint8_t* Bursts(int i) const { return NoiseEnd(Noise(i)); }
+    /* a point's attacks, or, from version 8, another point's: a burst count
+       of 0xFFFF is followed by the index of the point whose attacks this one
+       plays — a note the export built between two recorded ones
+       (export.py --every-note) plays the nearer recorded note's attack at
+       its own pitch, and does not carry a copy of it: the attacks are most
+       of a world, and a copy a semitone would not fit the module's slot */
+    int BurstPoint(int i) const
+    {
+        const uint8_t* b = NoiseEnd(Noise(i));
+        uint16_t nb; std::memcpy(&nb, b, 2);
+        if(nb != 0xFFFFu) return i;
+        uint16_t r; std::memcpy(&r, b + 2, 2);
+        return r < P ? (int)r : i;
+    }
+    const uint8_t* Bursts(int i) const
+    {
+        const uint8_t* b = NoiseEnd(Noise(BurstPoint(i)));
+        uint16_t nb; std::memcpy(&nb, b, 2);
+        return nb == 0xFFFFu ? kNoBursts : b;       /* one step only: a reference to a reference plays nothing */
+    }
     /* a burst: f32 swing, f32 scale, u16 len, [u16 fade from version 6,]
        i16 samples */
     uint32_t BurstHead() const { return ver >= 6 ? 12u : 10u; }
     const uint8_t* BurstEnd(const uint8_t* b) const
     {
         uint16_t nb; std::memcpy(&nb, b, 2);
+        if(nb == 0xFFFFu) return b + 4;             /* a reference: the marker and a point's index */
         const uint8_t* q = b + 2;
         for(uint16_t k = 0; k < nb; k++) { uint16_t n; std::memcpy(&n, q + 8, 2); q += BurstHead() + 2u * n; }
         return q;
@@ -1347,7 +1371,7 @@ struct ResonatorWorld
         M = 0;
         if(kind == 2)
         {
-            if(v < 6 || v > 7 || size < kHeader + 1) return false;
+            if(v < 6 || v > 8 || size < kHeader + 1) return false;
             const uint8_t m = blob[kHeader];
             if(m == 0 || m > kMaxMembers || size < kHeader + 1 + 24u * m) return false;
             for(int i = 0; i < m; i++)
@@ -1361,7 +1385,7 @@ struct ResonatorWorld
             M = m;
             return N <= ResonatorBank::kMax;
         }
-        if(!((v >= 4 && v <= 7) && N <= ResonatorBank::kMax && size >= HeaderBytes() + (uint32_t)P * FixedBytes())) return false;
+        if(!((v >= 4 && v <= 8) && N <= ResonatorBank::kMax && size >= HeaderBytes() + (uint32_t)P * FixedBytes())) return false;
         TablePoints();
         return true;
     }
@@ -1757,8 +1781,8 @@ struct ResonatorWorld
             n = 0;
             for(int k = 0; k < N; k++) if(take[k]) { ha[n] = ha[k]; za[n] = za[k]; ga[n] = ga[k]; fa[n] = fa[k]; n++; }
         }
-        for(int k = 0; k < n; k++) { v.hz[k] = ha[k]; v.zeta[k] = za[k]; v.gain[k] = ga[k]; }
-        for(int k = n; k < ResonatorBank::kMax; k++) { v.hz[k] = 0.f; v.zeta[k] = 0.f; v.gain[k] = 0.f; }
+        for(int k = 0; k < n; k++) { v.hz[k] = ha[k]; v.zeta[k] = za[k]; v.gain[k] = ga[k]; v.phase[k] = fa[k]; }
+        for(int k = n; k < ResonatorBank::kMax; k++) { v.hz[k] = 0.f; v.zeta[k] = 0.f; v.gain[k] = 0.f; v.phase[k] = 0.f; }
         /* a strike at another note on this voice: the old note choked —
            its ring over 2 ms (ResonatorBank::Choke), its attack, which is
            the recording of the old note, over 5 (BurstPlayer::Choke).
@@ -1797,14 +1821,16 @@ struct ResonatorWorld
            ring decay fully muted shouldn't impact the strike"). It was
            made to fade with the muted T60 for an afternoon. */
         v.burst.damp = 1.f;
+        for(int k = 0; k < 8; k++) v.stage[k] = st[k];
         st[0] += voicing * st[1];                                /* h moves by widths */
         st[3] *= coil;
         {
             /* a burst is not interpolated: the nearer point's, read at the
                played note over its own, so a note between two points is not
                a semitone off in its attack; a body row plays it as it is */
+            const int bp = BurstPoint(near);
             v.bursts = Bursts(near);
-            v.burst_rate = kind == 1 ? 1.f : std::exp2((param - Param(near)) / 12.f);
+            v.burst_rate = kind == 1 ? 1.f : std::exp2((param - Param(bp)) / 12.f);
             v.burst_head = BurstHead();
             v.sr = sr;
             /* where this instrument's envelope has fallen 12 dB from its
