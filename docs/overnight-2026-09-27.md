@@ -50,8 +50,11 @@ outside Kyklophoria and ModalBake.
 7. [x] **The 8-world-slot limit** (e912838): it was eight 4 MB SDRAM
    regions; now four of 4 MB and twenty of 2 MB, a world in the smallest
    that fits — the whole card (24 worlds) loads at once. tests/regions_check.
-8. **Exciters coupled through feedback** (docs/litreview in ModalBake):
-   design note first, then a prototype on the desktop.
+8. [x] **Exciters coupled through feedback**: design note docs/exciters.md
+   (strike, pluck, bow, reed, lips on one loop; noise tied to the contact;
+   the waveguide dropped as a separate path). Stage 1, the bow, prototyped
+   and tested (core/kyk_exciter.h, tests/exciter_check): it plays Schelleng's
+   diagram by itself. Not wired into the engine: stages 2-4 in the note.
 
 ## For the morning (needs Combust)
 
@@ -102,3 +105,9 @@ outside Kyklophoria and ModalBake.
   (scratch voices in both engines of the stereo pair); the shell now lends
   the room, SDRAM on the module. Firmware 2a38f4f + fullintro, release200,
   morph. Next: item 8, the exciter design note.
+- 07:45 — item 8: the design note, and the bow on the desktop. A harmonic
+  string bowed through the coupled loop finds its own playable band of
+  force, plays its fundamental within 2 cents, and its amplitude follows
+  the bow's speed — Helmholtz motion. Every item on the list is done; the
+  exciter's next stages (the strike through the loop, the reed and the
+  lips, the module's Exciter page) are the next list.

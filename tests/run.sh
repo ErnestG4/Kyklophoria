@@ -56,6 +56,10 @@ echo "== resonate_engine_check =="
 $CXX $CORE_FLAGS $SAN tests/resonate_engine_check.cpp -o "$OUT/resonate_engine_check" || fail=1
 "$OUT/resonate_engine_check" || fail=1
 
+echo "== exciter_check =="
+$CXX $CORE_FLAGS $SAN tests/exciter_check.cpp -o "$OUT/exciter_check" || fail=1
+"$OUT/exciter_check" || fail=1
+
 echo "== regions_check =="
 $CXX $CORE_FLAGS $SAN -Ishell/common tests/regions_check.cpp -o "$OUT/regions_check" || fail=1
 "$OUT/regions_check" || fail=1
