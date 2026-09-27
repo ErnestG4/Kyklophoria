@@ -139,10 +139,14 @@ bound). So:
    frequency, swung open by the pressure. On a brass-like bore (ten harmonic
    resonances at 116.5 Hz) the lip tuned just under the 2nd, 3rd and 4th
    resonance plays the 2nd, 3rd and 4th — 242, 365, 487 Hz — which is how a
-   bugle has notes; a frozen lip selects nothing. **Open:** the pitch sits
-   3-5 % sharp of the resonance it locks to (50-80 cents), more than a
-   player lips a note; the lip's phase through the flow's first difference
-   is the first suspect.
+   bugle has notes; a frozen lip selects nothing. The pitch sits
+   3-5 % sharp of the resonance it locks to at the test bore's losses, and
+   it is the lip pulling it, not the loop: with the bore's losses cut to a
+   third and a tenth the 2nd resonance plays at 2.08, 2.03, 2.02 of the
+   fundamental (the 4th at 4.18, 4.08, 4.03), and driving the modes through
+   a zero-phase band-pass (u[n] - u[n-2]) in place of the first difference
+   changed nothing (242 Hz either way). How far a real brass bore lets the
+   lip pull is its losses', which a fitted bore will bring.
 4. The module: an Exciter page (type, energy, timbre, position), the J1
    input as one more force, the contact noise; the recorded attack stays as
    the default "strike" until the synthesised one has been heard against it.

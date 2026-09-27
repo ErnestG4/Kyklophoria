@@ -84,8 +84,9 @@ outside Kyklophoria and ModalBake.
     Combust of what to drop or re-split; nothing refitted without it.
 
 13. [x] **Exciter stage 3b: the lips** — the lip's tuning selects the
-    bore's 2nd/3rd/4th resonance (exciter_check 7); intonation 3-5 % sharp,
-    open. Was: **the lips** — the reed's loop with a mass on the
+    bore's 2nd/3rd/4th resonance (exciter_check 7); its 3-5 % sharpness
+    is the lip pulling a lossy resonance (it shrinks to 1 % as the bore's
+    losses fall), not the loop. Was: **the lips** — the reed's loop with a mass on the
     reed (a lip that has a frequency of its own and locks to the bore's
     nearest resonance): tested for the lock (the lip tuned between two bore
     resonances plays the nearer) and boundedness.
@@ -166,3 +167,6 @@ outside Kyklophoria and ModalBake.
 - 07:57 — item 13: the lips select their register; their intonation is
   sharp by 3-5 %, written down as open in docs/exciters.md. Every item is
   done; the wrap-up at 10:57 writes the morning summary.
+- 08:18 — the lips' sharpness: frequency pulling (2.08 -> 2.02 f0 as the
+  bore's losses fall to a tenth); a zero-phase drive changes nothing. Written
+  into docs/exciters.md; code unchanged.
