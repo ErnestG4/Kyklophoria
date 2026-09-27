@@ -45,7 +45,9 @@ outside Kyklophoria and ModalBake.
    worlds stay mono).
 6. **Instrument morph**: a family's body axis glides between members by the
    partial pairing At() already has, instead of switching.
-7. **The 8-world-slot limit** (feedback 2026-09-23): what fails past 8.
+7. [x] **The 8-world-slot limit** (e912838): it was eight 4 MB SDRAM
+   regions; now four of 4 MB and twenty of 2 MB, a world in the smallest
+   that fits — the whole card (24 worlds) loads at once. tests/regions_check.
 8. **Exciters coupled through feedback** (docs/litreview in ModalBake):
    design note first, then a prototype on the desktop.
 
@@ -55,6 +57,7 @@ outside Kyklophoria and ModalBake.
   firmware refuses them cleanly). Then the **filled** cards: out/card-abc8
   (the A/B/C, every note a point: the pops and overruns on the pianos
   should be gone) — the unfilled card-abc is the same sound with the pops.
+- Load more than eight resonate worlds: all 24 of the card should load now.
 - New to try: on a plain resonator (a piano, guitar, harp), turn up the
   Stereo page's spread; set an orbit rate on the stereo plane to spin the
   two ears along the string. Watch the CPU footer with it up.
@@ -82,3 +85,6 @@ outside Kyklophoria and ModalBake.
 - 01:20 — item 5: two ears on the bank. First cut 2.6x the block; modes
   both ears hear whole now run in the shared paired loop and the weights
   are cached per voice: 1.5x. Mono path untouched (goldens identical).
+- 01:45 — item 7 (before 6: a bug before a feature): 24 worlds at once.
+  SDRAM 60.8 of 64 MB. The card path itself is module-only; the policy is
+  tested pure.
