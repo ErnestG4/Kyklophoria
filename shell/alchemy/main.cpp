@@ -39,6 +39,7 @@
 #include <type_traits>
 #include "kyk_telemetry.h"
 #include "kyk_ext.h"
+#include "kyk_regions.h"
 #include "kyk_worldrx.h"
 #include "kyk_aim.h"
 #include "alchemy/storage/sd_card.h"
@@ -327,13 +328,30 @@ static char     gSlotName[kSlotCount][kUserNameLen + 1];
  * 8 MB of the 64 MB SDRAM. A slot holding one keeps its region's number in
  * gSlotRes and its gSlotBlob bytes mean nothing. */
 /* Sixteen: four was the first evening's number and the fifth world would
- * not load, silently — a slot past 03 stayed empty. 32 MB of the 64, with
- * the wavetable blobs and the slots taking under 5 MB of the rest. */
+ * not load, silently — a slot past 03 stayed empty. It went to eight of
+ * 4 MB, and the ninth world would not load whichever slot it went to
+ * (Combust: "Only 8 world slots can be filled then others fail"). Most
+ * worlds are far under 4 MB — a Wurlitzer 100 KB, a grand 1.2 MB, the
+ * string families under 2; only the layered pianos (2.5) and the electric
+ * family (3.4) need more — so there are two sizes now: four of 4 MB and
+ * twenty of 2 MB, 56 MB of the 64 with the wavetable blobs and the slots
+ * taking about 5 of the rest, and a world takes the smallest free region it
+ * fits (shell/common/kyk_regions.h, tests/regions_check). The card's 24
+ * worlds all load at once. */
 constexpr uint32_t kResRegionBytes = 4u << 20;   /* a family — strings is six worlds, 2.1 MB; electric 3.4 — needs the room */
-constexpr int      kResRegions     = 8;
-static uint8_t KYK_SDRAM gResArena[kResRegions][kResRegionBytes];
-static_assert(std::is_trivially_default_constructible<decltype(gResArena)>::value,
+constexpr int      kResRegionsBig  = 4;
+constexpr uint32_t kResSmallBytes  = 2u << 20;
+constexpr int      kResRegionsSmall = 20;
+constexpr int      kResRegions     = kResRegionsBig + kResRegionsSmall;
+static uint8_t KYK_SDRAM gResArena[kResRegionsBig][kResRegionBytes];
+static uint8_t KYK_SDRAM gResSmall[kResRegionsSmall][kResSmallBytes];
+static_assert(std::is_trivially_default_constructible<decltype(gResArena)>::value && std::is_trivially_default_constructible<decltype(gResSmall)>::value,
               "gResArena is in SDRAM and must not be constructed before hw.Init()");
+static uint8_t* ResBase(int r) { return r < kResRegionsBig ? gResArena[r] : gResSmall[r - kResRegionsBig]; }
+struct ResCapTable { uint32_t cap[kResRegions]; };
+static constexpr ResCapTable MakeResCaps() { ResCapTable t{}; for(int r = 0; r < kResRegions; r++) t.cap[r] = r < kResRegionsBig ? kResRegionBytes : kResSmallBytes; return t; }
+static constexpr ResCapTable kResCapTable = MakeResCaps();   /* the big ones first; in flash, not SDRAM */
+static const uint32_t* const kResCaps = kResCapTable.cap;
 static uint8_t gSlotRes[kSlotCount];        /* 0 = a frame world in gSlotBlob, r + 1 = region r */
 static uint8_t gResOwner[kResRegions];      /* slot + 1, 0 = free */
 static bool IsKykm(const char* name)
@@ -466,6 +484,20 @@ static size_t ReadCardWorld(uint8_t i)
  * time — IDMA's reach is the staging buffer's section, not SDRAM's, and the
  * DMA law above is not one to test by reading a megabyte straight in. Returns
  * bytes read, 0 on any failure or a file past the region. */
+/* a card file's size, for choosing the region it is read into (0 if it
+   cannot be opened) */
+static size_t CardFileSize(uint8_t i)
+{
+    if(i >= gCardCount) return 0;
+    if(!gSd.EnsureMounted(daisy::System::GetNow())) return 0;
+    alchemy::SdCard::BusyGuard busy(gSd);
+    char path[80];
+    std::snprintf(path, sizeof path, "%s/%s", kWorldDir, gCardNames[i]);
+    if(f_open(&gCardFil, path, FA_READ) != FR_OK) return 0;
+    const size_t sz = (size_t)f_size(&gCardFil);
+    f_close(&gCardFil);
+    return sz;
+}
 static size_t ReadCardResonate(uint8_t i, uint8_t* dst, size_t cap)
 {
     if(i >= gCardCount) return 0;
@@ -571,7 +603,7 @@ static bool ResSlotLive(uint8_t slot)
 {
     if(slot >= kSlotCount || !gSlotRes[slot]) return false;
     const World* w = gEng.L.WorldPtr();
-    return w && w->IsResonate() && w->Res().blob == gResArena[gSlotRes[slot] - 1];
+    return w && w->IsResonate() && w->Res().blob == ResBase(gSlotRes[slot] - 1);
 }
 static void ResRelease(uint8_t slot)
 {
@@ -984,7 +1016,7 @@ struct ModuleSource : ExtSource
         if(offset >= total) return 0;
         uint32_t n = total - offset;
         if(n > (uint32_t)max) n = (uint32_t)max;
-        const uint8_t* src = gSlotRes[slot] ? gResArena[gSlotRes[slot] - 1] : gSlotBlob[slot];
+        const uint8_t* src = gSlotRes[slot] ? ResBase(gSlotRes[slot] - 1) : gSlotBlob[slot];
         std::memcpy(out, src + offset, n);
         return (int)n;
     }
@@ -1599,16 +1631,19 @@ static void ServeWorldRequest()
                a free one; the file's base name is its name, since the
                header carries none. Probed as the world it will be before
                the slot claims it, like a frame world is. */
-            int r = gSlotRes[sl] ? gSlotRes[sl] - 1 : -1;
-            if(r < 0) for(int k = 0; k < kResRegions; k++) if(!gResOwner[k]) { r = k; break; }
+            const int cur = gSlotRes[sl] ? gSlotRes[sl] - 1 : -1;
+            const int r = PickRegion(CardFileSize(gCardToSlotCard), kResCaps, gResOwner, kResRegions, cur);
             if(r >= 0)
             {
-                const size_t n = ReadCardResonate(gCardToSlotCard, gResArena[r], kResRegionBytes);
+                const size_t n = ReadCardResonate(gCardToSlotCard, ResBase(r), kResCaps[r]);
                 if(n)
                 {
-                    gScratch.UseResonate(gResArena[r], (uint32_t)n);
+                    gScratch.UseResonate(ResBase(r), (uint32_t)n);
                     if(gScratch.IsResonate())
                     {
+                        /* the slot's old region is let go only now, the new
+                           world loaded: a load that fails leaves it as it was */
+                        if(cur >= 0 && cur != r) gResOwner[cur] = 0u;
                         gSlotRes[sl]  = (uint8_t)(r + 1);
                         gResOwner[r]  = (uint8_t)(sl + 1);
                         gSlotLen[sl]  = (uint32_t)n;
@@ -1617,9 +1652,7 @@ static void ServeWorldRequest()
                         std::snprintf(gSlotName[sl], sizeof gSlotName[sl], "%.*s",
                                       (int)(bl < (size_t)kUserNameLen ? bl : (size_t)kUserNameLen), nm);
                     }
-                    else if(!gSlotRes[sl]) gResOwner[r] = 0u;
                 }
-                else if(!gSlotRes[sl]) gResOwner[r] = 0u;
             }
             return;
         }
@@ -1657,7 +1690,7 @@ static void ServeWorldRequest()
             {
                 /* the World reads the region in place; the engine's SetWorld
                    builds the voice from it */
-                gWorlds[wi].UseResonate(gResArena[gSlotRes[sl] - 1], gSlotLen[sl]);
+                gWorlds[wi].UseResonate(ResBase(gSlotRes[sl] - 1), gSlotLen[sl]);
                 ok = gWorlds[wi].IsResonate();
                 if(ok) std::snprintf(gUserName, sizeof gUserName, "%s", gSlotName[sl]);
             }
