@@ -1741,13 +1741,14 @@ struct ResonatorWorld
     {
         const uint8_t* m = Modes(i);
         float score[ResonatorBank::kMax];
-        for(int k = 0; k < N; k++)
+        const int nn = N < ResonatorBank::kMax ? N : ResonatorBank::kMax;   /* Attach holds N to it; said here so the compiler sees it */
+        for(int k = 0; k < nn; k++)
         {
             uint16_t c; std::memcpy(&c, m + 5 * k, 2);
             const uint8_t d = m[5 * k + 2], l = m[5 * k + 3];
             score[k] = (ver >= 6 && l == 255) ? -1e9f : -0.0575647f * (float)l + 0.1f * (float)d - (ver >= 6 ? c / 6000.0f : c / 1200.0f) * 0.6931472f;
         }
-        return TopScores(score, N, cap < N ? cap : N, idx, -1e8f);
+        return TopScores(score, nn, cap < nn ? cap : nn, idx, -1e8f);
     }
 
     /* the world at a parameter value, into a voice. A note world (kind 0)
