@@ -721,6 +721,24 @@ int main()
         CHECK(r.bursts == V.Bursts(k) && std::fabs(r.burst_rate - std::exp2(0.25f / 12.f)) < 1e-5f && r.burst_len == o.burst_len,
               "the referring note's attack: rate %.5f (want %.5f), %u samples (k's %u)", r.burst_rate, std::exp2(0.25f / 12.f), r.burst_len, o.burst_len);
         printf("  format 8: a point plays another's attack at its own pitch (x%.4f); a reference to a reference plays nothing; the points after are untouched\n", r.burst_rate);
+        /* and a world whose bytes run out is refused at Attach, never read
+           past: cut short, or stamped with a version it was not written for
+           (a version 6 world marked 8 reads its first point as a body curve),
+           or a reference past the last point */
+        ResonatorWorld T; T.Init();
+        const bool cut = T.Attach(bl, (uint32_t)wblob.size() - 100);
+        std::vector<uint8_t> restamped(wblob);
+        const uint16_t six = 6; std::memcpy(restamped.data() + 4, &six, 2);       /* the fixture is 7: read as 6, its body curve is taken for its first point */
+        ResonatorWorld T2; T2.Init();
+        const bool wrongver = T2.Attach(restamped.data(), (uint32_t)restamped.size());
+        std::vector<uint8_t> badref(v8);
+        size_t rat = 0;
+        for(size_t i = 0; i + 4 <= badref.size(); i++) { uint16_t m, x; std::memcpy(&m, &badref[i], 2); std::memcpy(&x, &badref[i + 2], 2); if(m == 0xFFFF && x == (uint16_t)k) { rat = i; break; } }
+        const uint16_t far = 9999; if(rat) std::memcpy(&badref[rat + 2], &far, 2);
+        ResonatorWorld T3; T3.Init();
+        const bool farref = rat && T3.Attach(badref.data(), (uint32_t)badref.size());
+        CHECK(!cut && !wrongver && !farref && rat, "a world whose bytes run out attached: cut short %d, read as another version %d, a reference past the end %d", cut, wrongver, farref);
+        printf("  a world cut short, read as another version, or referring past its last point is refused at Attach\n");
     }
 
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
