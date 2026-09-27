@@ -158,6 +158,6 @@ outside Kyklophoria and ModalBake.
   physics: a threshold falling toward a third of the closing pressure as
   the impedance rises, the fundamental exactly, silence when shut. Next:
   item 12, the rough remainder's recordings.
-- 08:00 — item 12: the rough remainder is mostly the recordings and the
+- 07:53 — item 12: the rough remainder is mostly the recordings and the
   cuts (seven of twelve); the report is ModalBake's
   docs/rough-remainder-2026-09-27.md. Next: item 13, the lips.
