@@ -57,7 +57,7 @@ outside Kyklophoria and ModalBake.
 
 - 00:55 — list written; v8 references in core/kyk_resonate.h written, not
   yet tested.
-- 02:10 — item 1 done. worldfill's first check paired a piano's unison
+- 01:05 — item 1 done. worldfill's first check paired a piano's unison
   pairs crosswise and failed identical worlds; now it renders and listens.
   Its first cut stamped a version 6 world 8 and the runtime walked off the
   end — fixed in the tool, and the runtime now refuses such a world at
