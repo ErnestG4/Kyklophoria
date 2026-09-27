@@ -43,8 +43,10 @@ outside Kyklophoria and ModalBake.
    the pair sits (orbit it to spin). 1.5x the block with spread up (desktop,
    4 voices), identical to mono at 0. Test 23. Plain worlds only (pickup
    worlds stay mono).
-6. **Instrument morph**: a family's body axis glides between members by the
-   partial pairing At() already has, instead of switching.
+6. [x] **Instrument morph** (2a38f4f): between two members of a family the
+   voice is both, paired and blended, built on the nearer; off by default,
+   kyklophoria-morph.bin has it on. Test 24 (a sweep steps 0.5 dB where the
+   switch stepped 7.7). Different kinds (EP beside Wurlitzer) still switch.
 7. [x] **The 8-world-slot limit** (e912838): it was eight 4 MB SDRAM
    regions; now four of 4 MB and twenty of 2 MB, a world in the smallest
    that fits — the whole card (24 worlds) loads at once. tests/regions_check.
@@ -53,7 +55,7 @@ outside Kyklophoria and ModalBake.
 
 ## For the morning (needs Combust)
 
-- **Flash kyklophoria.bin (901d03e) first** (version 8 worlds need it; older
+- **Flash kyklophoria.bin (2a38f4f) first** (version 8 worlds need it; older
   firmware refuses them cleanly). Then the **filled** cards: out/card-abc8
   (the A/B/C, every note a point: the pops and overruns on the pianos
   should be gone) — the unfilled card-abc is the same sound with the pops.
@@ -64,7 +66,10 @@ outside Kyklophoria and ModalBake.
 - A/B builds beside it (each differs from kyklophoria.bin in one thing):
   kyklophoria-fullintro.bin — the whole recorded intro at every velocity;
   kyklophoria-release200.bin — a stolen voice falls over 200 ms, not 40
-  ("I can now hear the voice stealing").
+  ("I can now hear the voice stealing");
+  kyklophoria-morph.bin — a family's body axis (Play P3/J5) morphs between
+  members instead of switching: on the string families it walks string to
+  string, on bass-pizz-vel E -> A -> D -> G.
 - Pushes: Kyklophoria `modal` and `pages`, ModalBake `bake` (key).
 
 ## Log
@@ -93,3 +98,7 @@ outside Kyklophoria and ModalBake.
 - 07:20 — the At()/PairBlend split committed (901d03e, bit-identical);
   firmware 901d03e with -fullintro and -release200. Item 6 (morph) not
   started beyond that split; item 8 not started.
+- 07:27 — item 6: the morph. First build overflowed the M7's SRAM by 24 KB
+  (scratch voices in both engines of the stereo pair); the shell now lends
+  the room, SDRAM on the module. Firmware 2a38f4f + fullintro, release200,
+  morph. Next: item 8, the exciter design note.
