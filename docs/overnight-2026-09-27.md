@@ -53,7 +53,7 @@ outside Kyklophoria and ModalBake.
 
 ## For the morning (needs Combust)
 
-- **Flash kyklophoria.bin (3f2773d or later) first** (version 8 worlds need it; older
+- **Flash kyklophoria.bin (901d03e) first** (version 8 worlds need it; older
   firmware refuses them cleanly). Then the **filled** cards: out/card-abc8
   (the A/B/C, every note a point: the pops and overruns on the pianos
   should be gone) — the unfilled card-abc is the same sound with the pops.
@@ -88,3 +88,8 @@ outside Kyklophoria and ModalBake.
 - 01:45 — item 7 (before 6: a bug before a feature): 24 worlds at once.
   SDRAM 60.8 of 64 MB. The card path itself is module-only; the policy is
   tested pure.
+- 02:00-07:15 — lost: the session stopped continuing after a finished
+  command, and the half-hourly check-ins queued rather than ran.
+- 07:20 — the At()/PairBlend split committed (901d03e, bit-identical);
+  firmware 901d03e with -fullintro and -release200. Item 6 (morph) not
+  started beyond that split; item 8 not started.
