@@ -1521,6 +1521,14 @@ function renderModelChips() {
         if (moduleOwns()) b.title = 'Play page P3 and J5 choose the instrument on the module';
         box.appendChild(b);
       }
+      /* the morph: between two instruments of one kind, both, blended —
+         what the module says it is doing, not what was last clicked */
+      if (r.morph != null) {
+        const m = chip('morph', r.morph, r.morph ? 'the body axis morphs between the instruments (two of one kind: a pickup piano beside a plain one still switches) — click to switch instead'
+                                                 : 'the body axis switches at the midpoint — click to morph between the instruments instead',
+                       () => act(MVL.ACT.memberMorph, [r.morph ? 0 : 1], 'morph'));
+        m.disabled = !link || !live; box.appendChild(dimText('·', '0 4px')); box.appendChild(m);
+      }
     }
     else if (r.kind === 1) { for (const e of positionSlider(0, `body 0..${r.P - 1}`, 'which body of the row: axis 0', r.P - 1)) box.appendChild(e); }
     else if (r.form === 0) { for (const e of positionSlider(0, 'position', 'where the string is struck: the bridge end at the left, the middle at the right, as fitted at the centre — axis 0')) box.appendChild(e); }
@@ -1547,6 +1555,15 @@ function renderModelChips() {
       b.disabled = !link || !live; box.appendChild(b);
     }
     if (moduleOwns()) $('voiceChips').appendChild(dimText('· the World page\'s third pot too'));
+    /* the release: how long a stolen voice's last note takes to fall */
+    if (live && r && r.release != null) {
+      const lab = dimText(`release ${r.release} ms`, '0 0 0 8px');
+      const t = document.createElement('input'); t.type = 'range'; t.min = 1; t.max = 200; t.value = Math.round(r.release / 5);
+      t.title = 'how long a stolen voice\'s last note takes to fall 60 dB when the next note takes its voice: 40 ms is the damper, longer is a natural fall';
+      t.disabled = !link;
+      t.oninput = () => { lab.textContent = `release ${t.value * 5} ms`; act(MVL.ACT.release, [t.value | 0], 'release'); };
+      box.appendChild(lab); box.appendChild(t);
+    }
   }
   $('exciterNote').textContent = moduleOwns()
     ? 'J1\'s audio driven into the bank, as much as the Stereo page\'s sixth pot says — the world as a filter bank for whatever is patched in'
@@ -3737,7 +3754,7 @@ function drawModel() {
   /* what the module says about the voices and the lock, and which member
      it plays, can change under a pot: the chips follow */
   const r = reso;
-  const sig = r ? `${r.name}|${r.member}|${r.voices}|${r.lock}|${r.members && r.members.length}|${slots && slots.live}` : `-|${slots && slots.live}`;
+  const sig = r ? `${r.name}|${r.member}|${r.voices}|${r.lock}|${r.members && r.members.length}|${r.morph}|${r.release}|${slots && slots.live}` : `-|${slots && slots.live}`;
   if (sig !== modelSig) { modelSig = sig; renderModelChips(); }
 }
 function drawSound() {

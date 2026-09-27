@@ -885,6 +885,17 @@ console.log('\n== the card: write, list, read back, and refuse to clobber');
   check(rs && rs.modes.filter(q => q.gain > 0).length >= 20 && rs.modes.some(q => Math.abs(q.hz - 110) < 5),
         `${rs && rs.modes.filter(q => q.gain > 0).length} modes, one of them at 110 Hz`);
   check(rs && rs.burst > 0, `and a burst of ${rs && rs.burst} samples`);
+  /* the family morph and the release are the page's to set and the
+     readout's to report: off and 40 ms to start, what was sent after, and a
+     value out of range refused */
+  check(rs && rs.morph === false && rs.release === 40, `the morph off and a 40 ms release to start (${rs && rs.morph}, ${rs && rs.release})`);
+  check((await act(KYK.ACT.memberMorph, 1))[0] === 0 && (await act(KYK.ACT.release, 40))[0] === 0, 'the morph turned on and the release set to 200 ms');
+  const rs2 = await KYK.fetchResonate(link);
+  check(rs2 && rs2.morph === true && rs2.release === 200, `and the readout says so (${rs2 && rs2.morph}, ${rs2 && rs2.release} ms)`);
+  let bad = '';
+  try { await act(KYK.ACT.release, 0); } catch (e) { bad = e.message; }
+  check(bad === 'BAD_ARGS', `a release of 0 is refused (${bad || 'accepted'})`);
+  await act(KYK.ACT.memberMorph, 0); await act(KYK.ACT.release, 8);
   let refused = '';
   try { await act(KYK.ACT.slotTarget, 10); } catch (e) { refused = e.message; }
   check(refused === 'BAD_STATE', `it is not a morph target (${refused || 'accepted'})`);
