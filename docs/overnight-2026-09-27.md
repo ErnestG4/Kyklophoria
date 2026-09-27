@@ -56,7 +56,10 @@ outside Kyklophoria and ModalBake.
    and tested (core/kyk_exciter.h, tests/exciter_check): it plays Schelleng's
    diagram by itself. Not wired into the engine: stages 2-4 in the note.
 
-9. **The new settings on the page, not in builds**: the family morph
+9. [x] **The new settings on the page, not in builds** (1b16f04): ACTION 22
+   morph, ACTION 23 release; the readout reports both; a "morph" chip in
+   BODY, a release slider in VOICES. link_check 154/154, selftest 230/230.
+   Was: the family morph
    (Engine::SetMemberMorph) and the release (SetReleaseMs) as module
    actions and model-tab controls, so the A/B needs no reflash. Tests: the
    desktop shell's action path (selftest/pagecheck), and that the engine's
@@ -67,7 +70,7 @@ outside Kyklophoria and ModalBake.
 
 ## For the morning (needs Combust)
 
-- **Flash kyklophoria.bin (2a38f4f) first** (version 8 worlds need it; older
+- **Flash kyklophoria.bin (1b16f04) first** (version 8 worlds need it; older
   firmware refuses them cleanly). Then the **filled** cards: out/card-abc8
   (the A/B/C, every note a point: the pops and overruns on the pianos
   should be gone) — the unfilled card-abc is the same sound with the pops.
@@ -82,7 +85,10 @@ outside Kyklophoria and ModalBake.
   kyklophoria-morph.bin — a family's body axis (Play P3/J5) morphs between
   members instead of switching: on the string families it walks string to
   string, on bass-pizz-vel E -> A -> D -> G.
-- Pushes: Kyklophoria `modal` and `pages`, ModalBake `bake` (key).
+- The page (pages branch rebuilt, stamp 1b16f04; push it): the model
+  tab's BODY row has a "morph" chip on a family, VOICES a release slider —
+  the same A/Bs as the -morph and -release200 builds, without reflashing.
+- Pushes: Kyklophoria `modal` and `pages` (-f), ModalBake `bake` (key).
 
 ## Log
 
@@ -120,3 +126,6 @@ outside Kyklophoria and ModalBake.
   the bow's speed — Helmholtz motion. Every item on the list is done; the
   exciter's next stages (the strike through the loop, the reed and the
   lips, the module's Exciter page) are the next list.
+- 07:50 — item 9: the morph and the release as actions and page controls,
+  read back through the readout. Firmware 1b16f04 (+ fullintro, release200,
+  morph), pages rebuilt. Next: item 10, the strike through the loop.
