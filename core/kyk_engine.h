@@ -51,7 +51,7 @@ public:
         DerivePhases();
         phase_dirty_ = false;
         dirty_ = true;
-        for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
+        for(int v = 0; v < kPoly; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rpoly_ = 1; rmember_ = 0; rdriven_ = 0; rhold_ = false;
         for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
@@ -143,6 +143,14 @@ public:
     /* a strike is waiting (the module holds one for the CV to settle): the
        pitch is not taken by the voice still ringing meanwhile */
     void HoldPitch(bool on) { rhold_ = on; }
+    /* how long a stolen voice's last note takes to fall 60 dB (ms, 5..1000;
+       ResonatorDefaults::kReleaseMs by default) */
+    void SetReleaseMs(float ms)
+    {
+        rrelease_ms_ = ms < 5.f ? 5.f : ms > 1000.f ? 1000.f : ms;
+        for(int v = 0; v < kPoly; v++) rvoices_[v].release_ms = rrelease_ms_;
+    }
+    float ReleaseMs() const { return rrelease_ms_; }
     static float NoteOf(float hz) { return 69.f + 12.f * std::log2(hz > 1.f ? hz / 440.f : 1.f / 440.f); }
     /* Where on its axis the world is played: a note world at the pitch, an
      * index world — a row of bodies, gong to woodblock — where position 0
@@ -498,6 +506,7 @@ public:
                     {
                         rvoices_[v].Init();
                         rvoices_[v].cap = rpoly_ > 1 ? ResonatorBank::kMax / rpoly_ : 0;
+                        rvoices_[v].release_ms = rrelease_ms_;
                         rvnote_[v] = 1e9f; rvdirty_[v] = false;
                         continue;
                     }
@@ -641,7 +650,7 @@ public:
         /* the voice is state derived from the world: rebuilt here and only
          * here, silent, at the current pitch — arriving at a resonate world
          * is the same as starting in it */
-        for(int v = 0; v < kPoly; v++) rvoices_[v].Init();
+        for(int v = 0; v < kPoly; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rmember_ = 0;
         for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
@@ -853,6 +862,7 @@ private:
     float          exgain_ = 0.f;
     uint32_t       rdriven_ = 0;         /* samples the bank still counts as driven: something came in at J1 */
     bool           rhold_ = false;       /* a strike is waiting for the CV (HoldPitch) */
+    float          rrelease_ms_ = ResonatorDefaults::kReleaseMs;
 
     const World*   morph_world_ = nullptr;
 

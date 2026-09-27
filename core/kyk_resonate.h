@@ -154,6 +154,15 @@ inline void SinCos(float w, float& s, float& c)
 
 } // namespace fastmath
 
+/* the release a voice starts with: 40 ms, the damper that took the pop out of
+   a steal. -DKYK_TAIL_MS=... builds another default for an A/B by ear
+   (a longer one is a softer, more natural fall and costs the tail's modes a
+   little longer on the CPU) */
+#ifndef KYK_TAIL_MS
+#define KYK_TAIL_MS 40.f
+#endif
+struct ResonatorDefaults { static constexpr float kReleaseMs = KYK_TAIL_MS; };
+
 struct ResonatorBank
 {
     static constexpr int kMax = 48;
@@ -236,15 +245,32 @@ struct ResonatorBank
     void Release(float ms, float sr)
     {
         for(int q = 0; q < kStrikes; q++) if(ramping[q]) Fold(q);
+        /* the tail still sounding from the steal before, kept: its modes go
+           on after the new tail's, where the bank has room, damped on at the
+           same rate from where they are. Dropped, as it was, a long release
+           under fast playing cut a ring mid-fall — at 40 ms it had always
+           fallen 60 dB by the next note, at 200 ms and six notes a second it
+           is 25 dB down and a step */
+        float oc1[kMax], oc2[kMax], oy1[kMax], oy2[kMax];
+        int on = 0;
+        if(tn > 0 && tail_left > 0)
+            for(int i = 0; i < tn; i++)
+                if(std::fabs(ty1[i]) > 1e-7f || std::fabs(ty2[i]) > 1e-7f) { oc1[on] = tc1[i]; oc2[on] = tc2[i]; oy1[on] = ty1[i]; oy2[on] = ty2[i]; on++; }
         /* a ring that is not sounding leaves no tail: a first note, or one
            rung out, is exactly what it was before there were tails (the
            pickup's crossfade asks Ringing(), and a silent tail said yes) */
         bool any = false;
         for(int i = 0; i < n; i++) if(std::fabs(y1[i]) > 1e-7f || std::fabs(y2[i]) > 1e-7f) { any = true; break; }
-        tn = any ? n : 0;
-        for(int i = 0; i < n; i++) { tc1[i] = c1[i]; tc2[i] = c2[i]; ty1[i] = y1[i]; ty2[i] = y2[i]; y1[i] = y2[i] = 0.f; }
-        tail_left = any ? (int)(ms * 0.001f * sr) : 0; if(any && tail_left < 1) tail_left = 1;
-        tail_c = fastmath::Exp2(-9.9657843f / (float)tail_left);   /* 1e-3 over the window */
+        int m = 0;
+        for(int i = 0; i < n; i++)
+        {
+            if(any) { tc1[m] = c1[i]; tc2[m] = c2[i]; ty1[m] = y1[i]; ty2[m] = y2[i]; m++; }
+            y1[i] = y2[i] = 0.f;
+        }
+        for(int k = 0; k < on && m < kMax; k++) { tc1[m] = oc1[k]; tc2[m] = oc2[k]; ty1[m] = oy1[k]; ty2[m] = oy2[k]; m++; }
+        tn = m;
+        tail_left = m ? (int)(ms * 0.001f * sr) : 0; if(m && tail_left < 1) tail_left = 1;
+        tail_c = fastmath::Exp2(-9.9657843f / (float)(tail_left > 0 ? tail_left : 1));   /* 1e-3 over the window */
         damp_left = 0; damp_c = 1.f;
         for(int q = 0; q < kStrikes; q++) damp_bank[q] = false;
     }
@@ -1156,10 +1182,11 @@ struct ResonatorVoice
     float          phase[ResonatorBank::kMax];   /* and each mode's phase at the strike: the filler (ModalBake tools/worldfill) writes a built voice back as a point */
     float          stage[8];          /* the stage it was built with, before the spin: h, w, K, fc, Q, the two swings, and 1 */
     uint32_t       burst_len;         /* samples in the burst it would play at swing 1, 0 for none */
+    float          release_ms;        /* how long the last note's ring takes to fall 60 dB when the next note on this voice is at another pitch (Engine::SetReleaseMs) */
 
     void Init()
     {
-        bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0; burst_head = 10; burst_fade = 0; param = 1e9f; cap = 0; body_top = 0.f;
+        bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; release_ms = ResonatorDefaults::kReleaseMs; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0; burst_head = 10; burst_fade = 0; param = 1e9f; cap = 0; body_top = 0.f;
         for(int k = 0; k < ResonatorBank::kMax; k++) hz[k] = zeta[k] = gain[k] = phase[k] = 0.f;
         for(int k = 0; k < 8; k++) stage[k] = 0.f;
     }
@@ -1235,7 +1262,7 @@ struct ResonatorWorld
     /* how long the last note's ring takes to fall 60 dB when the next note
        on its voice is at another pitch: a damper, not a cut (see
        ResonatorBank::Release) */
-    static constexpr float kTailMs = 40.f;
+    static constexpr float kTailMs = ResonatorDefaults::kReleaseMs;
     const uint8_t* blob;
     uint32_t size;
     uint16_t N, P;
@@ -1823,7 +1850,7 @@ struct ResonatorWorld
            attack faded over the same, and the new note built from silence,
            nothing carried: no pitch shifting, and no 2 ms step to pop */
         const bool released = keep && strike && v.param < 1e8f && std::fabs(param - v.param) > 1e-4f;
-        if(released) { v.bank.Release(kTailMs, sr); v.burst.Choke(kTailMs, sr); }
+        if(released) { v.bank.Release(v.release_ms, sr); v.burst.Choke(v.release_ms, sr); }
         /* the pitch change this retune is, for the carry: a note world's
            notes, a body row's none; a first build has nothing to carry */
         const float ratio = (keep && kind != 1 && v.param < 1e8f) ? std::exp2((param - v.param) / 12.f) : 1.f;

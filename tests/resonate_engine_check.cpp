@@ -741,6 +741,45 @@ int main()
         printf("  a world cut short, read as another version, or referring past its last point is refused at Attach\n");
     }
 
+    /* 22. the release: how long a stolen voice's last note takes to fall is a
+       setting (Engine::SetReleaseMs, 40 ms by default), and a tail still
+       sounding when the voice is stolen again goes on rather than being cut —
+       at 40 ms it had always fallen 60 dB by the next note, at 200 ms and
+       notes 30 ms apart it has not, and dropping it was a step. On the bank:
+       three notes of six modes each, a release after each */
+    {
+        auto bank_note = [&](ResonatorBank& b, float f0) {
+            float hz[6], z[6], g[6], ph[6];
+            for(int k = 0; k < 6; k++) { hz[k] = f0 * (k + 1); z[k] = 0.0005f; g[k] = 0.3f / (k + 1); ph[k] = 0.3f * k; }
+            b.Set(hz, z, g, 6, sr, ph); b.Strike(1.f);
+        };
+        auto run = [&](ResonatorBank& b, int n, std::vector<float>& y) { const size_t s0 = y.size(); y.resize(s0 + n); for(int i = 0; i < n; i += 24) b.Process(y.data() + s0 + i, 24); };
+        ResonatorBank b; b.Init();
+        std::vector<float> y;
+        bank_note(b, 130.81f); run(b, 4800, y);
+        b.Release(200.f, sr);
+        CHECK(b.tail_left == 9600 && std::fabs(std::pow((double)b.tail_c, 9600.0) - 1e-3) < 1e-4, "a 200 ms release: %d samples, falls to %.2e over them", b.tail_left, std::pow((double)b.tail_c, 9600.0));
+        bank_note(b, 164.81f); run(b, 1440, y);                         /* 30 ms on, the first note's tail about 9 dB down */
+        b.Release(200.f, sr);
+        const int tails = b.tn;
+        /* the step at the third release: the bank's output either side of
+           it against its own step a sample before */
+        run(b, 1440, y);
+        const size_t at = y.size();
+        const float before = std::fabs(y[at - 1] - y[at - 2]);
+        b.Release(200.f, sr);
+        bank_note(b, 196.f);
+        std::vector<float> z2; run(b, 24, z2);
+        /* the new note starts from its own state; what has to be continuous
+           is the old notes, so the new one is subtracted: the same bank
+           state struck alone */
+        ResonatorBank lone; lone.Init(); bank_note(lone, 196.f); std::vector<float> zl; run(lone, 24, zl);
+        const float across = std::fabs((z2[0] - zl[0]) - y[at - 1]);
+        CHECK(tails == 12, "the second steal kept %d tail modes, not the first note's six and the second's six", tails);
+        CHECK(across < 8.f * before + 1e-6f, "a steal cut the tails: a step of %.3g where the ring stepped %.3g", across, before);
+        printf("  release: 200 ms sets a 200 ms fall; a steal keeps the tails still sounding (%d modes), no step (%.3g against the ring's %.3g)\n", tails, across, before);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }
