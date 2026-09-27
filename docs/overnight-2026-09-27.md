@@ -29,9 +29,12 @@ outside Kyklophoria and ModalBake.
    - [x] filled: out/card8, card-B8, card-r38, card-abc8 — 102 worlds, all
          attach and render. At() at a semitone 1.3 us (blend was 3.2-4.1,
          nearest 1.6)
-2. **The piano world's labels**: its "G7" is a G#7, its "A#7" a damaged
-   take (tools/pitchcheck). Fix the manifest, re-export `piano`.
-3. **README**: the J4–J8 map is out of date.
+2. [x] **The piano world's labels** — no change: the fitted modes put
+   "G7" at G7 +54 c (a stretch-tuned top, not a G#7; piano030 is the G#7)
+   and "A#7" at A#7 +38 c, not a damaged C5. tools/pitchcheck misreads the
+   top octave; I passed its reading on as fact on the 24th.
+3. [x] **README**: the jack map is the firmware's now (J4 out A/trigger,
+   J5-J8 positions, J1 in, J2 clock).
 4. **The steal**: the 40 ms tail as an option with a longer, natural fade —
    built and tested, default unchanged until Combust has heard it.
 5. **Stereo points on a resonator** (the fun, now the models are good
@@ -63,3 +66,5 @@ outside Kyklophoria and ModalBake.
   end — fixed in the tool, and the runtime now refuses such a world at
   Attach (test 21). Firmware 7fab4ae built; -nearest dropped (a filled world
   never blends at a semitone), -fullintro rebuilt on 7fab4ae.
+- 01:15 — items 2 and 3: the piano labels were right (the fits' own
+  loudest partials); README jack map brought up to date.

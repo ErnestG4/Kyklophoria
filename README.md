@@ -50,8 +50,11 @@ now it's an orbiting modulator.
 **Couple** Turn it up and each pair of orbits pulls the other toward the nearest
 simple ratio. 
 
-**Jacks.** J3 v/oct · J4 to J7 position 0 to 3 · J8 CV out A · J9/J10 stereo
-out. J1 and J2 are reserved for FM and sync and are not read yet.
+**Jacks.** J3 v/oct · J4 CV out A (the strike trigger under a resonator) ·
+J5 to J8 position 0 to 3 (a resonator's body, velocity, decay and coil) ·
+J9/J10 stereo out · J1 audio in (FM is planned; under a resonator it is the
+exciter, driven into the bank by Stereo P6) · J2 clock, which steps the world
+tour. `docs/io-map.md` has the whole map.
 
 **Stereo is not a chorus.** The two channels read the space at rotation angles
 either side of centre, so width is an angular spread, and an orbit moves
