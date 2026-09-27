@@ -144,7 +144,7 @@ outside Kyklophoria and ModalBake.
   morph), pages rebuilt. Next: item 10, the strike through the loop.
 - 07:43 — item 10: the hammer through the loop, tested (contact, brightness,
   energy; a linear felt fails it). Both lists done.
-- 07:55 — item 11: the reed. Driven raw it ran away (a mode's peak 5000);
+- 07:51 — item 11: the reed. Driven raw it ran away (a mode's peak 5000);
   normalised so each peak is the bore's impedance, it plays a clarinet's
   physics: a threshold falling toward a third of the closing pressure as
   the impedance rises, the fundamental exactly, silence when shut. Next:
