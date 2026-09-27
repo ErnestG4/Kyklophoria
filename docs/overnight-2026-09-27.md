@@ -35,8 +35,9 @@ outside Kyklophoria and ModalBake.
    top octave; I passed its reading on as fact on the 24th.
 3. [x] **README**: the jack map is the firmware's now (J4 out A/trigger,
    J5-J8 positions, J1 in, J2 clock).
-4. **The steal**: the 40 ms tail as an option with a longer, natural fade —
-   built and tested, default unchanged until Combust has heard it.
+4. [x] **The steal**: Engine::SetReleaseMs (default 40 ms), and a tail
+   still sounding kept through the next steal (test 22). A/B build
+   kyklophoria-release200.bin defaults to 200 ms.
 5. **Stereo points on a resonator** (the fun, now the models are good
    enough): L and R hear the same bank from two strike/pickup positions,
    spread and spinnable like the wavetable's, at a few per cent of CPU.
@@ -48,12 +49,14 @@ outside Kyklophoria and ModalBake.
 
 ## For the morning (needs Combust)
 
-- **Flash kyklophoria.bin 7fab4ae first** (version 8 worlds need it; older
+- **Flash kyklophoria.bin (3f2773d or later) first** (version 8 worlds need it; older
   firmware refuses them cleanly). Then the **filled** cards: out/card-abc8
   (the A/B/C, every note a point: the pops and overruns on the pianos
   should be gone) — the unfilled card-abc is the same sound with the pops.
-- kyklophoria-fullintro.bin (7fab4ae-fullintro): the whole recorded intro at
-  every velocity, for the A/B against the velocity-shortened one.
+- A/B builds beside it (each differs from kyklophoria.bin in one thing):
+  kyklophoria-fullintro.bin — the whole recorded intro at every velocity;
+  kyklophoria-release200.bin — a stolen voice falls over 200 ms, not 40
+  ("I can now hear the voice stealing").
 - Pushes: Kyklophoria `modal` and `pages`, ModalBake `bake` (key).
 
 ## Log
@@ -66,5 +69,8 @@ outside Kyklophoria and ModalBake.
   end — fixed in the tool, and the runtime now refuses such a world at
   Attach (test 21). Firmware 7fab4ae built; -nearest dropped (a filled world
   never blends at a semitone), -fullintro rebuilt on 7fab4ae.
+- 01:40 — item 4: the release a setting and tails kept (a 200 ms release
+  at notes 30 ms apart stepped 0.18 dropping the tail; kept, 0.001).
+  Firmware 3f2773d with -fullintro and -release200.
 - 01:15 — items 2 and 3: the piano labels were right (the fits' own
   loudest partials); README jack map brought up to date.
