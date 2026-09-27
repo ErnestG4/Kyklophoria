@@ -38,9 +38,11 @@ outside Kyklophoria and ModalBake.
 4. [x] **The steal**: Engine::SetReleaseMs (default 40 ms), and a tail
    still sounding kept through the next steal (test 22). A/B build
    kyklophoria-release200.bin defaults to 200 ms.
-5. **Stereo points on a resonator** (the fun, now the models are good
-   enough): L and R hear the same bank from two strike/pickup positions,
-   spread and spinnable like the wavetable's, at a few per cent of CPU.
+5. [x] **Stereo points on a resonator** (ed21c67): Stereo P1 spread = the
+   two ears' distance along the string, the stereo plane's angle = where
+   the pair sits (orbit it to spin). 1.5x the block with spread up (desktop,
+   4 voices), identical to mono at 0. Test 23. Plain worlds only (pickup
+   worlds stay mono).
 6. **Instrument morph**: a family's body axis glides between members by the
    partial pairing At() already has, instead of switching.
 7. **The 8-world-slot limit** (feedback 2026-09-23): what fails past 8.
@@ -53,6 +55,9 @@ outside Kyklophoria and ModalBake.
   firmware refuses them cleanly). Then the **filled** cards: out/card-abc8
   (the A/B/C, every note a point: the pops and overruns on the pianos
   should be gone) — the unfilled card-abc is the same sound with the pops.
+- New to try: on a plain resonator (a piano, guitar, harp), turn up the
+  Stereo page's spread; set an orbit rate on the stereo plane to spin the
+  two ears along the string. Watch the CPU footer with it up.
 - A/B builds beside it (each differs from kyklophoria.bin in one thing):
   kyklophoria-fullintro.bin — the whole recorded intro at every velocity;
   kyklophoria-release200.bin — a stolen voice falls over 200 ms, not 40
@@ -74,3 +79,6 @@ outside Kyklophoria and ModalBake.
 - 01:12 — item 4: the release a setting and tails kept (a 200 ms release
   at notes 30 ms apart stepped 0.18 dropping the tail; kept, 0.001).
   Firmware 3f2773d with -fullintro and -release200.
+- 01:20 — item 5: two ears on the bank. First cut 2.6x the block; modes
+  both ears hear whole now run in the shared paired loop and the weights
+  are cached per voice: 1.5x. Mono path untouched (goldens identical).
