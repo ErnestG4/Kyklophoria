@@ -179,3 +179,6 @@ outside Kyklophoria and ModalBake.
   (a pluck's comb and brightness are feed-forward); the energy balance
   through the plectrum's spring is the check that needs the loop. All five
   exciters now tested on the desktop.
+- 09:17 — check-in: nothing running, nothing left on the list. The next
+  steps (the exciters on the module's own page, the rough remainder's drops
+  and re-splits) are Combust's decisions, not the night's.
