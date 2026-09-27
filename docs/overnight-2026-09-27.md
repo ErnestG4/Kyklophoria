@@ -69,6 +69,17 @@ outside Kyklophoria and ModalBake.
     conserved (98-100 %). Desktop only; the bench comparison against the
     recorded attack is stage 2's second half.
 
+11. **Exciter stage 3: the reed** (docs/exciters.md): the pressure-driven
+    reed through the loop, tested for its oscillation threshold (silence
+    below a mouth pressure, a tone at the resonator's fundamental above) and
+    boundedness.
+12. **The rough remainder's recordings** (ModalBake, CPU): banjo, mandolin,
+    viola C, bass D and violin E notes still over 3 dB from their
+    recordings after refit3 (out/audit-r/fitcheck-C.tsv). Look at the
+    audio and the splits (tools/splitnotes.py's cut points) of the worst
+    ten: a late cut, a second note in the file, a damaged take. A list for
+    Combust of what to drop or re-split; nothing refitted without it.
+
 ## For the morning (needs Combust)
 
 - **Flash kyklophoria.bin (1b16f04) first** (version 8 worlds need it; older
@@ -130,5 +141,5 @@ outside Kyklophoria and ModalBake.
 - 07:40 — item 9: the morph and the release as actions and page controls,
   read back through the readout. Firmware 1b16f04 (+ fullintro, release200,
   morph), pages rebuilt. Next: item 10, the strike through the loop.
-- 07:55 — item 10: the hammer through the loop, tested (contact, brightness,
+- 07:43 — item 10: the hammer through the loop, tested (contact, brightness,
   energy; a linear felt fails it). Both lists done.
