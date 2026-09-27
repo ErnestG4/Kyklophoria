@@ -1690,6 +1690,17 @@ struct ResonatorWorld
         v.param = param;
     }
 
+    /* the point At() takes a note's attack and wash from, and the two it
+       lies between (a, b) and where (t) */
+    int NearPoint(float param, int& a, int& b, float& t) const
+    {
+        a = 0; while(a + 1 < P && Param(a + 1) <= param) a++;
+        b = a + 1 < P ? a + 1 : a;
+        const float pa = Param(a), pb = Param(b);
+        t = pb > pa ? std::fmin(1.f, std::fmax(0.f, (param - pa) / (pb - pa))) : 0.f;
+        return t < 0.5f ? a : b;
+    }
+
     /* two sets of modes at one note, partial paired with partial loudest
        first (each taking the partner loudest for how close it is, within a
        sixth of a tone), frequency blended linearly and decay and level
