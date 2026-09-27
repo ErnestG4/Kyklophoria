@@ -119,6 +119,8 @@ public:
     void SetExciter(const float* x, float gain) { L.SetExciter(x, gain); }   /* the voice is L's; R copies */
     void SetPitchLock(bool on) { L.SetPitchLock(on); R.SetPitchLock(on); }
     void SetVelocityTrack(float per_octave) { L.SetVelocityTrack(per_octave); R.SetVelocityTrack(per_octave); }
+    void SetMemberMorph(bool on) { L.SetMemberMorph(on); R.SetMemberMorph(on); }
+    void SetReleaseMs(float ms) { L.SetReleaseMs(ms); R.SetReleaseMs(ms); }
 
     /* Change worlds under a running voice. Build the World fully first. */
     void SetWorld(const World* w)

@@ -190,7 +190,18 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              time constant); 0 (the default) for none.
                              BAD_STATE when what is playing is not a
                              resonator. */
-                          kActVelTrack   = 21 };
+                          kActVelTrack   = 21,
+                          /* u8 on: a family's body axis morphs between its
+                             members (1) or switches at the midpoint (0, the
+                             default) — Engine::SetMemberMorph. BAD_ARG past
+                             1, BAD_STATE when what is playing is not a
+                             resonator */
+                          kActMemberMorph = 22,
+                          /* u8 release in 5 ms steps, 1..200 (5..1000 ms):
+                             how long a stolen voice's last note takes to fall
+                             60 dB — Engine::SetReleaseMs. BAD_ARG at 0,
+                             BAD_STATE when not a resonator */
+                          kActRelease     = 23 };
 /* the tune byte to its value, shared by the host and the module so a page
    sees one mapping */
 inline float TuneValue(uint8_t which, uint8_t v)
@@ -519,6 +530,10 @@ public:
                    and a button the other */
                 w.U8((uint8_t)en->Polyphony()); w.U8(en->PitchLock() ? 1u : 0u);
                 w.U8(r.form);   /* 0 no pickup (the voicing and coil axes are position and brightness), 1 a bell field, 2 a gap */
+                /* the morph and the release, which the page sets and must
+                   read back rather than remember */
+                w.U8(en->MemberMorph() ? 1u : 0u);
+                const float rel = en->ReleaseMs(); w.U16((uint16_t)(rel + 0.5f));
                 return;
             }
             case kCmdSlots:

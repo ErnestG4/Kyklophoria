@@ -1087,6 +1087,22 @@ struct ModuleSource : ExtSource
                 gEng.SetVelocityTrack(args[0] / 255.f);
                 return 0u;
             }
+            case kActMemberMorph:
+            {
+                if(len < 1 || args[0] > 1) return 2u;
+                const World* w = gEng.L.WorldPtr();
+                if(!w || !w->IsResonate()) return 3u;
+                gEng.SetMemberMorph(args[0] != 0);
+                return 0u;
+            }
+            case kActRelease:
+            {
+                if(len < 1 || args[0] < 1 || args[0] > 200) return 2u;
+                const World* w = gEng.L.WorldPtr();
+                if(!w || !w->IsResonate()) return 3u;
+                gEng.SetReleaseMs(5.f * args[0]);
+                return 0u;
+            }
             case kActRenderDiv: (void)args; (void)len; return 1u;   /* the pot owns it on the module */
             case kActSelectWorld:
                 if(len < 1 || args[0] >= worlds::kCount) return 2u;
