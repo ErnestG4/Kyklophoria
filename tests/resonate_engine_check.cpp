@@ -780,6 +780,78 @@ int main()
         printf("  release: 200 ms sets a 200 ms fall; a steal keeps the tails still sounding (%d modes), no step (%.3g against the ring's %.3g)\n", tails, across, before);
     }
 
+    /* 22b. the tail is held to the voice's share. It kept the tail before it
+       and took the new ring beside it up to all 48 modes, so four voices under
+       overlapping strikes at a long release rang 192 tail modes over their own
+       48 — five times the block Rings' rule promises, and the overruns heard
+       only on strikes, only overlapping (Combust). (a) The engine: four
+       voices, a 1 s release, a note every 25 ms for two seconds: no voice's
+       tail ever holds more than its twelve. (b) The share keeps the loudest,
+       wherever they came from: a loud note, then a quiet one stolen onto the
+       same bank; capped at six the tail keeps nine tenths of what the whole
+       twelve would ring — the six new modes first, as the tail used to take
+       them, keep a hundredth */
+    {
+        Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4); e.SetReleaseMs(1000.f);
+        const float notes[] = {48, 55, 60, 64, 67, 72, 52, 59, 62, 65, 69, 74, 50, 57, 63, 70};
+        std::vector<float> y(24);
+        int most = 0;
+        for(int blk = 0; blk < 4000; blk++)
+        {
+            if(blk % 50 == 0) { e.SetF0(440.f * std::exp2((notes[(blk / 50) % 16] - 69.f) / 12.f)); e.Strike(0.8f); }
+            e.Process(y.data(), 24);
+            for(int v = 0; v < 4; v++) { const ResonatorBank& b = e.VoiceAt(v).bank; if(b.tail_left > 0 && b.tn > most) most = b.tn; }
+        }
+        const int share = ResonatorBank::kMax / 4;
+        CHECK(most > 0 && most <= share, "overlapping strikes at four voices: a tail of %d modes, the share is %d", most, share);
+
+        auto note = [&](ResonatorBank& b, float f0, float lv) {
+            float hz[6], z[6], g[6], ph[6];
+            for(int k = 0; k < 6; k++) { hz[k] = f0 * (k + 1); z[k] = 0.0005f; g[k] = lv / (k + 1); ph[k] = 0.3f * k; }
+            b.Set(hz, z, g, 6, sr, ph); b.Strike(1.f);
+        };
+        auto tail_energy = [&](int lim) {
+            ResonatorBank b; b.Init();
+            std::vector<float> y2(2400);
+            note(b, 130.81f, 1.f); for(int i = 0; i < 2400; i += 24) b.Process(y2.data() + i, 24);
+            b.Release(1000.f, sr);                                   /* the loud note to the tail */
+            note(b, 196.f, 0.01f); for(int i = 0; i < 480; i += 24) b.Process(y2.data() + i, 24);
+            b.Release(1000.f, sr, lim);                              /* the quiet one stolen: both compete */
+            double en = 0.0;
+            for(int i = 0; i < 2400; i += 24) { b.Process(y2.data() + i, 24); for(int k = 0; k < 24; k++) en += (double)y2[i + k] * y2[i + k]; }
+            return std::make_pair(en, b.tn);
+        };
+        /* (c) the selection both use (TopScores, a quickselect) takes what
+           picking the highest lim times over took, the first of equals each
+           time: 20 000 draws of up to 96 scores from eight values, so ties
+           at the cut are the rule, some under the floor */
+        {
+            uint32_t rs = 12345u; int bad = 0;
+            auto rnd = [&]() { rs = rs * 1664525u + 1013904223u; return rs >> 8; };
+            for(int t = 0; t < 20000 && !bad; t++)
+            {
+                const int m = 1 + (int)(rnd() % 96), lim = 1 + (int)(rnd() % 48);
+                float sc[96]; for(int k = 0; k < m; k++) sc[k] = (float)(int)(rnd() % 8) - 1.f;   /* -1 is under the floor */
+                int got[96]; const int ng = TopScores(sc, m, lim, got, -0.5f);
+                bool take[96] = {false}; int nw = 0, want[96];
+                for(int c = 0; c < lim; c++)
+                {
+                    int best = -1;
+                    for(int k = 0; k < m; k++) if(!take[k] && (best < 0 || sc[k] > sc[best])) best = k;
+                    if(best < 0 || sc[best] <= -0.5f) break;
+                    take[best] = true;
+                }
+                for(int k = 0; k < m; k++) if(take[k]) want[nw++] = k;
+                if(ng != nw) bad = 1; else for(int k = 0; k < nw; k++) if(got[k] != want[k]) bad = 1;
+            }
+            CHECK(!bad, "TopScores took another set than the greedy pick");
+        }
+        const auto whole = tail_energy(ResonatorBank::kMax), capped = tail_energy(6);
+        CHECK(whole.second == 12 && capped.second == 6, "tails of %d and %d modes, not 12 and 6", whole.second, capped.second);
+        CHECK(capped.first > 0.9 * whole.first, "the capped tail rings %.3g of the whole one's energy: it kept the quiet modes", capped.first / whole.first);
+        printf("  the tail at four voices under overlapping strikes holds %d modes at most (the share %d); capped at six it keeps %.3f of the whole tail's ring\n", most, share, capped.first / whole.first);
+    }
+
     /* 23. a resonator heard from two points (the fun that synthesis buys: a
        stereo image that is the string's own, and spins). (a) the bank: with
        complementary weights, left plus right is the mono output exactly.
