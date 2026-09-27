@@ -143,6 +143,60 @@ struct Reed
     }
 };
 
+/* the lips: a brass player's, a mass on a spring with a frequency of its
+   own (f_lip, quality q) swung open by the pressure across it (outward
+   striking), the opening its displacement past closed; the flow and the
+   bore as the reed's. A massless reed plays whatever the bore's lowest
+   strong resonance says; a lip with a frequency selects the resonance
+   nearest it, which is how a bugle has notes */
+struct Lips
+{
+    float gamma, zeta;       /* mouth pressure over the closing pressure, the lip's opening scale */
+    float f_lip, q;          /* the lip's own frequency, Hz, and quality */
+    float h0;                /* its opening at rest */
+    float h, hv;             /* its opening and the opening's velocity */
+    float u_prev;
+    void Init() { gamma = 0.f; zeta = 0.3f; f_lip = 200.f; q = 3.f; h0 = 0.1f; h = h0; hv = 0.f; u_prev = 0.f; }
+    /* one sample: the lip moved by the pressure across it, then the flow */
+    float Step(float p, float sr)
+    {
+        const float w = 6.2831853f * f_lip, dt = 1.f / sr;
+        const float dp = gamma - p;
+        const float acc = -w * w * (h - h0) - (w / q) * hv + w * w * dp;    /* pushed open by the pressure, in units of the closing pressure */
+        hv += acc * dt; h += hv * dt;                                        /* semi-implicit: stable for a lip well under the rate */
+        const float open = h > 0.f ? h : 0.f;
+        const float r = std::sqrt(std::sqrt(dp * dp + 1e-4f));
+        return dp < 0.f ? -zeta * open * r : zeta * open * r;
+    }
+};
+
+/* a bank blown through the lips, as ProcessBlown through a reed */
+inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float* w, Lips& l, float z, float sr)
+{
+    float bk[ResonatorBank::kMax];
+    for(int k = 0; k < b.n; k++)
+    {
+        const float wk = b.wq[k], rk = b.rq[k], sh = std::sin(0.5f * wk);
+        bk[k] = sh > 1e-6f ? z * (1.f - rk) * std::sin(wk) / sh : 0.f;
+    }
+    for(int s = 0; s < frames; s++)
+    {
+        float p = 0.f;
+        for(int k = 0; k < b.n; k++) p += w[k] * b.y1[k];
+        const float u = l.Step(p, sr);
+        const float du = u - l.u_prev;
+        l.u_prev = u;
+        float o = 0.f;
+        for(int k = 0; k < b.n; k++)
+        {
+            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * bk[k] * du;
+            b.y2[k] = b.y1[k]; b.y1[k] = y;
+            o += w[k] * y;
+        }
+        out[s] = o;
+    }
+}
+
 /* a bank blown through a reed: frames samples of the mouthpiece pressure
    into out (overwrite); w the modes' weights at the mouthpiece, z the bore's
    impedance at a resonance (pressure over flow at a peak, in the reed's

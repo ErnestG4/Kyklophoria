@@ -83,7 +83,9 @@ outside Kyklophoria and ModalBake.
     ten: a late cut, a second note in the file, a damaged take. A list for
     Combust of what to drop or re-split; nothing refitted without it.
 
-13. **Exciter stage 3b: the lips** — the reed's loop with a mass on the
+13. [x] **Exciter stage 3b: the lips** — the lip's tuning selects the
+    bore's 2nd/3rd/4th resonance (exciter_check 7); intonation 3-5 % sharp,
+    open. Was: **the lips** — the reed's loop with a mass on the
     reed (a lip that has a frequency of its own and locks to the bore's
     nearest resonance): tested for the lock (the lip tuned between two bore
     resonances plays the nearer) and boundedness.
@@ -161,3 +163,6 @@ outside Kyklophoria and ModalBake.
 - 07:53 — item 12: the rough remainder is mostly the recordings and the
   cuts (seven of twelve); the report is ModalBake's
   docs/rough-remainder-2026-09-27.md. Next: item 13, the lips.
+- 08:05 — item 13: the lips select their register; their intonation is
+  sharp by 3-5 %, written down as open in docs/exciters.md. Every item is
+  done; the wrap-up at 10:57 writes the morning summary.

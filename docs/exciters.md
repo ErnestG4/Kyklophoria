@@ -134,8 +134,15 @@ bound). So:
    first cut got wrong and the tests now hold: each mode must be driven so
    its own peak is the bore's impedance (driven raw, a lightly damped mode's
    peak was 5000 and the loop ran away at any pressure), and a bore whose
-   peaks do not fall with frequency jumps to its upper registers. The lips
-   next, the same loop with a mass on the reed.
+   peaks do not fall with frequency jumps to its upper registers. And the lips
+   (Lips, ProcessLipped; exciter_check 7): a mass on a spring with its own
+   frequency, swung open by the pressure. On a brass-like bore (ten harmonic
+   resonances at 116.5 Hz) the lip tuned just under the 2nd, 3rd and 4th
+   resonance plays the 2nd, 3rd and 4th — 242, 365, 487 Hz — which is how a
+   bugle has notes; a frozen lip selects nothing. **Open:** the pitch sits
+   3-5 % sharp of the resonance it locks to (50-80 cents), more than a
+   player lips a note; the lip's phase through the flow's first difference
+   is the first suspect.
 4. The module: an Exciter page (type, energy, timbre, position), the J1
    input as one more force, the contact noise; the recorded attack stays as
    the default "strike" until the synthesised one has been heard against it.

@@ -16,7 +16,8 @@
  *      tone brightening with velocity by themselves, and the string never
  *      holding more energy than the hammer lost;
  *   6. the reed on a bore: a blowing threshold, the bore's fundamental
- *      above it, silence with the reed pressed shut, bounded everywhere.
+ *      above it, silence with the reed pressed shut, bounded everywhere;
+ *   7. the lips on a brass bore: the lip's tuning selects the resonance.
  *
  * Without the force written back the string is silent; without the
  * velocity read it is pushed aside and never oscillates — either fails 2. */
@@ -160,6 +161,41 @@ int main()
         CHECK(std::fabs(c5) < 10 && std::fabs(c9) < 10, "the reed plays %.1f and %.1f Hz on a 147 Hz bore", p5, p9);
         CHECK(bounded && worst < 3.0, "blown at every impedance and pressure: finite %d, largest pressure %.3g", bounded, worst);
         printf("  the reed: silent at 0.3 of the closing pressure and pressed shut at 1.1; %.1f Hz at 0.5 (%.2f) and %.1f Hz at 0.9 (%.2f) on a 147 Hz bore\n", p5, a5, p9, a9);
+    }
+    /* the lips on a brass-like bore (ten harmonic resonances at 116.5 Hz,
+       impedance 100, lip quality 10): the lip's own frequency selects the
+       resonance that plays — tuned just under the 2nd, 3rd and 4th, it plays
+       the 2nd, 3rd and 4th — and every tuning and pressure stays bounded.
+       The pitch sits 3-5 % sharp of the resonance (docs/exciters.md): the
+       register is held here, the intonation is open */
+    {
+        const float fb = 116.5f;
+        auto lipped = [&](float ratio, float gamma, float z, std::vector<float>& y) {
+            ResonatorBank bk; bk.Init();
+            float hz[10], zz[10], g[10], w[10];
+            for(int k = 0; k < 10; k++) { hz[k] = fb * (k + 1); zz[k] = 0.01f * std::sqrt((float)(k + 1)); g[k] = 0.f; w[k] = 1.f / std::sqrt((float)(k + 1)); }
+            bk.Set(hz, zz, g, 10, sr);
+            Lips l; l.Init(); l.gamma = gamma; l.f_lip = ratio * fb; l.q = 10.f;
+            y.assign(96000, 0.f);
+            ProcessLipped(bk, y.data(), 96000, w, l, z, sr);
+        };
+        auto peak = [&](const std::vector<float>& y) {
+            double mean = 0; for(int i = 72000; i < 96000; i++) mean += y[i]; mean /= 24000;
+            double bf = 0, bp = -1;
+            for(double fq = 60; fq < 1300; fq += 0.5) { double re = 0, im = 0; for(int i = 72000; i < 96000; i += 2) { const double ph = 2 * M_PI * fq * i / sr; re += (y[i] - mean) * std::cos(ph); im -= (y[i] - mean) * std::sin(ph); } const double pw = re * re + im * im; if(pw > bp) { bp = pw; bf = fq; } }
+            return bf;
+        };
+        std::vector<float> y;
+        int regs[3]; double pf[3], amp[3];
+        const float tunings[3] = {1.9f, 2.85f, 3.8f};
+        for(int i = 0; i < 3; i++) { lipped(tunings[i], 0.5f, 100.f, y); pf[i] = peak(y); regs[i] = (int)std::lround(pf[i] / fb); amp[i] = Ac(y, 72000, 96000); }
+        bool bounded = true; double worst = 0;
+        for(float r : {1.5f, 2.f, 3.f, 5.f}) for(float gm : {0.f, 0.3f, 0.6f, 0.9f, 1.2f})
+        { lipped(r, gm, 100.f, y); for(float v : y) { if(!std::isfinite(v)) bounded = false; else worst = std::fmax(worst, std::fabs(v)); } }
+        CHECK(regs[0] == 2 && regs[1] == 3 && regs[2] == 4 && amp[0] > 0.1 && amp[1] > 0.1 && amp[2] > 0.1,
+              "the lip tuned under the 2nd, 3rd, 4th resonance played resonances %d, %d, %d (%.0f, %.0f, %.0f Hz; %.2f %.2f %.2f)", regs[0], regs[1], regs[2], pf[0], pf[1], pf[2], amp[0], amp[1], amp[2]);
+        CHECK(bounded && worst < 5.0, "the lips at every tuning and pressure: finite %d, largest %.3g", bounded, worst);
+        printf("  the lips: tuned under the 2nd, 3rd, 4th resonance they play %.0f, %.0f, %.0f Hz (resonances %d, %d, %d of %.1f Hz)\n", pf[0], pf[1], pf[2], regs[0], regs[1], regs[2], fb);
     }
     if(fails) printf("exciter_check: %d FAILED\n", fails);
     else printf("exciter_check: ok — bowed at 196 Hz the tone is %.1f Hz; amplitude x%.2f at half the speed, x%.2f at less pressure; %.2f under the band, %.2f over it\n",
