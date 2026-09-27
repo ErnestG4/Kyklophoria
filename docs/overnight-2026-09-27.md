@@ -69,8 +69,8 @@ outside Kyklophoria and ModalBake.
   end — fixed in the tool, and the runtime now refuses such a world at
   Attach (test 21). Firmware 7fab4ae built; -nearest dropped (a filled world
   never blends at a semitone), -fullintro rebuilt on 7fab4ae.
-- 01:40 — item 4: the release a setting and tails kept (a 200 ms release
+- 01:08 — items 2 and 3: the piano labels were right (the fits' own
+  loudest partials); README jack map brought up to date.
+- 01:12 — item 4: the release a setting and tails kept (a 200 ms release
   at notes 30 ms apart stepped 0.18 dropping the tail; kept, 0.001).
   Firmware 3f2773d with -fullintro and -release200.
-- 01:15 — items 2 and 3: the piano labels were right (the fits' own
-  loudest partials); README jack map brought up to date.
