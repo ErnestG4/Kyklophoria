@@ -1305,15 +1305,44 @@ struct ResonatorWorld
         for(int j = kMaxPoints - 1; j < i; j++) q = BurstEnd(NoiseEnd(q + FixedBytes()));
         return q;
     }
-    void TablePoints()
+    /* and every point checked to lie inside the blob on the way: a world
+       whose bytes run out — a truncated file, a version it was not written
+       for (a version 6 world stamped 8 by a tool's bug read the start of its
+       first point as a body curve and walked off the end, on the desktop a
+       fault and on the module a read of whatever SDRAM lay beyond) — is
+       refused at Attach, and nothing after reads past it */
+    bool TablePoints()
     {
         const uint8_t* q = blob + HeaderBytes();
-        for(int i = 0; i < P && i < kMaxPoints; i++)
+        const uint8_t* end = blob + size;
+        const uint32_t bh = BurstHead();
+        for(int i = 0; i < P; i++)
         {
-            poff_[i] = (uint32_t)(q - blob);
-            std::memcpy(&pparam_[i], q, 4);
-            q = BurstEnd(NoiseEnd(q + FixedBytes()));
+            if(q + FixedBytes() + 1 > end) return false;
+            if(i < kMaxPoints) { poff_[i] = (uint32_t)(q - blob); std::memcpy(&pparam_[i], q, 4); }
+            const uint8_t* b = q + FixedBytes();
+            b += 1 + 8u * b[0];
+            if(b + 2 > end) return false;
+            uint16_t nb; std::memcpy(&nb, b, 2);
+            if(nb == 0xFFFFu)
+            {
+                if(b + 4 > end) return false;
+                uint16_t r; std::memcpy(&r, b + 2, 2);
+                if(r >= P) return false;
+                q = b + 4;
+                continue;
+            }
+            const uint8_t* c = b + 2;
+            for(uint16_t k = 0; k < nb; k++)
+            {
+                if(c + bh > end) return false;
+                uint16_t n; std::memcpy(&n, c + 8, 2);
+                c += bh + 2u * n;
+                if(c > end) return false;
+            }
+            q = c;
         }
+        return true;
     }
     /* after the fixed part: u8 nbands + nbands x (f32 level, f32 t60), then the bursts */
     const uint8_t* Noise(int i) const { return Point(i) + FixedBytes(); }
@@ -1386,8 +1415,7 @@ struct ResonatorWorld
             return N <= ResonatorBank::kMax;
         }
         if(!((v >= 4 && v <= 8) && N <= ResonatorBank::kMax && size >= HeaderBytes() + (uint32_t)P * FixedBytes())) return false;
-        TablePoints();
-        return true;
+        return TablePoints();
     }
     /* the m-th instrument of a family, as a world of its own with this
        family's spin; a plain world is its own only member */

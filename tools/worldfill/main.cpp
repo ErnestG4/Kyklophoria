@@ -163,6 +163,11 @@ static Bytes Fill(const uint8_t* blob, uint32_t size, int& added, std::string& e
     for(size_t j = 0; j < outs.size(); j++) if(outs[j].old >= 0) newof[outs[j].old] = (int)j;
 
     Bytes w(blob, blob + head);
+    /* a world from before version 7 has no body curve, and from 7 on the
+       header is followed by one: a flat one (0 dB everywhere), which leaves
+       every note as it was. Stamping 8 without it read the first point as
+       the curve (tine-vel, version 6) */
+    if(ver < 7) { const float flat[8] = {0}; put(w, flat, sizeof flat); }
     const uint16_t v8 = 8, P2 = (uint16_t)outs.size();
     std::memcpy(w.data() + 4, &v8, 2); std::memcpy(w.data() + 6, &N2, 2); std::memcpy(w.data() + 8, &P2, 2);
     for(const Out& o : outs)
