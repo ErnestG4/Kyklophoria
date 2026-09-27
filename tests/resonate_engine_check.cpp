@@ -662,6 +662,67 @@ int main()
         printf("  intro by velocity: full plays %d of %u samples, the softest %d\n", full, len, soft);
     }
 
+    /* 21. format 8: a point may play another point's attack. The export fills
+       every semitone of a note world with a point built by At()'s own blend
+       (ModalBake tools/worldfill) so the module plays every locked note by
+       the cheap path — the blend at every strike ran the pianos' strike
+       blocks over (Combust: "a lot of popping and overruns especially on the
+       pianos") — and each new point refers to the nearer recorded point's
+       attack instead of carrying a copy. Built here in memory from the
+       fixture: point k's bytes again at param + 0.5 with its attack a
+       reference to k, and a second one referring to the first */
+    {
+        const ResonatorWorld& W = piano.Res();
+        const uint8_t* bl = wblob.data();
+        auto u16 = [&](size_t at) { uint16_t v; std::memcpy(&v, bl + at, 2); return v; };
+        const uint16_t ver = u16(4), N = u16(6), P = u16(8);
+        const size_t head = 20 + (ver >= 7 ? 32 : 0), fixed = 4 + 32 + 5u * N, bh = ver >= 6 ? 12 : 10;
+        std::vector<size_t> at{head};
+        for(int i = 0; i < P; i++)
+        {
+            size_t q = at.back() + fixed; q += 1 + 8u * bl[q];
+            const uint16_t nb = u16(q); q += 2;
+            for(uint16_t k = 0; k < nb; k++) q += bh + 2u * u16(q + 8);
+            at.push_back(q);
+        }
+        const int k = P / 2;
+        float pk; std::memcpy(&pk, bl + at[k], 4);
+        std::vector<uint8_t> v8(bl, bl + at[k + 1]);                 /* header and points 0..k */
+        auto point_ref = [&](float param, uint16_t ref) {
+            const size_t s0 = v8.size();
+            v8.insert(v8.end(), bl + at[k], bl + at[k] + fixed + 1 + 8u * bl[at[k] + fixed]);   /* k's modes and wash */
+            std::memcpy(v8.data() + s0, &param, 4);
+            const uint16_t mark = 0xFFFF; v8.insert(v8.end(), (const uint8_t*)&mark, (const uint8_t*)&mark + 2);
+            v8.insert(v8.end(), (const uint8_t*)&ref, (const uint8_t*)&ref + 2);
+        };
+        point_ref(pk + 0.25f, (uint16_t)k);                          /* index k + 1: plays k's attack */
+        point_ref(pk + 0.5f, (uint16_t)(k + 1));                     /* index k + 2: a reference to a reference */
+        v8.insert(v8.end(), bl + at[k + 1], bl + at[P]);             /* the rest, shifted two on */
+        const uint16_t eight = 8, P2 = P + 2; std::memcpy(v8.data() + 4, &eight, 2); std::memcpy(v8.data() + 8, &P2, 2);
+        ResonatorWorld V; V.Init();
+        CHECK(V.Attach(v8.data(), (uint32_t)v8.size()) && V.P == P + 2, "a version 8 world with references did not attach");
+        CHECK(V.BurstPoint(k + 1) == k && V.BurstPoint(k + 2) == k + 1 && V.BurstPoint(k) == k, "BurstPoint: %d %d %d", V.BurstPoint(k + 1), V.BurstPoint(k + 2), V.BurstPoint(k));
+        CHECK(V.Bursts(k + 1) == V.Bursts(k), "a reference does not play the attack it names");
+        uint16_t nb2; std::memcpy(&nb2, V.Bursts(k + 2), 2);
+        CHECK(nb2 == 0, "a reference to a reference played something (%u attacks)", nb2);
+        /* every point after the two is where it was: the same note, the same modes */
+        bool same = true;
+        for(int i = k + 1; i < P; i++)
+        {
+            ResonatorVoice a, b; a.Init(); b.Init();
+            W.At(W.Param(i), a, sr); V.At(V.Param(i + 2), b, sr);
+            same = same && W.Param(i) == V.Param(i + 2);
+            for(int m = 0; m < ResonatorBank::kMax; m++) same = same && a.hz[m] == b.hz[m] && a.gain[m] == b.gain[m];
+        }
+        CHECK(same, "the points after a reference moved or changed");
+        /* the referring note: k's attack, read at its own pitch */
+        ResonatorVoice r; r.Init(); V.At(pk + 0.25f, r, sr);
+        ResonatorVoice o; o.Init(); W.At(pk, o, sr);
+        CHECK(r.bursts == V.Bursts(k) && std::fabs(r.burst_rate - std::exp2(0.25f / 12.f)) < 1e-5f && r.burst_len == o.burst_len,
+              "the referring note's attack: rate %.5f (want %.5f), %u samples (k's %u)", r.burst_rate, std::exp2(0.25f / 12.f), r.burst_len, o.burst_len);
+        printf("  format 8: a point plays another's attack at its own pitch (x%.4f); a reference to a reference plays nothing; the points after are untouched\n", r.burst_rate);
+    }
+
     printf(fails ? "resonate_engine_check: %d FAILED\n" : "resonate_engine_check: ok\n", fails);
     return fails ? 1 : 0;
 }
