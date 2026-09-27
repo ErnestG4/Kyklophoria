@@ -56,6 +56,15 @@ outside Kyklophoria and ModalBake.
    and tested (core/kyk_exciter.h, tests/exciter_check): it plays Schelleng's
    diagram by itself. Not wired into the engine: stages 2-4 in the note.
 
+9. **The new settings on the page, not in builds**: the family morph
+   (Engine::SetMemberMorph) and the release (SetReleaseMs) as module
+   actions and model-tab controls, so the A/B needs no reflash. Tests: the
+   desktop shell's action path (selftest/pagecheck), and that the engine's
+   setting follows the action.
+10. **Exciter stage 2**: the strike through the coupled loop (Hunt-Crossley
+    felt, the hammer a mass leaving when it stops pressing), tested for the
+    contact shortening and brightening with velocity by itself.
+
 ## For the morning (needs Combust)
 
 - **Flash kyklophoria.bin (2a38f4f) first** (version 8 worlds need it; older
@@ -105,7 +114,7 @@ outside Kyklophoria and ModalBake.
   (scratch voices in both engines of the stereo pair); the shell now lends
   the room, SDRAM on the module. Firmware 2a38f4f + fullintro, release200,
   morph. Next: item 8, the exciter design note.
-- 07:45 — item 8: the design note, and the bow on the desktop. A harmonic
+- 07:33 — item 8: the design note, and the bow on the desktop. A harmonic
   string bowed through the coupled loop finds its own playable band of
   force, plays its fundamental within 2 cents, and its amplitude follows
   the bow's speed — Helmholtz motion. Every item on the list is done; the
