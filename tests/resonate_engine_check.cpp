@@ -780,6 +780,27 @@ int main()
         printf("  release: 200 ms sets a 200 ms fall; a steal keeps the tails still sounding (%d modes), no step (%.3g against the ring's %.3g)\n", tails, across, before);
     }
 
+    /* 22c. the position a resonate world reports as heard (Position(), which
+       telemetry sends as posL and the page's model sliders follow) moves with
+       the axes. The skipped render was the only thing that folded it, so it
+       sat where the world was loaded and the sliders never moved under the
+       pots (Combust: "the decay and brightness etc in the web client aren't
+       changing -still-") */
+    {
+        Engine e; e.Init(&piano, sr); e.gain = 1.f;
+        std::vector<float> y(24);
+        float worst = 0.f;
+        const float at[3][4] = { {0.5f, 0.5f, 0.2f, 0.8f}, {0.3f, 0.9f, 0.95f, 0.1f}, {0.7f, 0.1f, 0.5f, 0.5f} };
+        for(int s = 0; s < 3; s++)
+        {
+            e.SetPosition(at[s], 4);
+            for(int b = 0; b < 4; b++) e.Process(y.data(), 24);
+            for(int a = 0; a < 4; a++) worst = std::fmax(worst, std::fabs(e.Position()[a] - at[s][a]));
+        }
+        CHECK(worst < 1e-6f, "a resonate world's reported position is %.3f off its axes: the page's sliders would not follow the pots", worst);
+        printf("  a resonate world reports the position it plays (within %.1g): the model sliders follow the pots\n", worst);
+    }
+
     /* 22b. the tail is held to the voice's share. It kept the tail before it
        and took the new ring beside it up to all 48 modes, so four voices under
        overlapping strikes at a long release rang 192 tail modes over their own

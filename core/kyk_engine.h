@@ -492,7 +492,18 @@ public:
            is rendered once at SetWorld and never again: the render was
            running on every pot jitter for nothing, and on the module that
            was the wavetable's whole cost under a voice it does not need */
-        if(world_ && world_->IsResonate() && rframe_) dirty_ = false;
+        if(world_ && world_->IsResonate() && rframe_)
+        {
+            dirty_ = false;
+            /* but the position is still what telemetry reports as heard
+               (Position(), posL), and the render was the only thing that
+               folded it: skipped, posL sat where the world was loaded, and
+               the page's sliders — which follow posL so that an orbit shows —
+               never moved under the pots (Combust, twice: "the decay and
+               brightness etc in the web client aren't changing"). Four
+               folds a block */
+            world_->Fold(c_, p_);
+        }
         const uint32_t period = (uint32_t)(render_div < 1 ? 1 : render_div);
         const bool     due    = ((block_ + (uint32_t)render_phase) % period) == 0u;
         const bool render = due && dirty_ && world_ && world_->Ready();
