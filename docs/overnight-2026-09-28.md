@@ -59,7 +59,44 @@ mode at large arguments), and the tails ring on.
 
 ## For the morning (needs Combust)
 
-(written at the end)
+**Flash** `shell/alchemy/build/kyklophoria.bin` (stamp in the footer and on
+the module: the commit this section is in). The page changed too (the CPU
+line's new fields): push `pages` and hard-refresh.
+
+**Test:** the Piano (and piano-salamander, the Wurlitzer) at 4 voices —
+smashed chords, fast rolls, audio-rate v/oct with triggers. Watch the CPU line:
+
+    last · avg · max · engine · strike · At/s · staged/s · overruns
+
+- overruns: the one that matters — do they still climb on strikes?
+- strike: what a strike itself costs. A staged strike is small; if it reads
+  high, look at staged/s.
+- staged/s against At/s: most strikes should be staged. If staged/s is near
+  zero while you are playing, the control loop is not serving the plans in
+  time, and that is the next thing to fix.
+- engine: the voices themselves. If max is high with engine high, it is the
+  ringing and not the strike.
+
+**Also on the card, unplayed:** everything from the 27th (stereo spin, 24
+worlds, family morph, release slider). The old variants in the build folder
+(-fullintro, -morph, -release200) are from the 27th and have none of this.
+
+**After that, if wanted:** `kyklophoria-room.bin` — the side branch
+`modal-room`, the resonator's voices lent so the right engine holds none (17
+KB of AXI SRAM back for the exciters). Same sound, all tests green.
+
+**Decisions only Combust can make:**
+1. The Exciter page (docs/exciters.md, "Stage 4, proposed"): eighth page or
+   folded in; the six pots; J4 as a gate under a bow/breath; recorded attack
+   as default until the synthesised one has been heard — for which the A/B/C
+   renders are in ModalBake out/wav/exciter-ab/.
+2. Merge `modal-room` into `modal` (the room the exciters need).
+3. ep-vel's bass: refit seeded off-centre (ModalBake docs/ep-bass-2026-09-28.md,
+   minutes of GPU) — or leave it.
+4. The rough remainder (ModalBake docs/rough-remainder-2026-09-27.md) and the
+   uncommitted refit outputs in ModalBake, still waiting.
+5. Pushes: Kyklophoria `modal`, `pages` (-f), `modalbake` (and `modal-room`
+   if you want it on Codeberg).
 
 ## Log
 
@@ -197,3 +234,5 @@ mode at large arguments), and the tails ring on.
 - 06:13 — check-in, holding for the wrap-up.
 - 06:43 — check-in, holding for the wrap-up.
 - 07:13 — check-in, holding for the wrap-up.
+- 07:52 — wrap-up: check-ins stopped, suite green (link_check 155/155,
+  selftest 230/230), firmware and pages rebuilt at this commit.
