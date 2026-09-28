@@ -219,6 +219,15 @@ struct ResonatorBank
     float p1[kMax], p2[kMax];            /* the state a unit strike starts from: A sin(phi-w)/r, A sin(phi-2w)/r^2 */
     float g[kMax];                       /* each mode's gain at a unit strike, for the carry's level */
     float y1[kMax], y2[kMax];
+    /* the main state is exactly zero — a note struck at another note starts
+       from nothing, its old ring gone to the tail, and stays at nothing until
+       the strike ramping in folds into it at the end of its fade. Running the
+       main loop then was computing zeros: every mode of the voice, through
+       the burst's whole lead and fade — on the Piano's bass 460 ms — on every
+       voice of a roll, the strike bank beside it doing the real work. Set
+       where the state is zeroed, cleared where anything is added; skipped
+       while set and nothing drives the bank. Exact: the zeros are zeros */
+    bool  quiet;
     /* the strike bank: a new hit rings here under a 3 ms raised-cosine ramp
        — the envelope the fit's model had, and the gains were fitted under —
        and is then added into the main state, which a linear bank allows
@@ -314,6 +323,7 @@ struct ResonatorBank
             if(any) { cc1[m] = c1[i]; cc2[m] = c2[i]; cy1[m] = y1[i]; cy2[m] = y2[i]; m++; }
             y1[i] = y2[i] = 0.f;
         }
+        quiet = true;
         if(tn > 0 && tail_left > 0)
             for(int i = 0; i < tn; i++)
                 if(std::fabs(ty1[i]) > 1e-7f || std::fabs(ty2[i]) > 1e-7f) { cc1[m] = tc1[i]; cc2[m] = tc2[i]; cy1[m] = ty1[i]; cy2[m] = ty2[i]; m++; }
@@ -352,6 +362,7 @@ struct ResonatorBank
         for(int i = 0; i < kMax; i++) { c1[i] = c2[i] = p1[i] = p2[i] = g[i] = y1[i] = y2[i] = 0.f; wq[i] = cwq[i] = swq[i] = rq[i] = lrq[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; tc1[i] = tc2[i] = ty1[i] = ty2[i] = 0.f; }
         damp_left = 0; damp_c = 1.f;
         tn = 0; tail_left = 0; tail_c = 1.f;
+        quiet = true;
     }
     bool Ringing() const
     {
@@ -541,6 +552,7 @@ struct ResonatorBank
            snapped the strike bank from a third of its way in to full,
            a step the ear-check caught on four worlds */
         if(!keep) for(int q = 0; q < kStrikes; q++) { ramp_len[q] = 0.003f * sr; ramp_lead[q] = 0.f; ramping[q] = false; }
+        quiet = keep ? false : true;     /* carried, the ring may be anything; fresh, every mode was zeroed above */
     }
 
     /* what Set(..., keep = false) leaves, taken from a bank Set fresh with
@@ -562,6 +574,7 @@ struct ResonatorBank
             for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f;
         }
         for(int q = 0; q < kStrikes; q++) { ramp_len[q] = 0.003f * sr; ramp_lead[q] = 0.f; ramping[q] = false; }
+        quiet = true;
     }
 
     /* the hammer: the strike bank set to the given swing at every mode's
@@ -662,6 +675,7 @@ struct ResonatorBank
         const float u = ramp_n[q] - ramp_lead[q];
         const float w = u <= 0.f ? 0.f : u >= ramp_len[q] ? 1.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len[q]);
         for(int i = 0; i < n; i++) { y1[i] += w * s1[q][i]; y2[i] += w * s2[q][i]; s1[q][i] = s2[q][i] = 0.f; }
+        quiet = false;
         ramping[q] = false;
     }
 
@@ -730,8 +744,9 @@ struct ResonatorBank
                     y1[i] = u1; y2[i] = u2;
                 }
                 drive += m;
+                quiet = false;
             }
-            else
+            else if(!quiet)
             {
                 /* two modes at a time. A mode's recurrence is a chain — the
                    multiply, the add, the next sample's multiply — and the
@@ -922,6 +937,9 @@ struct ResonatorBank
             if(damp_left > 0 && damp_left < m) m = damp_left;
             const float dc = damp_left > 0 ? damp_c : 1.f, dc2 = dc * dc;
             for(int k = 0; k < m; k++) { outL[k] = 0.f; outR[k] = 0.f; }
+            const bool run = drive || !quiet;          /* a quiet main state is zeros: nothing to run (see quiet) */
+            if(drive) quiet = false;
+            if(run)
             {
                 int j = 0;
                 for(; j + 1 < nb; j += 2)
@@ -944,7 +962,7 @@ struct ResonatorBank
                 }
                 for(int k = 0; k < m; k++) outR[k] = outL[k];          /* what both hear */
             }
-            int jt = 0;
+            int jt = run ? 0 : nt;
             if(!drive) for(; jt + 1 < nt; jt += 2)                    /* in pairs, as the rest */
             {
                 const int i0 = two[jt], i1 = two[jt + 1];

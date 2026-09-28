@@ -817,6 +817,55 @@ int main()
         printf("  audio-rate v/oct with its axes moving and a strike every 4 ms: one build a block at most, %.0f a second (%.0f of them strikes)\n", per_s, strikes / secs);
     }
 
+    /* 22g. a quiet main state is skipped (ResonatorBank::quiet): a note
+       struck at another note starts from zeros and stays there until its
+       strike folds in, and running the main loop over the zeros was a
+       voice's whole cost through the lead and the fade. Held to exactness:
+       the same banks — strikes at new notes (Release, fresh Set), a strike
+       at the same note inside a fade (both strike banks), a bend, the
+       exciter driving it for a while — once as they are and once with the
+       skip forced off before every block, mono and two ears: identical, bit
+       for bit, and the skip taken on some blocks */
+    {
+        auto hit = [&](ResonatorBank& b, float f0, float lead, bool fresh) {
+            float hz[8], z[8], g[8], ph[8];
+            for(int k = 0; k < 8; k++) { hz[k] = f0 * (k + 1) * (1.f + 0.001f * k * k); z[k] = 0.0008f; g[k] = 0.3f / (k + 1); ph[k] = 0.4f * k; }
+            if(fresh) { b.Release(200.f, sr, 8); b.Set(hz, z, g, 8, sr, ph); }
+            b.Strike(1.f, lead, 480.f);
+        };
+        auto run = [&](bool force, bool lr) {
+            ResonatorBank b; b.Init();
+            std::vector<float> L(24), R(24), x(24), out;
+            const float wl[8] = {1, 0.5f, 1, 0.2f, 1, 1, 0.7f, 1}, wr[8] = {0.3f, 1, 1, 1, 0.6f, 1, 1, 0.1f};
+            int skipped = 0;
+            uint32_t rs = 3; auto rnd = [&]() { rs = rs * 1664525u + 1013904223u; return (rs >> 8) / 16777216.f - 0.5f; };
+            for(int blk = 0; blk < 2000; blk++)
+            {
+                if(blk == 0) hit(b, 110.f, 960.f, true);
+                if(blk == 150) hit(b, 146.8f, 1440.f, true);
+                if(blk == 170) hit(b, 146.8f, 0.f, false);               /* the same note inside the fade: the second strike bank */
+                if(blk == 400) { float hz[8], z[8]; for(int k = 0; k < 8; k++) { hz[k] = 150.f * (k + 1); z[k] = 0.0008f; } b.Bend(hz, z, 8, sr); }
+                if(blk == 600) hit(b, 196.f, 2400.f, true);
+                if(blk == 1200) hit(b, 98.f, 480.f, true);
+                const bool drive = blk >= 1210 && blk < 1300;
+                for(int k = 0; k < 24; k++) x[k] = rnd();
+                if(force) b.quiet = false; else if(b.quiet) skipped++;
+                if(lr) { b.ProcessLR(L.data(), R.data(), 24, wl, wr, drive ? x.data() : nullptr, 0.01f); out.insert(out.end(), L.begin(), L.end()); out.insert(out.end(), R.begin(), R.end()); }
+                else { b.Process(L.data(), 24, drive ? x.data() : nullptr, 0.01f); out.insert(out.end(), L.begin(), L.end()); }
+            }
+            return std::make_pair(out, skipped);
+        };
+        for(int lr = 0; lr < 2; lr++)
+        {
+            const auto a = run(false, lr), f = run(true, lr);
+            bool same = a.first.size() == f.first.size();
+            for(size_t i = 0; same && i < a.first.size(); i++) same = a.first[i] == f.first[i];
+            CHECK(same, "%s: skipping the quiet main state changed the output", lr ? "two ears" : "mono");
+            CHECK(a.second > 100, "%s: the quiet main state was skipped on %d blocks", lr ? "two ears" : "mono", a.second);
+            printf("  a quiet main state skipped on %d blocks of 2000 (%s), bit for bit the bank run through\n", a.second, lr ? "two ears" : "mono");
+        }
+    }
+
     /* 22f. a roll faster than the late-CV window: C3 struck, and 10 ms later
        the pitch at E3 with the next strike waiting (HoldPitch, as the module
        holds every strike for its CV). The C3 keeps ringing at C3 on its
