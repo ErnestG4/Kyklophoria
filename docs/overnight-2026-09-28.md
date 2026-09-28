@@ -139,3 +139,10 @@ mode at large arguments), and the tails ring on.
   range: ep-vel's bass fits (3rd, 4th harmonics 20-40 dB short) — a refit,
   for Combust to call. Also (3cbb80f): the staged strike builds nothing from a
   world changed since the request (it read a world that may be gone; tested).
+- 02:59 — why ep-vel's bass fits miss the 3rd and 4th harmonics (ModalBake
+  docs/ep-bass-2026-09-28.md, 8b95d94): the fits sit with the tine dead
+  centre on the pickup (h/w 0.014-0.03), where a symmetric field makes the
+  2nd harmonic and little else at any swing; the runtime's own pickup set a
+  tenth to a third of a width off centre reaches the recordings within 3-6 dB
+  over h2-h4. A local optimum; the refit seeded off centre is minutes of GPU
+  on ~20 records — written up, not run (the models were called good enough).
