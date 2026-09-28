@@ -142,10 +142,24 @@ static VirtualKnob k_plane  = VirtualKnob(1, "Stereo plane").Selector(6).Labels(
  * knob to a player. Sharpness is the audible control the survey said to steal
  * (Plaits' quantization ramp, Piston Honda's morph resolution): smooth morph
  * at one end, a bank of discrete waves at the other. CV depth moved to P6. */
+#if KYK_MODE_MODAL
+static VirtualKnob k_sharp  = VirtualKnob(2, "—").Unit("sharp").Ident("morph.sharp").Ring(Level(kStereo));
+#else
 static VirtualKnob k_sharp  = VirtualKnob(2, "Morph").Unit("sharp").Ident("morph.sharp").Ring(Level(kStereo));
+#endif
+#if KYK_MODE_MODAL
+/* the modal firmware: pots that belong to the wavetable say so ("—"), and
+   the two the resonator uses are named for what they do there */
+static VirtualKnob k_rdiv   = VirtualKnob(3, "—").Selector(4).Labels(kDivNames, 4).Ident("eng.rdiv").Ring(Level(kStereo));
+#else
 static VirtualKnob k_rdiv   = VirtualKnob(3, "Render div").Selector(4).Labels(kDivNames, 4).Ident("eng.rdiv").Ring(Level(kStereo));
+#endif
 static VirtualKnob k_level  = VirtualKnob(4, "Level").Ident("out.level").Ring(Level(kStereo));
+#if KYK_MODE_MODAL
+static VirtualKnob k_cvdep  = VirtualKnob(5, "Exciter (J1)").Ident("res.exciter").Ring(Level(kStereo));
+#else
 static VirtualKnob k_cvdep  = VirtualKnob(5, "CV out A depth").Ident("lane.cva").Ring(Level(kStereo));
+#endif
 
 /* ── World page ───────────────────────────────────────────────────────
  * Axes 4 and 5, which the I/O map has always said are pot-only: there are
@@ -172,9 +186,16 @@ static VirtualKnob k_pos5   = VirtualKnob(1, "Position 5").Ident("pos.5").Ring(L
  * at the bottom it is off and J2 is the only thing that moves the loop. */
 static const char* kDivNamesTour[8] = {"1", "2", "3", "4", "6", "8", "12", "16"};
 static const uint8_t kDivValuesTour[8] = {1, 2, 3, 4, 6, 8, 12, 16};
+#if KYK_MODE_MODAL
+static const char* const kVoiceNames[3] = {"1", "2", "4"};
+static VirtualKnob k_tdiv   = VirtualKnob(2, "Voices").Selector(3).Labels(kVoiceNames, 3).Ident("res.voices").Ring(Level(kWorld));
+static VirtualKnob k_tglide = VirtualKnob(3, "—").Ident("tour.glide").Ring(Level(kWorld));
+static VirtualKnob k_trate  = VirtualKnob(4, "—").Unit("s").Ident("tour.rate").Ring(Level(kWorld));
+#else
 static VirtualKnob k_tdiv   = VirtualKnob(2, "Tour division").Selector(8).Labels(kDivNamesTour, 8).Ident("tour.div").Ring(Level(kWorld));
 static VirtualKnob k_tglide = VirtualKnob(3, "Tour glide").Ident("tour.glide").Ring(Level(kWorld));
 static VirtualKnob k_trate  = VirtualKnob(4, "Tour free-run").Unit("s").Ident("tour.rate").Ring(Level(kWorld));
+#endif
 static Page page_world  = Page(6).Name("World").Color("#f7c08a").Knobs(k_pos4, k_pos5, k_tdiv, k_tglide, k_trate);
 
 /* A resonate world has no page of its own, on purpose. Combust: "I really
@@ -219,7 +240,11 @@ static VirtualKnob k_kbody  = VirtualKnob(3, "Bodies").Selector(8).Ident("kep.bo
 static VirtualKnob k_kmass  = VirtualKnob(4, "Company").Ident("kep.mass").Ring(Level(kCouple));
 /* How far towards the other world. Which world is a setup choice and lives on
  * the page; how far is a performance one and belongs under a finger. */
+#if KYK_MODE_MODAL
+static VirtualKnob k_morph  = VirtualKnob(5, "—").Ident("world.morph").Ring(Level(kCouple));
+#else
 static VirtualKnob k_morph  = VirtualKnob(5, "World morph").Ident("world.morph").Ring(Level(kCouple));
+#endif
 static Page page_couple = Page(5).Name("Couple").Color("#f0a0d8").Knobs(k_couple, k_reach, k_ratex, k_kbody, k_kmass, k_morph);
 static Page page_stereo = Page(2).Name("Stereo").Color("#c4b5fd").Knobs(k_spread, k_plane, k_sharp, k_rdiv, k_level, k_cvdep);
 
@@ -289,7 +314,19 @@ static_assert(std::is_trivially_default_constructible<solids::VertexTable>::valu
 static_assert(std::is_trivially_default_constructible<decltype(gBlob)>::value,
               "SDRAM objects must not have default member initialisers");
 static uint8_t gBufIdx    = 0;
-static volatile uint8_t gWorldIdx = worlds::kCrop;
+/* The two firmwares (shell/alchemy/Makefile MODE; Combust, 28 September:
+ * "let's swap to be two firmwares ... users swap from the SD"). The wavetable
+ * firmware has the built-in worlds and plays .kykw from the card; the modal
+ * firmware has no built-ins — its instruments are the card's .kykm — and
+ * boots into the first of them. */
+#if KYK_MODE_MODAL
+static constexpr uint8_t kBuiltinWorlds = 0;
+static constexpr char    kCardExt = 'm';       /* .kykm */
+#else
+static constexpr uint8_t kBuiltinWorlds = worlds::kCount;
+static constexpr char    kCardExt = 'w';       /* .kykw */
+#endif
+static volatile uint8_t gWorldIdx = kBuiltinWorlds ? worlds::kCrop : 0xFFu;
 static volatile uint8_t gWorldReq = 0xFFu;   /* 0xFF: nothing pending */
 /* A user world arriving over HostLink. The chunks land here from the main
  * loop; the parse and the swap happen in ServeWorldRequest with the same
@@ -467,9 +504,10 @@ static void ScanCard()
         if(gCardFno.fattrib & AM_DIR) continue;
         const char* dot = std::strrchr(gCardFno.fname, '.');
         if(!dot || std::strlen(gCardFno.fname) > 30) continue;
-        /* .kykw, a set of frames; .kykm, a resonator — both are worlds */
+        /* .kykw, a set of frames, on the wavetable firmware; .kykm, a
+           resonator, on the modal one — each lists only what it plays */
         if(std::strlen(dot) != 5 || (dot[1] != 'k' && dot[1] != 'K')) continue;
-        if(dot[4] != 'w' && dot[4] != 'W' && dot[4] != 'm' && dot[4] != 'M') continue;
+        if(dot[4] != kCardExt && dot[4] != kCardExt - 32) continue;
         std::strncpy(gCardNames[gCardCount], gCardFno.fname, 31);
         gCardNames[gCardCount][31] = 0;
         gCardCount++;
@@ -842,7 +880,11 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
             static float lastDiv = -1.f;
             const float dv = k_tdiv.Value();
             if(gPolyReq) { gEng.SetPolyphony(gPolyReq); gPolyReq = 0u; lastDiv = dv; }
+#if KYK_MODE_MODAL
+            else if(dv != lastDiv) { lastDiv = dv; gEng.SetPolyphony(dv < 0.5f ? 1 : dv < 1.5f ? 2 : 4); }   /* Voices: 1, 2, 4 */
+#else
             else if(dv != lastDiv) { lastDiv = dv; gEng.SetPolyphony(dv < 2.5f ? 1 : dv < 5.5f ? 2 : 4); }
+#endif
             /* and Rings' rule for a trigger jack nobody has patched: a note
                that jumps — 0.4 semitone in one block, which a sequencer does
                and a hand on a pot cannot — strikes on its own, unless a
@@ -1133,7 +1175,7 @@ struct ModuleSource : ExtSource
             }
             case kActRenderDiv: (void)args; (void)len; return 1u;   /* the pot owns it on the module */
             case kActSelectWorld:
-                if(len < 1 || args[0] >= worlds::kCount) return 2u;
+                if(len < 1 || args[0] >= kBuiltinWorlds) return 2u;
                 if(gWorldBusy) return 9u;                     /* BUSY */
                 gWorldReq = args[0];
                 return 0u;
@@ -1176,7 +1218,7 @@ struct ModuleSource : ExtSource
                 /* 0xFF clears the target, which is the only way to get the
                    single-world path back regardless of where the knob sits. */
                 if(len < 1) return 2u;
-                if(args[0] != 0xFFu && args[0] >= worlds::kCount) return 2u;
+                if(args[0] != 0xFFu && args[0] >= kBuiltinWorlds) return 2u;
                 if(gWorldBusy) return 9u;
                 gMorphReq = args[0];
                 return 0u;
@@ -1199,7 +1241,7 @@ struct ModuleSource : ExtSource
             {
                 if(len < 1 || args[0] >= kSlotCount) return 2u;
                 const uint8_t which = len >= 2 ? args[1] : 0xFFu;
-                if(which != 0xFFu && which >= worlds::kCount) return 2u;
+                if(which != 0xFFu && which >= kBuiltinWorlds) return 2u;
                 /* a resonate world has no frame to sample; and a slot whose
                    region is playing cannot be written over */
                 if(which == 0xFFu && gEng.L.WorldPtr() && gEng.L.WorldPtr()->IsResonate()) return 3u;
@@ -1276,7 +1318,7 @@ struct ModuleSource : ExtSource
     int Worlds(uint8_t& count, uint8_t& current, const char** names, const char** notes,
                uint8_t* kinds, int max) override
     {
-        count   = (uint8_t)(worlds::kCount < max ? worlds::kCount : max);
+        count   = (uint8_t)(kBuiltinWorlds < max ? kBuiltinWorlds : max);
         current = gWorldIdx;
         for(int i = 0; i < (int)count; i++)
         {
@@ -1396,7 +1438,12 @@ struct ModuleSource : ExtSource
 };
 static ModuleSource  gSource;
 static KykExt         gExt(gSource);
-static hostlink::Host host(presets, "kyk", "Kyklophoria", KYK_FW_VERSION, KYK_GIT_HASH);
+/* the name says which firmware this is: the page shows that firmware's controls */
+#if KYK_MODE_MODAL
+static hostlink::Host host(presets, "kyk", "Kyklophoria Modal", KYK_FW_VERSION, KYK_GIT_HASH);
+#else
+static hostlink::Host host(presets, "kyk", "Kyklophoria Wavetable", KYK_FW_VERSION, KYK_GIT_HASH);
+#endif
 
 /* Switch worlds on the control thread. Analytic is a pointer write; a
  * tabulated world is expanded into the spare buffer first, which takes long
@@ -1417,7 +1464,7 @@ static bool TourLoad(int slot, uint8_t w)
         if(gSlotRes[sl]) return false;
         return dst.UseUserWorld(gSlotBlob[sl], gSlotLen[sl], kBootP, nullptr) == UserError::Ok;
     }
-    if(w >= worlds::kCount) return false;
+    if(w >= kBuiltinWorlds) return false;
     if(worlds::IsAnalytic(w)) return worlds::Point(w, dst, kBootP, nullptr, &gVertTable[slot]);
     const size_t n = worlds::Expand(w, kBootN, kBootSide, kBootK, kBootP, gBlob[slot], sizeof(gBlob[slot]));
     if(!n || gSpace[slot].Attach(gBlob[slot], n) != SpaceError::Ok) return false;
@@ -1786,7 +1833,7 @@ static void ServeWorldRequest()
     if(mreq != 0xFFu)
     {
         gMorphReq = 0xFFu;
-        if(mreq >= worlds::kCount) { gEng.SetMorph(nullptr, 0.f); gMorphIdx = 0xFFu; }
+        if(mreq >= kBuiltinWorlds) { gEng.SetMorph(nullptr, 0.f); gMorphIdx = 0xFFu; }
         else
         {
             bool ok = true;
@@ -1805,7 +1852,7 @@ static void ServeWorldRequest()
         return;
     }
     const uint8_t req = gWorldReq;
-    if(req == 0xFFu || req >= worlds::kCount) return;
+    if(req == 0xFFu || req >= kBuiltinWorlds) return;
     gWorldReq  = 0xFFu;
     gWorldBusy = 1;
     const uint8_t wi = (uint8_t)(gBufIdx ^ 1u);
@@ -1923,8 +1970,11 @@ static void OnFrame()
        in under a resonate one. Switched here, on the control thread, the
        DG411 being an I2C expander's business; the callback reads the flag. */
     {
-        const World* lw = gEng.L.WorldPtr();
-        const uint8_t want = (lw && lw->IsResonate()) ? 0u : 1u;
+#if KYK_MODE_MODAL
+        const uint8_t want = 0u;                /* the modal firmware: J4 is always the trigger */
+#else
+        const uint8_t want = 1u;                /* the wavetable firmware: J4 is always CV out A */
+#endif
         if(want != gJ4Out) { if(want) hw.j4.EnableCvOutput(); else hw.j4.DisableCvOutput(); gJ4Out = want; }
     }
     if(gJ4Out) hw.j4.SetVolts(gPayloadA * 5.f * k_cvdep.Norm());
@@ -1941,12 +1991,20 @@ int main()
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
+#if KYK_MODE_MODAL
+    /* The modal firmware has no built-in worlds: it boots silent on an empty
+     * world, and once the card is scanned (below) its first resonator is
+     * loaded into slot 0 and played. No card, no resonator: silence, and the
+     * page says the card has none. */
+    gEng.Init(&gWorlds[0], hw.SampleRate());
+    hw.j4.DisableCvOutput(); gJ4Out = 0u;   /* J4 is the strike trigger */
+#else
     /* Boot into an analytic world: it is a formula, so there is nothing to
      * expand and the module makes sound immediately. */
     worlds::Point(worlds::kCrop, gWorlds[0], kBootP, nullptr, &gVertTable[0]);
     gEng.Init(&gWorlds[0], hw.SampleRate());
-
-    hw.j4.EnableCvOutput();                 /* CV out A, until a resonate world takes the jack as its trigger */
+    hw.j4.EnableCvOutput();                 /* CV out A */
+#endif
     gEng.TuneFromControl(true);             /* the spin is jacks and pots here, not the page */
     gEng.L.SetMorphScratch(gMorphVoices, gMorphWorlds);   /* the resonator is L's; R copies it */
     gEng.L.SetStrikePlan(&gStrikePlan);
@@ -2008,6 +2066,11 @@ int main()
 
     gSd.Init();
     ScanCard();          /* so the folder is already listed when a page connects */
+#if KYK_MODE_MODAL
+    /* the first resonator on the card into slot 0, and played: the control
+       loop serves the two in order (ServeWorldRequest) */
+    if(gCardCount > 0) { gCardToSlotCard = 0; gCardToSlotReq = 0; gSlotLiveReq = 0; }
+#endif
 
     presets.Init();
     presets.BootLoad();   /* HostLink starts here: descriptor + panel USB up */

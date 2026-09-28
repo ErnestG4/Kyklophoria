@@ -11,6 +11,15 @@
 #pragma once
 #include <atomic>
 #include "kyk_world.h"
+
+/* KYK_RESONATOR 0: a build without the resonator (the wavetable firmware,
+   shell/alchemy MODE=wavetable). Its paths are compiled out, not only idle:
+   every resonator entry point returns on a constant, and the stereo pair
+   holds no voices. 1 (the default) everywhere else: the modal firmware, the
+   desktop shell, the suite */
+#ifndef KYK_RESONATOR
+#define KYK_RESONATOR 1
+#endif
 #include "kyk_resonate.h"
 #include "kyk_fft.h"
 #include "kyk_osc.h"
@@ -72,6 +81,7 @@ struct ResonatorVoices
 
 class EngineCore
 {
+    static constexpr bool kResonator = KYK_RESONATOR != 0;
 public:
     /* Tunables the shell may set between blocks. */
     /* Unit-RMS cells with a worst measured crest factor of 4.2, so this keeps
@@ -129,7 +139,7 @@ public:
         ractive_ = 0; rpoly_ = 1; rmember_ = 0; rdriven_ = 0; rhold_ = false;
         for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
         rframe_ = false;
-        if(world && world->IsResonate() && rcap_) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
+        if(kResonator && world && world->IsResonate() && rcap_) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
     }
 
     /* ── the resonate path ───────────────────────────────────────────────
@@ -147,7 +157,7 @@ public:
        settled takes the pitch as it is (the plan may be a step behind) */
     void Strike(float velocity01, bool at_plan = false)
     {
-        if(!world_ || !world_->IsResonate() || !rcap_) return;
+        if(!kResonator || !world_ || !world_->IsResonate() || !rcap_) return;
         rforce_ = 1e9f;
         if(at_plan && rplan_ && rplan_->state == 2u)
         {
@@ -398,7 +408,7 @@ public:
     }
     void Retune()
     {
-        if(!rcap_) return;
+        if(!kResonator || !rcap_) return;
         /* At() is 48 modes of exp2, exp, pow, cos and sin — some 60 us on
            the M7, an eighth of a 24-sample block — so it runs on a move the
            ear can hear, two cents or a two-hundredth of a body row, and not
@@ -601,7 +611,7 @@ public:
        as they stand. Cheap; the building is ServeStrikePlan's */
     void PlanStrike()
     {
-        if(!rplan_ || !rcap_ || !world_ || !world_->IsResonate()) return;
+        if(!kResonator || !rplan_ || !rcap_ || !world_ || !world_->IsResonate()) return;
         StrikeKey k;
         rstriking_ = true; k.param = ResParam(); rstriking_ = false;
         k.world = world_; k.gen = rgen_; k.member = ResMemberOf(c_[0]);
@@ -622,7 +632,7 @@ public:
        if a voice was built */
     bool ServeStrikePlan()
     {
-        if(!rplan_) return false;
+        if(!kResonator || !rplan_) return false;
         StrikeKey k; k.on = false;
         for(int tries = 0; tries < 4; tries++)
         {
@@ -786,7 +796,7 @@ public:
         }
         osc_.SetFreq(f0_, sr_);
         osc_.Process(out, n, render);
-        if(world_ && world_->IsResonate())
+        if(kResonator && world_ && world_->IsResonate())
         {
             if(tune_from_control_)
             {
@@ -1014,7 +1024,7 @@ public:
         ractive_ = 0; rmember_ = 0;
         for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
         rframe_ = false;
-        if(w && w->IsResonate() && rcap_) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
+        if(kResonator && w && w->IsResonate() && rcap_) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
     }
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */

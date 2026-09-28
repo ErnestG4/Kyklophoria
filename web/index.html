@@ -208,7 +208,7 @@
 </head>
 <body>
 <header>
-  <span class="name">Kyklophoria</span>
+  <span class="name">Kyklophoria</span><span id="fwMode" style="color:var(--dim)"></span>
   <button class="tab on" id="tabPlay">play</button>
   <button class="tab" id="tabModel">model</button>
   <button class="tab" id="tabBuild">build</button>
@@ -237,7 +237,7 @@
     <span id="worldNote"></span>
   </div>
   <div class="wrow">
-    <span class="cap">MORPH</span>
+    <span class="cap" id="morphCap">MORPH</span>
     <select id="morphSel"><option value="255">off</option></select>
     <button class="chip" id="morphDirect">direct</button>
     <button class="chip" id="morphAim">aimed</button>
@@ -352,7 +352,7 @@
     <button class="chip" id="libRescan">rescan</button>
     <span id="libState" style="color: var(--dim)"></span>
   </div>
-  <div class="brow">
+  <div class="brow" id="tourRow">
     <span class="cap">LOOP</span>
     <button class="chip" id="tourAdd">add stop</button>
     <button class="chip" id="tourDrop">drop last</button>
@@ -570,6 +570,7 @@ async function connect(transport) {
   }
   if (gen !== connectGen) { try { await transport.close(); } catch {} return; }
   $('modinfo').textContent = `${info.name} · fw ${info.fw} (${info.git}) · ${transport.kind}`;
+  fwMode = fwModeOf(info.name); applyFwMode();
   $('sMod').textContent = info.id + ' ' + info.fw;
   await refreshWorlds();
   renderMorphSel();
@@ -597,6 +598,7 @@ async function connect(transport) {
 }
 async function disconnect() {
   polling = false;
+  fwMode = 'both'; applyFwMode();
   const l = link; link = null; tel = null; stats = null; info = null; panel = null;
   reso = null; lastStrikeN = -1;
   worlds = null; basis = null; basisWorld = -1; switching = -1; terrain.key = '';
@@ -3388,6 +3390,21 @@ buildTourDiv();
 renderTour();
 
 /* ── switching views ───────────────────────────────────────────────────── */
+/* Which firmware is answering (Combust, 28 September: two firmwares, the
+   wavetable and the modal, swapped from the card). The module says so in its
+   name; the desktop bridge and firmware from before the split say neither,
+   and the page offers everything as it did. Each firmware's page shows only
+   what that firmware does. */
+let fwMode = 'both';
+function fwModeOf(name) { return /modal/i.test(name || '') ? 'modal' : /wavetable/i.test(name || '') ? 'wavetable' : 'both'; }
+function applyFwMode() {
+  const modal = fwMode === 'modal', wave = fwMode === 'wavetable';
+  $('fwMode').textContent = modal ? ' modal' : wave ? ' wavetable' : '';
+  $('tabModel').hidden = wave;
+  $('tabBuild').hidden = modal;
+  for (const id of ['morphCap', 'morphSel', 'morphDirect', 'morphAim', 'morphState', 'tourRow']) $(id).hidden = modal;
+  if ((wave && viewMode === 'model') || (modal && viewMode === 'build')) setView(modal ? 'model' : 'play');
+}
 let viewMode = 'play';
 function setView(m) {
   viewMode = m;

@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
+const IDS = 'fwMode morphCap tourRow axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -1487,6 +1487,29 @@ for (const [name, t, r] of CASES) {
     if (line) console.log(`          ${line.trim()}`);
   }
 }
+/* The two firmwares (Combust, 28 September): the module's name says which,
+   and the page shows only that firmware's controls. The wavetable one has no
+   model tab; the modal one no build tab, world loop or world morph; the
+   desktop bridge and firmware from before the split, everything. A view left
+   on a tab its firmware does not have moves to one it does */
+{
+  const fails = [];
+  const want = (name, mode) => { const m = P.fwModeOf(name); if (m !== mode) fails.push(`"${name}" read as ${m}, not ${mode}`); };
+  want('Kyklophoria Modal', 'modal'); want('Kyklophoria Wavetable', 'wavetable'); want('Kyklophoria', 'both'); want(undefined, 'both');
+  const shows = (mode, view, tabs, rows) => {
+    P.setView(view); P.setFwMode(mode); P.applyFwMode();
+    const t = { model: !els.tabModel.hidden, build: !els.tabBuild.hidden }, r = { tour: !els.tourRow.hidden, morph: !els.morphSel.hidden };
+    for (const k in tabs) if (t[k] !== tabs[k]) fails.push(`${mode}: the ${k} tab ${t[k] ? 'shown' : 'hidden'}`);
+    for (const k in rows) if (r[k] !== rows[k]) fails.push(`${mode}: the ${k} row ${r[k] ? 'shown' : 'hidden'}`);
+    return P.getView();
+  };
+  if (shows('wavetable', 'model', { model: false, build: true }, { tour: true, morph: true }) !== 'play') fails.push('wavetable: left on the model tab');
+  if (shows('modal', 'build', { model: true, build: false }, { tour: false, morph: false }) !== 'model') fails.push('modal: left on the build tab');
+  shows('both', 'play', { model: true, build: true }, { tour: true, morph: true });
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} two firmwares: each name shows its own tabs and rows${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
 /* The same plane, drawn. A missing guard here throws nothing and paints
    nothing: it asks the canvas for a mark at NaN, which is why the watch below
    exists rather than a try/catch. */

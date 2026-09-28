@@ -8,7 +8,19 @@
 #   make program-dfu   — flash (module parked in the Daisy bootloader)
 #   make program-live  — reboot the running module over USB and flash it
 # =============================================================================
-TARGET = kyklophoria
+# Two firmwares from one tree (Combust, 28 September: "let's swap to be two
+# firmwares ... users swap from the SD"): each with the whole RAM, the pots and
+# the jacks to itself.
+#   make MODE=wavetable   -> build-wavetable/kyklophoria-wavetable.bin
+#   make MODE=modal       -> build-modal/kyklophoria-modal.bin
+#   make both             -> the two
+MODE ?= modal
+ifeq ($(filter $(MODE),wavetable modal),)
+$(error MODE is wavetable or modal, not "$(MODE)")
+endif
+TARGET = kyklophoria-$(MODE)
+# the SDK's Makefile sets BUILD_DIR plainly; a mode's objects are its own
+override BUILD_DIR := build-$(MODE)
 BOARD ?= v2
 
 ALCHEMY_DIR  = ../../../alchemy-sdk
@@ -43,6 +55,11 @@ GIT_DIRTY := $(shell git diff --quiet 2>/dev/null || echo -dirty)
 C_DEFS += -DKYK_GIT_HASH=\"$(GIT_HASH)$(GIT_DIRTY)\"
 # Core determinism: no FMA contraction (docs/spec.md §2).
 C_DEFS += -ffp-contract=off
+ifeq ($(MODE),wavetable)
+C_DEFS += -DKYK_MODE_WAVETABLE=1 -DKYK_RESONATOR=0
+else
+C_DEFS += -DKYK_MODE_MODAL=1 -DKYK_RESONATOR=1
+endif
 # extra defines for a variant build, e.g. make KYK_DEFS=-DKYK_RES_NEAREST
 C_DEFS += $(KYK_DEFS)
 
@@ -52,6 +69,11 @@ CPP_STANDARD = -std=gnu++17
 
 SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core
 include $(SYSTEM_FILES_DIR)/Makefile
+
+.PHONY: both
+both:
+	$(MAKE) MODE=wavetable
+	$(MAKE) MODE=modal
 
 .PHONY: libdaisy
 libdaisy:
