@@ -176,3 +176,13 @@ mode at large arguments), and the tails ring on.
   green, clean under ASan/UBSan, test 22j. Its firmware is
   shell/alchemy/build/kyklophoria-room.bin — for after kyklophoria.bin has
   been played, not instead of it. Merge into `modal` is Combust's call.
+- 04:55 — for decision 4 of docs/exciters.md (keep the recorded attack as
+  the default until the synthesised strike is heard against it): the A/B/C
+  rendered, ModalBake out/wav/exciter-ab/ (ignored folder; the source beside
+  them as exciterab.cpp.txt). piano-salamander and wurli, C2 C4 C6, velocity
+  0.3 0.6 0.9: A the recorded attack and modes as today, B the same modes
+  struck by the coupled hammer (Hunt-Crossley felt at an eighth of the
+  string, no recording), C B with the contact noise; B and C matched to A's
+  loudness over the first second, each triplet scaled together under 0.9.
+  The Wurlitzer's hammer versions peak well over the recording's at the same
+  loudness — the felt's impulse through the pickup — so listen for the click.
