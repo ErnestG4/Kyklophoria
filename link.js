@@ -753,6 +753,8 @@ function parseStats(b) {
   const s = { cyclesLast: u32(b, 1), cyclesMax: u32(b, 5), cyclesAvg: u32(b, 9), overruns: u16(b, 13), dropped: u16(b, 15), renderDiv: b[17], cyclesBudget: u32(b, 18) };
   /* the engine's own peak and the voices built a second, from firmware that says (null before it) */
   s.engineMax = b.length >= 30 ? u32(b, 22) : null; s.atPerS = b.length >= 30 ? u32(b, 26) : null;
+  /* and the costliest strike in the window (the voice's rebuild with it), from firmware that says */
+  s.strikeMax = b.length >= 34 ? u32(b, 30) : null;
   return s;
 }
 /* 0x64 ACTION */
