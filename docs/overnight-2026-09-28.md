@@ -190,3 +190,7 @@ mode at large arguments), and the tails ring on.
   nor a decision; the project memory carries tonight's findings for the next
   session. Holding until the 07:52 wrap-up (pages rebuild, clean firmware,
   the morning summary); check-ins continue.
+- 05:43 — check-in, holding. Considered and left: the lead-end Advance's
+  libm sin/cos (a percent or two on the M7, unmeasured) and plans that accept
+  a millisecond-old tune (only for decay/coil CVs at audio rate). Neither is
+  worth changing tested firmware for before it has been played.
