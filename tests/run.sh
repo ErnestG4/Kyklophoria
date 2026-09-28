@@ -151,6 +151,48 @@ for script in tests/scripts/*.txt; do
     fi
 done
 
+# The wavetable firmware builds the core without the resonator
+# (KYK_RESONATOR=0, shell/alchemy MODE=wavetable): every wavetable golden again,
+# through that core, bit for bit — the firmware that ships is the core that is
+# tested. And a resonator through it is silence: the flag really takes the
+# resonator out, or this proves nothing.
+echo "== golden, the wavetable firmware's core =="
+for script in tests/scripts/m[0-3]_*.txt; do
+    name=$(basename "$script" .txt)
+    args="--gen --seed 1"
+    case "$name" in
+        m2_field*|m2_orbit*) args="--gen --seed 1 --family field --side 8";;
+        m3_solid*|m3_kepler*|m3_couple*) args="--gen --seed 1 --world 1";;
+        m3_fm*) args="--gen --seed 1 --world 9";;
+        m3_vowel*) args="--gen --seed 1 --world 10";;
+        m3_shapes_ring*) args="--gen --seed 1 --world 12";;
+        m3_shapes*) args="--gen --seed 1 --world 11";;
+        m3_lock*) args="--gen --seed 1 --world 13";;
+        m3_unison*) args="--gen --seed 1 --world 14";;
+        m3_plate*) args="--gen --seed 1 --world 15";;
+        m3_bar*) args="--gen --seed 1 --world 16";;
+        m3_drum*) args="--gen --seed 1 --world 17";;
+        m3_saw*) args="--gen --seed 1 --world 18";;
+        m3_pulse*) args="--gen --seed 1 --world 19";;
+        m3_edge*) args="--gen --seed 1 --world 20";;
+        m3_grit*) args="--gen --seed 1 --world 21";;
+    esac
+    build/host/kykdesk-wavetable $args --script "$script" --out "$OUT/wt_$name.wav" > /dev/null || { fail=1; continue; }
+    "$OUT/wavdiff" "$OUT/wt_$name.wav" "tests/golden/$name.wav" 1e-6 > /dev/null || { echo "  FAIL $name differs through the wavetable core"; fail=1; continue; }
+    echo "  ok   $name"
+done
+build/host/kykdesk-wavetable --gen --seed 1 --resonate tests/data/piano.kykm --script tests/scripts/m4_resonate.txt --out "$OUT/wt_m4.wav" > /dev/null 2>&1
+if python3 - "$OUT/wt_m4.wav" <<'PY'
+import struct, sys
+b = open(sys.argv[1], 'rb').read()
+i = b.find(b'data'); n = struct.unpack('<I', b[i + 4:i + 8])[0]; d = b[i + 8:i + 8 + n]
+fmt = struct.unpack('<H', b[20:22])[0]
+x = struct.unpack('<%df' % (len(d) // 4), d) if fmt == 3 else struct.unpack('<%dh' % (len(d) // 2), d)
+sys.exit(0 if max(abs(v) for v in x) == 0 else 1)
+PY
+then echo "  ok   a resonator through the wavetable core is silence"
+else echo "  FAIL a resonator sounds through the wavetable core: the resonator is not compiled out"; fail=1; fi
+
 # Every fitted world carries burst audio — a window of the recording it was
 # fitted from — so publishing one publishes that. tests/data/SOURCES.md is the
 # record of which recording, and a fixture that is not in it is one nobody has

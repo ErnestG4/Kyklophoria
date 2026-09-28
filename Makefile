@@ -15,12 +15,19 @@ LINK_FLAGS = -Ishell/common -I$(SDK_DIR)/framework/include -DALCHEMY_HOSTLINK_MA
 CORE_HDRS  = $(wildcard core/*.h) $(wildcard shell/common/*.h)
 
 .PHONY: host test tables clean
-host: build/host/kykdesk build/host/kykspace build/host/kykeigen build/host/kykworlds \
+host: build/host/kykdesk build/host/kykdesk-wavetable build/host/kykspace build/host/kykeigen build/host/kykworlds \
       build/host/alias_check
 
 build/host/kykdesk: shell/desktop/main.cpp shell/desktop/wavio.h shell/desktop/script.h shell/desktop/serve.h $(CORE_HDRS)
 	@mkdir -p build/host
 	$(CXX) $(CORE_FLAGS) $(LINK_FLAGS) shell/desktop/main.cpp -o $@
+
+# the desktop renderer built as the wavetable firmware builds the core: the
+# resonator compiled out (KYK_RESONATOR=0). The suite renders every wavetable
+# golden through it, so the firmware that ships is the core that is tested
+build/host/kykdesk-wavetable: shell/desktop/main.cpp shell/desktop/wavio.h shell/desktop/script.h shell/desktop/serve.h $(CORE_HDRS)
+	@mkdir -p build/host
+	$(CXX) $(CORE_FLAGS) $(LINK_FLAGS) -DKYK_RESONATOR=0 shell/desktop/main.cpp -o $@
 
 build/host/kykspace: tools/kykspace/main.cpp $(CORE_HDRS)
 	@mkdir -p build/host
