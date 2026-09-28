@@ -51,7 +51,26 @@ struct StrikePlan
     volatile uint32_t state;
 };
 
-class Engine
+/* a resonator's voices and what is kept per voice, lent to the engine that
+   plays one (EngineCore::LendVoices). Engine owns four and lends them to
+   itself; the stereo pair lends its left engine four and its right none —
+   the right never plays a resonator (the left plays, the right copies), and
+   its four were some 23 KB of the M7's AXI SRAM, where the code runs too:
+   the room the exciters need (docs/exciters.md, stage 4). A template on the
+   voice count gave the room back as code compiled twice (1796376) */
+struct ResonatorVoices
+{
+    static constexpr int kN = 4;
+    ResonatorVoice v[kN];
+    float          note[kN];
+    bool           dirty[kN];
+    uint32_t       struck[kN];
+    float          wl[kN][ResonatorBank::kMax], wr[kN][ResonatorBank::kMax];
+    float          w_s[kN], w_c[kN], w_param[kN], w_hz0[kN];
+    int            w_n[kN];
+};
+
+class EngineCore
 {
 public:
     /* Tunables the shell may set between blocks. */
@@ -68,6 +87,24 @@ public:
     int   render_phase = 0;
     int   rolloff_bins = 0;
     float sharp        = 0.f;   /* see SharpenWeights */      /* raised-cosine taper over the top bins below the cutoff */
+
+    /* the voices this engine plays a resonator with (ResonatorVoices), or
+       none: without them every resonator entry point does nothing */
+    void LendVoices(ResonatorVoices* rv, bool fresh = true)
+    {
+        if(!rv) { rcap_ = 0; rvoices_ = nullptr; rvnote_ = nullptr; rvdirty_ = nullptr; rvstruck_ = nullptr; rwl_ = rwr_ = nullptr; rw_s_ = rw_c_ = rw_param_ = rw_hz0_ = nullptr; rw_n_ = nullptr; return; }
+        rcap_ = ResonatorVoices::kN;
+        rvoices_ = rv->v; rvnote_ = rv->note; rvdirty_ = rv->dirty; rvstruck_ = rv->struck;
+        rwl_ = rv->wl; rwr_ = rv->wr; rw_s_ = rv->w_s; rw_c_ = rv->w_c; rw_param_ = rv->w_param; rw_hz0_ = rv->w_hz0; rw_n_ = rv->w_n;
+        if(fresh)
+            for(int v = 0; v < rcap_; v++)
+            {
+                rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_;
+                rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u;
+                rw_s_[v] = -1.f; rw_c_[v] = rw_param_[v] = rw_hz0_[v] = 0.f; rw_n_[v] = 0;
+            }
+    }
+    int Voices() const { return rcap_; }
 
     void Init(const World* world, float sr)
     {
@@ -86,13 +123,13 @@ public:
         DerivePhases();
         phase_dirty_ = false;
         dirty_ = true;
-        for(int v = 0; v < kPoly; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
+        for(int v = 0; v < rcap_; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rgen_++; if(rplan_) rplan_->state = 0u;
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rpoly_ = 1; rmember_ = 0; rdriven_ = 0; rhold_ = false;
-        for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
+        for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
         rframe_ = false;
-        if(world && world->IsResonate()) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
+        if(world && world->IsResonate() && rcap_) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
     }
 
     /* ── the resonate path ───────────────────────────────────────────────
@@ -110,7 +147,7 @@ public:
        settled takes the pitch as it is (the plan may be a step behind) */
     void Strike(float velocity01, bool at_plan = false)
     {
-        if(!world_ || !world_->IsResonate()) return;
+        if(!world_ || !world_->IsResonate() || !rcap_) return;
         rforce_ = 1e9f;
         if(at_plan && rplan_ && rplan_->state == 2u)
         {
@@ -176,7 +213,8 @@ public:
        silencing four voices at the turn of it was a click */
     void SetPolyphony(int n)
     {
-        n = n < 1 ? 1 : n > kPoly ? kPoly : n;
+        if(!rcap_) return;
+        n = n < 1 ? 1 : n > rcap_ ? rcap_ : n;
         if(n == rpoly_) return;
         rpoly_ = n;
         if(ractive_ >= n) ractive_ = n - 1;
@@ -184,7 +222,7 @@ public:
            four voices stacked are as rich as one and cost the same —
            Combust: "white room talk". Each voice keeps its loudest 48 / n
            modes, rebuilt one a block */
-        for(int v = 0; v < kPoly; v++) { rvoices_[v].cap = n > 1 ? ResonatorBank::kMax / n : 0; rvdirty_[v] = true; }
+        for(int v = 0; v < rcap_; v++) { rvoices_[v].cap = n > 1 ? ResonatorBank::kMax / n : 0; rvdirty_[v] = true; }
     }
     int Polyphony() const { return rpoly_; }
     /* Rings' external exciter: an audio block driven into the voice that
@@ -215,14 +253,14 @@ public:
     void SetLoad(float frac)
     {
         if(!(frac > 0.85f)) return;
-        for(int v = 0; v < kPoly; v++) rvoices_[v].bank.Hurry(2.f, sr_);
+        for(int v = 0; v < rcap_; v++) rvoices_[v].bank.Hurry(2.f, sr_);
         rhurried_++;
     }
     uint32_t Hurried() const { return rhurried_; }   /* blocks the load hurried the tails */
     void SetReleaseMs(float ms)
     {
         rrelease_ms_ = ms < 5.f ? 5.f : ms > 1000.f ? 1000.f : ms;
-        for(int v = 0; v < kPoly; v++) rvoices_[v].release_ms = rrelease_ms_;
+        for(int v = 0; v < rcap_; v++) rvoices_[v].release_ms = rrelease_ms_;
     }
     float ReleaseMs() const { return rrelease_ms_; }
     static float NoteOf(float hz) { return 69.f + 12.f * std::log2(hz > 1.f ? hz / 440.f : 1.f / 440.f); }
@@ -241,7 +279,7 @@ public:
            hysteresis between strikes so a CV on a boundary does not
            chatter; a strike takes the nearest outright, since a strike is
            a moment and the CV is what it is then */
-        const float held = rvnote_[ractive_];
+        const float held = rcap_ ? rvnote_[ractive_] : 1e9f;
         if(!rstriking_ && held != 1e9f && std::fabs(note - held) <= 0.6f) return held;
         return std::floor(note + 0.5f);
     }
@@ -254,7 +292,7 @@ public:
        second"). A bank driven by the exciter with no strikes follows the
        pitch by the semitone, which is a quantiser. Unlocked, the ring
        follows the pitch by the cent: a bend, for whoever wants one. */
-    void SetPitchLock(bool on) { if(pitch_lock_ != on) { pitch_lock_ = on; rvnote_[ractive_] = 1e9f; } }   /* re-read: locked, the nearest semitone; free, the cent */
+    void SetPitchLock(bool on) { if(pitch_lock_ != on) { pitch_lock_ = on; if(rcap_) rvnote_[ractive_] = 1e9f; } }   /* re-read: locked, the nearest semitone; free, the cent */
     void SetVelocityTrack(float amount) { vtrack_ = amount; }   /* 0..1: how much harder the strike gets with fast playing (0.5 of velocity at full, at six strikes a second) */
     float VelocityTrack() const { return vtrack_; }
     float LastStrikeVelocity() const { return rlast_v_; }
@@ -360,6 +398,7 @@ public:
     }
     void Retune()
     {
+        if(!rcap_) return;
         /* At() is 48 modes of exp2, exp, pow, cos and sin — some 60 us on
            the M7, an eighth of a 24-sample block — so it runs on a move the
            ear can hear, two cents or a two-hundredth of a body row, and not
@@ -377,10 +416,10 @@ public:
             /* morphing: every voice rebuilt when the axis has moved a
                hundredth of the way between two members, one a block, rings
                carried; the member playing is the nearer */
-            if(mm0 != rmorph_m_ || std::fabs(mt - rmorph_t_) > 0.01f) { rmorph_m_ = mm0; rmorph_t_ = mt; for(int v = 0; v < kPoly; v++) rvdirty_[v] = true; }
+            if(mm0 != rmorph_m_ || std::fabs(mt - rmorph_t_) > 0.01f) { rmorph_m_ = mm0; rmorph_t_ = mt; for(int v = 0; v < rcap_; v++) rvdirty_[v] = true; }
             rmember_ = mt < 0.5f ? mm0 : mm0 + 1;
         }
-        else if(m != rmember_) { rmember_ = m; for(int v = 0; v < kPoly; v++) rvdirty_[v] = true; }   /* another instrument: every voice rebuilt, its ring carried */
+        else if(m != rmember_) { rmember_ = m; for(int v = 0; v < rcap_; v++) rvdirty_[v] = true; }   /* another instrument: every voice rebuilt, its ring carried */
         /* does the active voice take the pitch? Not within the deadband;
            and locked, not at all unless this is the strike, the bank is
            being driven (the pitch is then the only thing playing it), or
@@ -463,9 +502,9 @@ public:
            the module reported an overrun about once a note (Combust). The
            other voices wait a block; nobody hears decay do that. */
         if(rdid_ || rsettle_ < 4) return;
-        for(int k = 1; k < kPoly; k++)
+        for(int k = 1; k < rcap_; k++)
         {
-            const int v = (ractive_ + k) % kPoly;
+            const int v = (ractive_ + k) % rcap_;
             if(!rvdirty_[v]) continue;
             if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { BuildVoice(rvnote_[v], rvoices_[v], true, false); at_count_++; rdid_ = true; rsettle_ = 0; rvdirty_[v] = false; return; }
             rvdirty_[v] = false;              /* silent, or never built: its next strike builds it */
@@ -488,12 +527,14 @@ public:
         const float eps = which == Tune::Voicing ? 0.02f : 0.01f * (t > 1.f ? t : 1.f);
         if(std::fabs(t - v) <= eps) return;
         t = v;
-        for(int i = 0; i < kPoly; i++) rvdirty_[i] = true;   /* every voice rebuilt at the note it holds, one a block */
+        for(int i = 0; i < rcap_; i++) rvdirty_[i] = true;   /* every voice rebuilt at the note it holds, one a block */
     }
     float GetTune(Tune which) const { return rtune_[(int)which]; }
-    const ResonatorVoice& Voice() const { return rvoices_[ractive_]; }
-    const ResonatorVoice& VoiceAt(int v) const { return rvoices_[v < 0 ? 0 : v >= kPoly ? kPoly - 1 : v]; }
-    float ResParamNow() const { return rvnote_[ractive_]; }
+    /* with no voices lent, a silent one: the readouts ask whatever engine they are given */
+    static const ResonatorVoice& NoVoice() { static const ResonatorVoice z{}; return z; }
+    const ResonatorVoice& Voice() const { return rcap_ ? rvoices_[ractive_] : NoVoice(); }
+    const ResonatorVoice& VoiceAt(int v) const { return rcap_ ? rvoices_[v < 0 ? 0 : v >= rcap_ ? rcap_ - 1 : v] : NoVoice(); }
+    float ResParamNow() const { return rcap_ ? rvnote_[ractive_] : 1e9f; }
     uint32_t AtCount() const { return at_count_; }   /* voices built since Init: the bench's measure of how often At() runs */
     float ControlAt(int a) const { return a >= 0 && a < kMaxN ? c_[a] : 0.f; }
     /* On a modular the spin is jacks and pots, not a page: with this set
@@ -548,7 +589,7 @@ public:
        Members of different kinds (a pickup EP beside a plain Wurlitzer)
        still switch: a pickup is not a thing half of a note has. Off by
        default until it has been heard; -DKYK_MEMBER_MORPH=1 builds it on */
-    void SetMemberMorph(bool on) { if(rmorph_ != on) { rmorph_ = on; rmorph_m_ = -1; for(int v = 0; v < kPoly; v++) rvdirty_[v] = true; } }
+    void SetMemberMorph(bool on) { if(rmorph_ != on) { rmorph_ = on; rmorph_m_ = -1; for(int v = 0; v < rcap_; v++) rvdirty_[v] = true; } }
     bool MemberMorph() const { return rmorph_; }
     /* two members and two voices of room for the morph (trivially
        constructible, so SDRAM will do); null takes it away */
@@ -560,7 +601,7 @@ public:
        as they stand. Cheap; the building is ServeStrikePlan's */
     void PlanStrike()
     {
-        if(!rplan_ || !world_ || !world_->IsResonate()) return;
+        if(!rplan_ || !rcap_ || !world_ || !world_->IsResonate()) return;
         StrikeKey k;
         rstriking_ = true; k.param = ResParam(); rstriking_ = false;
         k.world = world_; k.gen = rgen_; k.member = ResMemberOf(c_[0]);
@@ -784,7 +825,7 @@ public:
             float tmp[48], tmpR[48];
             const bool lr = rout_ != nullptr && world_->Res().kind != 1;
             if(rout_) for(int i = 0; i < n; i++) rout_[i] = 0.f;
-            for(int v = 0; v < kPoly; v++)
+            for(int v = 0; v < rcap_; v++)
             {
                 /* a voice past the count rings out and is then skipped */
                 if(v >= rpoly_ && !rvoices_[v].Active()) continue;
@@ -967,25 +1008,25 @@ public:
         /* the voice is state derived from the world: rebuilt here and only
          * here, silent, at the current pitch — arriving at a resonate world
          * is the same as starting in it */
-        for(int v = 0; v < kPoly; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
+        for(int v = 0; v < rcap_; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rgen_++; if(rplan_) rplan_->state = 0u;
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rmember_ = 0;
-        for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
+        for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
         rframe_ = false;
-        if(w && w->IsResonate()) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
+        if(w && w->IsResonate() && rcap_) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
     }
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
     /* Match another voice's phase and block count without rendering. */
-    void FollowPhase(const Engine& o)
+    void FollowPhase(const EngineCore& o)
     {
         osc_.ResetPhase(o.osc_.Phase());
         block_ = o.block_;
     }
     /* Take the other voice's current frame as our own, so the next render
      * crossfades from it instead of from stale content. */
-    void AdoptFrame(const Engine& o)
+    void AdoptFrame(const EngineCore& o)
     {
         osc_.AdoptFront(o.osc_);
         block_ = o.block_;
@@ -1152,17 +1193,17 @@ private:
     }
 
     const World* world_ = nullptr;
-    static constexpr int kPoly = 4;
-    ResonatorVoice rvoices_[kPoly]; /* the resonate path; idle for every other kind */
+    int            rcap_ = 0;       /* voices lent (LendVoices); 0, no resonator plays here */
+    ResonatorVoice* rvoices_ = nullptr; /* the resonate path; idle for every other kind */
     int            ractive_ = 0;    /* the voice the last strike took, which follows the pitch */
     int            rmember_ = 0;    /* the instrument of a family the voice is built from */
     int            rpoly_ = 1;
     ResonatorWorld rtuned_;         /* the member playing, attached once per member (Tuned()) */
     const World*   rtuned_for_ = nullptr;
     int            rtuned_member_ = -1;
-    float          rvnote_[kPoly];  /* the note each voice was built at; 1e9 for not yet */
-    bool           rvdirty_[kPoly]; /* the voice is to be rebuilt at that note: the tune or the member changed */
-    uint32_t       rvstruck_[kPoly] = {};   /* the strike count when each voice was last struck: the oldest is the one taken */
+    float*         rvnote_ = nullptr;   /* the note each voice was built at; 1e9 for not yet */
+    bool*          rvdirty_ = nullptr;  /* the voice is to be rebuilt at that note: the tune or the member changed */
+    uint32_t*      rvstruck_ = nullptr; /* the strike count when each voice was last struck: the oldest is the one taken */
     uint32_t       rstrikes_ = 0;
     uint32_t       at_count_ = 0;
     float          rtune_[3] = {0.f, 1.f, 1.f};   /* voicing (widths), decay (x), coil (x) */
@@ -1187,9 +1228,9 @@ private:
     bool           rhold_ = false;       /* a strike is waiting for the CV (HoldPitch) */
     float*         rout_ = nullptr;      /* this block's right channel, when a resonator is heard from two points (SetListen) */
     float          rlisten_s_ = 0.f, rlisten_c_ = 0.25f;
-    float          rwl_[kPoly][ResonatorBank::kMax], rwr_[kPoly][ResonatorBank::kMax];   /* each voice's ears, kept while they have not moved */
-    float          rw_s_[kPoly] = {-1.f, -1.f, -1.f, -1.f}, rw_c_[kPoly] = {}, rw_param_[kPoly] = {}, rw_hz0_[kPoly] = {};
-    int            rw_n_[kPoly] = {};
+    float          (*rwl_)[ResonatorBank::kMax] = nullptr, (*rwr_)[ResonatorBank::kMax] = nullptr;   /* each voice's ears, kept while they have not moved */
+    float*         rw_s_ = nullptr; float* rw_c_ = nullptr; float* rw_param_ = nullptr; float* rw_hz0_ = nullptr;
+    int*           rw_n_ = nullptr;
     float          rrelease_ms_ = ResonatorDefaults::kReleaseMs;
 #ifndef KYK_MEMBER_MORPH
 #define KYK_MEMBER_MORPH 0
@@ -1250,6 +1291,19 @@ private:
     int          hold_  = 0;
     uint32_t     block_ = 0;
     bool         dirty_ = true;
+};
+
+/* the engine with its own four voices: every caller that is not the stereo
+   pair (the suite, the desktop's tools) plays a resonator as it always did.
+   A copy lends itself its own copy of the voices, not the original's */
+class Engine : public EngineCore
+{
+public:
+    Engine() { LendVoices(&own_); }
+    Engine(const Engine& o) : EngineCore(o), own_(o.own_) { LendVoices(&own_, false); }
+    Engine& operator=(const Engine& o) { if(this != &o) { EngineCore::operator=(o); own_ = o.own_; LendVoices(&own_, false); } return *this; }
+private:
+    ResonatorVoices own_;
 };
 
 } // namespace kyk

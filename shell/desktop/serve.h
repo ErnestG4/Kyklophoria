@@ -314,7 +314,7 @@ public:
     }
 
     const kyk::World*  ResonateWorld() override { return world && world->IsResonate() ? world : nullptr; }
-    const kyk::Engine* ResonateEngine() override { return eng ? &eng->L : nullptr; }
+    const kyk::EngineCore* ResonateEngine() override { return eng ? &eng->L : nullptr; }
 
     int CardWorlds(const char** names, int max) override
     {

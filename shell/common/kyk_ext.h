@@ -312,7 +312,7 @@ struct ExtSource
 
     /* the live world if it is a resonator, and the engine playing it */
     virtual const World*  ResonateWorld() { return nullptr; }
-    virtual const Engine* ResonateEngine() { return nullptr; }
+    virtual const EngineCore* ResonateEngine() { return nullptr; }
 
     virtual uint8_t SetControl(float f0, const float* c, int n, const float* angles, int planes, float spread)
     {
@@ -506,7 +506,7 @@ public:
             }
             case kCmdResonate:
             {
-                const World* wd = src_.ResonateWorld(); const Engine* en = src_.ResonateEngine();
+                const World* wd = src_.ResonateWorld(); const EngineCore* en = src_.ResonateEngine();
                 if(!wd || !en || !wd->IsResonate()) { w.U8(3u); return; }
                 /* a family reports the instrument the voice is built from,
                    then says which of how many, and its name */

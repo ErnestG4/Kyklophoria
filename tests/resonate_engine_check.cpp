@@ -1035,6 +1035,25 @@ int main()
         printf("  audio-rate v/oct: %u of 50 unsettled strikes took the voice built before them, at its note (settled, %u)\n", with, without);
     }
 
+    /* 22j. the voices are lent (ResonatorVoices, LendVoices): the stereo
+       pair's left engine plays the resonator with four and its right holds
+       none — some 23 KB of AXI SRAM the right never used — and a strike on the
+       right does nothing. A copied Engine plays its own voices: a strike on
+       the copy leaves the original's voices as they were */
+    {
+        StereoEngine se; se.Init(&piano, sr);
+        CHECK(se.L.Voices() == 4 && se.R.Voices() == 0, "the stereo pair lends L %d voices and R %d (4 and 0)", se.L.Voices(), se.R.Voices());
+        se.R.SetF0(261.63f); se.R.Strike(0.9f); se.R.SetPolyphony(4);
+        CHECK(!se.R.Voice().Active() && se.R.Voices() == 0, "a strike on the right engine sounded");
+        Engine a; a.Init(&piano, sr); a.gain = 1.f; a.SetF0(130.81f); a.Strike(0.8f);
+        std::vector<float> ya; Run(a, ya, 4);
+        Engine b = a;
+        const float before = a.Voice().bank.y1[0];
+        b.SetF0(196.f); b.Strike(0.9f); std::vector<float> yb; Run(b, yb, 20);
+        CHECK(a.Voice().bank.y1[0] == before && &a.Voice() != &b.Voice(), "a copied Engine played the original's voices");
+        printf("  the voices lent: the stereo pair's L four, R none; a copied Engine plays its own\n");
+    }
+
     /* 22c. the position a resonate world reports as heard (Position(), which
        telemetry sends as posL and the page's model sliders follow) moves with
        the axes. The skipped render was the only thing that folded it, so it
