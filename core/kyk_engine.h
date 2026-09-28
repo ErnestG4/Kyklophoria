@@ -284,9 +284,9 @@ public:
         Tuned().At(param, v, sr_, keep, strike);
     }
     /* the strike takes the staged voice when it is the one it would build:
-       the same world, member, note, cap and tune, a note other than the one
-       ringing (a release — the case the staged voice is built for), and no
-       pickup still on from another member */
+       the same world, member, note, cap and tune, and a note other than the
+       one ringing (a release — the case the staged voice is built for). The
+       pickup is set here, from the old voice's, as Build sets it */
     bool TakePlan(float param, ResonatorVoice& v)
     {
         if(!rplan_ || rplan_->state != 2u) return false;
@@ -296,8 +296,12 @@ public:
         for(int i = 0; i < 3; i++) now.tune[i] = rtune_[i];
         now.on = true;
         if(!SameStrike(rplan_->key, now)) return false;
-        if(!(v.param < 1e8f && std::fabs(param - v.param) > 1e-4f) || v.pickup.on) return false;
+        if(!(v.param < 1e8f && std::fabs(param - v.param) > 1e-4f)) return false;
         v.TakeStaged(rplan_->v, sr_);
+        const ResonatorWorld& w = rplan_->w;
+        float st[8]; for(int i = 0; i < 8; i++) st[i] = v.stage[i];
+        st[0] += w.voicing * st[1]; st[3] *= w.coil;          /* as Build spins the stage */
+        w.SetPickup(v, st, sr_, true);
         rplan_->state = 0u; rplan_taken_++;
         return true;
     }
@@ -563,7 +567,7 @@ public:
         rplan_->state = 1u;
         std::atomic_signal_fence(std::memory_order_seq_cst);
         StrikePlan& pl = *rplan_;
-        if(!k.world->Res().Member(k.member, pl.w) || pl.w.form != 0) { pl.state = 0u; return false; }   /* a pickup's coil crosses from the old voice's: inline */
+        if(!k.world->Res().Member(k.member, pl.w)) { pl.state = 0u; return false; }
         pl.w.voicing = k.tune[0]; pl.w.decay = k.tune[1]; pl.w.coil = k.tune[2];
         pl.v.Init(); pl.v.cap = k.cap;
         pl.w.At(k.param, pl.v, sr_, false, false);

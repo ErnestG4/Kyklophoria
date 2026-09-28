@@ -1535,8 +1535,10 @@ struct ResonatorVoice
        with keep and strike at a released note on a world with no pickup —
        the old ring to the tail and its attack choked, the new note's
        coefficients, stage, attack and wash filters taken from `f`, the wash's
-       state and everything else of this voice's kept. The callers hold it to
-       exactly that case; the rest builds inline */
+       state and everything else of this voice's kept. The pickup is the
+       caller's to set after (ResonatorWorld::SetPickup), since it reads the
+       ring this leaves. The callers hold it to exactly that case; the rest
+       builds inline */
     void TakeStaged(const ResonatorVoice& f, float sr_)
     {
         bank.Release(release_ms, sr_, cap > 0 ? cap : ResonatorBank::kMax); burst.Choke(release_ms, sr_);
@@ -1556,7 +1558,6 @@ struct ResonatorVoice
             wash.gain[k] = f.wash.gain[k]; wash.level[k] = f.wash.level[k]; wash.fall[k] = f.wash.fall[k];
         }
         swing_soft = f.swing_soft; swing_hard = f.swing_hard;
-        pickup.on = false;
     }
 };
 
@@ -2257,6 +2258,17 @@ const float wa = 1.f - wb;
             else v.wash.Set(la, ta, sr);
         }
         v.swing_soft = st[5]; v.swing_hard = st[6];
+        SetPickup(v, st, sr, keep);
+    }
+
+    /* the pickup of a voice just built — st the stage with the spin's
+       voicing and coil in — keep and a ring still sounding crossing the old
+       coil into the new, as a retune must; Build's last step, and all the
+       staged strike (ResonatorVoice::TakeStaged, Engine::TakePlan) has to do
+       of it on the audio thread, since it is the one part that reads the
+       voice it replaces */
+    void SetPickup(ResonatorVoice& v, const float* st, float sr, bool keep) const
+    {
         /* a voice at rest has nothing to carry: built fresh, so arriving at
            a world is the same as starting in it */
         if(keep && v.pickup.on && v.bank.Ringing())

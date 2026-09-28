@@ -862,7 +862,8 @@ int main()
        every voice inline, one served a plan before each strike: the output
        bit for bit the same, and the plan taken on the strikes it is for (at
        another note). A plan made stale by the pitch moving after it was built
-       is refused; a pickup world (the fixture tine) never takes one */
+       is refused. A pickup world (the fixture tine) takes them too, its coil
+       crossed from the old voice's on the audio thread as Build crosses it */
     {
         auto play = [&](const World& w, bool staged, bool stale, uint32_t& taken) {
             Engine e; e.Init(&w, sr); e.gain = 1.f; e.SetPolyphony(4);
@@ -895,8 +896,8 @@ int main()
         CHECK(d2 == 0.f && t3 == 0, "a stale plan: %u taken, output off by %.3g", t3, d2);
         uint32_t tp; const auto tin = play(rw, false, false, t4), tst = play(rw, true, false, tp);
         float d3 = 0.f; for(size_t i = 0; i < tin.size(); i++) d3 = std::fmax(d3, std::fabs(tin[i] - tst[i]));
-        CHECK(d3 == 0.f && tp == 0, "a pickup world: %u plans taken, output off by %.3g", tp, d3);
-        printf("  the staged strike: %u of 150 strikes took a voice built before them, bit for bit the inline build; stale plans and a pickup world build inline\n", t1);
+        CHECK(d3 == 0.f && tp >= 100, "a pickup world (the tine): %u plans taken, output off by %.3g", tp, d3);
+        printf("  the staged strike: %u of 150 strikes took a voice built before them, %u on a pickup world, bit for bit the inline build; stale plans build inline\n", t1, tp);
     }
 
     /* 22c. the position a resonate world reports as heard (Position(), which
