@@ -32,7 +32,7 @@ were missing.
 
     ~/fmexplorer/bin/python tools/notecheck.py out/worlds/wurli.kykm 36 96
 """
-import os, subprocess, sys, tempfile
+import os, re, subprocess, sys, tempfile
 import numpy as np, soundfile as sf
 sys.path.insert(0, os.path.dirname(__file__))
 from pitchman import pitch, NAMES
@@ -65,15 +65,38 @@ def harmonics(x, sr, f0, n=4):
 LAYER_RANK = {'min': 0.0, 'pp': 0.0, 'p': 0.2, 'mp': 0.4, 'med': 0.5, 'mf': 0.6, 'f': 0.8, 'max': 1.0, 'ff': 1.0}
 
 
+def layer_rank(name):
+    """a take's loudness 0..1 from its layer's name: pp/mf/ff and MIN/MED/MAX
+    by LAYER_RANK, Epi's v015/v030/... as the velocity they were rendered at"""
+    n = name.lower()
+    if n in LAYER_RANK:
+        return LAYER_RANK[n]
+    m = re.fullmatch(r'v(\d{3})', n)
+    return int(m.group(1)) / 100.0 if m else None
+
+
+def fit_dir(world):
+    """where a card world was fitted: the card manifests name it (piano-iowa-vel
+    is out/fit/piano-iowa3), else out/fit/<its own name>"""
+    name = os.path.basename(world)[:-5]
+    for man in ('manifests/card.tsv', 'manifests/card-extra.tsv'):
+        if os.path.exists(man):
+            for line in open(man).read().splitlines():
+                f = line.split('\t')
+                if len(f) >= 2 and f[0] == name:
+                    return os.path.join('out', 'fit', f[1])
+    return os.path.join('out', 'fit', name)
+
+
 def targets(world, vel=0.9):
-    """midi -> the recording that record was fitted from, when it is on disk.
-    out/worlds/viola-sulc.kykm is fitted in out/fit/viola-sulc. A velocity-
-    layered record (ep-vel's epv007-MED-target.wav, -MAX-) has one take a
-    layer, and the one nearest the strike's velocity is the grade: without
-    it every layered world was graded on the ask, and an EP's bass, whose
-    recordings carry the second harmonic 6-14 dB over the first even soft,
-    read as an octave wrong (28 September)."""
-    d = os.path.join('out', 'fit', os.path.basename(world)[:-5])
+    """midi -> the recording that record was fitted from, when it is on disk,
+    the take nearest the strike's velocity where there are several: a
+    layered record's (ep-vel's epv007-MED-target.wav, Epi's tine000-v050-),
+    or one row a take (bells-vel's pp, mf and ff rows at one note). Without
+    the layers every layered world was graded on the ask, and an EP's bass,
+    whose recordings carry the second harmonic 6-14 dB over the first even
+    soft, read as an octave wrong (28 September)."""
+    d = fit_dir(world)
     f = os.path.join(d, 'fits.tsv')
     if not os.path.exists(f):
         return {}
@@ -82,22 +105,29 @@ def targets(world, vel=0.9):
     if 'param' not in hdr or 'value' not in hdr:
         return {}
     ip, iv = hdr.index('param'), hdr.index('value')
-    out = {}
+    idyn = hdr.index('dynamic') if 'dynamic' in hdr else None
+    files = os.listdir(d)
+    best = {}                                  # midi -> (distance, path)
     for r in rows[1:]:
         if len(r) <= max(ip, iv) or r[ip] != 'midi':
             continue
-        t = os.path.join(d, r[0] + '-target.wav')
-        if not os.path.exists(t):
-            pre = r[0] + '-'
-            layers = [f[len(pre):-len('-target.wav')] for f in os.listdir(d)
-                      if f.startswith(pre) and f.endswith('-target.wav')]
-            layers = [l for l in layers if l.lower() in LAYER_RANK]
-            if not layers:
-                continue
-            best = min(layers, key=lambda l: abs(LAYER_RANK[l.lower()] - vel))
-            t = os.path.join(d, pre + best + '-target.wav')
-        out[int(round(float(r[iv])))] = t
-    return out
+        midi = int(round(float(r[iv])))
+        cands = []
+        t = r[0] + '-target.wav'
+        if t in files:
+            rk = layer_rank(r[idyn]) if idyn is not None and len(r) > idyn else None
+            cands.append((rk, t))
+        pre = r[0] + '-'
+        for fn in files:
+            if fn.startswith(pre) and fn.endswith('-target.wav'):
+                rk = layer_rank(fn[len(pre):-len('-target.wav')])
+                if rk is not None:
+                    cands.append((rk, fn))
+        for rk, fn in cands:
+            dist = abs(rk - vel) if rk is not None else 0.5
+            if midi not in best or dist < best[midi][0]:
+                best[midi] = (dist, os.path.join(d, fn))
+    return {m: p for m, (_, p) in best.items()}
 
 
 def main():
