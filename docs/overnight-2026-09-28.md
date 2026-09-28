@@ -194,3 +194,4 @@ mode at large arguments), and the tails ring on.
   libm sin/cos (a percent or two on the M7, unmeasured) and plans that accept
   a millisecond-old tune (only for decay/coil CVs at audio rate). Neither is
   worth changing tested firmware for before it has been played.
+- 06:13 — check-in, holding for the wrap-up.
