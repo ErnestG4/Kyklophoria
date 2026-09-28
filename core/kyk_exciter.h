@@ -22,6 +22,44 @@
 
 namespace kyk {
 
+/* the noise of the contact itself — felt on steel, a plectrum's scrape, a
+   bow's hair, breath through a reed — as loud as the contact is, sample by
+   sample: the exciter hands it how hard it is touching (the hammer's force,
+   the plectrum's, the bow's friction while it slips, the reed's flow) and it
+   is noise band-passed to the contact's brightness, followed within a
+   millisecond. It lives exactly while the contact does, so it cannot stack:
+   the wash's twelve bands each fell on their own and at four notes a second
+   summed into a "snare chain" (Combust, 23 September; docs/exciters.md).
+   drive is in the exciter's own units; gain scales it to the output's */
+struct ContactNoise
+{
+    uint32_t rng;
+    float env, att, rel;       /* the follower and its one-pole coefficients */
+    float a1, a2, b0;          /* the band-pass: b0 (x - x2) - a1 y1 - a2 y2 */
+    float x1, x2, y1, y2;
+    float gain;
+    void Init(float sr, float fc = 3000.f, float q = 0.8f, float g = 1.f)
+    {
+        rng = 0x2545F491u; env = 0.f; gain = g;
+        att = 1.f - std::exp(-1.f / (0.0001f * sr));      /* 0.1 ms up */
+        rel = 1.f - std::exp(-1.f / (0.001f * sr));       /* 1 ms down */
+        const float w0 = 6.2831853f * (fc < 0.45f * sr ? fc : 0.45f * sr) / sr;
+        const float al = std::sin(w0) / (2.f * q), a0 = 1.f + al;
+        b0 = al / a0; a1 = -2.f * std::cos(w0) / a0; a2 = (1.f - al) / a0;
+        x1 = x2 = y1 = y2 = 0.f;
+    }
+    float Next(float drive)
+    {
+        const float d = drive < 0.f ? -drive : drive;
+        env += (d > env ? att : rel) * (d - env);
+        rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+        const float x = (float)(int32_t)rng * (1.f / 2147483648.f);
+        const float y = b0 * (x - x2) - a1 * y1 - a2 * y2;
+        x2 = x1; x1 = x; y2 = y1; y1 = y;
+        return gain * env * y;
+    }
+};
+
 /* friction on the slip velocity: static mu_s at no slip falling to dynamic
    mu_d as the slip grows (the hyperbolic curve, v0 its knee), and linear
    through zero within eps — the regularised stick an explicit loop needs */
@@ -46,7 +84,7 @@ struct Bow
 
 /* a bank bowed at a point: frames samples of its displacement summed into
    out (overwrite), w the modes' weights at the contact, m the modal mass */
-inline void ProcessBowed(ResonatorBank& b, float* out, int frames, const float* w, Bow& bow, float sr, float m)
+inline void ProcessBowed(ResonatorBank& b, float* out, int frames, const float* w, Bow& bow, float sr, float m, ContactNoise* cn = nullptr)
 {
     const float kin = 1.f / (sr * sr * m);
     for(int s = 0; s < frames; s++)
@@ -55,7 +93,12 @@ inline void ProcessBowed(ResonatorBank& b, float* out, int frames, const float* 
         for(int k = 0; k < b.n; k++) xc += w[k] * b.y1[k];
         const float vc = (xc - bow.xc_prev) * sr;
         bow.xc_prev = xc;
-        const float f = bow.Force(vc) * kin;
+        const float fr = bow.Force(vc);
+        const float f = fr * kin;
+        /* the hair's noise while it slips; sticking, the hair moves with the
+           string and says nothing */
+        const float slip = bow.v_bow - vc;
+        const float cnoise = cn ? cn->Next((slip > bow.eps || slip < -bow.eps) ? fr : 0.f) : 0.f;
         float o = 0.f;
         for(int k = 0; k < b.n; k++)
         {
@@ -63,7 +106,7 @@ inline void ProcessBowed(ResonatorBank& b, float* out, int frames, const float* 
             b.y2[k] = b.y1[k]; b.y1[k] = y;
             o += y;
         }
-        out[s] = o;
+        out[s] = o + cnoise;
     }
 }
 
@@ -88,7 +131,7 @@ struct Hammer
 
 /* a bank struck by a hammer: frames samples of its displacement into out
    (overwrite); returns true while the hammer is still in contact */
-inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float* w, Hammer& h, float sr, float m)
+inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float* w, Hammer& h, float sr, float m, ContactNoise* cn = nullptr)
 {
     const float dt = 1.f / sr, kin = dt * dt / m;
     for(int s = 0; s < frames; s++)
@@ -111,7 +154,7 @@ inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float*
             b.y2[k] = b.y1[k]; b.y1[k] = y;
             o += y;
         }
-        out[s] = o;
+        out[s] = cn ? o + cn->Next(f) : o;                  /* the felt's noise: as loud as it presses */
     }
     return !h.gone;
 }
@@ -163,7 +206,7 @@ struct Pluck
 
 /* a bank plucked: frames samples of its displacement into out (overwrite);
    true while the finger still holds the string */
-inline bool ProcessPlucked(ResonatorBank& b, float* out, int frames, const float* w, Pluck& pk, float sr, float m)
+inline bool ProcessPlucked(ResonatorBank& b, float* out, int frames, const float* w, Pluck& pk, float sr, float m, ContactNoise* cn = nullptr)
 {
     const float dt = 1.f / sr, kin = dt * dt / m;
     for(int s = 0; s < frames; s++)
@@ -185,7 +228,7 @@ inline bool ProcessPlucked(ResonatorBank& b, float* out, int frames, const float
             b.y2[k] = b.y1[k]; b.y1[k] = y;
             o += y;
         }
-        out[s] = o;
+        out[s] = cn ? o + cn->Next(f) : o;                  /* the plectrum's scrape: as hard as it pulls */
     }
     return !pk.gone;
 }
@@ -250,7 +293,7 @@ inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float*
    units: a clarinet's is some tens). Each mode is driven so that its own
    peak is z: driven raw, a lightly damped mode's peak was 1 / (1 - r), five
    thousand at 147 Hz, and the loop ran away at any pressure */
-inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* w, Reed& r, float z)
+inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* w, Reed& r, float z, ContactNoise* cn = nullptr)
 {
     float bk[ResonatorBank::kMax];
     for(int k = 0; k < b.n; k++)
@@ -275,7 +318,7 @@ inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* 
             b.y2[k] = b.y1[k]; b.y1[k] = y;
             o += w[k] * y;
         }
-        out[s] = o;
+        out[s] = cn ? o + cn->Next(u) : o;                  /* breath through the reed: as much as flows */
     }
 }
 

@@ -237,6 +237,77 @@ int main()
         CHECK(std::fabs(bal) < 0.1, "the pluck's energy does not balance: the finger put in %.3g, the spring kept %.3g, the string has %.3g (%+.0f%%)", wk, left, es, 100 * bal);
         printf("  the pluck: at the middle the even harmonics %.0f dB under the odd; a stiffer plectrum lets go in %d samples, not %d, centroid h%.2f against h%.2f\n", ev, h2, h1, cs2, cs);
     }
+    /* 9. the contact's noise (ContactNoise): as loud as the contact, so it
+       lives exactly while the contact does and cannot stack — the fix the
+       design note gives for the "snare chain" of noise bands falling on their
+       own clocks. The noise is not fed back, so the noise alone is the output
+       with it less the output without it. (a) A hammer's: all of it within
+       the contact and 10 ms after, -60 dB and under from there on. (b) The
+       hammer again every 250 ms on the ringing string for 2 s: the noise in
+       each gap before the next hit stays -60 dB under the hits'. (c) A harder
+       hit, a louder noise. (d) A bow's: there while it slips, gone 10 ms after
+       the bow stops */
+    {
+        auto str = [&](ResonatorBank& b, float* w) {
+            b.Init(); float hz[12], z[12], g[12];
+            for(int k = 0; k < 12; k++) { hz[k] = f0 * (k + 1); z[k] = 0.001f; g[k] = 0.f; }
+            b.Set(hz, z, g, 12, sr);
+            for(int k = 0; k < 12; k++) w[k] = std::sin(3.14159265f * 0.12f * (k + 1));
+        };
+        /* the noise of hits at the given times, and the samples each was in contact */
+        auto hits = [&](float vel, const std::vector<int>& at, int n, std::vector<int>& contact_end) {
+            std::vector<float> y[2];
+            for(int pass = 0; pass < 2; pass++)
+            {
+                ResonatorBank b; float w[12]; str(b, w);
+                ContactNoise cn; cn.Init(sr, 3000.f, 0.8f, 2e-4f);
+                y[pass].assign(n, 0.f);
+                Hammer h; h.Init();
+                size_t next = 0; contact_end.clear();
+                bool was = false;
+                for(int s = 0; s < n; s++)
+                {
+                    if(next < at.size() && s == at[next]) { float xc = 0.f; for(int k = 0; k < 12; k++) xc += w[k] * b.y1[k]; h.Strike(vel, xc); next++; }
+                    const bool in = ProcessStruck(b, &y[pass][s], 1, w, h, sr, mass, pass ? &cn : nullptr);
+                    if(pass && was && !in) contact_end.push_back(s);
+                    was = in;
+                }
+            }
+            std::vector<float> nz(n); for(int s = 0; s < n; s++) nz[s] = y[1][s] - y[0][s];
+            return nz;
+        };
+        auto en = [](const std::vector<float>& x, int a, int b) { double e = 0; for(int i = a; i < b && i < (int)x.size(); i++) e += (double)x[i] * x[i]; return e; };
+        std::vector<int> ce;
+        const auto one = hits(1.f, {0}, 24000, ce);
+        const int end = ce.empty() ? 0 : ce[0];
+        const double during = en(one, 0, end + 480), after = en(one, end + 480, 24000);
+        CHECK(end > 0 && during > 0 && after < 1e-6 * during, "a hammer's noise: %.3g in the contact (%d samples) and 10 ms, %.3g after (%.1f dB)", during, end, after, 10 * std::log10(after / during + 1e-30));
+        std::vector<int> at; for(int k = 0; k < 8; k++) at.push_back(k * 12000);
+        const auto many = hits(1.f, at, 96000, ce);
+        double gaps = 0, hitsE = 0;
+        for(int k = 0; k < 8; k++) { hitsE += en(many, at[k], at[k] + 480); gaps += en(many, at[k] + 4800, at[k] + 12000); }
+        CHECK(gaps < 1e-6 * hitsE, "the noise stacks: %.3g in the gaps against %.3g in the hits (%.1f dB)", gaps, hitsE, 10 * std::log10(gaps / hitsE + 1e-30));
+        const auto soft = hits(0.5f, {0}, 24000, ce), hard = hits(2.f, {0}, 24000, ce);
+        const double es = en(soft, 0, 24000), eh = en(hard, 0, 24000);
+        CHECK(eh > 2.0 * es, "a harder hit is not noisier: %.3g at 2 m/s against %.3g at 0.5", eh, es);
+        /* the bow: 200 ms bowed, then lifted (no speed, no pressure) */
+        std::vector<float> yb[2];
+        for(int pass = 0; pass < 2; pass++)
+        {
+            ResonatorBank b; float w[12]; str(b, w);
+            ContactNoise cn; cn.Init(sr, 3000.f, 0.8f, 1e-3f);
+            Bow bow; bow.Init(); bow.v_bow = 0.2f; bow.f_n = 5.f;
+            yb[pass].assign(19200, 0.f);
+            ProcessBowed(b, yb[pass].data(), 9600, w, bow, sr, mass, pass ? &cn : nullptr);
+            bow.v_bow = 0.f; bow.f_n = 0.f;
+            ProcessBowed(b, yb[pass].data() + 9600, 9600, w, bow, sr, mass, pass ? &cn : nullptr);
+        }
+        std::vector<float> nb(19200); for(int s = 0; s < 19200; s++) nb[s] = yb[1][s] - yb[0][s];
+        const double bowing = en(nb, 4800, 9600), lifted = en(nb, 9600 + 480, 19200);
+        CHECK(bowing > 0 && lifted < 1e-6 * bowing, "a bow's noise: %.3g bowing, %.3g from 10 ms after it lifts (%.1f dB)", bowing, lifted, 10 * std::log10(lifted / bowing + 1e-30));
+        printf("  the contact's noise: a hammer's %.0f dB down 10 ms after the felt leaves; eight hits 250 ms apart, the gaps %.0f dB under the hits; x%.1f energy hit four times as hard; a bow's %.0f dB down 10 ms after it lifts\n",
+               10 * std::log10(after / during + 1e-30), 10 * std::log10(gaps / hitsE + 1e-30), eh / es, 10 * std::log10(lifted / bowing + 1e-30));
+    }
     if(fails) printf("exciter_check: %d FAILED\n", fails);
     else printf("exciter_check: ok — bowed at 196 Hz the tone is %.1f Hz; amplitude x%.2f at half the speed, x%.2f at less pressure; %.2f under the band, %.2f over it\n",
                 p, rb / ra, rc / ra, rw / ra, rh / ra);

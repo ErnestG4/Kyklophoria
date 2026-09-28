@@ -67,6 +67,18 @@ velocity while slipping; for a reed, the flow), so it lives exactly while
 the contact does, milliseconds for a strike and as long as the bow moves,
 and a steal takes it with the voice. No independent decays at all.
 
+Built on the desktop, 28 September (ContactNoise in core/kyk_exciter.h, an
+optional last argument to ProcessStruck, ProcessPlucked, ProcessBowed and
+ProcessBlown; exciter_check 9): noise band-passed to the contact's
+brightness, its level following the contact within 0.1 ms up and 1 ms down —
+the hammer's force, the plectrum's pull, the bow's friction while it slips
+(sticking, the hair moves with the string and is silent), the reed's flow.
+Measured: a hammer's noise is 104 dB down 10 ms after the felt leaves; eight
+hits 250 ms apart leave nothing in the gaps; four times the hammer speed is
+25 times the noise energy; a bow's is 109 dB down 10 ms after it lifts. A
+noise with a decay of its own (half a second, the wash's way) fails all three
+of the stacking checks — the snare chain, caught.
+
 ## The waveguide
 
 Dropped as a separate path. What the Wurlitzer's "Beooooo" is — the
