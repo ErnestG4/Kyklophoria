@@ -72,3 +72,16 @@ mode at large arguments), and the tails ring on.
   to the next note (under 30 ms apart): now not while a strike waits, and not
   until the jump has stood 2 ms. The code put AXI SRAM 1.8 KB over; the world
   receiver moved to SDRAM (98.99 % now). Firmware 87b7b84.
+- 01:49 — the staged strike on pickup worlds too (fef561e): the coil's
+  crossfade split out of Build (SetPickup) and done on the audio thread after
+  taking the staged voice; the tine fixture takes 114 of 150, bit for bit.
+- 01:55 — item 3 rethought: with the rebuild off the audio thread, what a
+  strike still does there is a percent or two (a few libm calls, Release's
+  divides) — not worth chasing blind. Item 4 turned into something better
+  (feced5f): a new note's main state is exact zeros until its strike folds in,
+  and the main loop ran every mode over them through the lead and the fade (up
+  to 460 ms on the Piano's bass). Skipped while quiet, bit for bit: Piano roll
+  median block 1.89 -> 1.31 us, p99 2.91 -> 2.32. Stack checked with
+  -fstack-usage: the plan's chain on the control loop (~6.5 KB) is under the
+  loop's existing deepest path (Basis, 8.3 KB frame), and a staged strike on
+  the audio thread uses less than the inline build. Firmware feced5f.
