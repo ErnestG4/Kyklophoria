@@ -51,19 +51,8 @@ struct StrikePlan
     volatile uint32_t state;
 };
 
-/* the spin on a resonator (Engine::SetTune): voicing, decay, coil. Outside
-   the class so every EngineT shares the one type */
-enum class ResTune : uint8_t { Voicing = 0, Decay = 1, Coil = 2 };
-
-/* kVoices: the resonator voices this engine holds. Four for the engine that
-   plays; the stereo pair's right engine never plays a resonator (the left
-   one plays and the right copies it), and its four voices were some 20 KB of
-   the M7's internal SRAM, where the code runs too — the room the exciters
-   need (docs/exciters.md, stage 4). It holds one */
-template<int kVoices>
-class EngineT
+class Engine
 {
-    template<int> friend class EngineT;   /* the stereo pair's two sizes read each other's frame and phase */
 public:
     /* Tunables the shell may set between blocks. */
     /* Unit-RMS cells with a worst measured crest factor of 4.2, so this keeps
@@ -79,8 +68,6 @@ public:
     int   render_phase = 0;
     int   rolloff_bins = 0;
     float sharp        = 0.f;   /* see SharpenWeights */      /* raised-cosine taper over the top bins below the cutoff */
-
-    EngineT() { for(int v = 0; v < kPoly; v++) rw_s_[v] = -1.f; }
 
     void Init(const World* world, float sr)
     {
@@ -490,7 +477,7 @@ public:
      * on the world, which is shared and const; applied through a copy of
      * the world's reader, which is a pointer and a dozen floats. Takes
      * effect on the next block, the state ringing on. */
-    using Tune = ResTune;
+    enum class Tune : uint8_t { Voicing = 0, Decay = 1, Coil = 2 };
     void SetTune(Tune which, float v)
     {
         float& t = rtune_[(int)which];
@@ -991,14 +978,14 @@ public:
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
     /* Match another voice's phase and block count without rendering. */
-    template<int V> void FollowPhase(const EngineT<V>& o)
+    void FollowPhase(const Engine& o)
     {
         osc_.ResetPhase(o.osc_.Phase());
         block_ = o.block_;
     }
     /* Take the other voice's current frame as our own, so the next render
      * crossfades from it instead of from stale content. */
-    template<int V> void AdoptFrame(const EngineT<V>& o)
+    void AdoptFrame(const Engine& o)
     {
         osc_.AdoptFront(o.osc_);
         block_ = o.block_;
@@ -1165,8 +1152,7 @@ private:
     }
 
     const World* world_ = nullptr;
-    static constexpr int kPoly = kVoices;
-    static_assert(kVoices >= 1, "an engine holds a voice at least");
+    static constexpr int kPoly = 4;
     ResonatorVoice rvoices_[kPoly]; /* the resonate path; idle for every other kind */
     int            ractive_ = 0;    /* the voice the last strike took, which follows the pitch */
     int            rmember_ = 0;    /* the instrument of a family the voice is built from */
@@ -1202,7 +1188,7 @@ private:
     float*         rout_ = nullptr;      /* this block's right channel, when a resonator is heard from two points (SetListen) */
     float          rlisten_s_ = 0.f, rlisten_c_ = 0.25f;
     float          rwl_[kPoly][ResonatorBank::kMax], rwr_[kPoly][ResonatorBank::kMax];   /* each voice's ears, kept while they have not moved */
-    float          rw_s_[kPoly], rw_c_[kPoly] = {}, rw_param_[kPoly] = {}, rw_hz0_[kPoly] = {};   /* rw_s_ -1, never worked out: set at construction */
+    float          rw_s_[kPoly] = {-1.f, -1.f, -1.f, -1.f}, rw_c_[kPoly] = {}, rw_param_[kPoly] = {}, rw_hz0_[kPoly] = {};
     int            rw_n_[kPoly] = {};
     float          rrelease_ms_ = ResonatorDefaults::kReleaseMs;
 #ifndef KYK_MEMBER_MORPH
@@ -1265,7 +1251,5 @@ private:
     uint32_t     block_ = 0;
     bool         dirty_ = true;
 };
-
-using Engine = EngineT<4>;
 
 } // namespace kyk
