@@ -85,3 +85,12 @@ mode at large arguments), and the tails ring on.
   -fstack-usage: the plan's chain on the control loop (~6.5 KB) is under the
   loop's existing deepest path (Basis, 8.3 KB frame), and a staged strike on
   the audio thread uses less than the inline build. Firmware feced5f.
+- 02:00 — an unsettled strike (the module's 30 ms hold ran out, the pitch
+  never stable: audio-rate v/oct) strikes at the staged voice's note (9db9a39;
+  43 of 50 take the plan in the test). Desktop, module-like harness (pitch
+  first, strike after the hold, the plan built untimed as the control loop
+  would): the strike block on the Piano and the Wurlitzer 2.20 -> 1.58 us
+  against a plain block's 1.34 — what a strike adds, 0.88 -> 0.24. Not taken:
+  decay/coil CVs at audio rate (the tune differs every block; those rebuilds
+  are one per 2 ms, bounded) — a plan could accept a millisecond-old tune, not
+  done. Firmware 9db9a39.
