@@ -949,6 +949,44 @@ int main()
         printf("  the staged strike: %u of 150 strikes took a voice built before them, %u on a pickup world, bit for bit the inline build; stale plans build inline\n", t1, tp);
     }
 
+    /* 22h. a strike whose pitch never settled (audio-rate v/oct: the module
+       waited its 30 ms) strikes at the staged voice's note (Strike, at_plan)
+       and takes it — the pitch a millisecond ago is as much the note as the
+       one now, and it is built. The pitch random every block, a plan served
+       every other block, a strike every 60: every strike after the first few
+       takes the plan, at the plan's note. A settled strike (at_plan false)
+       takes the pitch as it stands, which here matches no plan */
+    {
+        auto go = [&](bool at_plan, int& at_note) {
+            Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4);
+            static StrikePlan plan; e.SetStrikePlan(&plan);
+            std::vector<float> y;
+            uint32_t rs = 5; auto rnd = [&]() { rs = rs * 1664525u + 1013904223u; return (rs >> 8) / 16777216.f; };
+            at_note = 0;
+            for(int b = 0; b < 3000; b++)
+            {
+                e.SetF0(440.f * std::exp2((36.f + 48.f * rnd() - 69.f) / 12.f));
+                const bool strike = b % 60 == 59;
+                e.HoldPitch(!strike);
+                if(!strike) { e.PlanStrike(); if(b % 2) e.ServeStrikePlan(); }
+                if(strike)
+                {
+                    const float want = plan.state == 2u ? plan.key.param : -1.f;
+                    const uint32_t before = e.PlansTaken();
+                    e.Strike(0.8f, at_plan);
+                    if(e.PlansTaken() > before && std::fabs(e.Voice().param - want) < 1e-4f) at_note++;
+                }
+                Run(e, y, 1);
+            }
+            return e.PlansTaken();
+        };
+        int n1 = 0, n0 = 0;
+        const uint32_t with = go(true, n1), without = go(false, n0);
+        CHECK(with >= 40 && (int)with == n1, "unsettled strikes at audio-rate v/oct: %u of 50 took the plan, %d at its note", with, n1);
+        CHECK(without <= 3, "settled strikes at audio-rate v/oct took %u plans: the pitch as it stands matches none", without);
+        printf("  audio-rate v/oct: %u of 50 unsettled strikes took the voice built before them, at its note (settled, %u)\n", with, without);
+    }
+
     /* 22c. the position a resonate world reports as heard (Position(), which
        telemetry sends as posL and the page's model sliders follow) moves with
        the axes. The skipped render was the only thing that folded it, so it

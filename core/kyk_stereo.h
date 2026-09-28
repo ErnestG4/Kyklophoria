@@ -112,7 +112,7 @@ public:
        heard — a second whole voice build in the strike's block, which on
        the module doubled what a note-on cost. Every other kind ignores a
        strike, so there is nothing for R to do on any world. */
-    void Strike(float velocity01) { L.Strike(velocity01); }
+    void Strike(float velocity01, bool at_plan = false) { L.Strike(velocity01, at_plan); }
     void SetTune(Engine::Tune which, float v) { L.SetTune(which, v); R.SetTune(which, v); }
     void TuneFromControl(bool on) { L.TuneFromControl(on); R.TuneFromControl(on); }
     void SetPolyphony(int n) { L.SetPolyphony(n); R.SetPolyphony(n); }

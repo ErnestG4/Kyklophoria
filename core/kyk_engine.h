@@ -102,9 +102,24 @@ public:
      * retunes the bank with its state ringing on, as the oscillator follows
      * the pitch, and every strike adds to what rings, as a hammer does. Who strikes is the shell's business (a host action, a
      * gate, a pot for the velocity — docs/modal-mode.md). */
-    void Strike(float velocity01)
+    /* at_plan: strike at the note the staged voice was built for, when one
+       is ready for everything else as it stands. For a strike whose pitch
+       never settled — the shell waited its 30 ms and the CV is still moving,
+       audio-rate v/oct — the note a millisecond ago is as much the note as
+       the one now, and it is the one already built. A strike whose pitch
+       settled takes the pitch as it is (the plan may be a step behind) */
+    void Strike(float velocity01, bool at_plan = false)
     {
         if(!world_ || !world_->IsResonate()) return;
+        rforce_ = 1e9f;
+        if(at_plan && rplan_ && rplan_->state == 2u)
+        {
+            const StrikeKey& k = rplan_->key;
+            bool same = k.on && k.world == world_ && k.gen == rgen_ && k.member == ResMemberOf(c_[0])
+                     && k.cap == (rpoly_ > 1 ? ResonatorBank::kMax / rpoly_ : 0);
+            for(int i = 0; i < 3; i++) same = same && k.tune[i] == rtune_[i];
+            if(same) rforce_ = k.param;
+        }
         if(rpoly_ > 1)
         {
             /* which voice: the one already ringing at this note, if any —
@@ -153,6 +168,7 @@ public:
         rdens_ += 1.f;
         rlast_v_ = v;
         rvoices_[ractive_].Strike(v);
+        rforce_ = 1e9f;
     }
     /* 1, 2 or 4 voices. Changing it cuts nothing: a voice past the new
        count rings out and is then skipped, and the round goes on from the
@@ -203,6 +219,7 @@ public:
      * what a position does everywhere else here: choosing the timbre. */
     float ResParam() const
     {
+        if(rstriking_ && rforce_ < 1e8f) return rforce_;       /* a strike at the staged note (Strike, at_plan) */
         const ResonatorWorld& r = world_->Res();
         if(r.kind == 1) return r.lo + (r.hi - r.lo) * (c_[0] < 0.f ? 0.f : c_[0] > 1.f ? 1.f : c_[0]);
         const float note = NoteOf(f0_);
@@ -1145,6 +1162,7 @@ private:
     int            rsettle_ = 64;        /* blocks since the last rebuild that was not a strike */
     bool           rlate_ = false;       /* the late-CV retune has been taken since the last strike */
     int            rlate_n_ = 0;         /* blocks a late CV has stood, no strike arriving */
+    float          rforce_ = 1e9f;       /* the note a strike takes from the staged voice, 1e9 for none */
     const float*   exciter_ = nullptr;   /* this block's drive, or null */
     float          exgain_ = 0.f;
     uint32_t       rdriven_ = 0;         /* samples the bank still counts as driven: something came in at J1 */

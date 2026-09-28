@@ -664,6 +664,7 @@ static float Velocity01()
     return v < 0.f ? 0.f : v > 1.f ? 1.f : v;
 }
 static bool              gStrikeHeld = false;       /* the pending strike waits for the pitch to settle */
+static bool              gStrikeUnsettled = false;  /* it waited its 30 ms and the pitch never settled: it strikes at the staged voice's note */
 static bool              gKepOn      = false;
 static float             gKepRadius  = 0.f;
 static constexpr uint32_t kCpuHz     = 480000000u;
@@ -868,6 +869,7 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
             {
                 held++;
                 if(held < 8u || (stable < 3u && held < 60u)) gStrikeHeld = true; else gStrikeHeld = false;
+                gStrikeUnsettled = stable < 3u;
             }
             else { held = 0u; gStrikeHeld = false; }
             lastNote = note;
@@ -881,7 +883,7 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     if(gStrike >= 0 && !gStrikeHeld)
     {
         const uint32_t ts = Cycles();
-        gEng.Strike((float)gStrike / 255.0f); gStrike = -1; gStrikeFromJack = false;
+        gEng.Strike((float)gStrike / 255.0f, gStrikeUnsettled); gStrike = -1; gStrikeFromJack = false;
         const uint32_t sc = Cycles() - ts;
         if(sc > gCycStrikeMax) gCycStrikeMax = sc;
     }
