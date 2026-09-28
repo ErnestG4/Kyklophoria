@@ -85,6 +85,7 @@ public:
     {
         world_ = world;
         sr_    = sr;
+        L.LendVoices(&lvoices_);   /* the resonator is L's */
         L.Init(world, sr);
         R.Init(world, sr);
         rot.Init(world ? world->N() : 4);
@@ -297,7 +298,9 @@ public:
     const World* WorldPtr() const { return world_; }
     const Space* SpacePtr() const { return world_ ? world_->SpacePtr() : nullptr; }
 
-    Engine   L, R;
+    EngineCore      L, R;
+    /* L's voices; R has none — it never plays a resonator (ResonatorVoices) */
+    ResonatorVoices lvoices_;
     Rotation rot;
 
 private:

@@ -1009,7 +1009,7 @@ struct ModuleSource : ExtSource
         s.staged_per_s  = gStagedPerS;
     }
     const World*  ResonateWorld() override { const World* w = gEng.L.WorldPtr(); return w && w->IsResonate() ? w : nullptr; }
-    const Engine* ResonateEngine() override { return &gEng.L; }
+    const EngineCore* ResonateEngine() override { return &gEng.L; }
 
     int CardWorlds(const char** names, int max) override
     {
