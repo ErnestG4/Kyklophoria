@@ -184,3 +184,49 @@ affordable at any polyphony; four at once is not the plan.
 4. The module: an Exciter page (type, energy, timbre, position), the J1
    input as one more force, the contact noise; the recorded attack stays as
    the default "strike" until the synthesised one has been heard against it.
+
+## Stage 4, proposed (28 September) — for Combust to decide
+
+What the module has now, so the proposal fits it: seven pages of six pots
+(Play, Rotate, Stereo, Orbit, Kepler, Couple, World); on a resonator the Play
+page's P3-P6 and J5-J8 are its four axes — body, **velocity**, decay, coil
+(or position, velocity, decay, brightness on a world with no pickup) — moved
+by every motion page; J4 is the strike trigger; J1 is Rings' exciter input
+(Stereo P6 its amount). Everything below is a proposal, not built.
+
+**Energy is the velocity axis, not a new pot.** A strike already takes its
+velocity from axis 1 at the moment it fires. For an exciter that keeps going
+— the bow, the reed, the lips — the same axis read *every block* is the bow's
+speed or the mouth's pressure, so Play P4, J6 and every orbit move the bowing
+as it sounds. That is the expressive part of a bowed string, and it comes
+free from the axes the instrument already has.
+
+**The Exciter page (an eighth page, P1-P6):**
+
+| pot | what it does | per exciter |
+|---|---|---|
+| P1 Type | Recorded (today's, the default) · Hammer · Pluck · Bow · Reed · Lips | a selector |
+| P2 Timbre | the contact's hardness | hammer felt (K, alpha) · plectrum stiffness · bow pressure · reed embouchure · lip tension (its frequency against the note) |
+| P3 Position | where along the string it touches | w_k = sin(pi p h); the stereo ears already listen along it |
+| P4 Noise | the contact's noise (ContactNoise), 0 to loud | follows the contact, cannot stack |
+| P5 Mass | the hammer's mass / the finger's speed / the bow's friction curve / the reed's stiffness | the second hand on the contact |
+| P6 J1 | J1 as one more force into the same loop | replaces Stereo P6's role under a resonator |
+
+**What J4 does under a continuous exciter** is the one real question.
+A trigger fires a hammer or a pluck. A bow or a breath wants a *gate*: on
+while it is high. J4 reads a trigger today; if its level can be read (the
+DG411 routes it to an input, so it probably can), gate-high = bowing,
+gate-low = lifted, and a trigger still gives a short bowed or blown note. If
+not, the bow runs while axis 1 (energy) is over zero, and J4 re-articulates.
+
+**Cost** (measured above): one coupled voice at a time, about 2.5 % of the
+block at four voices' share of modes, 10 % at all 48. So: at four voices the
+newest voice is coupled while it sounds and the older ones ring on free —
+which is what a player does with one bow anyway.
+
+**To decide:**
+1. An eighth page, or fold the exciter into an existing one?
+2. The pot list above — which six, and in what order?
+3. J4 under a bow or a breath: gate (if its level is readable) or trigger?
+4. Recorded as the default type until the synthesised hammer has been heard
+   against it on the bench — agreed?
