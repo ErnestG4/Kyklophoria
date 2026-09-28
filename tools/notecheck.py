@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""notecheck.py <world.kykm> [lo hi]   — every semitone through the engine
+"""notecheck.py <world.kykm> [lo hi] [--vel v]   — every semitone through the engine
+(--vel: the strike's velocity, 0.9 by default; a soft strike tells a pickup's
+hard-hit octave "bark" from a fit that is an octave wrong at every velocity)
 
 Combust, on the module: "wurli's notes are OFF badly. A2 to B2 and C2 in
 particular is an octave wrong." The records were the cause (a C2 labelled
@@ -59,9 +61,18 @@ def harmonics(x, sr, f0, n=4):
     return out
 
 
-def targets(world):
+# a velocity-layered record's takes, soft to hard, by the names the sets use
+LAYER_RANK = {'min': 0.0, 'pp': 0.0, 'p': 0.2, 'mp': 0.4, 'med': 0.5, 'mf': 0.6, 'f': 0.8, 'max': 1.0, 'ff': 1.0}
+
+
+def targets(world, vel=0.9):
     """midi -> the recording that record was fitted from, when it is on disk.
-    out/worlds/viola-sulc.kykm is fitted in out/fit/viola-sulc."""
+    out/worlds/viola-sulc.kykm is fitted in out/fit/viola-sulc. A velocity-
+    layered record (ep-vel's epv007-MED-target.wav, -MAX-) has one take a
+    layer, and the one nearest the strike's velocity is the grade: without
+    it every layered world was graded on the ask, and an EP's bass, whose
+    recordings carry the second harmonic 6-14 dB over the first even soft,
+    read as an octave wrong (28 September)."""
     d = os.path.join('out', 'fit', os.path.basename(world)[:-5])
     f = os.path.join(d, 'fits.tsv')
     if not os.path.exists(f):
@@ -76,16 +87,27 @@ def targets(world):
         if len(r) <= max(ip, iv) or r[ip] != 'midi':
             continue
         t = os.path.join(d, r[0] + '-target.wav')
-        if os.path.exists(t):
-            out[int(round(float(r[iv])))] = t
+        if not os.path.exists(t):
+            pre = r[0] + '-'
+            layers = [f[len(pre):-len('-target.wav')] for f in os.listdir(d)
+                      if f.startswith(pre) and f.endswith('-target.wav')]
+            layers = [l for l in layers if l.lower() in LAYER_RANK]
+            if not layers:
+                continue
+            best = min(layers, key=lambda l: abs(LAYER_RANK[l.lower()] - vel))
+            t = os.path.join(d, pre + best + '-target.wav')
+        out[int(round(float(r[iv])))] = t
     return out
 
 
 def main():
+    vel = 0.9
+    if '--vel' in sys.argv:
+        i = sys.argv.index('--vel'); vel = float(sys.argv[i + 1]); del sys.argv[i:i + 2]
     world = sys.argv[1]
     lo = int(sys.argv[2]) if len(sys.argv) > 2 else 36
     hi = int(sys.argv[3]) if len(sys.argv) > 3 else 96
-    tgt = targets(world)
+    tgt = targets(world, vel)
     kykdesk = os.path.join(KYK, 'build', 'host', 'kykdesk')
     if not os.path.exists(kykdesk):
         print('no %s: make -C %s build/host/kykdesk' % (kykdesk, KYK)); return 2
@@ -94,7 +116,7 @@ def main():
         for m in range(lo, hi + 1):
             f0 = 440.0 * 2 ** ((m - 69) / 12)
             sc = os.path.join(d, 'n.txt'); wav = os.path.join(d, 'n.wav')
-            open(sc, 'w').write('0.8 dur\n0.0 f0 %.4f\n0.05 strike 0.9\n' % f0)
+            open(sc, 'w').write('0.8 dur\n0.0 f0 %.4f\n0.05 strike %.3f\n' % (f0, vel))
             subprocess.run([kykdesk, '--gen', '--seed', '1', '--resonate', world, '--script', sc, '--out', wav],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
             x, sr = sf.read(wav, always_2d=True); x = x.mean(axis=1)
