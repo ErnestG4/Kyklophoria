@@ -169,3 +169,10 @@ mode at large arguments), and the tails ring on.
   is unchanged, the stereo pair lending L four and R none — about 23 KB, no
   code twice; 53 voice-array references and 25 kPoly uses to walk, which is
   a daylight job with the Exciter page decided.
+- 04:30 — done anyway, on the side branch, since it risks nothing on `modal`
+  (7bbfe05 on modal-room): EngineCore on lent voices, Engine owning four,
+  the stereo pair lending L four and R none. AXI SRAM 99.3 -> 95.8 % (17 KB
+  back; about 21 KB of headroom where there was 3.5), goldens identical, all
+  green, clean under ASan/UBSan, test 22j. Its firmware is
+  shell/alchemy/build/kyklophoria-room.bin — for after kyklophoria.bin has
+  been played, not instead of it. Merge into `modal` is Combust's call.
