@@ -163,6 +163,48 @@ inline void SinCos(float w, float& s, float& c)
 #endif
 struct ResonatorDefaults { static constexpr float kReleaseMs = KYK_TAIL_MS; };
 
+/* the lim highest of m scores, their indices ascending in idx; the count
+   taken is returned. Ties at the cut go to the lower index, so it is the
+   set that picking the highest lim times over (the first of equals each
+   time) took — a pass or two over m by quickselect where that was lim
+   passes: 576 compares a capped strike, most of At() (a Loudest on the
+   desktop 0.62 of At's 1.0 us) and all of it on the audio thread.
+   Scores at or under `least` are never taken. At most 2 x 48 */
+inline int TopScores(const float* sc, int m, int lim, int* idx, float least = -3.4e38f)
+{
+    if(lim <= 0) return 0;
+    float w[96];
+    int valid = 0;
+    for(int k = 0; k < m; k++) if(sc[k] > least) w[valid++] = sc[k];
+    if(valid <= lim)
+    {
+        int n = 0;
+        for(int k = 0; k < m; k++) if(sc[k] > least) idx[n++] = k;
+        return n;
+    }
+    int lo = 0, hi = valid - 1; const int want = lim - 1;        /* descending: w[want] is the cut */
+    while(lo < hi)
+    {
+        const float piv = w[(lo + hi) >> 1];
+        int i = lo, j = hi;
+        while(i <= j)
+        {
+            while(w[i] > piv) i++;
+            while(w[j] < piv) j--;
+            if(i <= j) { const float t = w[i]; w[i] = w[j]; w[j] = t; i++; j--; }
+        }
+        if(want <= j) hi = j; else if(want >= i) lo = i; else break;
+    }
+    const float cut = w[want];
+    int over = 0;
+    for(int k = 0; k < m; k++) if(sc[k] > cut) over++;
+    int ties = lim - over;                                          /* how many at exactly the cut still fit */
+    int n = 0;
+    for(int k = 0; k < m && n < lim; k++)
+        if(sc[k] > cut || (sc[k] == cut && sc[k] > least && ties-- > 0)) idx[n++] = k;
+    return n;
+}
+
 struct ResonatorBank
 {
     static constexpr int kMax = 48;
@@ -177,6 +219,15 @@ struct ResonatorBank
     float p1[kMax], p2[kMax];            /* the state a unit strike starts from: A sin(phi-w)/r, A sin(phi-2w)/r^2 */
     float g[kMax];                       /* each mode's gain at a unit strike, for the carry's level */
     float y1[kMax], y2[kMax];
+    /* the main state is exactly zero — a note struck at another note starts
+       from nothing, its old ring gone to the tail, and stays at nothing until
+       the strike ramping in folds into it at the end of its fade. Running the
+       main loop then was computing zeros: every mode of the voice, through
+       the burst's whole lead and fade — on the Piano's bass 460 ms — on every
+       voice of a roll, the strike bank beside it doing the real work. Set
+       where the state is zeroed, cleared where anything is added; skipped
+       while set and nothing drives the bank. Exact: the zeros are zeros */
+    bool  quiet;
     /* the strike bank: a new hit rings here under a 3 ms raised-cosine ramp
        — the envelope the fit's model had, and the gains were fitted under —
        and is then added into the main state, which a linear bank allows
@@ -242,37 +293,79 @@ struct ResonatorBank
        to take it 60 dB down over ms. The bank is left silent for the new
        note. A tail still sounding from the note before is replaced: at
        40 ms it is a thousandth of itself by the next note at 25 a second */
-    void Release(float ms, float sr)
+    /* lim: the most modes the tail may keep — the voice's share of the 48
+       (Rings' rule), which the tail had no part in: it kept the one before
+       it and took the new ring beside it up to all 48, so four voices under
+       overlapping strikes rang 192 tail modes over their own 48 — at a
+       200 ms release and a note every 25 ms, 250 modes a block where the
+       rule promises 48, and the overruns heard only on strikes, only
+       overlapping (Combust). The new ring and the old tail compete for the
+       share and the loudest keep it: what is cut is what is quietest now */
+    void Release(float ms, float sr, int lim = kMax)
     {
         for(int q = 0; q < kStrikes; q++) if(ramping[q]) Fold(q);
+        lim = lim < 1 ? 1 : lim > kMax ? kMax : lim;
         /* the tail still sounding from the steal before, kept: its modes go
-           on after the new tail's, where the bank has room, damped on at the
-           same rate from where they are. Dropped, as it was, a long release
-           under fast playing cut a ring mid-fall — at 40 ms it had always
-           fallen 60 dB by the next note, at 200 ms and six notes a second it
-           is 25 dB down and a step */
-        float oc1[kMax], oc2[kMax], oy1[kMax], oy2[kMax];
-        int on = 0;
-        if(tn > 0 && tail_left > 0)
-            for(int i = 0; i < tn; i++)
-                if(std::fabs(ty1[i]) > 1e-7f || std::fabs(ty2[i]) > 1e-7f) { oc1[on] = tc1[i]; oc2[on] = tc2[i]; oy1[on] = ty1[i]; oy2[on] = ty2[i]; on++; }
+           on after the new tail's, where the share has room, damped on at
+           the same rate from where they are. Dropped, as it was, a long
+           release under fast playing cut a ring mid-fall — at 40 ms it had
+           always fallen 60 dB by the next note, at 200 ms and six notes a
+           second it is 25 dB down and a step */
+        float cc1[2 * kMax], cc2[2 * kMax], cy1[2 * kMax], cy2[2 * kMax];
+        int m = 0;
         /* a ring that is not sounding leaves no tail: a first note, or one
            rung out, is exactly what it was before there were tails (the
            pickup's crossfade asks Ringing(), and a silent tail said yes) */
         bool any = false;
         for(int i = 0; i < n; i++) if(std::fabs(y1[i]) > 1e-7f || std::fabs(y2[i]) > 1e-7f) { any = true; break; }
-        int m = 0;
         for(int i = 0; i < n; i++)
         {
-            if(any) { tc1[m] = c1[i]; tc2[m] = c2[i]; ty1[m] = y1[i]; ty2[m] = y2[i]; m++; }
+            if(any) { cc1[m] = c1[i]; cc2[m] = c2[i]; cy1[m] = y1[i]; cy2[m] = y2[i]; m++; }
             y1[i] = y2[i] = 0.f;
         }
-        for(int k = 0; k < on && m < kMax; k++) { tc1[m] = oc1[k]; tc2[m] = oc2[k]; ty1[m] = oy1[k]; ty2[m] = oy2[k]; m++; }
+        quiet = true;
+        if(tn > 0 && tail_left > 0)
+            for(int i = 0; i < tn; i++)
+                if(std::fabs(ty1[i]) > 1e-7f || std::fabs(ty2[i]) > 1e-7f) { cc1[m] = tc1[i]; cc2[m] = tc2[i]; cy1[m] = ty1[i]; cy2[m] = ty2[i]; m++; }
+        if(m > lim)
+        {
+            /* each mode's amplitude now, from its two samples under its
+               pole: y1 = B sin t, r y2 = B sin(t - w), so
+               B^2 sin^2 w = y1^2 + (r y2)^2 - 2 y1 r y2 cos w. The share is
+               the lim loudest by it, in the order they came (the new ring
+               first) */
+            float amp[2 * kMax]; int idx[2 * kMax];
+            for(int i = 0; i < m; i++)
+            {
+                const float r2 = -cc2[i], r = r2 > 0.f ? std::sqrt(r2) : 0.f;
+                const float cw = r > 0.f ? cc1[i] / (2.f * r) : 1.f;
+                float s2 = 1.f - cw * cw; s2 = s2 > 1e-6f ? s2 : 1e-6f;
+                const float ry = r * cy2[i];
+                amp[i] = (cy1[i] * cy1[i] + ry * ry - 2.f * cy1[i] * ry * cw) / s2;
+            }
+            const int j = TopScores(amp, m, lim, idx);
+            for(int k = 0; k < j; k++) { const int i = idx[k]; cc1[k] = cc1[i]; cc2[k] = cc2[i]; cy1[k] = cy1[i]; cy2[k] = cy2[i]; }
+            m = j;
+        }
+        for(int i = 0; i < m; i++) { tc1[i] = cc1[i]; tc2[i] = cc2[i]; ty1[i] = cy1[i]; ty2[i] = cy2[i]; }
         tn = m;
         tail_left = m ? (int)(ms * 0.001f * sr) : 0; if(m && tail_left < 1) tail_left = 1;
         tail_c = fastmath::Exp2(-9.9657843f / (float)(tail_left > 0 ? tail_left : 1));   /* 1e-3 over the window */
         damp_left = 0; damp_c = 1.f;
         for(int q = 0; q < kStrikes; q++) damp_bank[q] = false;
+    }
+
+    /* the tail brought to its end within ms from where it stands: the damper
+       made steep enough to fall 60 dB in that time, the level carried on —
+       a steeper fall, not a step. Engine::SetLoad, when the audio callback
+       runs out of room: the tails are the one load that can go without
+       being heard to go, since they are going anyway */
+    void Hurry(float ms, float sr)
+    {
+        const int left = (int)(ms * 0.001f * sr);
+        if(tn <= 0 || tail_left <= left || left < 1) return;
+        tail_left = left;
+        tail_c = fastmath::Exp2(-9.9657843f / (float)left);
     }
 
     void Init()
@@ -282,6 +375,7 @@ struct ResonatorBank
         for(int i = 0; i < kMax; i++) { c1[i] = c2[i] = p1[i] = p2[i] = g[i] = y1[i] = y2[i] = 0.f; wq[i] = cwq[i] = swq[i] = rq[i] = lrq[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; tc1[i] = tc2[i] = ty1[i] = ty2[i] = 0.f; }
         damp_left = 0; damp_c = 1.f;
         tn = 0; tail_left = 0; tail_c = 1.f;
+        quiet = true;
     }
     bool Ringing() const
     {
@@ -471,6 +565,29 @@ struct ResonatorBank
            snapped the strike bank from a third of its way in to full,
            a step the ear-check caught on four worlds */
         if(!keep) for(int q = 0; q < kStrikes; q++) { ramp_len[q] = 0.003f * sr; ramp_lead[q] = 0.f; ramping[q] = false; }
+        quiet = keep ? false : true;     /* carried, the ring may be anything; fresh, every mode was zeroed above */
+    }
+
+    /* what Set(..., keep = false) leaves, taken from a bank Set fresh with
+       the same modes and rate: the coefficients copied rather than worked
+       out, and the state as Set leaves it — silent, no strike ramping. The
+       staged strike (Engine::ServeStrikePlan) builds the new note off the
+       audio thread and this is all the strike then does of Set: no SinCos,
+       no exp, no divide. Bit for bit what Set writes (resonate_engine_check
+       holds it to that) */
+    void TakeFresh(const ResonatorBank& f, float sr)
+    {
+        n = f.n;
+        for(int i = 0; i < n; i++)
+        {
+            c1[i] = f.c1[i]; c2[i] = f.c2[i];
+            wq[i] = f.wq[i]; cwq[i] = f.cwq[i]; swq[i] = f.swq[i]; rq[i] = f.rq[i]; lrq[i] = f.lrq[i];
+            p1[i] = f.p1[i]; p2[i] = f.p2[i]; g[i] = f.g[i];
+            y1[i] = y2[i] = 0.f;
+            for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f;
+        }
+        for(int q = 0; q < kStrikes; q++) { ramp_len[q] = 0.003f * sr; ramp_lead[q] = 0.f; ramping[q] = false; }
+        quiet = true;
     }
 
     /* the hammer: the strike bank set to the given swing at every mode's
@@ -571,6 +688,7 @@ struct ResonatorBank
         const float u = ramp_n[q] - ramp_lead[q];
         const float w = u <= 0.f ? 0.f : u >= ramp_len[q] ? 1.f : 0.5f - 0.5f * std::cos(3.1415927f * u / ramp_len[q]);
         for(int i = 0; i < n; i++) { y1[i] += w * s1[q][i]; y2[i] += w * s2[q][i]; s1[q][i] = s2[q][i] = 0.f; }
+        quiet = false;
         ramping[q] = false;
     }
 
@@ -639,8 +757,9 @@ struct ResonatorBank
                     y1[i] = u1; y2[i] = u2;
                 }
                 drive += m;
+                quiet = false;
             }
-            else
+            else if(!quiet)
             {
                 /* two modes at a time. A mode's recurrence is a chain — the
                    multiply, the add, the next sample's multiply — and the
@@ -768,7 +887,24 @@ struct ResonatorBank
             {
                 const int mt = m < tail_left ? m : tail_left;
                 const float tc = tail_c, tc2_ = tail_c * tail_c;
-                for(int i = 0; i < tn; i++)
+                int i = 0;
+                for(; i + 1 < tn; i += 2)     /* in pairs, as the main state: a tail is up to a voice's share of modes */
+                {
+                    const float a0 = tc1[i] * tc, b0 = tc2[i] * tc2_, a1 = tc1[i + 1] * tc, b1 = tc2[i + 1] * tc2_;
+                    float p1 = ty1[i], p2 = ty2[i], q1 = ty1[i + 1], q2 = ty2[i + 1];
+                    for(int k = 0; k < mt; k++)
+                    {
+                        const float yp = a0 * p1 + b0 * p2;
+                        const float yq = a1 * q1 + b1 * q2;
+                        p2 = p1; p1 = yp;
+                        q2 = q1; q1 = yq;
+                        float o = out[k];
+                        o += yp; o += yq;
+                        out[k] = o;
+                    }
+                    ty1[i] = p1; ty2[i] = p2; ty1[i + 1] = q1; ty2[i + 1] = q2;
+                }
+                for(; i < tn; i++)
                 {
                     const float a = tc1[i] * tc, b = tc2[i] * tc2_;
                     float u1 = ty1[i], u2 = ty2[i];
@@ -814,6 +950,9 @@ struct ResonatorBank
             if(damp_left > 0 && damp_left < m) m = damp_left;
             const float dc = damp_left > 0 ? damp_c : 1.f, dc2 = dc * dc;
             for(int k = 0; k < m; k++) { outL[k] = 0.f; outR[k] = 0.f; }
+            const bool run = drive || !quiet;          /* a quiet main state is zeros: nothing to run (see quiet) */
+            if(drive) quiet = false;
+            if(run)
             {
                 int j = 0;
                 for(; j + 1 < nb; j += 2)
@@ -836,7 +975,7 @@ struct ResonatorBank
                 }
                 for(int k = 0; k < m; k++) outR[k] = outL[k];          /* what both hear */
             }
-            int jt = 0;
+            int jt = run ? 0 : nt;
             if(!drive) for(; jt + 1 < nt; jt += 2)                    /* in pairs, as the rest */
             {
                 const int i0 = two[jt], i1 = two[jt + 1];
@@ -903,7 +1042,21 @@ struct ResonatorBank
             {
                 const int mt = m < tail_left ? m : tail_left;
                 const float tc = tail_c, tc2_ = tail_c * tail_c;
-                for(int i = 0; i < tn; i++)
+                int i = 0;
+                for(; i + 1 < tn; i += 2)     /* in pairs, as Process */
+                {
+                    const float a0 = tc1[i] * tc, b0 = tc2[i] * tc2_, a1 = tc1[i + 1] * tc, b1 = tc2[i + 1] * tc2_;
+                    float p1 = ty1[i], p2 = ty2[i], q1 = ty1[i + 1], q2 = ty2[i + 1];
+                    for(int k = 0; k < mt; k++)
+                    {
+                        const float yp = a0 * p1 + b0 * p2, yq = a1 * q1 + b1 * q2;
+                        p2 = p1; p1 = yp; q2 = q1; q1 = yq;
+                        float l = outL[k]; l += yp; l += yq; outL[k] = l;
+                        float r = outR[k]; r += yp; r += yq; outR[k] = r;
+                    }
+                    ty1[i] = p1; ty2[i] = p2; ty1[i + 1] = q1; ty2[i + 1] = q2;
+                }
+                for(; i < tn; i++)
                 {
                     const float a = tc1[i] * tc, b = tc2[i] * tc2_;
                     float u1 = ty1[i], u2 = ty2[i];
@@ -1407,6 +1560,36 @@ struct ResonatorVoice
     }
     /* still making sound: a mode ringing, a burst playing or the wash falling */
     bool Active() const { return bank.Ringing() || burst.Playing() || wash.Active(); }
+
+    /* a strike at another note whose voice was built already, fresh, off the
+       audio thread (Engine::ServeStrikePlan): what ResonatorWorld::Build does
+       with keep and strike at a released note on a world with no pickup —
+       the old ring to the tail and its attack choked, the new note's
+       coefficients, stage, attack and wash filters taken from `f`, the wash's
+       state and everything else of this voice's kept. The pickup is the
+       caller's to set after (ResonatorWorld::SetPickup), since it reads the
+       ring this leaves. The callers hold it to exactly that case; the rest
+       builds inline */
+    void TakeStaged(const ResonatorVoice& f, float sr_)
+    {
+        bank.Release(release_ms, sr_, cap > 0 ? cap : ResonatorBank::kMax); burst.Choke(release_ms, sr_);
+        bank.TakeFresh(f.bank, sr_);
+        for(int k = 0; k < ResonatorBank::kMax; k++) { hz[k] = f.hz[k]; zeta[k] = f.zeta[k]; gain[k] = f.gain[k]; phase[k] = f.phase[k]; }
+        param = f.param;
+        burst.damp = 1.f;
+        for(int k = 0; k < 8; k++) stage[k] = f.stage[k];
+        bursts = f.bursts; burst_rate = f.burst_rate; burst_head = f.burst_head; sr = f.sr;
+        body_top = f.body_top; burst_len = f.burst_len; burst_fade = f.burst_fade;
+        /* the wash's filters, levels and falls as Set makes them; its
+           envelopes, filter state and noise carried, as Build carries them */
+        wash.on = f.wash.on; wash.gain_sr = f.wash.gain_sr;
+        for(int k = 0; k < NoiseLayer::kBands; k++)
+        {
+            wash.b0[k] = f.wash.b0[k]; wash.a1[k] = f.wash.a1[k]; wash.a2[k] = f.wash.a2[k];
+            wash.gain[k] = f.wash.gain[k]; wash.level[k] = f.wash.level[k]; wash.fall[k] = f.wash.fall[k];
+        }
+        swing_soft = f.swing_soft; swing_hard = f.swing_hard;
+    }
 };
 
 /* A condensed world (ModalBake tools/export.py), attached where it lies. */
@@ -1639,24 +1822,15 @@ struct ResonatorWorld
     int Loudest(int i, int cap, int* idx) const
     {
         const uint8_t* m = Modes(i);
-        float score[ResonatorBank::kMax]; bool take[ResonatorBank::kMax];
-        for(int k = 0; k < N; k++)
+        float score[ResonatorBank::kMax];
+        const int nn = N < ResonatorBank::kMax ? N : ResonatorBank::kMax;   /* Attach holds N to it; said here so the compiler sees it */
+        for(int k = 0; k < nn; k++)
         {
             uint16_t c; std::memcpy(&c, m + 5 * k, 2);
             const uint8_t d = m[5 * k + 2], l = m[5 * k + 3];
             score[k] = (ver >= 6 && l == 255) ? -1e9f : -0.0575647f * (float)l + 0.1f * (float)d - (ver >= 6 ? c / 6000.0f : c / 1200.0f) * 0.6931472f;
-            take[k] = false;
         }
-        for(int c = 0; c < cap && c < N; c++)
-        {
-            int best = -1;
-            for(int k = 0; k < N; k++) if(!take[k] && (best < 0 || score[k] > score[best])) best = k;
-            if(best < 0 || score[best] <= -1e8f) break;
-            take[best] = true;
-        }
-        int n = 0;
-        for(int k = 0; k < N; k++) if(take[k]) idx[n++] = k;
-        return n;
+        return TopScores(score, nn, cap < nn ? cap : nn, idx, -1e8f);
     }
 
     /* the world at a parameter value, into a voice. A note world (kind 0)
@@ -2043,7 +2217,7 @@ const float wa = 1.f - wb;
            attack faded over the same, and the new note built from silence,
            nothing carried: no pitch shifting, and no 2 ms step to pop */
         const bool released = keep && strike && v.param < 1e8f && std::fabs(param - v.param) > 1e-4f;
-        if(released) { v.bank.Release(v.release_ms, sr); v.burst.Choke(v.release_ms, sr); }
+        if(released) { v.bank.Release(v.release_ms, sr, v.cap > 0 ? v.cap : ResonatorBank::kMax); v.burst.Choke(v.release_ms, sr); }
         /* the pitch change this retune is, for the carry: a note world's
            notes, a body row's none; a first build has nothing to carry */
         const float ratio = (keep && kind != 1 && v.param < 1e8f) ? std::exp2((param - v.param) / 12.f) : 1.f;
@@ -2115,6 +2289,17 @@ const float wa = 1.f - wb;
             else v.wash.Set(la, ta, sr);
         }
         v.swing_soft = st[5]; v.swing_hard = st[6];
+        SetPickup(v, st, sr, keep);
+    }
+
+    /* the pickup of a voice just built — st the stage with the spin's
+       voicing and coil in — keep and a ring still sounding crossing the old
+       coil into the new, as a retune must; Build's last step, and all the
+       staged strike (ResonatorVoice::TakeStaged, Engine::TakePlan) has to do
+       of it on the audio thread, since it is the one part that reads the
+       voice it replaces */
+    void SetPickup(ResonatorVoice& v, const float* st, float sr, bool keep) const
+    {
         /* a voice at rest has nothing to carry: built fresh, so arriving at
            a world is the same as starting in it */
         if(keep && v.pickup.on && v.bank.Ringing())
