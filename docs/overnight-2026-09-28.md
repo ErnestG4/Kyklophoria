@@ -112,3 +112,20 @@ mode at large arguments), and the tails ring on.
   desktop can take it; the rest is the morning's numbers off the CPU line.
   Pages rebuild left for the wrap-up (the strike readout is a page change).
   Next: item 5, the roadmap.
+- 02:40 — item 5. (a) `make armcost` lists the coupled exciters' loops
+  (tools/armloops.py, 07eab17): about 21 instructions a mode a sample against
+  the free bank's 10 — one coupled voice 2.5 % of the block at 12 modes, 10 %
+  at 48; in docs/exciters.md. (b) ContactNoise (6871dc9): the contact's noise
+  follows the contact and cannot stack (the snare chain), exciter_check 9;
+  a noise with its own decay fails it. (c) The Exciter page proposed in
+  docs/exciters.md with four questions (882e6f9) — and the room it needs: AXI
+  SRAM is 99.3 % full, so the exciters on the module want the right engine's
+  unused resonator voices (22 KB; on a resonator only the left engine plays)
+  reclaimed first. Not done tonight: it reshapes how the engine holds voices,
+  and that is a daytime change. (d) Known data issues, checked: ep-vel's top
+  is in tune now (0 off, E4-C6). Its bass reading an octave up turned out,
+  once notecheck could find a layered world's recordings (ModalBake 190946b,
+  also --vel), to be the fits: the recordings read their notes, ours the
+  octave, with the 3rd and 4th harmonics 20-40 dB under the recording's — the
+  pickup not driven hard enough, a refit question. An audit of every layered
+  card world at velocity 0.3 and 0.9 is running (scratchpad velaudit.log).
