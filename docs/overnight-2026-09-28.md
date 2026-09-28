@@ -64,3 +64,11 @@ mode at large arguments), and the tails ring on.
 ## Log
 
 - 01:16 — list written; check-ins at :13 and :43, wrap-up 07:52.
+- 01:40 — item 2 done (cf5204c): the CPU line says "strike N%", the peak of
+  Engine::Strike in the callback, a fourth appended stats word.
+- 02:30 — item 1 done (87b7b84): the staged strike. 114 of 150 strikes in
+  the test take a voice built on the control loop, output bit for bit the
+  inline build. Its test found the late-CV rule dragging a roll's ringing note
+  to the next note (under 30 ms apart): now not while a strike waits, and not
+  until the jump has stood 2 ms. The code put AXI SRAM 1.8 KB over; the world
+  receiver moved to SDRAM (98.99 % now). Firmware 87b7b84.
