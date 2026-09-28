@@ -954,6 +954,17 @@ int main()
         uint32_t tp; const auto tin = play(rw, false, false, t4), tst = play(rw, true, false, tp);
         float d3 = 0.f; for(size_t i = 0; i < tin.size(); i++) d3 = std::fmax(d3, std::fabs(tin[i] - tst[i]));
         CHECK(d3 == 0.f && tp >= 100, "a pickup world (the tine): %u plans taken, output off by %.3g", tp, d3);
+        /* a request posted, then the world changed before the control loop
+           served it: nothing is built from the old world */
+        {
+            Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4);
+            static StrikePlan plan; e.SetStrikePlan(&plan);
+            std::vector<float> z;
+            e.SetF0(196.f); e.HoldPitch(true); e.PlanStrike();
+            e.SetWorld(&rw);
+            const bool built = e.ServeStrikePlan();
+            CHECK(!built && plan.state != 2u, "a request from before the world changed was built (state %u)", plan.state);
+        }
         printf("  the staged strike: %u of 150 strikes took a voice built before them, %u on a pickup world, bit for bit the inline build; stale plans build inline\n", t1, tp);
     }
 

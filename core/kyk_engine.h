@@ -592,7 +592,11 @@ public:
             if(!(s0 & 1u) && rq_seq_ == s0) break;
             k.on = false;
         }
-        if(!k.on || !k.world || !k.world->IsResonate()) return false;
+        /* a request from before the world changed: its world may be gone
+           (a slot reloaded, its region reused), and the strike would refuse
+           the voice anyway. SetWorld runs on this same loop, so rgen_ here
+           is current */
+        if(!k.on || k.gen != rgen_ || k.world != world_ || !k.world || !k.world->IsResonate()) return false;
         if(rplan_->state == 2u && SameStrike(rplan_->key, k)) return false;
         rplan_->state = 1u;
         std::atomic_signal_fence(std::memory_order_seq_cst);
