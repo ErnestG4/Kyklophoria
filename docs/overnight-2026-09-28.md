@@ -186,3 +186,7 @@ mode at large arguments), and the tails ring on.
   loudness over the first second, each triplet scaled together under 0.9.
   The Wurlitzer's hammer versions peak well over the recording's at the same
   loudness — the felt's impulse through the pickup — so listen for the click.
+- 05:15 — check-in. Nothing left on the list that needs neither hardware
+  nor a decision; the project memory carries tonight's findings for the next
+  session. Holding until the 07:52 wrap-up (pages rebuild, clean firmware,
+  the morning summary); check-ins continue.
