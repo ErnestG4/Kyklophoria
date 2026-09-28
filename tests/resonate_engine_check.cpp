@@ -402,7 +402,7 @@ int main()
         printf("  nothing cuts: a reused voice steps %.3g, the count turned down %.3g, the ring itself %.3g\n", at_reuse, at_turn, ringing);
     }
 
-    /* 12. a tune change reaches every voice, one a block, and does not
+    /* 12. a tune change reaches every voice, one every four blocks, and does not
        move a locked ring's pitch. Four voices struck at four notes; decay
        x4; within four blocks every voice's zeta has quartered. And a ring
        locked at C3 with the pitch since moved to G3 stays at C3 through
@@ -417,10 +417,16 @@ int main()
         e.SetTune(Engine::Tune::Decay, 4.f);
         Run(e, y, 1);
         int after1 = 0; for(int v = 0; v < 4; v++) if(std::fabs(e.VoiceAt(v).zeta[0] / z0[v] - 0.25f) < 0.01f) after1++;
+        /* one voice every four blocks since the rebuild cap (a CV at
+           audio rate on the decay was a rebuild every block): the first at
+           once, all four by the thirteenth block, 6.5 ms */
         Run(e, y, 4);
         int after5 = 0; for(int v = 0; v < 4; v++) if(std::fabs(e.VoiceAt(v).zeta[0] / z0[v] - 0.25f) < 0.01f) after5++;
-        CHECK(after1 >= 1 && after1 <= 2, "after one block %d voices had the new decay (one or two: the active one, and one more)", after1);
-        CHECK(after5 == 4, "after five blocks %d of 4 voices had the new decay", after5);
+        Run(e, y, 8);
+        int after13 = 0; for(int v = 0; v < 4; v++) if(std::fabs(e.VoiceAt(v).zeta[0] / z0[v] - 0.25f) < 0.01f) after13++;
+        CHECK(after1 == 1, "after one block %d voices had the new decay (the active one)", after1);
+        CHECK(after5 == 2, "after five blocks %d of 4 voices had the new decay (two: a rebuild every four blocks)", after5);
+        CHECK(after13 == 4, "after thirteen blocks %d of 4 voices had the new decay", after13);
         Engine l; l.Init(&piano, sr); l.gain = 1.f;
         l.SetF0(130.81f); l.Strike(0.7f); Run(l, y, 50);
         l.SetF0(196.f); Run(l, y, 10);
@@ -428,7 +434,7 @@ int main()
         l.SetTune(Engine::Tune::Decay, 2.f); Run(l, y, 2);
         const float after = l.Voice().hz[0];
         CHECK(std::fabs(after - before) < 0.01f, "a tune change moved a locked ring from %.2f to %.2f Hz", before, after);
-        printf("  a tune reaches the voices one a block (%d after one, %d after five) and leaves a locked ring at %.1f Hz\n", after1, after5, after);
+        printf("  a tune reaches the voices one every four blocks (%d after one, %d after five) and leaves a locked ring at %.1f Hz\n", after1, after5, after);
     }
 
     /* 13. Rings' rule for polyphony: the bank's modes shared out, so four
@@ -778,6 +784,37 @@ int main()
         CHECK(tails == 12, "the second steal kept %d tail modes, not the first note's six and the second's six", tails);
         CHECK(across < 8.f * before + 1e-6f, "a steal cut the tails: a step of %.3g where the ring stepped %.3g", across, before);
         printf("  release: 200 ms sets a 200 ms fall; a steal keeps the tails still sounding (%d modes), no step (%.3g against the ring's %.3g)\n", tails, across, before);
+    }
+
+    /* 22d. the rebuilds under playing nobody plans for (Combust: "people
+       smash notes together. roll their fingers across the keys. Call in
+       v/oct with audio rate", and it overran). Four voices, a strike every
+       four milliseconds (the module's shortest hold), the pitch random every
+       block and the decay and coil axes with it: never two voices built in
+       one block, and the rebuilds a second at most two a strike (the strike
+       and its one late-CV retune) plus one every four blocks (500). It was 1 940 a second with the pitch alone —
+       the late-CV rule rebuilding every block for 30 ms after each strike —
+       and two in one block one block in eight with the axes moving */
+    {
+        Engine e; e.Init(&piano, sr); e.gain = 1.f; e.TuneFromControl(true); e.SetPolyphony(4);
+        std::vector<float> y(24);
+        uint32_t rs = 7; auto rnd = [&]() { rs = rs * 1664525u + 1013904223u; return (rs >> 8) / 16777216.f; };
+        float c[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+        int most = 0, strikes = 0; const uint32_t a0 = e.AtCount();
+        const int blocks = 4000;
+        for(int b = 0; b < blocks; b++)
+        {
+            c[2] = rnd(); c[3] = rnd(); e.SetPosition(c, 4);
+            e.SetF0(440.f * std::exp2((36.f + 48.f * rnd() - 69.f) / 12.f));
+            const uint32_t before = e.AtCount();
+            if(b % 8 == 0) { e.Strike(0.9f); strikes++; }
+            e.Process(y.data(), 24);
+            most = std::max(most, (int)(e.AtCount() - before));
+        }
+        const double secs = blocks * 24.0 / sr, per_s = (e.AtCount() - a0) / secs;
+        CHECK(most == 1, "%d voices built in one block under audio-rate v/oct", most);
+        CHECK(per_s <= 2.0 * strikes / secs + 500.0 + 1.0, "%.0f rebuilds a second under audio-rate v/oct at %.0f strikes a second: more than two a strike (the strike and its one late CV) and one every four blocks", per_s, strikes / secs);
+        printf("  audio-rate v/oct with its axes moving and a strike every 4 ms: one build a block at most, %.0f a second (%.0f of them strikes)\n", per_s, strikes / secs);
     }
 
     /* 22c. the position a resonate world reports as heard (Position(), which

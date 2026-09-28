@@ -102,7 +102,7 @@ public:
         rvstruck_[ractive_] = ++rstrikes_;
         rstriking_ = true;
         Retune();          /* the pitch is taken here, locked or not */
-        rstriking_ = false; rsince_ = 0;
+        rstriking_ = false; rsince_ = 0; rlate_ = false;
         /* the strike a little harder the faster the playing, when asked —
            Combust: "the strike velocity gets slightly harder as the strike
            frequency increases... I meant how fast you're playing". The
@@ -299,12 +299,18 @@ public:
            a sequencer whose CV lands after its gate: the note belongs to
            the strike it followed, and a strike that held the old note
            would be the wrong note for as long as it rang */
-        bool move;
+        bool move, late = false;
         if(note == 1e9f) move = true;
         else if(std::fabs(p - note) <= eps) move = false;
         else
         {
-            const bool late = rsince_ < 0.03f * sr_ && std::fabs(p - note) > 0.4f;
+            /* once per strike: a late CV is one step after the gate. At
+               audio-rate v/oct the pitch jumps every block, and this rebuilt
+               the voice every block for 30 ms after each strike — 1 940
+               rebuilds a second at a strike every 4 ms, eight a strike, where
+               the strikes alone are 230 (desktop stress; Combust: "Call in
+               v/oct with audio rate", overruns) */
+            late = !rlate_ && rsince_ < 0.03f * sr_ && std::fabs(p - note) > 0.4f;
             /* driven: something is actually coming in (Process), and no
                strike is waiting — the shell holds a strike for the CV to
                settle, and in those milliseconds the pitch belongs to the
@@ -330,6 +336,17 @@ public:
                 return;
             }
             if(!move && !rvdirty_[ractive_]) return;
+            /* a strike's build is the one this block has; anything else
+               waits a block, the pitch or tune one block late */
+            if(rdid_ && !rstriking_) return;
+            /* and a rebuild that is not a strike — a CV on the body, decay
+               or coil, a driven bank following the pitch, an index world's
+               pot — at most one every four blocks (2 ms): at audio rate each
+               of these was a rebuild every block on top of the strikes. The
+               late CV is the exception, once per strike, and immediate */
+            if(!rstriking_ && !late && rsettle_ < 4) return;
+            if(!rstriking_) rsettle_ = 0;
+            if(late && !rstriking_) rlate_ = true;
             /* a tune change under the lock rebuilds the voice at the note
                it holds, not at wherever the pitch has gone since */
             BuildVoice(move ? p : note, rvoices_[ractive_], true, rstriking_); at_count_++; rdid_ = true;
@@ -345,12 +362,12 @@ public:
            a pot crossing its deadband in the same block cost a second —
            the module reported an overrun about once a note (Combust). The
            other voices wait a block; nobody hears decay do that. */
-        if(rdid_) return;
+        if(rdid_ || rsettle_ < 4) return;
         for(int k = 1; k < kPoly; k++)
         {
             const int v = (ractive_ + k) % kPoly;
             if(!rvdirty_[v]) continue;
-            if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { BuildVoice(rvnote_[v], rvoices_[v], true, false); at_count_++; rdid_ = true; rvdirty_[v] = false; return; }
+            if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { BuildVoice(rvnote_[v], rvoices_[v], true, false); at_count_++; rdid_ = true; rsettle_ = 0; rvdirty_[v] = false; return; }
             rvdirty_[v] = false;              /* silent, or never built: its next strike builds it */
         }
     }
@@ -578,7 +595,11 @@ public:
                 SetTune(Tune::Decay, DecayOf(c_[2]));
                 SetTune(Tune::Coil, CoilOf(c_[3]));
             }
-            rdid_ = false;                 /* one voice built a block at most (see Retune) */
+            /* one voice built a block at most (see Retune): the flag is
+               cleared at the end of the block, not here, so the build a
+               strike did before this Process counts — cleared here, a strike
+               block with a decay or coil CV moving built two voices, one
+               block in eight under a roll (desktop stress, 975 of 8000) */
             /* the bank counts as driven — its pitch following the CV under
                the lock, as a quantiser — only while something is coming in:
                J1 over -54 dBFS with the amount over 1 %, held 100 ms past
@@ -599,6 +620,7 @@ public:
             if(rdriven_ > 0) rdriven_ = rdriven_ > (uint32_t)n ? rdriven_ - (uint32_t)n : 0u;
             Retune();
             if(rbend_ < 64) rbend_++;
+            if(rsettle_ < 64) rsettle_++;
             if(rsince_ < 0xFFFFFFu) rsince_ += (uint32_t)n;
             rdens_ *= 1.f - (float)n / sr_;                   /* the strike count leaks with a one-second time constant */
             float tmp[48], tmpR[48];
@@ -649,6 +671,7 @@ public:
                 }
             }
             exciter_ = nullptr;
+            rdid_ = false;
         }
         /* Cells are normalised to unit RMS, so peak depends on how the
          * harmonics happen to line up. Measured crest factor across a baked
@@ -994,6 +1017,8 @@ private:
     uint32_t       rsince_ = 0xFFFFFFu;  /* samples since the last strike, for the late-CV window */
     int            rbend_ = 64;          /* blocks since the last bend */
     bool           rdid_ = false;        /* a voice was built this block */
+    int            rsettle_ = 64;        /* blocks since the last rebuild that was not a strike */
+    bool           rlate_ = false;       /* the late-CV retune has been taken since the last strike */
     const float*   exciter_ = nullptr;   /* this block's drive, or null */
     float          exgain_ = 0.f;
     uint32_t       rdriven_ = 0;         /* samples the bank still counts as driven: something came in at J1 */
