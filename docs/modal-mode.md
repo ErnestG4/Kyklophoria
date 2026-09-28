@@ -384,6 +384,40 @@ to") — the intune-refused points in the manifests (piano 37 +162 c and 80
 calibration check against the wavetable is the second — and whether a pop
 remains at note-on with one voice.
 
+## Fast playing: what a strike costs, and what keeps it bounded
+
+Combust, 27-28 September: overruns on strikes, "specifically overlapping
+strikes", the Piano at four voices; "sometimes people smash notes together.
+roll their fingers across the keys. Call in v/oct with audio rate". What the
+engine does about it now (docs/overnight-2026-09-28.md has the measurements):
+
+- **The rebuild is off the audio thread.** A strike waits at least 4 ms for
+  its pitch (the module's hold). While it waits the audio callback posts
+  which voice it will need; the control loop's 1 ms poll builds it into a
+  plan (`Engine::PlanStrike`, `ServeStrikePlan`, `StrikePlan` in SDRAM); the
+  strike takes it — the old ring to the tail, the new coefficients copied,
+  the pickup's coil crossed on the audio thread as it always was. Bit for
+  bit the inline build. A strike whose pitch never settled (audio-rate v/oct)
+  strikes at the plan's note. What still builds inline: a repeat at the note
+  ringing (nothing to build), a plan made stale, the family morph, decay or
+  coil moving at audio rate (the tune then differs every block).
+- **One rebuild a block, at most**, the strike's own included; one that is
+  not a strike (a body, decay or coil CV, a driven bank following the pitch)
+  at most every 2 ms; the late-CV retune once a strike, and not while the
+  next strike waits — a roll no longer drags the ringing note to the next.
+- **The tail is the voice's share.** A stolen note's ring and the one before
+  it compete for the voice's twelve modes (at four voices); the loudest keep
+  them. It could grow to all 48 each.
+- **A new note does not run its silent main state** through its attack's lead
+  and fade (up to 460 ms on the Piano's bass).
+- **Over 85 % of the budget**, every tail is brought to its end within 2 ms
+  (`Engine::SetLoad`): the one load that can go without being heard to go.
+- **The CPU line** on the page reads last · avg · max · engine · strike: max
+  is the whole callback, engine the voices, strike the strike itself (its
+  rebuild if it had to build inline). Max near 100 % with engine and strike
+  both low would be something else in the callback; engine high, the voices
+  themselves; strike high, a strike that did not take its plan.
+
 ## Playing it: the bench steps
 
 Written before the first evening; the steps still hold, with what has
