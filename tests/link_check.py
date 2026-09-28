@@ -199,7 +199,7 @@ def stdio_tests():
     ty, seq, r, ok = link.request(0x63)
     last, mx, avg = struct.unpack('<III', r[1:13]); budget = struct.unpack('<I', r[18:22])[0]
     check(r[0] == 0 and budget == 500000 and 0 < last < budget, f'stats last {last} budget {budget}')
-    check(len(r) == 30, f'stats ends with the engine peak and the At() rate ({len(r)} bytes)')
+    check(len(r) == 34, f'stats ends with the engine peak, the At() rate and the strike peak ({len(r)} bytes)')
     body = struct.pack('<fB', 440.0, 4) + struct.pack('<4f', 0.1, 0.2, 0.3, 0.4) + bytes([6]) + struct.pack('<6f', 0.05, 0, 0, 0, 0, 0) + struct.pack('<f', 0.02)
     ty, seq, r, ok = link.request(0x6E, body)
     check(r[0] == 0, 'SET_CONTROL accepted')
@@ -444,6 +444,16 @@ def card_tests():
     check(r[0] == 0, 'reset-phase strikes it')
     ty, seq, r, ok = link.request(0x64, bytes([17, 200]))
     check(r[0] == 0, 'and so does a strike with a velocity')
+    # the strike's own cost in the stats (the overruns come on strikes): a
+    # strike and the stats straight after it; the one-second window can roll
+    # over between the two, so a zero is struck again, each try independent
+    peak = 0
+    for _ in range(3):
+        link.request(0x64, bytes([17, 200]))
+        ty, seq, r, ok = link.request(0x63)
+        peak = struct.unpack('<I', r[30:34])[0] if len(r) >= 34 else 0
+        if peak: break
+    check(peak > 0, f'the stats carry the strike peak ({peak})')
     ty, seq, r, ok = link.request(0x64, bytes([18, 1, 192]))
     check(r[0] == 0, 'a tune (decay x2) is taken')
     ty, seq, r, ok = link.request(0x64, bytes([18, 3, 128]))

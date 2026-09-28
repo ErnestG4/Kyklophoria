@@ -636,6 +636,7 @@ static void AimMorph()
  * buffer and nothing for the audio callback to do (see ModuleSource). */
 static volatile uint32_t gCycLast = 0, gCycMax = 0, gCycSum = 0, gCycN = 0;
 static volatile uint32_t gCycEngMax = 0;         /* the engine's own peak this window */
+static volatile uint32_t gCycStrikeMax = 0;      /* the costliest strike this window, the rebuild with it */
 static volatile uint16_t gOverruns = 0, gDropped = 0;
 static volatile float    gPayloadA = 0.f;
 static volatile uint8_t  gResetPhase = 0;
@@ -863,7 +864,13 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
         else gStrikeHeld = false;
     }
     /* after SetF0: a strike retunes the bank to the pitch it is struck at */
-    if(gStrike >= 0 && !gStrikeHeld) { gEng.Strike((float)gStrike / 255.0f); gStrike = -1; gStrikeFromJack = false; }
+    if(gStrike >= 0 && !gStrikeHeld)
+    {
+        const uint32_t ts = Cycles();
+        gEng.Strike((float)gStrike / 255.0f); gStrike = -1; gStrikeFromJack = false;
+        const uint32_t sc = Cycles() - ts;
+        if(sc > gCycStrikeMax) gCycStrikeMax = sc;
+    }
     gEng.L.HoldPitch(gStrike >= 0);   /* a strike still waiting: the ringing note keeps its pitch meanwhile */
     /* Rings' external exciter: J1's audio driven into the resonate world's
        bank, the amount on the Stereo page's sixth pot, which under a
@@ -979,6 +986,7 @@ struct ModuleSource : ExtSource
         s.cycles_budget = kCycBudget;
         s.engine_max    = gCycEngMaxWin;
         s.at_per_s      = gAtPerS;
+        s.strike_max    = gCycStrikeMaxWin;
     }
     const World*  ResonateWorld() override { const World* w = gEng.L.WorldPtr(); return w && w->IsResonate() ? w : nullptr; }
     const Engine* ResonateEngine() override { return &gEng.L; }
@@ -1364,7 +1372,7 @@ struct ModuleSource : ExtSource
     }
 
     uint32_t gBlobCrc   = 0;
-    uint32_t gCycMaxWin = 0, gCycAvgWin = 0, gCycEngMaxWin = 0, gAtPerS = 0;
+    uint32_t gCycMaxWin = 0, gCycAvgWin = 0, gCycEngMaxWin = 0, gAtPerS = 0, gCycStrikeMaxWin = 0;
 };
 static ModuleSource  gSource;
 static KykExt         gExt(gSource);
@@ -1876,10 +1884,11 @@ static void OnFrame()
         gSource.gCycAvgWin = n ? gCycSum / n : 0;
         gSource.gCycMaxWin = gCycMax;
         gSource.gCycEngMaxWin = gCycEngMax;
+        gSource.gCycStrikeMaxWin = gCycStrikeMax;
         static uint32_t at_last = 0;
         const uint32_t at_now = gEng.L.AtCount();
         gSource.gAtPerS = at_now - at_last; at_last = at_now;
-        gCycSum = 0; gCycN = 0; gCycMax = 0; gCycEngMax = 0;
+        gCycSum = 0; gCycN = 0; gCycMax = 0; gCycEngMax = 0; gCycStrikeMax = 0;
         win_t = now_ms;
     }
     /* J4 follows the world: CV out A under a wavetable world, the trigger

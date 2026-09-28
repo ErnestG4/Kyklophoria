@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <chrono>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -513,9 +514,14 @@ public:
                action that means "now" */
             case kyk::kActResetPhase: eng->L.ResetPhase(); eng->R.ResetPhase(); eng->Strike(0.8f); return 0u;
             case kyk::kActStrike:
+            {
                 if(!world || !world->IsResonate()) return 3u;
+                const auto t0 = std::chrono::steady_clock::now();
                 eng->Strike((len >= 1 ? args[0] : 204u) / 255.0f);
+                const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count();
+                if(ns > stats.strike_max) stats.strike_max = (uint32_t)(ns > 1.0 ? ns : 1.0);   /* the desktop's units are ns, as its block's */
                 return 0u;
+            }
             case kyk::kActTune:
                 if(len < 2 || args[0] > 2) return 2u;
                 if(!world || !world->IsResonate()) return 3u;
@@ -922,7 +928,7 @@ inline int Serve(kyk::StereoEngine& eng, kyk::World& world, std::vector<uint8_t>
         }
         if(Now() - win_t >= 1.0 && acc_n)
         {
-            src.stats.cycles_avg = (uint32_t)(acc_ns / acc_n); acc_ns = 0; acc_n = 0; win_t = Now(); src.stats.cycles_max = 0; src.stats.engine_max = 0;
+            src.stats.cycles_avg = (uint32_t)(acc_ns / acc_n); acc_ns = 0; acc_n = 0; win_t = Now(); src.stats.cycles_max = 0; src.stats.engine_max = 0; src.stats.strike_max = 0;
             static uint32_t at_last = 0; const uint32_t at_now = eng.L.AtCount(); src.stats.at_per_s = at_now - at_last; at_last = at_now;
         }
 

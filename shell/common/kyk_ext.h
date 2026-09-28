@@ -221,6 +221,7 @@ struct ExtStats
 {
     uint32_t cycles_last = 0, cycles_max = 0, cycles_avg = 0;
     uint32_t engine_max = 0, at_per_s = 0;   /* the engine alone, and how many voices were built a second: the two numbers a bench needs to place an overrun */
+    uint32_t strike_max = 0;   /* the costliest strike in the window (Engine::Strike, the voice's rebuild): the third, since the overruns come on strikes */
     uint16_t overruns = 0, dropped = 0;
     uint8_t  render_div = 1;
     uint32_t cycles_budget = 0;   /* cycles per block at the audio rate */
@@ -636,6 +637,7 @@ public:
                    voices built a second, so a bench can say whether an
                    overrun is the engine's block work or a retune */
                 w.U32(s.engine_max); w.U32(s.at_per_s);
+                w.U32(s.strike_max);
                 return;
             }
             case kCmdAction:
