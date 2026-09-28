@@ -355,6 +355,19 @@ struct ResonatorBank
         for(int q = 0; q < kStrikes; q++) damp_bank[q] = false;
     }
 
+    /* the tail brought to its end within ms from where it stands: the damper
+       made steep enough to fall 60 dB in that time, the level carried on —
+       a steeper fall, not a step. Engine::SetLoad, when the audio callback
+       runs out of room: the tails are the one load that can go without
+       being heard to go, since they are going anyway */
+    void Hurry(float ms, float sr)
+    {
+        const int left = (int)(ms * 0.001f * sr);
+        if(tn <= 0 || tail_left <= left || left < 1) return;
+        tail_left = left;
+        tail_c = fastmath::Exp2(-9.9657843f / (float)left);
+    }
+
     void Init()
     {
         n = 0;

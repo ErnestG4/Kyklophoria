@@ -46,6 +46,14 @@ static void Run(Engine& e, std::vector<float>& out, int blocks, int n = 48)
     out.assign((size_t)blocks * n, 0.f);
     for(int b = 0; b < blocks; b++) e.Process(out.data() + (size_t)b * n, n);
 }
+/* as Run, onto the end of what is there: for a check that compares a whole
+   performance, not its last call */
+static void RunOn(Engine& e, std::vector<float>& out, int blocks, int n = 48)
+{
+    const size_t at = out.size();
+    out.resize(at + (size_t)blocks * n, 0.f);
+    for(int b = 0; b < blocks; b++) e.Process(out.data() + at + (size_t)b * n, n);
+}
 
 int main()
 {
@@ -930,7 +938,7 @@ int main()
                 if(staged && b % 20 >= 13 && b % 20 < 19) { e.PlanStrike(); e.ServeStrikePlan(); }
                 if(stale && b % 20 == 19) e.SetF0(440.f * std::exp2((note + 2.f - 69.f) / 12.f));   /* the pitch moves after the plan */
                 if(b % 20 == 19) e.Strike(0.3f + 0.7f * rnd());
-                Run(e, y, 1);
+                RunOn(e, y, 1);
             }
             taken = e.PlansTaken();
             return y;
@@ -947,6 +955,35 @@ int main()
         float d3 = 0.f; for(size_t i = 0; i < tin.size(); i++) d3 = std::fmax(d3, std::fabs(tin[i] - tst[i]));
         CHECK(d3 == 0.f && tp >= 100, "a pickup world (the tine): %u plans taken, output off by %.3g", tp, d3);
         printf("  the staged strike: %u of 150 strikes took a voice built before them, %u on a pickup world, bit for bit the inline build; stale plans build inline\n", t1, tp);
+    }
+
+    /* 22i. the load governor (Engine::SetLoad): four voices of the Piano
+       stolen at a 1 s release, so tails ring; a block reported at 0.9 of the
+       budget brings every tail to its end within 2 ms, with no step — the
+       output's jump across the hurry no bigger than the ring's own — and a
+       block at 0.8 leaves them alone */
+    {
+        auto setup = [&](Engine& e, std::vector<float>& y) {
+            e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4); e.SetReleaseMs(1000.f);
+            const float notes[8] = {48, 55, 60, 64, 50, 57, 62, 66};
+            for(int i = 0; i < 8; i++) { e.SetF0(440.f * std::exp2((notes[i] - 69.f) / 12.f)); e.Strike(0.9f); RunOn(e, y, 20); }
+        };
+        auto tails = [&](const Engine& e) { int t = 0; for(int v = 0; v < 4; v++) { const ResonatorBank& b = e.VoiceAt(v).bank; if(b.tn > 0 && b.tail_left > 0) t += b.tn; } return t; };
+        Engine a; std::vector<float> ya; setup(a, ya);
+        const int before = tails(a);
+        const float ring = std::fabs(ya[ya.size() - 1] - ya[ya.size() - 2]);
+        a.SetLoad(0.8f); RunOn(a, ya, 1);
+        const int calm = tails(a);
+        const size_t at = ya.size();
+        a.SetLoad(0.9f); RunOn(a, ya, 5);
+        const int after = tails(a);
+        float jump = 0.f; for(size_t i = at; i < ya.size(); i++) jump = std::fmax(jump, std::fabs(ya[i] - ya[i - 1]));
+        float ringmax = 0.f; for(size_t i = at - 480; i < at; i++) ringmax = std::fmax(ringmax, std::fabs(ya[i] - ya[i - 1]));
+        CHECK(before > 0 && calm == before, "tails before the load %d, after a block at 0.8 %d (should be untouched)", before, calm);
+        CHECK(after == 0, "a block at 0.9 of the budget left %d tail modes ringing 2.5 ms later", after);
+        CHECK(jump <= 1.5f * ringmax + 1e-6f, "hurrying the tails stepped %.3g where the ring moves %.3g a sample", jump, ringmax);
+        printf("  the load governor: %d tail modes ended within 2 ms at 0.9 of the budget (none at 0.8), no step (%.3g against the ring's %.3g)\n", before, jump, ringmax);
+        (void)ring;
     }
 
     /* 22h. a strike whose pitch never settled (audio-rate v/oct: the module

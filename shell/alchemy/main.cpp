@@ -697,6 +697,9 @@ static void ReadClock(const float* in, size_t n)
 static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::OutputBuffer out, size_t size)
 {
     const uint32_t t0 = Cycles();
+    /* the last block's share of the budget: over 0.85 the engine brings the
+       stolen notes' tails to their end within 2 ms (Engine::SetLoad) */
+    gEng.L.SetLoad((float)gCycLast / (float)kCycBudget);
     if(gTour.Running()) ReadClock(in[1], size);
 
     /* pitch: v/oct on J3 (calibrated volts), coarse octaves, fine semitones.

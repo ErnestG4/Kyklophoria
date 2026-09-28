@@ -206,6 +206,19 @@ public:
     void HoldPitch(bool on) { rhold_ = on; }
     /* how long a stolen voice's last note takes to fall 60 dB (ms, 5..1000;
        ResonatorDefaults::kReleaseMs by default) */
+    /* how much of the audio callback's budget the last block took (0..1+),
+       from the shell. Over 0.85 every voice's tail — a stolen note's ring,
+       fading anyway — is brought to its end within 2 ms (ResonatorBank::
+       Hurry): a load nothing can plan for (Combust: "sometimes people smash
+       notes together. roll their fingers across the keys. Call in v/oct with
+       audio rate") gives up the one thing that can go without a sound */
+    void SetLoad(float frac)
+    {
+        if(!(frac > 0.85f)) return;
+        for(int v = 0; v < kPoly; v++) rvoices_[v].bank.Hurry(2.f, sr_);
+        rhurried_++;
+    }
+    uint32_t Hurried() const { return rhurried_; }   /* blocks the load hurried the tails */
     void SetReleaseMs(float ms)
     {
         rrelease_ms_ = ms < 5.f ? 5.f : ms > 1000.f ? 1000.f : ms;
@@ -1162,7 +1175,8 @@ private:
     int            rsettle_ = 64;        /* blocks since the last rebuild that was not a strike */
     bool           rlate_ = false;       /* the late-CV retune has been taken since the last strike */
     int            rlate_n_ = 0;         /* blocks a late CV has stood, no strike arriving */
-    float          rforce_ = 1e9f;       /* the note a strike takes from the staged voice, 1e9 for none */
+    float          rforce_ = 1e9f;
+    uint32_t       rhurried_ = 0u;       /* the note a strike takes from the staged voice, 1e9 for none */
     const float*   exciter_ = nullptr;   /* this block's drive, or null */
     float          exgain_ = 0.f;
     uint32_t       rdriven_ = 0;         /* samples the bank still counts as driven: something came in at J1 */

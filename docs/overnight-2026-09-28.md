@@ -94,3 +94,15 @@ mode at large arguments), and the tails ring on.
   decay/coil CVs at audio rate (the tune differs every block; those rebuilds
   are one per 2 ms, bounded) — a plan could accept a millisecond-old tune, not
   done. Firmware 9db9a39.
+- 02:06 — in progress, uncommitted: a load governor (Engine::SetLoad; over
+  0.85 of the budget the tails end within 2 ms, ResonatorBank::Hurry; the
+  module passes the last block's share), test 22i. Found while writing it:
+  the tests' Run() overwrites its buffer, so 22e (the staged strike's
+  bit-identity) compared only each performance's last block — RunOn()
+  appends, 22e and 22i use it now. Not yet run: the shell's permission check
+  stopped answering (a transient server fault), so paused for the 02:13
+  check-in. Next: make test, then commit, then rebuild.
+- 02:13 — check-in: the shell's permission check still gives no verdict (six
+  in a row; ten ends the session), so nothing run. Reviewed the uncommitted
+  governor and the RunOn change by reading; they stand as written. Waiting
+  for the 02:43 check-in to run the suite.
