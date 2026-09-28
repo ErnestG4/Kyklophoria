@@ -106,3 +106,9 @@ mode at large arguments), and the tails ring on.
   in a row; ten ends the session), so nothing run. Reviewed the uncommitted
   governor and the RunOn change by reading; they stand as written. Waiting
   for the 02:43 check-in to run the suite.
+- 02:25 — the shell answers again. The governor committed (67ced0c): all
+  green, 22e bit for bit over whole performances, 22i fails without the
+  hurry. Firmware 67ced0c. The strike list (items 1-4) is done as far as the
+  desktop can take it; the rest is the morning's numbers off the CPU line.
+  Pages rebuild left for the wrap-up (the strike readout is a page change).
+  Next: item 5, the roadmap.
