@@ -153,3 +153,8 @@ mode at large arguments), and the tails ring on.
   bit for bit the inline build on seven card worlds — plain, both pickup
   forms (wurli's gap, ep's bell), a string family, a layered grand, the bells —
   over 6000 blocks with body, decay and coil moved (278 of 375 strikes staged).
+- 03:30 — docs/modal-mode.md has a "Fast playing" section: the staged strike,
+  the rebuild limits, the tail share, the governor, how to read the CPU line
+  (98a5d83). And the CPU line now says "N staged/s" (9956cc6): if the strike
+  number stays high in the morning, it tells whether the module took the
+  voices built for its strikes at all. Firmware 9956cc6.
