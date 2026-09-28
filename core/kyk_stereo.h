@@ -297,7 +297,8 @@ public:
     const World* WorldPtr() const { return world_; }
     const Space* SpacePtr() const { return world_ ? world_->SpacePtr() : nullptr; }
 
-    Engine   L, R;
+    Engine        L;
+    EngineT<1>    R;      /* never plays a resonator (L plays, R copies), so one voice, not four */
     Rotation rot;
 
 private:
