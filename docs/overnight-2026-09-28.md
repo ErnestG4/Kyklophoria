@@ -158,3 +158,14 @@ mode at large arguments), and the tails ring on.
   (98a5d83). And the CPU line now says "N staged/s" (9956cc6): if the strike
   number stays high in the morning, it tells whether the module took the
   voices built for its strikes at all. Firmware 9956cc6.
+- 04:05 — the room for the exciters, tried on a side branch (`modal-room`,
+  worktree .wt/room inside the project; `modal` untouched). The engine as a
+  template on its voice count, the right engine one voice: green, goldens
+  identical, the engine 17.5 KB smaller — but the second instantiation
+  compiles the engine's code twice and SRAM falls only 4.8 KB (99.3 -> 98.3
+  %). Measured and committed there (1796376) as the reason not to. The way,
+  for the day: one EngineCore on lent voices (as the morph scratch and the
+  strike plan are lent), Engine a thin subclass owning four so every caller
+  is unchanged, the stereo pair lending L four and R none — about 23 KB, no
+  code twice; 53 voice-array references and 25 kPoly uses to walk, which is
+  a daylight job with the Exciter page decided.
