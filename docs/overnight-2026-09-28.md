@@ -129,3 +129,13 @@ mode at large arguments), and the tails ring on.
   octave, with the 3rd and 4th harmonics 20-40 dB under the recording's — the
   pickup not driven hard enough, a refit question. An audit of every layered
   card world at velocity 0.3 and 0.9 is running (scratchpad velaudit.log).
+- 02:57 — check-in. The audit ran; notecheck now finds every layered
+  world's recordings (ModalBake 32a32c9: Epi's v050 takes, bells' rows a
+  take, piano-iowa-vel fitted as piano-iowa3). Graded on the recordings:
+  marimba and vibraphone clean; piano-iowa-vel's "off" bass is its
+  recordings' own (16 -> 1-2 left, all in the top octave where the detector
+  is unreliable); tine-vel's octave at hard velocity is its recordings' bark;
+  what remains is transposition outside the recorded ranges. The fault in
+  range: ep-vel's bass fits (3rd, 4th harmonics 20-40 dB short) — a refit,
+  for Combust to call. Also (3cbb80f): the staged strike builds nothing from a
+  world changed since the request (it read a world that may be gone; tested).
