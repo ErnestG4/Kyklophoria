@@ -146,3 +146,10 @@ mode at large arguments), and the tails ring on.
   tenth to a third of a width off centre reaches the recordings within 3-6 dB
   over h2-h4. A local optimum; the refit seeded off centre is minutes of GPU
   on ~20 records — written up, not run (the models were called good enough).
+- 03:25 — check-in; validation of tonight's code on real worlds. The three
+  resonator tests clean under ASan + UBSan; the module-like stress (staged,
+  roll and audio-rate v/oct with the axes moving) clean under both on piano,
+  wurli, ep-vel, piano-iowa-vel and guitar-str-vel. And the staged strike is
+  bit for bit the inline build on seven card worlds — plain, both pickup
+  forms (wurli's gap, ep's bell), a string family, a layered grand, the bells —
+  over 6000 blocks with body, decay and coil moved (278 of 375 strikes staged).
