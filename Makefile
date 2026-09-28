@@ -74,6 +74,12 @@ armcost:
 'extern "C" void c_pickup(Pickup* p, float* d, int n){ p->Process(d,n); }\n'\
 'extern "C" void c_burst(BurstPlayer* b, float* d, int n){ b->Process(d,n); }\n'\
 'extern "C" void c_wash(NoiseLayer* w, float* d, int n){ w->Process(d,n); }\n'\
+'#include "kyk_exciter.h"\n'\
+'extern "C" void c_bowed(ResonatorBank* b, float* d, int n, const float* w, Bow* x){ ProcessBowed(*b,d,n,w,*x,48000.f,0.01f); }\n'\
+'extern "C" bool c_struck(ResonatorBank* b, float* d, int n, const float* w, Hammer* x){ return ProcessStruck(*b,d,n,w,*x,48000.f,0.01f); }\n'\
+'extern "C" void c_blown(ResonatorBank* b, float* d, int n, const float* w, Reed* x){ ProcessBlown(*b,d,n,w,*x,50.f); }\n'\
+'extern "C" void c_lipped(ResonatorBank* b, float* d, int n, const float* w, Lips* x){ ProcessLipped(*b,d,n,w,*x,50.f,48000.f); }\n'\
+'extern "C" bool c_plucked(ResonatorBank* b, float* d, int n, const float* w, Pluck* x){ return ProcessPlucked(*b,d,n,w,*x,48000.f,0.01f); }\n'\
 	  > build/arm/probe.cpp
 	@arm-none-eabi-g++ -std=gnu++17 -O3 -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard \
 	  -mthumb -ffp-contract=off -Icore -c build/arm/probe.cpp -o build/arm/probe.o
@@ -81,6 +87,8 @@ armcost:
 	@for f in c_fold c_warp c_ring c_crush c_drop c_resonate c_pickup c_burst c_wash; do \
 	  n=$$(arm-none-eabi-objdump -d build/arm/probe.o | awk -v fn=$$f '$$0 ~ "<"fn">:" {p=1;next} p && /^$$/ {exit} p' | grep -cE "^[[:space:]]+[0-9a-f]+:"); \
 	  printf "    %-8s %3d\n" $$f $$n; done
+	@echo "  the coupled exciters (docs/exciters.md): sample-outer, so the innermost loops are a mode's work a sample:"
+	@python3 tools/armloops.py build/arm/probe.o 'kyk::ResonatorBank::Process(' c_bowed c_struck c_blown c_lipped c_plucked
 
 clean:
 	rm -rf build/host

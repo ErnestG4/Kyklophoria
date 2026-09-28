@@ -95,6 +95,19 @@ bound). So:
 - the budget is measured with `make armcost` before anything reaches the
   module.
 
+Measured, 28 September (`make armcost`, which now lists every loop's body
+through `tools/armloops.py`; instructions as the M7 compiler emits them, not
+cycles): the free bank's paired loop is about 20 instructions a pass, two
+modes a sample, so about 10 a mode. The bowed loop reads the contact in 6 a
+mode and writes the force and runs the recursion in 15, so about 21 a mode a
+sample: twice the free bank, not the 2-3x the desktop showed nor worse. The
+hammer, pluck, reed and lips have the same two loops (16-19 a mode for the
+write, 6 for the read) plus their own force law once a sample. So one coupled
+voice costs about 21 x modes x 24 instructions a block: at 12 modes (a voice's
+share at four voices) about 6 000, 2.5 % of the 240 000-cycle budget; at 48
+(one voice, all the modes) about 24 000, 10 %. One voice coupled at a time is
+affordable at any polyphony; four at once is not the plan.
+
 ## Stages
 
 1. **Desktop prototype, one exciter: the bow** — done, 27 September:
