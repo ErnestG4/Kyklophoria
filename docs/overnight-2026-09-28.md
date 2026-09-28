@@ -158,7 +158,7 @@ mode at large arguments), and the tails ring on.
   (98a5d83). And the CPU line now says "N staged/s" (9956cc6): if the strike
   number stays high in the morning, it tells whether the module took the
   voices built for its strikes at all. Firmware 9956cc6.
-- 04:05 — the room for the exciters, tried on a side branch (`modal-room`,
+- 03:58 — the room for the exciters, tried on a side branch (`modal-room`,
   worktree .wt/room inside the project; `modal` untouched). The engine as a
   template on its voice count, the right engine one voice: green, goldens
   identical, the engine 17.5 KB smaller — but the second instantiation
