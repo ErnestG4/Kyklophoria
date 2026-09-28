@@ -755,6 +755,8 @@ function parseStats(b) {
   s.engineMax = b.length >= 30 ? u32(b, 22) : null; s.atPerS = b.length >= 30 ? u32(b, 26) : null;
   /* and the costliest strike in the window (the voice's rebuild with it), from firmware that says */
   s.strikeMax = b.length >= 34 ? u32(b, 30) : null;
+  /* and the strikes a second that took a voice built before them (the staged strike) */
+  s.stagedPerS = b.length >= 38 ? u32(b, 34) : null;
   return s;
 }
 /* 0x64 ACTION */
