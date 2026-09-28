@@ -9,12 +9,47 @@
  * accessors expose what the web surface draws (docs/hostlink.md).
  */
 #pragma once
+#include <atomic>
 #include "kyk_world.h"
 #include "kyk_resonate.h"
 #include "kyk_fft.h"
 #include "kyk_osc.h"
 
 namespace kyk {
+
+/* A strike's voice, built before the strike, off the audio thread
+   (Engine::PlanStrike, ServeStrikePlan). The module holds every strike at
+   least 4 ms for its pitch to settle; the main loop is idle meanwhile, and
+   the rebuild — At(), its libm and its divides, on the M7 the one thing a
+   strike block has that a plain block does not — was done in the audio
+   callback on top of four voices ringing (Combust: "again I think it's the
+   strikes", overruns on the Piano at four voices). What the voice is built
+   from: */
+struct StrikeKey
+{
+    const World* world;
+    uint32_t     gen;        /* Engine's world generation: a world rebuilt in place keeps its pointer */
+    int          member;
+    float        param;
+    int          cap;
+    float        tune[3];
+    bool         on;
+};
+inline bool SameStrike(const StrikeKey& a, const StrikeKey& b)
+{
+    return a.on && b.on && a.world == b.world && a.gen == b.gen && a.member == b.member && a.param == b.param && a.cap == b.cap
+        && a.tune[0] == b.tune[0] && a.tune[1] == b.tune[1] && a.tune[2] == b.tune[2];
+}
+/* and the room it is built in, lent by the shell (SDRAM on the module, so no
+   default initialisers): the member world, tuned, and the voice built fresh
+   from it. state: 0 empty, 1 being written, 2 ready for a strike keyed so */
+struct StrikePlan
+{
+    ResonatorWorld    w;
+    ResonatorVoice    v;
+    StrikeKey         key;
+    volatile uint32_t state;
+};
 
 class Engine
 {
@@ -52,6 +87,7 @@ public:
         phase_dirty_ = false;
         dirty_ = true;
         for(int v = 0; v < kPoly; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
+        rgen_++; if(rplan_) rplan_->state = 0u;
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rpoly_ = 1; rmember_ = 0; rdriven_ = 0; rhold_ = false;
         for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
@@ -102,7 +138,7 @@ public:
         rvstruck_[ractive_] = ++rstrikes_;
         rstriking_ = true;
         Retune();          /* the pitch is taken here, locked or not */
-        rstriking_ = false; rsince_ = 0; rlate_ = false;
+        rstriking_ = false; rsince_ = 0; rlate_ = false; rlate_n_ = 0;
         /* the strike a little harder the faster the playing, when asked —
            Combust: "the strike velocity gets slightly harder as the strike
            frequency increases... I meant how fast you're playing". The
@@ -244,7 +280,26 @@ public:
                 return;
             }
         }
+        if(strike && keep && TakePlan(param, v)) return;
         Tuned().At(param, v, sr_, keep, strike);
+    }
+    /* the strike takes the staged voice when it is the one it would build:
+       the same world, member, note, cap and tune, a note other than the one
+       ringing (a release — the case the staged voice is built for), and no
+       pickup still on from another member */
+    bool TakePlan(float param, ResonatorVoice& v)
+    {
+        if(!rplan_ || rplan_->state != 2u) return false;
+        std::atomic_signal_fence(std::memory_order_seq_cst);
+        StrikeKey now;
+        now.world = world_; now.gen = rgen_; now.member = rmember_; now.param = param; now.cap = v.cap;
+        for(int i = 0; i < 3; i++) now.tune[i] = rtune_[i];
+        now.on = true;
+        if(!SameStrike(rplan_->key, now)) return false;
+        if(!(v.param < 1e8f && std::fabs(param - v.param) > 1e-4f) || v.pickup.on) return false;
+        v.TakeStaged(rplan_->v, sr_);
+        rplan_->state = 0u; rplan_taken_++;
+        return true;
     }
     /* each mode of a voice as the two listening points hear it (SetListen) */
     void ListenWeights(const ResonatorVoice& v, float* wl, float* wr) const
@@ -310,7 +365,18 @@ public:
                rebuilds a second at a strike every 4 ms, eight a strike, where
                the strikes alone are 230 (desktop stress; Combust: "Call in
                v/oct with audio rate", overruns) */
-            late = !rlate_ && rsince_ < 0.03f * sr_ && std::fabs(p - note) > 0.4f;
+            /* and not while the next strike is waiting (HoldPitch): the pitch
+               then is that strike's. It was taken as the last one's late CV
+               — a roll with the notes under 30 ms apart dragged the note
+               still ringing to the next note, and the next strike found it
+               there and struck the same voice again */
+            /* and not until it has stood for four blocks (2 ms) with no
+               strike arriving: a keyboard's CV leads its gate by a moment,
+               and in that moment the next note's pitch looked like the last
+               one's late CV just the same */
+            const bool maybe = !rlate_ && !rhold_ && rsince_ < 0.03f * sr_ && std::fabs(p - note) > 0.4f;
+            if(!rstriking_) rlate_n_ = maybe ? rlate_n_ + 1 : 0;
+            late = maybe && rlate_n_ >= 4;
             /* driven: something is actually coming in (Process), and no
                strike is waiting — the shell holds a strike for the CV to
                settle, and in those milliseconds the pitch belongs to the
@@ -452,6 +518,60 @@ public:
     bool MemberMorph() const { return rmorph_; }
     /* two members and two voices of room for the morph (trivially
        constructible, so SDRAM will do); null takes it away */
+    /* the staged strike's room (StrikePlan); none lent, every strike builds inline */
+    void SetStrikePlan(StrikePlan* p) { rplan_ = p; if(p) p->state = 0u; }
+    uint32_t PlansTaken() const { return rplan_taken_; }   /* strikes that took a staged voice */
+    /* the audio thread, each block a strike is waiting: say which voice it
+       will build — the note it will take, the member, the cap and the tune
+       as they stand. Cheap; the building is ServeStrikePlan's */
+    void PlanStrike()
+    {
+        if(!rplan_ || !world_ || !world_->IsResonate()) return;
+        StrikeKey k;
+        rstriking_ = true; k.param = ResParam(); rstriking_ = false;
+        k.world = world_; k.gen = rgen_; k.member = ResMemberOf(c_[0]);
+        k.cap = rpoly_ > 1 ? ResonatorBank::kMax / rpoly_ : 0;
+        for(int i = 0; i < 3; i++) k.tune[i] = rtune_[i];
+        k.on = !rmorph_;                      /* a family morph builds from two members: inline */
+        if(SameStrike(k, rq_) || (!k.on && !rq_.on)) return;
+        rq_seq_ = rq_seq_ + 1u;               /* odd: being written */
+        std::atomic_signal_fence(std::memory_order_seq_cst);
+        rq_ = k;
+        std::atomic_signal_fence(std::memory_order_seq_cst);
+        rq_seq_ = rq_seq_ + 1u;
+    }
+    /* the main loop: build the voice the waiting strike asked for, fresh,
+       into the plan, unless it is built already. The audio callback
+       interrupts this whenever it likes; it reads the plan only once state
+       says ready, and the request is read under its sequence number. True
+       if a voice was built */
+    bool ServeStrikePlan()
+    {
+        if(!rplan_) return false;
+        StrikeKey k; k.on = false;
+        for(int tries = 0; tries < 4; tries++)
+        {
+            const uint32_t s0 = rq_seq_;
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+            k = rq_;
+            std::atomic_signal_fence(std::memory_order_seq_cst);
+            if(!(s0 & 1u) && rq_seq_ == s0) break;
+            k.on = false;
+        }
+        if(!k.on || !k.world || !k.world->IsResonate()) return false;
+        if(rplan_->state == 2u && SameStrike(rplan_->key, k)) return false;
+        rplan_->state = 1u;
+        std::atomic_signal_fence(std::memory_order_seq_cst);
+        StrikePlan& pl = *rplan_;
+        if(!k.world->Res().Member(k.member, pl.w) || pl.w.form != 0) { pl.state = 0u; return false; }   /* a pickup's coil crosses from the old voice's: inline */
+        pl.w.voicing = k.tune[0]; pl.w.decay = k.tune[1]; pl.w.coil = k.tune[2];
+        pl.v.Init(); pl.v.cap = k.cap;
+        pl.w.At(k.param, pl.v, sr_, false, false);
+        pl.key = k;
+        std::atomic_signal_fence(std::memory_order_seq_cst);
+        pl.state = 2u;
+        return true;
+    }
     void SetMorphScratch(ResonatorVoice* two_voices, ResonatorWorld* two_worlds) { rscr_ = two_voices; rmw_ = two_worlds; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1; }
 
     /* Position moves that are smaller than this are not worth a re-render.
@@ -810,6 +930,7 @@ public:
          * here, silent, at the current pitch — arriving at a resonate world
          * is the same as starting in it */
         for(int v = 0; v < kPoly; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
+        rgen_++; if(rplan_) rplan_->state = 0u;
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rmember_ = 0;
         for(int v = 0; v < kPoly; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
@@ -1019,6 +1140,7 @@ private:
     bool           rdid_ = false;        /* a voice was built this block */
     int            rsettle_ = 64;        /* blocks since the last rebuild that was not a strike */
     bool           rlate_ = false;       /* the late-CV retune has been taken since the last strike */
+    int            rlate_n_ = 0;         /* blocks a late CV has stood, no strike arriving */
     const float*   exciter_ = nullptr;   /* this block's drive, or null */
     float          exgain_ = 0.f;
     uint32_t       rdriven_ = 0;         /* samples the bank still counts as driven: something came in at J1 */
@@ -1041,6 +1163,13 @@ private:
        pair; on the module it is SDRAM. None lent, no morph */
     ResonatorWorld* rmw_ = nullptr;
     ResonatorVoice* rscr_ = nullptr;
+    /* the staged strike: the plan's room (lent), the request the audio
+       thread posts under its sequence number, the world generation */
+    StrikePlan*    rplan_ = nullptr;
+    StrikeKey      rq_ = {nullptr, 0u, 0, 0.f, 0, {0.f, 0.f, 0.f}, false};
+    volatile uint32_t rq_seq_ = 0u;
+    uint32_t       rgen_ = 0u;
+    uint32_t       rplan_taken_ = 0u;
     const World*   rmw_for_[2] = {nullptr, nullptr};
     int            rmw_m_[2] = {-1, -1};
 

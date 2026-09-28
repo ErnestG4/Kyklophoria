@@ -817,6 +817,88 @@ int main()
         printf("  audio-rate v/oct with its axes moving and a strike every 4 ms: one build a block at most, %.0f a second (%.0f of them strikes)\n", per_s, strikes / secs);
     }
 
+    /* 22f. a roll faster than the late-CV window: C3 struck, and 10 ms later
+       the pitch at E3 with the next strike waiting (HoldPitch, as the module
+       holds every strike for its CV). The C3 keeps ringing at C3 on its
+       voice and the E3 takes another. The late-CV rule took the E3 as the
+       C3's late CV — the ringing note dragged to E3, and the strike then
+       found E3 there and struck that voice again */
+    {
+        Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4);
+        std::vector<float> y;
+        e.SetF0(130.81f); e.Strike(0.8f); Run(e, y, 12);
+        int cv = -1; for(int v = 0; v < 4; v++) if(std::fabs(e.VoiceAt(v).param - 48.f) < 0.01f) cv = v;
+        e.HoldPitch(true); e.SetF0(164.81f); Run(e, y, 8);
+        const float c3 = cv >= 0 ? e.VoiceAt(cv).param : -1.f;
+        e.Strike(0.8f); e.HoldPitch(false); Run(e, y, 4);
+        int at_c3 = 0, at_e3 = 0;
+        for(int v = 0; v < 4; v++) { if(std::fabs(e.VoiceAt(v).param - 48.f) < 0.01f) at_c3++; if(std::fabs(e.VoiceAt(v).param - 52.f) < 0.01f) at_e3++; }
+        CHECK(std::fabs(c3 - 48.f) < 0.01f && at_c3 == 1 && at_e3 == 1, "a roll 10 ms apart: the C3's voice went to note %.2f while the E3 waited; %d voices at C3, %d at E3", c3, at_c3, at_e3);
+        /* the CV a block ahead of the gate, as a keyboard's: the pitch at E3
+           a millisecond before the strike is waiting — still the E3's */
+        {
+            Engine f; f.Init(&piano, sr); f.gain = 1.f; f.SetPolyphony(4);
+            std::vector<float> z;
+            f.SetF0(130.81f); f.Strike(0.8f); Run(f, z, 12);
+            int fv = -1; for(int v = 0; v < 4; v++) if(std::fabs(f.VoiceAt(v).param - 48.f) < 0.01f) fv = v;
+            f.SetF0(164.81f); Run(f, z, 2);                            /* the CV first */
+            f.HoldPitch(true); Run(f, z, 8); f.Strike(0.8f); f.HoldPitch(false); Run(f, z, 4);
+            const float lead = fv >= 0 ? f.VoiceAt(fv).param : -1.f;
+            CHECK(std::fabs(lead - 48.f) < 0.01f, "the CV a millisecond ahead of the gate dragged the ringing C3 to note %.2f", lead);
+            /* and a CV that is late, with no strike after it, is still taken */
+            Engine g; g.Init(&piano, sr); g.gain = 1.f; g.SetPolyphony(4);
+            g.SetF0(130.81f); g.Strike(0.8f); Run(g, z, 4);
+            g.SetF0(164.81f); Run(g, z, 8);
+            CHECK(std::fabs(g.Voice().param - 52.f) < 0.01f, "a late CV with no strike after it was not taken: the voice is at %.2f", g.Voice().param);
+        }
+        printf("  a roll under the late-CV window: the ringing note keeps its pitch while the next strike waits, and the next takes its own voice\n");
+    }
+
+    /* 22e. the staged strike: the voice a waiting strike will need built
+       before it, off the audio thread (PlanStrike, ServeStrikePlan), and the
+       strike only taking it. Two engines play the same performance — four
+       voices, notes from all over, a strike every 20 blocks, the decay moved
+       twice, a strike at the note already ringing now and then — one building
+       every voice inline, one served a plan before each strike: the output
+       bit for bit the same, and the plan taken on the strikes it is for (at
+       another note). A plan made stale by the pitch moving after it was built
+       is refused; a pickup world (the fixture tine) never takes one */
+    {
+        auto play = [&](const World& w, bool staged, bool stale, uint32_t& taken) {
+            Engine e; e.Init(&w, sr); e.gain = 1.f; e.SetPolyphony(4);
+            static StrikePlan plan;
+            if(staged) e.SetStrikePlan(&plan);
+            std::vector<float> y;
+            uint32_t rs = 11; auto rnd = [&]() { rs = rs * 1664525u + 1013904223u; return (rs >> 8) / 16777216.f; };
+            float note = 60.f;
+            for(int b = 0; b < 3000; b++)
+            {
+                if(b == 1000) e.SetTune(Engine::Tune::Decay, 2.f);
+                if(b == 2000) e.SetTune(Engine::Tune::Decay, 0.5f);
+                if(b % 20 == 12) { if(rnd() > 0.15f) note = (float)(36 + (int)(48 * rnd())); e.SetF0(440.f * std::exp2((note - 69.f) / 12.f)); }
+                e.HoldPitch(b % 20 >= 12);   /* the strike waiting from the pitch change on, as the module holds it */
+                if(staged && b % 20 >= 13 && b % 20 < 19) { e.PlanStrike(); e.ServeStrikePlan(); }
+                if(stale && b % 20 == 19) e.SetF0(440.f * std::exp2((note + 2.f - 69.f) / 12.f));   /* the pitch moves after the plan */
+                if(b % 20 == 19) e.Strike(0.3f + 0.7f * rnd());
+                Run(e, y, 1);
+            }
+            taken = e.PlansTaken();
+            return y;
+        };
+        uint32_t t0, t1, t2, t3, t4;
+        const auto inl = play(piano, false, false, t0), stg = play(piano, true, false, t1);
+        float d = 0.f; for(size_t i = 0; i < inl.size(); i++) d = std::fmax(d, std::fabs(inl[i] - stg[i]));
+        CHECK(d == 0.f, "a staged strike differs from one built inline by %.3g", d);
+        CHECK(t1 >= 100, "only %u of 150 strikes took the staged voice", t1);
+        const auto inl2 = play(piano, false, true, t2), stl = play(piano, true, true, t3);
+        float d2 = 0.f; for(size_t i = 0; i < inl2.size(); i++) d2 = std::fmax(d2, std::fabs(inl2[i] - stl[i]));
+        CHECK(d2 == 0.f && t3 == 0, "a stale plan: %u taken, output off by %.3g", t3, d2);
+        uint32_t tp; const auto tin = play(rw, false, false, t4), tst = play(rw, true, false, tp);
+        float d3 = 0.f; for(size_t i = 0; i < tin.size(); i++) d3 = std::fmax(d3, std::fabs(tin[i] - tst[i]));
+        CHECK(d3 == 0.f && tp == 0, "a pickup world: %u plans taken, output off by %.3g", tp, d3);
+        printf("  the staged strike: %u of 150 strikes took a voice built before them, bit for bit the inline build; stale plans and a pickup world build inline\n", t1);
+    }
+
     /* 22c. the position a resonate world reports as heard (Position(), which
        telemetry sends as posL and the page's model sliders follow) moves with
        the axes. The skipped render was the only thing that folded it, so it

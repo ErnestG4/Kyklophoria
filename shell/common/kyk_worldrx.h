@@ -44,9 +44,12 @@ public:
     void           Reset() { have_ = 0; total_ = 0; done_ = false; }
 
 private:
+    /* no default initialisers: the module keeps this in SDRAM, which is not
+       up until hw.Init(), so the owner calls Reset() first (or value-
+       initialises it, {}) */
     uint8_t  buf_[kUserBlobMax];
-    uint32_t have_ = 0, total_ = 0;
-    bool     done_ = false;
+    uint32_t have_, total_;
+    bool     done_;
 };
 
 } // namespace kyk

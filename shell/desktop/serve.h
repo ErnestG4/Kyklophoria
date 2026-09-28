@@ -210,7 +210,7 @@ public:
     float                    tourGlide = 1.f;
     uint32_t                 tourBlock = 0u;
 
-    kyk::WorldReceiver rx;
+    kyk::WorldReceiver rx{};
     /* The same library the module keeps, so the suite can drive it. Blobs, not
        expanded Worlds, for the reason in kyk_ext.h. */
     std::vector<uint8_t> slotBlob[kyk::kSlotCount];

@@ -295,9 +295,14 @@ static volatile uint8_t gWorldReq = 0xFFu;   /* 0xFF: nothing pending */
  * loop; the parse and the swap happen in ServeWorldRequest with the same
  * double buffer and barrier a built-in world switch uses, because the audio
  * thread is reading the live one throughout. */
-/* AXI SRAM, not DTCM. It is nearly seven kilobytes that the audio path never
- * touches — only a transfer does — and DTCM is the scarcest memory here. */
-static WorldReceiver KYK_AXI gRx;
+/* SDRAM: nearly seven kilobytes that the audio path never touches — only a
+ * transfer does. It was AXI SRAM, where the code runs too, until the staged
+ * strike's code needed the room (28 September: 1.8 KB over); a transfer's
+ * bytes are copied once and parsed once, and SDRAM does that as well. Reset
+ * after hw.Init(), as everything in SDRAM is. */
+static WorldReceiver KYK_SDRAM gRx;
+static_assert(std::is_trivially_default_constructible<WorldReceiver>::value,
+              "gRx is in SDRAM and must not be constructed before hw.Init()");
 /* The worlds you have loaded, as blobs.
  *
  * A World is 7 KB and has to live in DTCM or AXI, where there are about
@@ -353,6 +358,12 @@ static ResonatorVoice KYK_SDRAM gMorphVoices[2];
 static ResonatorWorld KYK_SDRAM gMorphWorlds[2];
 static_assert(std::is_trivially_default_constructible<ResonatorVoice>::value && std::is_trivially_default_constructible<ResonatorWorld>::value,
               "the morph's room is in SDRAM and must not be constructed before hw.Init()");
+/* the staged strike's room (Engine::SetStrikePlan): the voice a waiting
+   strike will need, built on the control loop (OnPoll) so the strike in the
+   audio callback only takes it */
+static StrikePlan KYK_SDRAM gStrikePlan;
+static_assert(std::is_trivially_default_constructible<StrikePlan>::value,
+              "the strike plan is in SDRAM and must not be constructed before hw.Init()");
 static uint8_t* ResBase(int r) { return r < kResRegionsBig ? gResArena[r] : gResSmall[r - kResRegionsBig]; }
 struct ResCapTable { uint32_t cap[kResRegions]; };
 static constexpr ResCapTable MakeResCaps() { ResCapTable t{}; for(int r = 0; r < kResRegions; r++) t.cap[r] = r < kResRegionsBig ? kResRegionBytes : kResSmallBytes; return t; }
@@ -863,6 +874,9 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
         }
         else gStrikeHeld = false;
     }
+    /* a strike still waiting says which voice it will build, so the control
+       loop can build it meanwhile (Engine::PlanStrike, ServeStrikePlan) */
+    if(gStrike >= 0 && gStrikeHeld) gEng.L.PlanStrike();
     /* after SetF0: a strike retunes the bank to the pitch it is struck at */
     if(gStrike >= 0 && !gStrikeHeld)
     {
@@ -1860,6 +1874,11 @@ static void TourService()
    the way into Settings does not flip it. */
 static void OnPoll(uint32_t t_ms)
 {
+    /* the voice the waiting strike asked for, built here and not in the
+       audio callback: At() is what a strike block has that a plain block
+       has not, and every strike waits 4 ms or more for its pitch — four of
+       these polls. A world changes on this loop too, never under it */
+    gEng.L.ServeStrikePlan();
     const World* lw = gEng.L.WorldPtr();
     if(!lw || !lw->IsResonate() || settings.IsActive()) return;
     auto& b2 = hw.buttons[kButtonB2]; auto& b3 = hw.buttons[kButtonB3];
@@ -1907,6 +1926,8 @@ static void OnFrame()
 int main()
 {
     hw.Init(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ, kEngineBlockSamples, true /* 480 MHz */);
+    gRx.Reset();          /* SDRAM, up from here: nothing in it has a constructor */
+    gStrikePlan.state = 0u;
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
@@ -1919,6 +1940,7 @@ int main()
     hw.j4.EnableCvOutput();                 /* CV out A, until a resonate world takes the jack as its trigger */
     gEng.TuneFromControl(true);             /* the spin is jacks and pots here, not the page */
     gEng.L.SetMorphScratch(gMorphVoices, gMorphWorlds);   /* the resonator is L's; R copies it */
+    gEng.L.SetStrikePlan(&gStrikePlan);
 
     settings.UseBrightness();
     settings.UsePresets(presets);

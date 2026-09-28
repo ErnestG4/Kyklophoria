@@ -543,6 +543,27 @@ struct ResonatorBank
         if(!keep) for(int q = 0; q < kStrikes; q++) { ramp_len[q] = 0.003f * sr; ramp_lead[q] = 0.f; ramping[q] = false; }
     }
 
+    /* what Set(..., keep = false) leaves, taken from a bank Set fresh with
+       the same modes and rate: the coefficients copied rather than worked
+       out, and the state as Set leaves it — silent, no strike ramping. The
+       staged strike (Engine::ServeStrikePlan) builds the new note off the
+       audio thread and this is all the strike then does of Set: no SinCos,
+       no exp, no divide. Bit for bit what Set writes (resonate_engine_check
+       holds it to that) */
+    void TakeFresh(const ResonatorBank& f, float sr)
+    {
+        n = f.n;
+        for(int i = 0; i < n; i++)
+        {
+            c1[i] = f.c1[i]; c2[i] = f.c2[i];
+            wq[i] = f.wq[i]; cwq[i] = f.cwq[i]; swq[i] = f.swq[i]; rq[i] = f.rq[i]; lrq[i] = f.lrq[i];
+            p1[i] = f.p1[i]; p2[i] = f.p2[i]; g[i] = f.g[i];
+            y1[i] = y2[i] = 0.f;
+            for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f;
+        }
+        for(int q = 0; q < kStrikes; q++) { ramp_len[q] = 0.003f * sr; ramp_lead[q] = 0.f; ramping[q] = false; }
+    }
+
     /* the hammer: the strike bank set to the given swing at every mode's
        fitted phase. A
        strike while a strike is still ramping folds the earlier one into the
@@ -1508,6 +1529,35 @@ struct ResonatorVoice
     }
     /* still making sound: a mode ringing, a burst playing or the wash falling */
     bool Active() const { return bank.Ringing() || burst.Playing() || wash.Active(); }
+
+    /* a strike at another note whose voice was built already, fresh, off the
+       audio thread (Engine::ServeStrikePlan): what ResonatorWorld::Build does
+       with keep and strike at a released note on a world with no pickup —
+       the old ring to the tail and its attack choked, the new note's
+       coefficients, stage, attack and wash filters taken from `f`, the wash's
+       state and everything else of this voice's kept. The callers hold it to
+       exactly that case; the rest builds inline */
+    void TakeStaged(const ResonatorVoice& f, float sr_)
+    {
+        bank.Release(release_ms, sr_, cap > 0 ? cap : ResonatorBank::kMax); burst.Choke(release_ms, sr_);
+        bank.TakeFresh(f.bank, sr_);
+        for(int k = 0; k < ResonatorBank::kMax; k++) { hz[k] = f.hz[k]; zeta[k] = f.zeta[k]; gain[k] = f.gain[k]; phase[k] = f.phase[k]; }
+        param = f.param;
+        burst.damp = 1.f;
+        for(int k = 0; k < 8; k++) stage[k] = f.stage[k];
+        bursts = f.bursts; burst_rate = f.burst_rate; burst_head = f.burst_head; sr = f.sr;
+        body_top = f.body_top; burst_len = f.burst_len; burst_fade = f.burst_fade;
+        /* the wash's filters, levels and falls as Set makes them; its
+           envelopes, filter state and noise carried, as Build carries them */
+        wash.on = f.wash.on; wash.gain_sr = f.wash.gain_sr;
+        for(int k = 0; k < NoiseLayer::kBands; k++)
+        {
+            wash.b0[k] = f.wash.b0[k]; wash.a1[k] = f.wash.a1[k]; wash.a2[k] = f.wash.a2[k];
+            wash.gain[k] = f.wash.gain[k]; wash.level[k] = f.wash.level[k]; wash.fall[k] = f.wash.fall[k];
+        }
+        swing_soft = f.swing_soft; swing_hard = f.swing_hard;
+        pickup.on = false;
+    }
 };
 
 /* A condensed world (ModalBake tools/export.py), attached where it lies. */
