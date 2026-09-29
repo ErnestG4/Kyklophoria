@@ -115,3 +115,10 @@ aa9e48d, with a brake on any runaway voice).
   world through it is silence. One consequence to know: a wavetable world
   sent to the modal firmware now plays silence.
 - 02:53 — check-in. iowa4 at note 66 of 108; waiting on it, then its level gate.
+- 03:08 — iowa4 **refused again, but closer**: 54 of 830 (raw, unsmoothed,
+  28). What's left: a C2 whose search found a corner that is no hammer (K
+  4.4e13, mu 30, 0.017-29.6 m/s) and ran to 15-19x struck again, and the
+  smoothing undoing some of the onset term's work. Fixed: excfit searches
+  only a hammer's ranges (ModalBake c3f8eea), and the engine holds any
+  stored hammer to them, so a card baked earlier is safe too (6d92e44).
+  iowa5 launched 03:09, gating both the smoothed and raw bakes.
