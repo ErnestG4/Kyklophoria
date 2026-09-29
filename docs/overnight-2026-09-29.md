@@ -44,12 +44,29 @@ aa9e48d, with a brake on any runaway voice).
 
 ## For the morning (needs Combust)
 
-(Drafted at 03:58, refreshed at the end.)
+(Final, 07:55. Firmware built at 423144c, clean stamps:
+`shell/alchemy/build-modal/kyklophoria-modal.bin` and
+`build-wavetable/kyklophoria-wavetable.bin`. Pages branch rebuilt, 16156fc.
+Nothing pushed: `git push -f origin pages` publishes it, and refresh the
+`modalbake` mirror branch (`git fetch -q ../ModalBake bake:modalbake`)
+before any push of Kyklophoria.)
+
+**Checked for level before being offered.** Every level check compares
+against the recorded attack; a struck note peaks under 1.
+- Both cards: `exclevel` strikes every trained note at every velocity
+  0.1-1.0 and re-strikes it while it rings (0 over 2x). It also plays fast:
+  2000 random strikes over four voices, 5-40 ms apart (trained 2.47,
+  recorded 2.39).
+- Bow, reed and lips: 216 corners of every setting on two worlds (under
+  0.8, the limiter's); fast playing over four voices, every type (1.03);
+  lifted and put back (a step of x1.24 at most); J1 at full scale, noise
+  and a sine on the note, C2 to C6 (0.80 and 1.12).
+- The engine: a near-rigid felt struck again, a hammer with no hammer's
+  numbers struck again (both under 1).
 
 **To try, in this order:**
 
-1. **The modal firmware** (`shell/alchemy`, `make MODE=modal`, build at the
-   end) with the card **ModalBake/out/card-exc5/kyklophoria**, the
+1. **The modal firmware** (`build-modal/kyklophoria-modal.bin`) with the card **ModalBake/out/card-exc5/kyklophoria**, the
    level-safe trained grand. Not `card-exc` from yesterday: its trained
    world still fails the level gate through tonight's engine (24 strikes
    over, fast playing 4.06). If you did load yesterday's card, the engine
@@ -72,7 +89,11 @@ aa9e48d, with a brake on any runaway voice).
    reed's impedance or the lip's Q. Demos are in `build/demos/`
    (bow/reed/lips phrases). J1 now plays *into* a bow or reed as a force.
 3. **Both pages**: `?page=wavetable` and `?page=modal` (or `modal.html` /
-   `wavetable.html`). The pages branch is rebuilt at the end.
+   `wavetable.html`); each shows only its firmware's controls, with a banner
+   if the connected module is the other firmware.
+4. **The wavetable firmware** is unchanged from what you were testing,
+   apart from shared-core fixes that don't touch its sound (its goldens are
+   bit for bit).
 
 **Decisions:**
 
@@ -212,3 +233,4 @@ aa9e48d, with a brake on any runaway voice).
 - 06:21 — check-in. Holding; nothing mid-way.
 - 06:51 — check-in. Holding; nothing mid-way.
 - 07:21 — check-in. Holding; nothing mid-way.
+- 07:55 — wrap-up: check-in job deleted; make test green (with the web selftest); both firmwares built at 423144c with clean stamps (modal SRAM 94.86%, wavetable 82.68%); pages branch rebuilt (16156fc, not pushed); For the morning final.
