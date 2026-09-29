@@ -1,0 +1,6 @@
+30 out/fit/piano-iowa3/piano232-target.wav:pp out/fit/piano-iowa3/piano146-target.wav:mf out/fit/piano-iowa3/piano060-target.wav:ff
+40 out/fit/piano-iowa3/piano226-target.wav:pp out/fit/piano-iowa3/piano140-target.wav:mf out/fit/piano-iowa3/piano054-target.wav:ff
+60 out/fit/piano-iowa3/piano206-target.wav:pp out/fit/piano-iowa3/piano120-target.wav:mf out/fit/piano-iowa3/piano034-target.wav:ff
+74 out/fit/piano-iowa3/piano222-target.wav:pp out/fit/piano-iowa3/piano136-target.wav:mf out/fit/piano-iowa3/piano050-target.wav:ff
+86 out/fit/piano-iowa3/piano223-target.wav:pp out/fit/piano-iowa3/piano137-target.wav:mf out/fit/piano-iowa3/piano051-target.wav:ff
+96 out/fit/piano-iowa3/piano209-target.wav:pp out/fit/piano-iowa3/piano037-target.wav:ff

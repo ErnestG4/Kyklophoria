@@ -429,8 +429,13 @@ int main(int argc, char** argv)
            K 4.4e13, mu 30, speeds 0.017 to 29.6 m/s and levels from 2225 to
            0.0077 — and struck again while ringing it ran to 15-19x the
            recording (iowa4, exclevel) */
+        /* the felt's exponent's floor (EXCFIT_ALPHA_MIN, 1.5 by default): half
+           the grand sat on 1.5, a near-linear felt that gives a pp the same
+           sharp edge as an ff — the pp's first 3 ms 8.9 dB over the take's
+           where the ff's matched (iowa5). A real felt is 2.5-3.5 */
+        static const double amin = std::getenv("EXCFIT_ALPHA_MIN") ? std::atof(std::getenv("EXCFIT_ALPHA_MIN")) : 1.5;
         auto clampv = [](double* v) { v[0] = std::min(std::log(1e11), std::max(std::log(1e6), v[0]));
-                                   v[1] = std::min(4.0, std::max(1.5, v[1])); v[2] = std::min(std::log(0.015), std::max(std::log(0.005), v[2])); for(int i = 4; i < 7; i++) v[i] = std::min(std::log(8.0), std::max(std::log(0.1), v[i]));
+                                   v[1] = std::min(4.0, std::max(amin, v[1])); v[2] = std::min(std::log(0.015), std::max(std::log(0.005), v[2])); for(int i = 4; i < 7; i++) v[i] = std::min(std::log(8.0), std::max(std::log(0.1), v[i]));
                                    v[8] = std::min(std::log(16000.0), std::max(std::log(100.0), v[8]));
                                    v[9] = std::min(std::log(5.0), std::max(std::log(1e-4), v[9]));
                                    v[10] = std::min(std::log(0.05), std::max(std::log(0.001), v[10])); };
