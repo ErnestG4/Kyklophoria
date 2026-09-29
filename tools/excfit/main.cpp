@@ -213,6 +213,7 @@ static Params FromVec(const double* v) { Params p; p.lk = v[0]; p.alpha = v[1]; 
 /* one layer struck by the hammer, kSec long: the voice's modes from rest,
    driven through the coupled loop with EngineCore::StrikeCoupled's weights
    (each mode's unit-strike gain over the loudest; position at the centre) */
+static int g_contact = 0;                     /* the last render's contact, in samples */
 static std::vector<float> RenderHammer(const ResonatorVoice& v0, const Params& p, int layer, int sr, float* wout = nullptr, bool raw = false)
 {
     static ResonatorVoice v; v = v0;
@@ -298,6 +299,7 @@ static std::vector<float> RenderHammer(const ResonatorVoice& v0, const Params& p
     std::vector<float> y(n, 0.f);
     ContactNoise cn; cn.Init((float)sr, (float)std::exp(p.lnfc), 0.7f, (float)std::exp(p.lnoise));
     ProcessStruck(b, y.data(), n, w, h, (float)sr, 0.01f, &cn);
+    g_contact = h.contact;
     if(v.pickup.on) v.pickup.Process(y.data(), n);
     if(raw) return y;                          /* the hammer's own units, as the module's contact runs */
     const float g = (float)std::exp(p.lgain);
@@ -386,7 +388,29 @@ int main(int argc, char** argv)
     static ResonatorVoice v0; v0.Init(); v0.cap = 0; R.At(midi, v0, (float)sr);
     std::printf("%s at %.0f: %d modes, %d takes at %d Hz\n", argv[1], midi, v0.bank.n, (int)takes.size(), sr);
 
-    auto total = [&](const Params& p) { double l = 0; for(size_t i = 0; i < takes.size(); i++) l += Loss(RenderHammer(v0, p, (int)i, sr), takes[i], sr); return l / takes.size(); };
+    /* the contact no shorter than a hammer's: 1.5 ms at pp, 1 at mf, 0.5
+       at ff, less above C6 as sqrt(1046/f0). The trained grand's were far
+       under — C3's ff two samples (0.04 ms), its pp 0.42 ms, C4's ff 0.23
+       ms, where a grand's hammer stays some milliseconds on the string in
+       the bass and middle — and a contact that short is an impulse: the
+       spectrum came right through the weights, the first milliseconds kept
+       the click (the pp's 3 ms 8.9 dB over the take's, iowa5). Short of the
+       floor costs its shortfall in e-folds, one a fold. Off unless
+       EXCFIT_CONTACT=1: tried on six notes it made every contact a
+       hammer's (1.7-4 ms at pp, 0.5-1.8 at ff) but the pop no better, and
+       four strikes over the level gate — the pp's "pop" had been mostly
+       the take's quiet precursor, which the onset at 3% of the peak caught
+       (at 10%, the level-safe card is within +/-2 dB of the takes) */
+    const double f0n = 440.0 * std::pow(2.0, (midi - 69.0) / 12.0);
+    const double cscale = std::min(1.0, std::sqrt(1046.5 / f0n));
+    const bool cfloor = std::getenv("EXCFIT_CONTACT") && std::atof(std::getenv("EXCFIT_CONTACT")) != 0.0;
+    auto contact_cost = [&](const Target& t) {
+        if(!cfloor) return 0.0;
+        const double ms = (t.layer == "pp" ? 1.5 : t.layer == "ff" ? 0.5 : 1.0) * cscale;
+        const double got = 1000.0 * g_contact / sr;
+        return got >= ms ? 0.0 : std::log(ms / std::max(got, 0.01));          /* an e-fold short costs as a spectrum an e-fold out */
+    };
+    auto total = [&](const Params& p) { double l = 0; for(size_t i = 0; i < takes.size(); i++) { l += Loss(RenderHammer(v0, p, (int)i, sr), takes[i], sr); l += contact_cost(takes[i]); } return l / takes.size(); };
 
     /* Nelder-Mead from a spread of starts; the best kept */
     std::mt19937 rng(7);
