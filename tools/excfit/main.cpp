@@ -414,12 +414,12 @@ int main(int argc, char** argv)
         for(int L = 0; L < 3; L++)
         {
             int ti = -1; for(size_t i = 0; i < takes.size(); i++) if(takes[i].layer == names[L]) ti = (int)i;
-            /* a layer with no take: its speed from its neighbours in logs */
-            Params q = best;
-            if(ti < 0) { const int a = L == 0 ? 1 : L - 1; q.lspeed[0] = best.lspeed[a < (int)takes.size() ? a : 0]; ti = -1; }
-            const int li = ti >= 0 ? ti : 0;
-            speed[L] = std::exp(ti >= 0 ? best.lspeed[ti] : q.lspeed[0]);
-            const auto yh = RenderHammer(v0, best, li, sr, w, true);
+            /* a layer with no take: its speed the mean, in logs, of the
+               layers there are — the runtime interpolates in logs anyway */
+            Params q = best; int li = ti;
+            if(ti < 0) { double m = 0; for(size_t i = 0; i < takes.size(); i++) m += best.lspeed[i]; q.lspeed[0] = m / (takes.size() ? takes.size() : 1); li = 0; }
+            speed[L] = std::exp(q.lspeed[li]);
+            const auto yh = RenderHammer(v0, q, li, sr, w, true);
             const auto yr = RenderRecorded(v0, vels[L], sr);
             const double rh = Rms(yh), rr = Rms(yr);
             gain[L] = rh > 0 ? rr / rh : 1.0;
