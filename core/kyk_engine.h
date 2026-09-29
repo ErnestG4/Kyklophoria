@@ -87,8 +87,11 @@ struct ResonatorVoices
    the string when the contact ends; Bow, Reed and Lips are to come.
    Trained: the hammer each point was trained with (format 9, ModalBake
    excfit) — full synthesis; a world or a point without one plays its
-   recorded attack */
-enum class ResExciter : uint8_t { Recorded = 0, Hammer = 1, Pluck = 2, Trained = 3 };
+   recorded attack. Bow, Reed and Lips keep going: they drive the newest
+   voice every sample for as long as there is energy (the velocity axis, read
+   every block — Play P4, J6, an orbit), and a strike only chooses the note */
+enum class ResExciter : uint8_t { Recorded = 0, Hammer = 1, Pluck = 2, Trained = 3, Bow = 4, Reed = 5, Lips = 6 };
+inline bool Sustained(ResExciter t) { return t == ResExciter::Bow || t == ResExciter::Reed || t == ResExciter::Lips; }
 
 class EngineCore
 {
@@ -146,7 +149,7 @@ public:
         dirty_ = true;
         for(int v = 0; v < rcap_; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rgen_++; if(rplan_) rplan_->state = 0u;
-        rcv_ = -1;                     /* a contact under way belonged to the voices just rebuilt */
+        rcv_ = -1; rsv_ = -1;          /* a contact or a bow under way belonged to the voices just rebuilt */
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rpoly_ = 1; rmember_ = 0; rdriven_ = 0; rhold_ = false;
         for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
@@ -226,7 +229,8 @@ public:
         if(vtrack_ != 0.f) { const float d = rdens_ > 6.f ? 1.f : rdens_ / 6.f; v += vtrack_ * 0.5f * d; v = v > 1.f ? 1.f : v; }
         rdens_ += 1.f;
         rlast_v_ = v;
-        if(rexc_ == ResExciter::Recorded || (rexc_ == ResExciter::Trained && !rvoices_[ractive_].exc_type)) rvoices_[ractive_].Strike(v);
+        if(Sustained(rexc_)) rsv_ = -1;            /* no attack: the bow, the reed or the lips take the new voice next block */
+        else if(rexc_ == ResExciter::Recorded || (rexc_ == ResExciter::Trained && !rvoices_[ractive_].exc_type)) rvoices_[ractive_].Strike(v);
         else StrikeCoupled(rvoices_[ractive_], v);
         rforce_ = 1e9f;
     }
@@ -886,7 +890,17 @@ public:
                 {
                     const int m = n - i < 48 ? n - i : 48;
                     const bool drive = v == ractive_ && exciter_ && exgain_ > 0.f;
-                    if(v == rcv_)
+                    /* the bow on the string only while there is energy: at none
+                       it is lifted and the note rings free (a bow resting still
+                       on a string would damp it), its state kept for when it
+                       comes back down */
+                    if(Sustained(rexc_) && v == ractive_ && (c_[1] > 1e-3f || rsv_ != v))
+                    {
+                        if(rsv_ != v) { StartSustained(v); rsv_ = v; }
+                        RunSustained(rvoices_[v], tmp, m);
+                        if(lr) for(int k = 0; k < m; k++) tmpR[k] = tmp[k];
+                    }
+                    else if(v == rcv_)
                     {
                         /* the contact is driving this voice: sample by
                            sample, mono for its few milliseconds */
@@ -911,6 +925,7 @@ public:
                     {
                         rvoices_[v].Init();
                         if(v == rcv_) rcv_ = -1;
+                        if(v == rsv_) rsv_ = -1;
                         rvoices_[v].cap = rpoly_ > 1 ? ResonatorBank::kMax / rpoly_ : 0;
                         rvoices_[v].release_ms = rrelease_ms_;
                         rvnote_[v] = 1e9f; rvdirty_[v] = false;
@@ -1061,7 +1076,7 @@ public:
          * is the same as starting in it */
         for(int v = 0; v < rcap_; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rgen_++; if(rplan_) rplan_->state = 0u;
-        rcv_ = -1;                     /* a contact under way belonged to the voices just rebuilt */
+        rcv_ = -1; rsv_ = -1;          /* a contact or a bow under way belonged to the voices just rebuilt */
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rmember_ = 0;
         for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
@@ -1194,10 +1209,189 @@ public:
         vv.wash.Process(out, m);
         return on;
     }
+    /* the sustained exciter takes a voice: its weights (a bow's at its
+       position along the string, sin(pi beta h); a reed's and the lips' at
+       the mouthpiece, sqrt(f1 / f), so each resonance's impedance peak falls
+       as a bore's does — equal peaks over a piano's 47 partials squeaked on
+       the 7th and 9th, and with a bore's losses ran to NaN), its state from
+       rest, and the output's scale — for a bow 2 pi f1 against the Helmholtz
+       amplitude v / (2 pi f1 beta) at this note, without the beta: what the
+       bow reaches of it grows about as beta does (measured, the Piano's C2,
+       C3 and C5), so a bow near the bridge and one over the middle sound
+       about alike loud; for a reed and the lips the mouthpiece pressure,
+       already of order one. The limiter (RunSustained) holds whatever is
+       left */
+    void StartSustained(int v)
+    {
+        ResonatorVoice& vv = rvoices_[v];
+        ResonatorBank& b = vv.bank;
+        for(int q = 0; q < ResonatorBank::kStrikes; q++) if(b.ramping[q]) b.Fold(q);
+        b.quiet = false;
+        /* the note's fundamental: the mode nearest the note it was struck
+           at, when there is one within 6 %; else the lowest mode with a
+           fifth of the loudest one's gain. Not the lowest mode: the Piano's
+           C5 has its soundboard at 108 Hz */
+        float gmax = 0.f;
+        for(int k = 0; k < b.n; k++) gmax = std::fmax(gmax, std::fabs(vv.gain[k]));
+        float f1 = 1e9f;
+        const ResonatorWorld& rw = world_->Res();
+        if(rw.kind != 1 && rvnote_[v] != 1e9f)
+        {
+            const float fn = 440.f * fastmath::Exp2((rvnote_[v] - 69.f) * (1.f / 12.f));
+            float best = 0.06f;
+            for(int k = 0; k < b.n; k++)
+            {
+                const float d = std::fabs(vv.hz[k] / fn - 1.f);
+                if(vv.gain[k] != 0.f && d < best) { best = d; f1 = vv.hz[k]; }
+            }
+        }
+        if(!(f1 < 1e8f))
+            for(int k = 0; k < b.n; k++) if(std::fabs(vv.gain[k]) >= 0.2f * gmax && vv.hz[k] > 0.f && vv.hz[k] < f1) f1 = vv.hz[k];
+        if(!(f1 < 1e8f)) f1 = 110.f;
+        const float beta = 0.05f + 0.25f * rexc_pos_;
+        rsq1_ = 0.f;
+        for(int k = 0; k < ResonatorBank::kMax; k++)
+        {
+            /* a ghost (gain 0, zeta 1: a voice with fewer modes than the
+               world's N is padded with them at its fundamental) is not
+               driven — the Piano's C5 has seventeen, and weighted they were
+               a broadband gain the reed relaxed on at 340-460 Hz */
+            if(k >= b.n || vv.gain[k] == 0.f) { rsw_[k] = 0.f; continue; }
+            const float h = vv.hz[k] / f1;
+            /* only the world's harmonics, for every sustained exciter: a mode
+               under the fundamental (a soundboard's — bowed, the Piano's C5
+               sank to its 108 Hz board) or off the harmonics (the C3 has a
+               body mode at 406 Hz beside its 392, and the lips locked onto
+               it 100 cents sharp) is not the string's or the bore's */
+            const float d = h - std::floor(h + 0.5f);
+            const float xw = d * d * (1.f / (0.02f * 0.02f));
+            const float win = h < 0.97f || xw > 16.f ? 0.f : fastmath::ExpNegSmall(xw);
+            if(rexc_ == ResExciter::Bow)
+            {
+                float x = beta * h; x -= std::floor(x);
+                float sn, cs; fastmath::SinCos(3.1415927f * x, sn, cs);
+                rsw_[k] = sn * win;
+            }
+            else rsw_[k] = std::sqrt(1.f / h) * win;             /* a bore's: each resonance's peak z f1/f */
+            if(k < b.n && std::fabs(vv.hz[k] - f1) < 1e-3f * f1 && b.lrq[k] < 0.f) rsq1_ = std::fmax(rsq1_, b.wq[k] / (-2.f * b.lrq[k]));
+        }
+        /* the lips' registers: the 1st to the 4th harmonic, each where
+           this voice has it (a piano's are stretched) — and one the voice
+           lacks (the Piano's C2 has no 4th; a lip tuned to nothing plays
+           its own frequency) plays the nearest below it */
+        for(int n = 0; n < 4; n++)
+        {
+            float bh = 0.f, bw = 0.f;
+            for(int k = 0; k < b.n; k++)
+            {
+                const float h = vv.hz[k] / f1;
+                if(std::fabs(h - (float)(n + 1)) < 0.025f * (float)(n + 1) && rsw_[k] > bw) { bw = rsw_[k]; bh = h; }
+            }
+            rsreg_[n] = bw > 0.1f ? bh : n ? rsreg_[n - 1] : 1.f;
+        }
+        rbow_.Init(); rreed_.Init(); rlips_.Init();
+        rlips_.f_lip = f1;
+        rsg_ = rexc_ == ResExciter::Bow ? 6.2831853f * f1 * 0.6f : 0.3f;
+        rsbeta_ = beta;
+        rslim_ = 1.f;
+        rsf1_ = f1;
+    }
+    /* the sustained voice's block: the energy from the velocity axis, the
+       shape from the page, the exciter coupled to the modes sample by sample,
+       the tail beside them, the pickup; the output scaled, and under a peak
+       limiter of its own at 0.8 (instant down, a second back up) — a bow
+       pushed past its band or a reed over-blown must not rail */
+    void RunSustained(ResonatorVoice& vv, float* out, int m)
+    {
+        const float energy = c_[1] < 0.f ? 0.f : c_[1] > 1.f ? 1.f : c_[1];
+        if(rexc_ == ResExciter::Bow)
+        {
+            /* the pressure with the speed, inside Schelleng's window: the
+               most force that keeps the Helmholtz motion is 2 Z0 v /
+               ((mu_s - mu_d) beta), Z0 = 2 M f1 the string's impedance (M
+               twice the modal mass), and past about a tenth of it the Piano
+               went raucous; under a hundredth it thins to the octave or
+               builds for seconds (a fixed 2 N did both: louder bowing came
+               out quieter). The timbre is the fraction, a light surface
+               (0.009) to a pressed one (0.07) */
+            rbow_.v_bow = 0.5f * energy;                                           /* 0 to 0.5 m/s */
+            const float fmax = 2.f * (4.f * kModalMass * rsf1_) * rbow_.v_bow / ((rbow_.mu_s - rbow_.mu_d) * rsbeta_);
+            rbow_.f_n   = fmax * 0.025f * fastmath::Exp2(3.f * (rexc_timbre_ - 0.5f));
+            /* a string's losses: no mode sharper than the fundamental's Q
+               over sqrt(h), so the fundamental is the one the bow holds. A
+               piano's are not so — a unison's second polarisation rings far
+               longer (the C4's octave, Q 4478 against the fundamental's 427)
+               — and bowed, it took the note to the octave or the 3rd */
+            if(rsq1_ > 0.f)
+            {
+                ResonatorBank& b = vv.bank;
+                const float w1 = 6.2831853f * rsf1_ / sr_;
+                for(int k = 0; k < b.n; k++)
+                {
+                    if(b.wq[k] <= w1) continue;
+                    const float a = b.wq[k] * 0.5f * std::sqrt(b.wq[k] / w1) / rsq1_;
+                    const float rc = fastmath::ExpNegSmall(a);
+                    if(b.rq[k] > rc) { b.rq[k] = rc; b.lrq[k] = -a; b.c1[k] = 2.f * rc * b.cwq[k]; b.c2[k] = -rc * rc; }
+                }
+            }
+            ProcessBowed(vv.bank, out, m, rsw_, rbow_, sr_, kModalMass);
+        }
+        else
+        {
+            /* a bore's losses: the world's tuning, but no resonance sharper
+               than Q 30 while a reed or the lips drive it. A piano's modes
+               ring for seconds, and an instability grows as f / Q — on the
+               fundamental over seconds, so the high partials won and the
+               reed squeaked; the prototypes' bores were Q 50. Once let go
+               the note falls as a wind instrument's does */
+            ResonatorBank& b = vv.bank;
+            for(int k = 0; k < b.n; k++)
+            {
+                const float rc = fastmath::ExpNegSmall(b.wq[k] * (0.5f / kBoreQ));
+                if(b.rq[k] > rc) { b.rq[k] = rc; b.lrq[k] = -b.wq[k] * (0.5f / kBoreQ); b.c1[k] = 2.f * rc * b.cwq[k]; b.c2[k] = -rc * rc; }
+            }
+            if(rexc_ == ResExciter::Reed)
+            {
+                rreed_.gamma = 0.2f + 0.75f * energy;                               /* speaks at about a fifth of the throw, nearly shut at the top */
+                rreed_.zeta  = 0.1f + 0.5f * rexc_timbre_;                          /* the embouchure */
+                ProcessBlown(vv.bank, out, m, rsw_, rreed_, 10.f + 50.f * rexc_mass_);
+            }
+            else
+            {
+                /* the timbre the register, in four: the lip tuned a quarter
+                   to a tenth of the harmonics' spacing under the 1st to the
+                   4th resonance, which plays that resonance within about 25
+                   cents (lip Q 15, the Piano; tuned on the resonance, 60
+                   sharp; between two, often nothing; tuned 0.75-0.9 of it,
+                   the 4th's lip sat on the 3rd) — and across each quarter a
+                   lip's small bend upward */
+                const float tr = (rexc_timbre_ < 0.f ? 0.f : rexc_timbre_ > 0.999f ? 0.999f : rexc_timbre_) * 4.f;
+                const int reg = (int)tr;
+                rlips_.gamma = 0.95f * energy;
+                rlips_.f_lip = rsf1_ * (rsreg_[reg] - (reg ? 0.4f : 0.25f) + 0.15f * (tr - (float)reg));
+                rlips_.q     = 10.f + 10.f * rexc_mass_;
+                ProcessLipped(vv.bank, out, m, rsw_, rlips_, 30.f, sr_);
+            }
+        }
+        vv.bank.ProcessTail(out, m);
+        for(int k = 0; k < m; k++)
+        {
+            float y = out[k] * rsg_;
+            const float a = std::fabs(y) * rslim_;
+            if(a > 0.8f) rslim_ = 0.8f / std::fabs(y);                             /* down at once */
+            else rslim_ += (1.f - rslim_) * (1.f / sr_);                            /* back over about a second */
+            out[k] = y * rslim_;
+        }
+        vv.pickup.Process(out, m);
+        vv.burst.Process(out, m);
+        vv.wash.Process(out, m);
+    }
+
     /* the modal mass the contact's force moves (kg): one number for every
        world until the exciter is trained per note (docs/exciters.md) */
     static constexpr float kModalMass = 0.01f;
     static constexpr float kVoiceBrake = 8.f;   /* a voice's peak, in its own units, past which it is reset (a struck note peaks under 1) */
+    static constexpr float kBoreQ = 30.f;       /* the sharpest resonance a reed or the lips drive (RunSustained) */
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
     /* Match another voice's phase and block count without rendering. */
@@ -1408,6 +1602,12 @@ private:
     int            rcv_ = -1;            /* the voice a coupled contact is driving, -1 none */
     float          rcg_ = 1.f;           /* the trained level the coupled voice is heard at, applied to its ring when the contact lets go */
     Hammer         rham_;
+    Bow            rbow_;
+    Reed           rreed_;
+    Lips           rlips_;
+    int            rsv_ = -1;            /* the voice the sustained exciter is driving, -1 none */
+    float          rsw_[ResonatorBank::kMax];   /* its weights on that voice's modes */
+    float          rsg_ = 1.f, rslim_ = 1.f, rsf1_ = 110.f, rsbeta_ = 0.2f, rsreg_[4] = {1.f, 2.f, 3.f, 4.f}, rsq1_ = 0.f;   /* its output's scale, its limiter, the note's fundamental, the bow's place (a fraction of the string), the lips' four registers (harmonic numbers, as this voice has them), the fundamental's Q (the bow's losses) */
     Pluck          rplk_;
     ContactNoise   rcn_;
     float          rcw_[ResonatorBank::kMax];   /* the contact's weights on the coupled voice's modes */

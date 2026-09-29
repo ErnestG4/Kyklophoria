@@ -250,9 +250,14 @@ static VirtualKnob k_morph  = VirtualKnob(5, "—").Ident("world.morph").Ring(Le
 /* The Exciter page (docs/exciters.md, stage 4): what strikes the resonator.
  * Trained by default — each point's own hammer, trained to the recordings
  * (ModalBake excfit; format 9), the recorded attack where a world has none —
- * with the shape as offsets around it, the centre of each as trained. */
-static const char* const kExciterNames[4] = {"Recorded", "Hammer", "Pluck", "Trained"};
-static VirtualKnob k_etype  = VirtualKnob(0, "Exciter").Selector(4).Labels(kExciterNames, 4).Ident("exc.type").Ring(Level(kExcite));
+ * with the shape as offsets around it, the centre of each as trained. Then
+ * the struck ones by hand, and the sustained ones — a bow, a reed, the lips —
+ * which drive the newest note for as long as the velocity axis gives them
+ * energy (a strike only chooses the note). Trained stays at the top, where
+ * the stored default and every preset saved with four zones put it. */
+static const char* const kExciterNames[7] = {"Recorded", "Hammer", "Pluck", "Bow", "Reed", "Lips", "Trained"};
+static const ResExciter kExciterOf[7] = {ResExciter::Recorded, ResExciter::Hammer, ResExciter::Pluck, ResExciter::Bow, ResExciter::Reed, ResExciter::Lips, ResExciter::Trained};
+static VirtualKnob k_etype  = VirtualKnob(0, "Exciter").Selector(7).Labels(kExciterNames, 7).Ident("exc.type").Ring(Level(kExcite));
 static VirtualKnob k_etimb  = VirtualKnob(1, "Timbre").Ident("exc.timbre").Ring(Level(kExcite));
 static VirtualKnob k_epos   = VirtualKnob(2, "Position").Ident("exc.pos").Ring(Level(kExcite));
 static VirtualKnob k_enoise = VirtualKnob(3, "Noise").Ident("exc.noise").Ring(Level(kExcite));
@@ -960,7 +965,10 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
 #if KYK_MODE_MODAL
         /* the Exciter page: the type and the shape, read every block (a strike
            takes them when it fires) */
-        gEng.L.SetExciterType((ResExciter)(int)(k_etype.Value() + 0.5f));
+        {
+            const int z = (int)(k_etype.Value() + 0.5f);
+            gEng.L.SetExciterType(kExciterOf[z < 0 ? 0 : z > 6 ? 6 : z]);
+        }
         gEng.L.SetExciterShape(k_etimb.Norm(), k_epos.Norm(), k_enoise.Norm(), k_emass.Norm());
 #endif
     }

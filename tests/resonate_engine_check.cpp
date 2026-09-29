@@ -1207,6 +1207,107 @@ int main()
         (void)step; (void)ring;
     }
 
+    /* 22m. the sustained exciters (Bow, Reed, Lips) on the engine: they drive
+       the newest voice every sample while there is energy — the velocity
+       axis, read every block — and a strike only chooses the note. (a) The
+       Piano fixture's C3 bowed: a steady tone at C3 (within 50 cents) under
+       the limiter's 0.8. (b) The bow lifted (no energy): the note rings free
+       and falls. (c) A reed under its threshold: silent. (d) Every type at
+       every corner of energy, timbre, position and mass, on the Piano and on
+       the tine (a pickup world): finite, and under 2 — the limiter at 0.8,
+       the brake behind it */
+    {
+        /* YIN's first dip (the cumulative-mean normalised difference under
+           0.15): the largest autocorrelation is as often at two or three
+           periods as at one */
+        auto pitch = [&](const std::vector<float>& y, size_t a, size_t len) {
+            const int maxL = 1200;
+            std::vector<double> dn(maxL + 1, 1.0);
+            double run = 0;
+            for(int L = 1; L <= maxL; L++)
+            {
+                double d = 0;
+                for(size_t i = a; i < a + len - maxL; i++) { const double e = (double)y[i] - y[i + L]; d += e * e; }
+                run += d; dn[L] = d * L / (run + 1e-30);
+            }
+            int best = -1;
+            for(int L = 20; L < maxL && best < 0; L++) if(dn[L] < 0.15 && dn[L] <= dn[L + 1]) best = L;
+            if(best < 0) { best = 20; for(int L = 20; L < maxL; L++) if(dn[L] < dn[best]) best = L; }
+            return (float)(sr / best);
+        };
+        auto rms = [](const std::vector<float>& y, size_t a, size_t b) { double e = 0; for(size_t i = a; i < b; i++) e += (double)y[i] * y[i]; return std::sqrt(e / (b - a)); };
+        auto bowed = [&](const World& w, ResExciter t, float energy, float timbre, float pos, float mass, int blocks, std::vector<float>& y) {
+            Engine e; e.Init(&w, sr); e.gain = 1.f; e.SetExciterType(t); e.SetExciterShape(timbre, pos, 0.f, mass);
+            float c[4] = {0.5f, energy, 0.5f, 0.5f}; e.SetPosition(c, 4);
+            e.SetF0(130.81f); e.Strike(0.8f);
+            y.clear(); RunOn(e, y, blocks);
+        };
+        std::vector<float> y;
+        bowed(piano, ResExciter::Bow, 0.6f, 0.5f, 0.3f, 0.5f, 1500, y);
+        float pk = 0.f; for(float s : y) pk = std::fmax(pk, std::fabs(s));
+        const double mid = rms(y, 24000, 48000), late = rms(y, 48000, 72000);
+        const float f = pitch(y, 48000, 4800);
+        const float cents = 1200.f * std::log2(f / 130.81f);
+        CHECK(pk <= 0.81f && mid > 1e-3 && late > 0.7 * mid && late < 1.43 * mid && std::fabs(cents) < 50.f,
+              "bowed C3: peak %.3f, rms %.3g then %.3g, the tone %.1f Hz (%+.0f c)", pk, mid, late, f, cents);
+        std::vector<float> yl; bowed(piano, ResExciter::Bow, 0.f, 0.5f, 0.3f, 0.5f, 400, yl);
+        float pl = 0.f; for(float s : yl) pl = std::fmax(pl, std::fabs(s));
+        CHECK(pl < 1e-3f, "the bow lifted (no energy): the note still sounds at %.3g", pl);
+        std::vector<float> yr; bowed(piano, ResExciter::Reed, 0.15f, 0.5f, 0.5f, 0.5f, 1000, yr);
+        const double rr = rms(yr, 24000, 48000);
+        CHECK(rr < 1e-3, "a reed under its threshold sounds: rms %.3g", rr);
+        /* in tune: the reed on the Piano's C3 and C5 (the C5 has seventeen
+           ghost modes at its fundamental and a soundboard at 108 Hz: driven,
+           the reed relaxed at 340-460 Hz), the lips' four registers on the
+           C3 (a body mode at 406 Hz took the 3rd 100 cents sharp), and the
+           C5 bowed (it sank to the board) — each within 40 cents of its
+           harmonic, a piano's stretch included */
+        auto at = [&](ResExciter t, float hz, float timbre, float pos) {
+            std::vector<float> z; Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetExciterType(t); e.SetExciterShape(timbre, pos, 0.f, 0.5f);
+            float c[4] = {0.5f, 0.8f, 0.5f, 0.5f}; e.SetPosition(c, 4); e.SetF0(hz); e.Strike(0.8f);
+            RunOn(e, z, 1000);
+            return 1200.f * std::log2(pitch(z, 38400, 4800) / hz);
+        };
+        const float r3 = at(ResExciter::Reed, 130.81f, 0.5f, 0.5f), r5 = at(ResExciter::Reed, 523.25f, 0.5f, 0.5f), b5 = at(ResExciter::Bow, 523.25f, 0.5f, 0.3f);
+        float lp[4];
+        for(int q = 0; q < 4; q++) lp[q] = at(ResExciter::Lips, 130.81f, 0.1f + 0.25f * q, 0.5f) - 1200.f * std::log2((float)(q + 1));
+        bool lips_ok = true; for(float c : lp) lips_ok = lips_ok && std::fabs(c) < 40.f;
+        CHECK(std::fabs(r3) < 40.f && std::fabs(r5) < 40.f && std::fabs(b5) < 40.f, "the reed on C3 %+.0f c, on C5 %+.0f c; C5 bowed %+.0f c", r3, r5, b5);
+        CHECK(lips_ok, "the lips' registers on C3: %+.0f %+.0f %+.0f %+.0f c from the 1st to the 4th harmonic", lp[0], lp[1], lp[2], lp[3]);
+        printf("  in tune: the reed on C3 %+.0f c and C5 %+.0f c, C5 bowed %+.0f c; the lips' four registers on C3 %+.0f %+.0f %+.0f %+.0f c\n", r3, r5, b5, lp[0], lp[1], lp[2], lp[3]);
+        /* the throw: the bow louder the harder it is drawn (a fixed force
+           under a faster bow came out quieter), the reed still sounding at
+           the top (1.2 of the closing pressure shut it), and both winds
+           speaking within a tenth of a second (a piano's modes, undamped
+           by a bore, grow over seconds) */
+        auto level = [&](ResExciter t, float energy, double& early) {
+            std::vector<float> z; Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetExciterType(t); e.SetExciterShape(0.5f, 0.3f, 0.f, 0.5f);
+            float c[4] = {0.5f, energy, 0.5f, 0.5f}; e.SetPosition(c, 4); e.SetF0(130.81f); e.Strike(0.8f);
+            RunOn(e, z, 1000);
+            early = rms(z, 2400, 4800);
+            return rms(z, 38400, 48000);
+        };
+        double eb4, eb1, er1, el1;
+        const double b4 = level(ResExciter::Bow, 0.4f, eb4), b1 = level(ResExciter::Bow, 1.f, eb1);
+        const double rf = level(ResExciter::Reed, 1.f, er1), lf = level(ResExciter::Lips, 1.f, el1);
+        CHECK(b1 > 1.3 * b4 && rf > 0.05 && er1 > 0.5 * rf && el1 > 0.5 * lf,
+              "the throw: bowed %.3g at 0.4, %.3g at 1; the reed at the top %.3g (at 50-100 ms %.3g), the lips %.3g (%.3g)", b4, b1, rf, er1, lf, el1);
+        printf("  the throw: bowed %.3f at 0.4 and %.3f at 1; at the top the reed %.3f and the lips %.3f, each at %.0f%% and %.0f%% of it by 50-100 ms\n",
+               b4, b1, rf, lf, 100 * er1 / rf, 100 * el1 / lf);
+        /* every corner, both worlds */
+        float worst = 0.f; bool finite = true; int runs = 0;
+        for(const World* w : {&piano, &rw})
+            for(ResExciter t : {ResExciter::Bow, ResExciter::Reed, ResExciter::Lips})
+                for(float en : {0.3f, 0.7f, 1.f}) for(float ti : {0.f, 0.5f, 1.f}) for(float po : {0.f, 1.f}) for(float ma : {0.f, 1.f})
+                {
+                    std::vector<float> z; bowed(*w, t, en, ti, po, ma, 300, z); runs++;
+                    for(float s : z) { finite = finite && std::isfinite(s); worst = std::fmax(worst, std::fabs(s)); }
+                }
+        CHECK(finite && worst < 2.f, "the sustained exciters at every corner (%d runs): finite %d, the loudest %.3g", runs, finite, worst);
+        printf("  the sustained exciters: C3 bowed %.1f Hz (%+.0f c), steady (rms %.3g then %.3g), under the limiter (%.2f); lifted, silent; a reed under threshold silent; %d corners of every type bounded (%.2f)\n",
+               f, cents, mid, late, pk, runs, worst);
+    }
+
     /* 22c. the position a resonate world reports as heard (Position(), which
        telemetry sends as posL and the page's model sliders follow) moves with
        the axes. The skipped render was the only thing that folded it, so it
