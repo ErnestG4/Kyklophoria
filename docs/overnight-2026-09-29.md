@@ -55,9 +55,11 @@ aa9e48d, with a brake on any runaway voice).
    over, fast playing 4.06). If you did load yesterday's card, the engine
    now holds its hammers to physical ranges; it's safer, but still not
    what to judge.
-   - The pop: medians against the recordings are now +2 to +4 dB (they were
-     +5 to +10). It's now mostly **pianissimo** (ff matches). Listen for
-     that first: soft notes may still click.
+   - The pop, against the recordings with each onset on the note itself:
+     medians -1.6 / -0.3 / +1.7 dB (bass / mid / treble), yesterday's +3.7
+     / +5.2 / +2.5. The worst tenth are still +5 to +9, and pianissimo is
+     the brightest layer (+2.2 median, +9.3 p90). Listen to soft notes
+     first.
    - Before flashing, you can listen to `build/demos/grand-{recorded,trained}-v20|v55|v90.wav`.
 2. **The Exciter page's new types**: Bow, Reed, Lips (between Pluck and
    Trained; Trained is still the default). **Play P4 (velocity) is the
@@ -70,10 +72,12 @@ aa9e48d, with a brake on any runaway voice).
 
 **Decisions:**
 
-- The **pp pop**: the trainer's felt sits at its exponent floor (1.5) on
-  half the keys. A real felt's exponent was mixed on six notes. Your ears on
-  card-exc5 decide whether the next step is the trainer, the takes (the
-  treble pp takes fit badly even with the recorded attack), or fine as is.
+- **What's left of the pop** is a few keys (the worst tenth +5 to +9 dB)
+  and pianissimo a little bright. Two trainer options were tried on six
+  notes and left off: a real felt's exponent (mixed), and a hammer-length
+  contact floor (the contacts became a hammer's, 1.7-4 ms, but the pop no
+  better, and four strikes failed the gate). Your ears on card-exc5 decide
+  whether it needs more.
 - **Refitted records are misaligned** 5-12 ms with their bursts (the
   training guide's finding, confirmed). It's fixed for future refits;
   existing refitted sets need re-bursting and re-exporting, which changes
@@ -187,3 +191,12 @@ aa9e48d, with a brake on any runaway voice).
   (156d8ba). A/B renders of the new card, trained against recorded at three
   velocities, are in `build/demos/grand-*.wav`.
 - 03:56 — check-in. Card-exc5 level-safe; the pp pop is the open part of item 1, being looked at.
+- 04:40 — **correction to 03:43**: the pp "pop" of +8.9 dB was mostly the
+  measure. Its onset (3% of the peak) landed on the pp takes' quiet
+  precursor, 6-8 ms before the note, while a trained strike sounds at once.
+  With the onset at 10%, card-exc5 against the takes is bass -1.6, mid
+  -0.3, treble +1.7 dB (yesterday +3.7, +5.2, +2.5); by layer pp +2.2, mf
+  -1.8, ff -2.8. Also found: the trained contacts are far shorter than a
+  hammer's (C3 ff two samples). A contact floor made them a hammer's
+  (1.7-4 ms) without helping the pop, so it's an option, off (ModalBake
+  2ad5758).
