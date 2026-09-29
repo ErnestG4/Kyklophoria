@@ -24,3 +24,9 @@ out/card/
 bench/
 out/card-clean/
 out/card-extra/
+out/exc/*.kykm
+out/exc/*/logs/
+out/exc/*/logs-smooth/
+out/exc/*/*.out
+out/exc/*/progress.log
+out/card-exc/
