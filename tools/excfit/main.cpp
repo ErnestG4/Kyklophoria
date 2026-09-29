@@ -273,6 +273,12 @@ static std::vector<float> RenderHammer(const ResonatorVoice& v0, const Params& p
         }
     }
     if(wout) for(int k = 0; k < ResonatorBank::kMax; k++) wout[k] = w[k];
+    /* each mode's polarity as the recording has it, sign(g cos phase), as
+       EngineCore::StrikeCoupled gives it (the weights baked are magnitudes;
+       the world has the signs). The contact cannot tell; the sum can: all
+       alike, the modes started in phase and piled into a 2 ms pulse, 5-9x
+       the recording's peak in the treble at the same loudness (the pop) */
+    for(int k = 0; k < b.n; k++) if(v.gain[k] * std::cos(v.phase[k]) < 0.f) w[k] = -w[k];
     h.Strike((float)std::exp(p.lspeed[layer]), 0.f);
     const int n = (int)(kSec * sr);
     std::vector<float> y(n, 0.f);
