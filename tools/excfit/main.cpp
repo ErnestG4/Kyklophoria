@@ -104,7 +104,23 @@ static std::vector<std::vector<float>> LogSpec(const std::vector<float>& x, int 
     }
     return out;
 }
-struct Target { std::vector<float> x; std::vector<std::vector<float>> s[3]; double floor[3]; double rms; std::vector<float> env; float vel; std::string layer, path; };
+struct Target { std::vector<float> x; std::vector<std::vector<float>> s[3]; double floor[3]; double rms; std::vector<float> env, onset; float vel; std::string layer, path; };
+/* the onset's harshness: the first difference's energy (a crude high band) in
+   1 ms frames over the first 30 ms, in dB over the take's own loudness. The
+   10 ms envelope and the spectra averaged a click away, and the trained
+   hammers came out with a pop at every note (Combust: "too harsh of a pop on
+   each note's exciter") — up to 13.6 dB more high band in the first 3 ms than
+   the recording's */
+static std::vector<float> Onset30(const std::vector<float>& y, double rms, int sr)
+{
+    const int w = sr / 1000; std::vector<float> o;
+    for(int at = 1; at + w <= (int)(0.03 * sr); at += w)
+    {
+        double d = 0; for(int i = at; i < at + w; i++) { const double x = y[i] - y[i - 1]; d += x * x; }
+        o.push_back((float)(10 * std::log10(d / w / (rms * rms + 1e-30) + 1e-9)));
+    }
+    return o;
+}
 static double Rms(const std::vector<float>& x) { double e = 0; for(float v : x) e += (double)v * v; return std::sqrt(e / (x.size() ? x.size() : 1)); }
 /* the loudest bin of any frame at window n, and the floor 50 dB under it */
 static double FloorOf(const std::vector<float>& x, int n)
@@ -144,7 +160,11 @@ static double Loss(const std::vector<float>& y0, const Target& t, int sr)
     const auto e = Env(y, sr);
     const size_t ne = std::min(e.size(), t.env.size());
     double de = 0; for(size_t i = 0; i < ne; i++) de += std::fabs(e[i] - t.env[i]);
-    return l / 3.0 + (ne ? de / ne / 20.0 : 1.0);     /* dB over 20: an envelope 20 dB out costs as much as a spectrum e-fold out */
+    const auto o = Onset30(y, t.rms, sr);
+    const size_t no = std::min(o.size(), t.onset.size());
+    double dn = 0; for(size_t i = 0; i < no; i++) dn += std::fabs(o[i] - t.onset[i]);
+    return l / 3.0 + (ne ? de / ne / 20.0 : 1.0)      /* dB over 20: an envelope 20 dB out costs as much as a spectrum e-fold out */
+                   + (no ? 3.0 * dn / no / 20.0 : 0.0);   /* and the onset's harshness three times over: a pop is what the ear objects to first */
 }
 
 /* the take from its onset (the first 10 ms window within 30 dB of the peak,
@@ -166,10 +186,15 @@ static std::vector<float> Onset(const std::vector<float>& x, int sr)
 /* ... and the contact's noise (ContactNoise): its level over the force, and
    its band's centre — a hard hit's knock, which the modes cannot carry */
 /* ... and the felt's hysteresis (Hammer::mu, Hunt-Crossley) */
-struct Params { double lk, alpha, lmass, lgain, lspeed[3], lnoise, lnfc, lmu; };
-static const int kDim = 10;
-static void ToVec(const Params& p, double* v) { v[0] = p.lk; v[1] = p.alpha; v[2] = p.lmass; v[3] = p.lgain; for(int i = 0; i < 3; i++) v[4 + i] = p.lspeed[i]; v[7] = p.lnoise; v[8] = p.lnfc; v[9] = p.lmu; }
-static Params FromVec(const double* v) { Params p; p.lk = v[0]; p.alpha = v[1]; p.lmass = v[2]; p.lgain = v[3]; for(int i = 0; i < 3; i++) p.lspeed[i] = v[4 + i]; p.lnoise = v[7]; p.lnfc = v[8]; p.lmu = v[9]; return p; }
+/* ... and the hammer's width, as a fraction of the string: a felt strikes a
+   patch 1-2 cm wide, and a mode whose wavelength is shorter than the patch is
+   averaged away at the contact — which is why a real bass attack thuds where
+   the point hammer clicked (C1, C2: 5-8 dB more high band in the first 3 ms
+   than the recording, whatever the felt). Baked into the weights */
+struct Params { double lk, alpha, lmass, lgain, lspeed[3], lnoise, lnfc, lmu, lwidth; };
+static const int kDim = 11;
+static void ToVec(const Params& p, double* v) { v[0] = p.lk; v[1] = p.alpha; v[2] = p.lmass; v[3] = p.lgain; for(int i = 0; i < 3; i++) v[4 + i] = p.lspeed[i]; v[7] = p.lnoise; v[8] = p.lnfc; v[9] = p.lmu; v[10] = p.lwidth; }
+static Params FromVec(const double* v) { Params p; p.lk = v[0]; p.alpha = v[1]; p.lmass = v[2]; p.lgain = v[3]; for(int i = 0; i < 3; i++) p.lspeed[i] = v[4 + i]; p.lnoise = v[7]; p.lnfc = v[8]; p.lmu = v[9]; p.lwidth = v[10]; return p; }
 
 /* one layer struck by the hammer, kSec long: the voice's modes from rest,
    driven through the coupled loop with EngineCore::StrikeCoupled's weights
@@ -221,10 +246,30 @@ static std::vector<float> RenderHammer(const ResonatorVoice& v0, const Params& p
             for(int k = 0; k < b.n; k++)
             {
                 const float got = a[k] / amax;                 /* the ring's proportion now */
-                if(got > 1e-6f) w[k] *= std::min(8.f, std::max(0.125f, target[k] / got));
-                ratio_max = std::max(ratio_max, w[k]);
+                /* cut only (Combust: "let's maybe not boost the high modes"):
+                   a mode the synthetic felt drives harder than the recorded
+                   one did is brought down to the fitted proportion, and one
+                   it drives less is left so — the brightness comes from the
+                   felt and the speed, not from lifted weights. Lifted (up to
+                   512x over three passes), every lifted high mode starting at
+                   the strike in phase was the pop at each note */
+                if(got > 1e-6f) w[k] *= std::max(0.125f, std::min(1.f, target[k] / got));
             }
+            for(int k = 0; k < b.n; k++) ratio_max = std::max(ratio_max, w[k]);
             if(ratio_max > 0.f) for(int k = 0; k < b.n; k++) w[k] /= ratio_max;
+        }
+    }
+    /* the hammer's width: each mode by how much of it survives an average
+       over the patch the felt covers, |sin z / z| at z = pi h width / 2, h
+       the mode's harmonic number over the lowest */
+    {
+        float f1 = 1e9f; for(int k = 0; k < b.n; k++) if(v.gain[k] != 0.f && v.hz[k] > 0.f && v.hz[k] < f1) f1 = v.hz[k];
+        const double width = std::exp(p.lwidth);
+        if(f1 < 1e8f) for(int k = 0; k < b.n; k++)
+        {
+            const double z = M_PI * (v.hz[k] / f1) * width / 2.0;
+            const double sc = z > 1e-6 ? std::fabs(std::sin(z) / z) : 1.0;
+            w[k] *= (float)std::max(0.02, sc);
         }
     }
     if(wout) for(int k = 0; k < ResonatorBank::kMax; k++) wout[k] = w[k];
@@ -310,6 +355,7 @@ int main(int argc, char** argv)
         sr = tsr; g_sr = sr;
         t.x = Onset(x, sr);
         t.rms = Rms(t.x);
+        t.onset = Onset30(t.x, t.rms, sr);
         for(int r = 0; r < 3; r++) { t.floor[r] = FloorOf(t.x, kSizes[r]); t.s[r] = LogSpec(t.x, kSizes[r], t.floor[r]); }
         t.env = Env(t.x, sr);
         takes.push_back(std::move(t));
@@ -332,8 +378,10 @@ int main(int argc, char** argv)
     int starts = std::getenv("EXCFIT_STARTS") ? std::atoi(std::getenv("EXCFIT_STARTS")) : 8;   /* fewer, for a quick look */
     if(const char* fixed = std::getenv("EXCFIT_PARAMS"))
     {
-        double k, a, mu, ms, nz, nf, sp[3];
-        if(std::sscanf(fixed, "%lf %lf %lf %lf %lf %lf %lf %lf %lf", &k, &a, &mu, &ms, &nz, &nf, &sp[0], &sp[1], &sp[2]) != 9) { std::fprintf(stderr, "EXCFIT_PARAMS wants nine numbers\n"); return 2; }
+        double k, a, mu, ms, nz, nf, sp[3], wd = 0.001;
+        const int got = std::sscanf(fixed, "%lf %lf %lf %lf %lf %lf %lf %lf %lf %lf", &k, &a, &mu, &ms, &nz, &nf, &sp[0], &sp[1], &sp[2], &wd);
+        if(got < 9) { std::fprintf(stderr, "EXCFIT_PARAMS wants nine numbers (and the width, a tenth)\n"); return 2; }
+        best.lwidth = std::log(wd);
         best.lk = std::log(k); best.alpha = a; best.lmu = std::log(mu); best.lmass = std::log(ms); best.lnoise = std::log(nz > 0 ? nz : 1e-12); best.lnfc = std::log(nf); best.lgain = 0;
         /* the takes' speeds by their layers (pp, mf, ff in that order among those given) */
         const char* names[3] = {"pp", "mf", "ff"};
@@ -343,16 +391,21 @@ int main(int argc, char** argv)
     for(int start = 0; start < starts; start++)
     {
         double simplex[kDim + 1][kDim], f[kDim + 1];
-        Params p0; p0.lk = rnd(std::log(1e7), std::log(1e10)); p0.alpha = rnd(2.2, 3.5); p0.lmass = rnd(std::log(0.003), std::log(0.02)); p0.lgain = rnd(-2, 4);
+        Params p0; p0.lk = rnd(std::log(1e7), std::log(1e10)); p0.alpha = rnd(2.2, 3.5); p0.lmass = rnd(std::log(0.005), std::log(0.015)); p0.lgain = rnd(-2, 4);
         for(int i = 0; i < 3; i++) p0.lspeed[i] = std::log(0.3 * std::pow(16.0, takes.size() > (size_t)i ? takes[i].vel : 0.5)) + rnd(-0.3, 0.3);
         p0.lnoise = rnd(std::log(1e-9), std::log(1e-5)); p0.lnfc = rnd(std::log(500.0), std::log(8000.0));
         p0.lmu = rnd(std::log(0.01), std::log(3.0));
+        p0.lwidth = rnd(std::log(0.003), std::log(0.03));
         ToVec(p0, simplex[0]);
-        const double step[kDim] = {1.0, 0.3, 0.5, 1.0, 0.4, 0.4, 0.4, 1.5, 0.5, 1.0};
+        const double step[kDim] = {1.0, 0.3, 0.5, 1.0, 0.4, 0.4, 0.4, 1.5, 0.5, 1.0, 0.7};
         for(int i = 1; i <= kDim; i++) { for(int d = 0; d < kDim; d++) simplex[i][d] = simplex[0][d]; simplex[i][i - 1] += step[i - 1]; }
-        auto clampv = [](double* v) { v[1] = std::min(4.0, std::max(1.5, v[1])); for(int i = 4; i < 7; i++) v[i] = std::min(std::log(30.0), std::max(std::log(0.01), v[i]));
+        /* a grand's hammers weigh 5-15 g (the bass's 10-12): the trainer had
+           them at 2-4 g and fast, a short contact and a bright click at every
+           bass note */
+        auto clampv = [](double* v) { v[1] = std::min(4.0, std::max(1.5, v[1])); v[2] = std::min(std::log(0.015), std::max(std::log(0.005), v[2])); for(int i = 4; i < 7; i++) v[i] = std::min(std::log(30.0), std::max(std::log(0.01), v[i]));
                                    v[8] = std::min(std::log(16000.0), std::max(std::log(100.0), v[8]));
-                                   v[9] = std::min(std::log(30.0), std::max(std::log(1e-4), v[9])); };
+                                   v[9] = std::min(std::log(30.0), std::max(std::log(1e-4), v[9]));
+                                   v[10] = std::min(std::log(0.05), std::max(std::log(0.001), v[10])); };
         for(int i = 0; i <= kDim; i++) { clampv(simplex[i]); f[i] = total(FromVec(simplex[i])); evals++; }
         for(int it = 0; it < 220; it++)
         {
@@ -382,7 +435,7 @@ int main(int argc, char** argv)
         if(f[bi] < bestL) { bestL = f[bi]; best = FromVec(simplex[bi]); }
         std::printf("  start %d: loss %.3f\n", start, f[bi]);
     }
-    std::printf("trained hammer (%d renders): felt k %.3g alpha %.2f, mass %.1f g, gain %.3g, noise %.3g at %.0f Hz, mu %.3g s/m, speeds", evals, std::exp(best.lk), best.alpha, 1000 * std::exp(best.lmass), std::exp(best.lgain), std::exp(best.lnoise), std::exp(best.lnfc), std::exp(best.lmu));
+    std::printf("trained hammer (%d renders): felt k %.3g alpha %.2f, mass %.1f g, gain %.3g, noise %.3g at %.0f Hz, mu %.3g s/m, width %.3g, speeds", evals, std::exp(best.lk), best.alpha, 1000 * std::exp(best.lmass), std::exp(best.lgain), std::exp(best.lnoise), std::exp(best.lnfc), std::exp(best.lmu), std::exp(best.lwidth));
     for(size_t i = 0; i < takes.size(); i++) std::printf(" %s %.2f m/s", takes[i].layer.c_str(), std::exp(best.lspeed[i]));
     std::printf("\n%-6s %10s %10s\n", "layer", "hammer", "recorded");
     for(size_t i = 0; i < takes.size(); i++)
@@ -446,7 +499,7 @@ int main(int argc, char** argv)
             for(int L = 0; L < 3; L++) std::fprintf(f, "\t%.6g", gain[L]);
             std::fprintf(f, "\t%d", v0.bank.n);
             for(int k = 0; k < v0.bank.n; k++) std::fprintf(f, "\t%.6g", w[k]);
-            std::fprintf(f, "\n");
+            std::fprintf(f, "\t%.6g\n", std::exp(best.lwidth));   /* the width, last: excbake reads the weights and stops; excsmooth takes it */
             std::fclose(f);
         }
     }

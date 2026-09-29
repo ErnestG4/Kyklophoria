@@ -11,15 +11,15 @@ speeds are kept in order, pp <= mf <= ff.
 
 In: excfit's results (EXCFIT_RESULTS), the last line for a note winning. Out:
 a line a note — midi, then the nine numbers EXCFIT_PARAMS takes (k alpha mu
-mass noise nfc speed_pp speed_mf speed_ff) — for the pass that writes the
+mass noise nfc speed_pp speed_mf speed_ff, and the hammer's width) — for the pass that writes the
 final weights and levels with the smoothed hammer. Standard library only.
 """
 import math
 import statistics
 import sys
 
-NAMES = ['k', 'alpha', 'mu', 'mass', 'noise', 'nfc', 'sp_pp', 'sp_mf', 'sp_ff']
-LOG = {'k', 'mu', 'mass', 'noise', 'nfc', 'sp_pp', 'sp_mf', 'sp_ff'}
+NAMES = ['k', 'alpha', 'mu', 'mass', 'noise', 'nfc', 'sp_pp', 'sp_mf', 'sp_ff', 'width']
+LOG = {'k', 'mu', 'mass', 'noise', 'nfc', 'sp_pp', 'sp_mf', 'sp_ff', 'width'}
 
 
 def main():
@@ -32,6 +32,8 @@ def main():
             continue
         midi = float(f[0])
         vals = [float(x) for x in f[1:10]]            # k alpha mu mass noise nfc sp_pp sp_mf sp_ff
+        n = int(f[13])
+        vals.append(float(f[14 + n]) if len(f) > 14 + n else 0.001)   # the hammer's width, last on the line (0.001, a point, for results before it)
         notes[round(midi, 2)] = dict(zip(NAMES, vals))
     keys = sorted(notes)
     half = window // 2
