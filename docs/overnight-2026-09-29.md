@@ -207,3 +207,4 @@ aa9e48d, with a brake on any runaway voice).
 - 04:02 — card-exc5-soft written for an A/B (ModalBake 181571f): 19 brightest keys on their recorded attack, 65 trained, gated safe; worst tenth +3 to +5 dB against the takes.
 - 04:21 — check-in. The list is worked through; two level-safe cards for an A/B; the rest waits on ears or a decision (For the morning). Holding for the wrap-up at 07:52.
 - 04:51 — check-in. Nothing mid-way; suite green (with the web selftest, 230 checks). Waiting for the wrap-up.
+- 05:21 — check-in. Holding; nothing mid-way.
