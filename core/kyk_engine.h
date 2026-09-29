@@ -899,10 +899,15 @@ public:
                        a linear bank's state is fed back forever — so it is
                        reset, not played: silent until its next strike builds
                        it, where a NaN left in reached the codec every block */
-                    float sum = 0.f;
-                    for(int k = 0; k < m; k++) sum += tmp[k];
-                    if(lr) for(int k = 0; k < m; k++) sum += tmpR[k];
-                    if(!(sum - sum == 0.f))
+                    float sum = 0.f, pk = 0.f;
+                    for(int k = 0; k < m; k++) { sum += tmp[k]; pk = std::fmax(pk, std::fabs(tmp[k])); }
+                    if(lr) for(int k = 0; k < m; k++) { sum += tmpR[k]; pk = std::fmax(pk, std::fabs(tmpR[k])); }
+                    /* and a voice far louder than any voice plays — 8 in its
+                       own units, where a struck note peaks under 1 — is reset
+                       the same way, whatever made it: a brake, not a sound.
+                       A runaway is a click this way, and was full scale held
+                       by the limiter (the trained re-strike, 28 September) */
+                    if(!(sum - sum == 0.f) || (pk > kVoiceBrake && !drive))   /* a bank J1 drives is a filter on a live input, and may ring loud: the limiter is its guard */
                     {
                         rvoices_[v].Init();
                         if(v == rcv_) rcv_ = -1;
@@ -1123,8 +1128,23 @@ public:
             rham_.alpha = vv.exc_alpha;
             rham_.mu    = vv.exc_mu;
             rham_.mass  = vv.exc_mass * std::exp(2.2f * (rexc_mass_ - 0.5f));
-            rham_.Strike(lerp3(vv.exc_speed), xc);
             rcg_ = lerp3(vv.exc_gain);
+            /* the contact runs in the hammer's own units and is heard at rcg_
+               (RunCoupled scales the output, and the ring when it lets go);
+               a string still ringing from the last strike is in the output's
+               units, so it goes into the hammer's first — the hand-back in
+               reverse. Without this a re-strike of a ringing note met a
+               string thousands of times too big for the felt, the force ran
+               away, and the result was scaled up again: 300-690x the first
+               strike, the limiter held at full scale (Combust: "C1 may have
+               just deafened me") */
+            if(rcg_ > 0.f)
+            {
+                const float inv = 1.f / rcg_;
+                for(int k = 0; k < b.n; k++) { b.y1[k] *= inv; b.y2[k] *= inv; }
+            }
+            xc = 0.f; for(int k = 0; k < b.n; k++) xc += rcw_[k] * b.y1[k];
+            rham_.Strike(lerp3(vv.exc_speed), xc);
             const float nm = 2.f * rexc_noise_;                                 /* none, as trained at the centre, 4x at the top */
             rcn_.Init(sr_, vv.exc_nfc > 20.f ? vv.exc_nfc : 2000.f, 0.7f, vv.exc_noise * nm * nm);
             rcv_ = ractive_;
@@ -1177,6 +1197,7 @@ public:
     /* the modal mass the contact's force moves (kg): one number for every
        world until the exciter is trained per note (docs/exciters.md) */
     static constexpr float kModalMass = 0.01f;
+    static constexpr float kVoiceBrake = 8.f;   /* a voice's peak, in its own units, past which it is reset (a struck note peaks under 1) */
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
     /* Match another voice's phase and block count without rendering. */

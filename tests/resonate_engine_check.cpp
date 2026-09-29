@@ -1167,6 +1167,42 @@ int main()
         float step = 0.f, ring = 0.f;
         for(size_t i = 1; i < yt2.size(); i++) { const float d = std::fabs(yt2[i] - yt2[i - 1]); if(i < 1200) step = std::fmax(step, d); else if(i < 4800) ring = std::fmax(ring, d); }
         CHECK(r < 1e-3f, "twice the trained level is not twice the note: off by %.3g", r);
+        /* a trained note struck again while it rings: within twice its first
+           strike. The contact ran in the hammer's units against a ring in the
+           output's, and a re-strike came out 300-690x the first, the limiter
+           held at full scale (Combust: "C1 may have just deafened me") */
+        {
+            Engine e; e.Init(&W9x2, sr); e.gain = 1.f; e.SetPolyphony(4); e.SetExciterType(ResExciter::Trained);
+            e.SetF0(440.f * std::exp2((R9.Param(3) - 69.f) / 12.f));
+            std::vector<float> y; float p1 = 0.f, p2 = 0.f;
+            e.Strike(0.7f); RunOn(e, y, 100); for(float s : y) p1 = std::fmax(p1, std::fabs(s));
+            y.clear(); e.Strike(0.7f); RunOn(e, y, 100); for(float s : y) p2 = std::fmax(p2, std::fabs(s));
+            CHECK(p1 > 0.f && p2 <= 2.f * p1, "a trained re-strike of a ringing note peaks %.3g against the first strike's %.3g", p2, p1);
+            /* and fast, random playing with trained hammers: four voices,
+               re-strikes, every velocity — never past a sane level */
+            Engine f; f.Init(&W9x2, sr); f.gain = 1.f; f.SetPolyphony(4); f.SetExciterType(ResExciter::Trained);
+            uint32_t rs = 17; auto rnd = [&]() { rs = rs * 1664525u + 1013904223u; return (rs >> 8) / 16777216.f; };
+            float worst = 0.f;
+            for(int blk = 0; blk < 3000; blk++)
+            {
+                if(blk % 7 == 0) { f.SetF0(440.f * std::exp2((R9.Param((int)(rnd() * R9.P) % R9.P) - 69.f) / 12.f)); f.Strike(rnd()); }
+                std::vector<float> z(48); f.Process(z.data(), 48);
+                for(float s : z) worst = std::fmax(worst, std::fabs(s));
+            }
+            CHECK(worst < 4.f * p1 + 1.f, "random trained playing peaked %.3g (a single strike %.3g)", worst, p1);
+        }
+        /* the brake: a voice far past any voice's level is reset, whatever
+           put it there — here forced to it by hand */
+        {
+            Engine e; e.Init(&piano, sr); e.gain = 1.f;
+            e.SetF0(261.63f); e.Strike(0.8f);
+            std::vector<float> y; RunOn(e, y, 300);       /* past the attack's lead and fade: the modes are ringing in the main state */
+            ResonatorVoice& v = const_cast<ResonatorVoice&>(e.Voice());
+            for(int k = 0; k < v.bank.n; k++) { v.bank.y1[k] *= 1e4f; v.bank.y2[k] *= 1e4f; }
+            y.clear(); RunOn(e, y, 3);
+            float late = 0.f; for(size_t i = 48; i < y.size(); i++) late = std::fmax(late, std::fabs(y[i]));
+            CHECK(late == 0.f, "a runaway voice was not reset: it still peaks %.3g two blocks on", late);
+        }
         printf("  format 9: a trained hammer from each point, its weights as stored; version 8 plays its recorded attack; the level scales the whole note (x2 within %.1g)\n", r);
         (void)step; (void)ring;
     }
