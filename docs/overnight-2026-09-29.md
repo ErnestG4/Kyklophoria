@@ -104,3 +104,13 @@ aa9e48d, with a brake on any runaway voice).
   bow, reed and lips on the Iowa grand are in `build/demos/` (not in git).
   The sustained loops cost about 20 M7 instructions a mode a sample, about
   10% of the block at one voice's 48 modes and 2.5% at four voices' share.
+- 02:53 — **the modal firmware's room, done after all** (c499ad5). A closer
+  look showed a resonate world's spectrum was always silence, so the switch
+  only has to leave out what never sounded there. `KYK_WAVETABLE=0` in the
+  modal build: every world evaluates to silence and the frame transform is
+  not linked. SRAM 99.34% -> 94.83% (about 22 KB back); the wavetable
+  firmware is unchanged. Proven in the suite: every resonate golden bit for
+  bit and its telemetry line for line through the modal core (a first try
+  moved the telemetry's kcut, and this check caught it), and a wavetable
+  world through it is silence. One consequence to know: a wavetable world
+  sent to the modal firmware now plays silence.
