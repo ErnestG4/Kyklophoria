@@ -60,6 +60,10 @@ aa9e48d, with a brake on any runaway voice).
      / +5.2 / +2.5. The worst tenth are still +5 to +9, and pianissimo is
      the brightest layer (+2.2 median, +9.3 p90). Listen to soft notes
      first.
+   - To A/B: **ModalBake/out/card-exc5-soft/kyklophoria** is the same grand
+     with the 19 brightest keys (over +6 dB at any layer) on their recorded
+     attack. It's gated the same (0 of 650, fast playing safe) and its worst
+     tenth is +3 to +5 dB.
    - Before flashing, you can listen to `build/demos/grand-{recorded,trained}-v20|v55|v90.wav`.
 2. **The Exciter page's new types**: Bow, Reed, Lips (between Pluck and
    Trained; Trained is still the default). **Play P4 (velocity) is the
@@ -200,3 +204,4 @@ aa9e48d, with a brake on any runaway voice).
   hammer's (C3 ff two samples). A contact floor made them a hammer's
   (1.7-4 ms) without helping the pop, so it's an option, off (ModalBake
   2ad5758).
+- 04:02 — card-exc5-soft written for an A/B (ModalBake 181571f): 19 brightest keys on their recorded attack, 65 trained, gated safe; worst tenth +3 to +5 dB against the takes.
