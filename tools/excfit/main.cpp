@@ -382,8 +382,19 @@ int main(int argc, char** argv)
         std::printf("       h1-h8, hammer and recorded voice against the take (dB):");
         for(int h = 0; h < 8; h++) std::printf(" %+.0f/%+.0f", hh[h] - ht[h], hr[h] - ht[h]);
         std::printf("\n");
-        kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-hammer.wav", yh.data(), yh.size(), sr);
-        kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-recorded.wav", yr.data(), yr.size(), sr);
+        /* written as the loss hears them: at the take's loudness (the hammer's
+           absolute level means nothing — the takes are levelled — and raw it
+           sat 45-67 dB down, silent: Combust, "I can't hear anything on those
+           hammer wavs"), held under full scale */
+        auto level = [&](std::vector<float> y) {
+            const double r = Rms(y); if(r > 0) { const float g = (float)(takes[i].rms / r); for(float& v : y) v *= g; }
+            float pk = 0; for(float v : y) pk = std::max(pk, std::fabs(v));
+            if(pk > 0.99f) for(float& v : y) v *= 0.99f / pk;
+            return y;
+        };
+        const auto wh = level(yh), wr = level(yr);
+        kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-hammer.wav", wh.data(), wh.size(), sr);
+        kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-recorded.wav", wr.data(), wr.size(), sr);
         kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-target.wav", takes[i].x.data(), takes[i].x.size(), sr);
     }
     return 0;
