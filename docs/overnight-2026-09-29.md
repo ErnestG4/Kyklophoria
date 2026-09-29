@@ -140,7 +140,7 @@ aa9e48d, with a brake on any runaway voice).
   resting here: the card is level-safe, and ears on it will say more than
   another retrain. On the module, Exciter page Timbre (the felt's
   stiffness) turned down softens every trained attack.
-- 04:05 — ModalBake housekeeping from the training guide's findings:
+- 03:55 — ModalBake housekeeping from the training guide's findings:
   `make check-runtime` passes again (runtime/kyk_resonate.h refreshed,
   5cd2091); refitn's misalignment confirmed (a refitted banjo record 9.7 ms
   off its burst) and fixed for future refits, but the records already
