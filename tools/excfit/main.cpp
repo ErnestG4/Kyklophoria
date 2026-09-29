@@ -422,9 +422,17 @@ int main(int argc, char** argv)
         /* a grand's hammers weigh 5-15 g (the bass's 10-12): the trainer had
            them at 2-4 g and fast, a short contact and a bright click at every
            bass note */
-        auto clampv = [](double* v) { v[1] = std::min(4.0, std::max(1.5, v[1])); v[2] = std::min(std::log(0.015), std::max(std::log(0.005), v[2])); for(int i = 4; i < 7; i++) v[i] = std::min(std::log(30.0), std::max(std::log(0.01), v[i]));
+        /* and a hammer's other numbers where a hammer's are: the felt's
+           stiffness 1e6-1e11, its hysteresis mu under 5 s/m, the speeds
+           0.1-8 m/s (a grand's pp to its hardest ff). Unbounded, the search
+           found corners that fit the spectra and are no hammer — the C2 at
+           K 4.4e13, mu 30, speeds 0.017 to 29.6 m/s and levels from 2225 to
+           0.0077 — and struck again while ringing it ran to 15-19x the
+           recording (iowa4, exclevel) */
+        auto clampv = [](double* v) { v[0] = std::min(std::log(1e11), std::max(std::log(1e6), v[0]));
+                                   v[1] = std::min(4.0, std::max(1.5, v[1])); v[2] = std::min(std::log(0.015), std::max(std::log(0.005), v[2])); for(int i = 4; i < 7; i++) v[i] = std::min(std::log(8.0), std::max(std::log(0.1), v[i]));
                                    v[8] = std::min(std::log(16000.0), std::max(std::log(100.0), v[8]));
-                                   v[9] = std::min(std::log(30.0), std::max(std::log(1e-4), v[9]));
+                                   v[9] = std::min(std::log(5.0), std::max(std::log(1e-4), v[9]));
                                    v[10] = std::min(std::log(0.05), std::max(std::log(0.001), v[10])); };
         for(int i = 0; i <= kDim; i++) { clampv(simplex[i]); f[i] = total(FromVec(simplex[i])); evals++; }
         for(int it = 0; it < 220; it++)
