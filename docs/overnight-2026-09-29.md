@@ -191,7 +191,7 @@ aa9e48d, with a brake on any runaway voice).
   (156d8ba). A/B renders of the new card, trained against recorded at three
   velocities, are in `build/demos/grand-*.wav`.
 - 03:56 — check-in. Card-exc5 level-safe; the pp pop is the open part of item 1, being looked at.
-- 04:40 — **correction to 03:43**: the pp "pop" of +8.9 dB was mostly the
+- 04:01 — **correction to 03:43**: the pp "pop" of +8.9 dB was mostly the
   measure. Its onset (3% of the peak) landed on the pp takes' quiet
   precursor, 6-8 ms before the note, while a trained strike sounds at once.
   With the onset at 10%, card-exc5 against the takes is bass -1.6, mid
