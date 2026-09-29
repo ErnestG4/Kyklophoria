@@ -166,9 +166,11 @@ what it is). Concretely:
   that is playing is refused (judged by the blob pointer, not by the live
   index, which no world select clears).
 - The module (`shell/alchemy/main.cpp`; the card path has run on the
-  bench since, the rest is built and not run): sixteen fixed 2 MB regions
-  in SDRAM (`gResArena`; four was the first evening's number and the fifth
-  world would not load), a slot holding a resonator keeps its
+  bench since, the rest is built and not run): regions in SDRAM, four of
+  4 MB and twenty of 2 MB, a world taking the smallest free one it fits
+  (`gResArena`, `shell/common/kyk_regions.h`; four was the first evening's
+  number and the fifth world would not load, then eight of 4 MB and the
+  ninth would not), a slot holding a resonator keeps its
   region's number in `gSlotRes`; the file is read through the SDMMC
   staging buffer a chunk at a time (IDMA's reach is the staging buffer's
   section); the World reads the region in place, so anything that would
@@ -424,12 +426,13 @@ Written before the first evening; the steps still hold, with what has
 been added since noted. What each one is the first test of:
 
 1. `cd shell/alchemy && make program-live` (or `program-dfu` from the
-   bootloader) on the `modal` branch. Boot is the first test: 32 MB of
-   `.sdram_bss` for the sixteen resonate regions, with the static_assert
-   guarding it.
+   bootloader) on the `modal` branch (`make MODE=modal` since the two
+   firmwares split). Boot is the first test: 56 MB of `.sdram_bss` for the
+   twenty-four resonate regions, with the static_assert guarding it.
 2. Copy `ModalBake/out/worlds/*.kykm` into `/kyklophoria/` on the card
-   beside the `.kykw` files (every world is under a 2 MB region;
-   `reed-vel` is the largest at 1.25 MB). Rescan on the page: the CARD
+   (the modal firmware lists only `.kykm`; every world fits a region — the
+   layered pianos, 2.5 MB, and the electric family, 3.4, take the 4 MB
+   ones). Rescan on the page: the CARD
    list is the second test — `wurli · resonator` and the rest beside the
    frame worlds.
 3. Worlds tab: pick an empty slot, load a resonator into it (the chunked
