@@ -9,7 +9,9 @@
  * while it rings — with the Trained exciter and with the Recorded attack.
  * A note fails if its trained peak is over `ratio` (2 by default) times its
  * recorded peak, or over 2 in the voice's units (a struck note peaks under 1),
- * or not finite. Prints the worst ten and a line a failure.
+ * or not finite. Then fast playing across the keyboard, trained against
+ * recorded, the loudest and the RMS each within 1.5x. Prints the worst ten
+ * and a line a failure.
  */
 #include <cstdio>
 #include <cstdlib>
@@ -62,6 +64,32 @@ int main(int argc, char** argv)
     std::printf("the loudest ten, trained against recorded (a strike and a re-strike, every velocity):\n");
     for(size_t k = 0; k < rows.size() && k < 10; k++)
         std::printf("  note %5.1f velocity %.1f: %.3f vs %.3f (x%.2f)\n", rows[k].param, rows[k].vel, rows[k].trained, rows[k].recorded, rows[k].trained / std::max(rows[k].recorded, 1e-6f));
-    std::printf("%s: %d notes with a trained exciter, %d of %zu strikes over x%.1f or 2.0 — %s\n", argv[1], notes, fails, rows.size(), ratio, fails ? "FAILS" : "safe");
-    return fails ? 1 : 0;
+    /* and fast playing: four voices, 2000 strikes 5-40 ms apart at random
+       notes across the keyboard and random velocities, trained against
+       recorded — the loudest and the RMS each within 1.5x. The overnight
+       rule of 29 September: a re-strike, fast playing, every velocity */
+    float loud[2] = {0.f, 0.f}; double rms[2] = {0, 0}; bool fin = true;
+    for(int t = 0; t < 2; t++)
+    {
+        double acc = 0; long cnt = 0;
+        for(int seed = 1; seed <= 5; seed++)
+        {
+            uint32_t r = (uint32_t)seed * 7919u;
+            auto rnd = [&]() { r = r * 1664525u + 1013904223u; return (float)(r >> 8) / 16777216.f; };
+            Engine e; e.Init(&W, 48000.f); e.gain = 1.f; e.SetPolyphony(4); e.SetExciterType(t ? ResExciter::Trained : ResExciter::Recorded);
+            std::vector<float> y(48);
+            for(int s = 0; s < 400; s++)
+            {
+                e.SetF0(440.f * std::exp2((R.lo + (R.hi - R.lo) * rnd() - 69.f) / 12.f)); e.Strike(rnd());
+                const int n = 5 + (int)(35.f * rnd());
+                for(int k = 0; k < n; k++) { e.Process(y.data(), 48); for(float q : y) { fin = fin && std::isfinite(q); loud[t] = std::fmax(loud[t], std::fabs(q)); acc += (double)q * q; cnt++; } }
+            }
+        }
+        rms[t] = std::sqrt(acc / (cnt ? cnt : 1));
+    }
+    const bool fast_ok = fin && loud[1] <= 1.5f * loud[0] && rms[1] <= 1.5 * rms[0];
+    std::printf("fast playing (2000 strikes, four voices, 5-40 ms apart): trained loudest %.3f rms %.4f, recorded %.3f rms %.4f — %s\n",
+                loud[1], rms[1], loud[0], rms[0], fast_ok ? "safe" : "FAILS");
+    std::printf("%s: %d notes with a trained exciter, %d of %zu strikes over x%.1f or 2.0 — %s\n", argv[1], notes, fails, rows.size(), ratio, fails || !fast_ok ? "FAILS" : "safe");
+    return fails || !fast_ok ? 1 : 0;
 }

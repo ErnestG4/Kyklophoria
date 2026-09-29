@@ -1,0 +1,70 @@
+  FAIL note 23.0 velocity 0.8: trained peak 2.162, recorded 0.962
+  FAIL note 23.0 velocity 0.9: trained peak 2.828, recorded 1.088
+  FAIL note 23.0 velocity 1.0: trained peak 3.029, recorded 1.219
+  FAIL note 36.0 velocity 0.1: trained peak 0.441, recorded 0.163
+  FAIL note 36.0 velocity 0.2: trained peak 0.495, recorded 0.204
+  FAIL note 36.0 velocity 0.3: trained peak 0.624, recorded 0.256
+  FAIL note 36.0 velocity 0.4: trained peak 0.787, recorded 0.322
+  FAIL note 36.0 velocity 0.5: trained peak 0.992, recorded 0.404
+  FAIL note 36.0 velocity 0.6: trained peak 1.472, recorded 0.507
+  FAIL note 36.0 velocity 0.7: trained peak 2.670, recorded 0.637
+  FAIL note 36.0 velocity 0.8: trained peak 5.057, recorded 0.836
+  FAIL note 37.0 velocity 0.8: trained peak 4.543, recorded 1.129
+  FAIL note 37.0 velocity 0.9: trained peak 5.495, recorded 1.292
+  FAIL note 37.0 velocity 1.0: trained peak 4.221, recorded 1.482
+  FAIL note 40.0 velocity 0.6: trained peak 1.082, recorded 0.500
+  FAIL note 40.0 velocity 0.7: trained peak 1.515, recorded 0.660
+  FAIL note 60.0 velocity 0.9: trained peak 2.555, recorded 1.001
+  FAIL note 60.0 velocity 1.0: trained peak 3.651, recorded 1.351
+  FAIL note 73.0 velocity 0.4: trained peak 0.302, recorded 0.136
+  FAIL note 74.0 velocity 0.1: trained peak 0.587, recorded 0.257
+  FAIL note 74.0 velocity 0.2: trained peak 0.597, recorded 0.291
+  FAIL note 75.0 velocity 0.1: trained peak 0.697, recorded 0.167
+  FAIL note 75.0 velocity 0.2: trained peak 0.697, recorded 0.204
+  FAIL note 75.0 velocity 0.3: trained peak 0.702, recorded 0.254
+  FAIL note 75.0 velocity 0.4: trained peak 0.710, recorded 0.339
+  FAIL note 80.0 velocity 0.1: trained peak 0.520, recorded 0.100
+  FAIL note 80.0 velocity 0.2: trained peak 0.488, recorded 0.131
+  FAIL note 80.0 velocity 0.3: trained peak 0.428, recorded 0.166
+  FAIL note 87.0 velocity 0.7: trained peak 1.363, recorded 0.680
+  FAIL note 87.0 velocity 0.8: trained peak 2.666, recorded 0.808
+  FAIL note 87.0 velocity 0.9: trained peak 3.714, recorded 0.960
+  FAIL note 87.0 velocity 1.0: trained peak 5.155, recorded 1.141
+  FAIL note 89.0 velocity 0.4: trained peak 1.493, recorded 0.492
+  FAIL note 89.0 velocity 0.5: trained peak 2.951, recorded 0.558
+  FAIL note 89.0 velocity 0.6: trained peak 3.938, recorded 0.634
+  FAIL note 89.0 velocity 0.7: trained peak 1.491, recorded 0.724
+  FAIL note 92.0 velocity 0.1: trained peak 1.645, recorded 0.261
+  FAIL note 92.0 velocity 0.2: trained peak 1.637, recorded 0.311
+  FAIL note 92.0 velocity 0.3: trained peak 1.601, recorded 0.377
+  FAIL note 92.0 velocity 0.4: trained peak 1.557, recorded 0.449
+  FAIL note 92.0 velocity 0.5: trained peak 1.510, recorded 0.535
+  FAIL note 92.0 velocity 0.6: trained peak 1.652, recorded 0.641
+  FAIL note 92.0 velocity 0.7: trained peak 1.992, recorded 0.769
+  FAIL note 92.0 velocity 0.8: trained peak 2.315, recorded 0.924
+  FAIL note 92.0 velocity 0.9: trained peak 2.608, recorded 1.122
+  FAIL note 92.0 velocity 1.0: trained peak 2.737, recorded 1.375
+  FAIL note 93.0 velocity 0.1: trained peak 0.586, recorded 0.243
+  FAIL note 93.0 velocity 0.2: trained peak 0.528, recorded 0.259
+  FAIL note 97.0 velocity 0.1: trained peak 0.778, recorded 0.304
+  FAIL note 97.0 velocity 0.2: trained peak 0.826, recorded 0.333
+  FAIL note 97.0 velocity 0.3: trained peak 0.929, recorded 0.363
+  FAIL note 97.0 velocity 0.4: trained peak 1.025, recorded 0.396
+  FAIL note 97.0 velocity 0.5: trained peak 1.100, recorded 0.435
+  FAIL note 97.0 velocity 0.6: trained peak 1.179, recorded 0.489
+  FAIL note 97.0 velocity 0.7: trained peak 1.269, recorded 0.573
+  FAIL note 99.0 velocity 0.1: trained peak 0.200, recorded 0.070
+  FAIL note 100.0 velocity 0.1: trained peak 0.299, recorded 0.086
+  FAIL note 102.0 velocity 0.1: trained peak 0.274, recorded 0.072
+the loudest ten, trained against recorded (a strike and a re-strike, every velocity):
+  note  92.0 velocity 0.1: 1.645 vs 0.261 (x6.29)
+  note  89.0 velocity 0.6: 3.938 vs 0.634 (x6.21)
+  note  36.0 velocity 0.8: 5.057 vs 0.836 (x6.05)
+  note  89.0 velocity 0.5: 2.951 vs 0.558 (x5.28)
+  note  92.0 velocity 0.2: 1.637 vs 0.311 (x5.26)
+  note  80.0 velocity 0.1: 0.520 vs 0.100 (x5.21)
+  note  87.0 velocity 1.0: 5.155 vs 1.141 (x4.52)
+  note  37.0 velocity 0.9: 5.495 vs 1.292 (x4.25)
+  note  92.0 velocity 0.3: 1.601 vs 0.377 (x4.25)
+  note  36.0 velocity 0.7: 2.670 vs 0.637 (x4.19)
+out/exc/piano-iowa-vel-5.kykm: 83 notes with a trained exciter, 58 of 830 strikes over x2.0 or 2.0 — FAILS
