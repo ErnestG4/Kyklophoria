@@ -60,6 +60,33 @@ static void Fft(std::vector<double>& re, std::vector<double>& im)
             }
     }
 }
+/* the spectrum in sixth-octave bands from 30 Hz (g_bands): the loss weighed
+   every linear bin alike, and at 44.1 kHz everything under 500 Hz is a
+   handful of bins among thousands — the trainer gave the fundamental and the
+   low partials away for the top (Combust: "they're missing a lot of the
+   deeper harmonics we need"). In bands an octave counts as an octave, as it
+   does to the ear. A band holds at least one bin; the lowest bands at small
+   windows merge into their neighbours */
+static bool g_bands = true;
+static int  g_sr = 44100;
+static std::vector<float> Bands(const std::vector<double>& re, const std::vector<double>& im, int n)
+{
+    std::vector<float> out;
+    double lo = 30.0;
+    const double step = std::pow(2.0, 1.0 / 6.0), top = std::min(16000.0, 0.45 * g_sr);
+    int k0 = std::max(1, (int)(lo * n / g_sr));
+    while(lo < top)
+    {
+        const double hi = lo * step;
+        int k1 = std::max(k0 + 1, (int)(hi * n / g_sr));
+        if(k1 > n / 2) k1 = n / 2;
+        if(k1 <= k0) break;
+        double p = 0; for(int k = k0; k < k1; k++) p += re[k] * re[k] + im[k] * im[k];
+        out.push_back((float)std::sqrt(p / (k1 - k0)));
+        k0 = k1; lo = hi;
+    }
+    return out;
+}
 /* log-magnitude frames of x, window n, hop n/4, Hann, floored at `floor`
    (a magnitude): the take's hiss is not a thing to match */
 static std::vector<std::vector<float>> LogSpec(const std::vector<float>& x, int n, double floor)
@@ -70,8 +97,9 @@ static std::vector<std::vector<float>> LogSpec(const std::vector<float>& x, int 
     {
         for(int i = 0; i < n; i++) { const double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / n); re[i] = x[at + i] * w; im[i] = 0; }
         Fft(re, im);
-        std::vector<float> f(n / 2);
-        for(int k = 0; k < n / 2; k++) f[k] = (float)std::log(std::max(std::sqrt(re[k] * re[k] + im[k] * im[k]), floor));
+        std::vector<float> f;
+        if(g_bands) { f = Bands(re, im, n); for(float& v : f) v = (float)std::log(std::max((double)v, floor)); }
+        else { f.resize(n / 2); for(int k = 0; k < n / 2; k++) f[k] = (float)std::log(std::max(std::sqrt(re[k] * re[k] + im[k] * im[k]), floor)); }
         out.push_back(std::move(f));
     }
     return out;
@@ -137,10 +165,11 @@ static std::vector<float> Onset(const std::vector<float>& x, int sr)
    the output's scale (the modal mass it moves), and one speed a layer */
 /* ... and the contact's noise (ContactNoise): its level over the force, and
    its band's centre — a hard hit's knock, which the modes cannot carry */
-struct Params { double lk, alpha, lmass, lgain, lspeed[3], lnoise, lnfc; };
-static const int kDim = 9;
-static void ToVec(const Params& p, double* v) { v[0] = p.lk; v[1] = p.alpha; v[2] = p.lmass; v[3] = p.lgain; for(int i = 0; i < 3; i++) v[4 + i] = p.lspeed[i]; v[7] = p.lnoise; v[8] = p.lnfc; }
-static Params FromVec(const double* v) { Params p; p.lk = v[0]; p.alpha = v[1]; p.lmass = v[2]; p.lgain = v[3]; for(int i = 0; i < 3; i++) p.lspeed[i] = v[4 + i]; p.lnoise = v[7]; p.lnfc = v[8]; return p; }
+/* ... and the felt's hysteresis (Hammer::mu, Hunt-Crossley) */
+struct Params { double lk, alpha, lmass, lgain, lspeed[3], lnoise, lnfc, lmu; };
+static const int kDim = 10;
+static void ToVec(const Params& p, double* v) { v[0] = p.lk; v[1] = p.alpha; v[2] = p.lmass; v[3] = p.lgain; for(int i = 0; i < 3; i++) v[4 + i] = p.lspeed[i]; v[7] = p.lnoise; v[8] = p.lnfc; v[9] = p.lmu; }
+static Params FromVec(const double* v) { Params p; p.lk = v[0]; p.alpha = v[1]; p.lmass = v[2]; p.lgain = v[3]; for(int i = 0; i < 3; i++) p.lspeed[i] = v[4 + i]; p.lnoise = v[7]; p.lnfc = v[8]; p.lmu = v[9]; return p; }
 
 /* one layer struck by the hammer, kSec long: the voice's modes from rest,
    driven through the coupled loop with EngineCore::StrikeCoupled's weights
@@ -155,7 +184,7 @@ static std::vector<float> RenderHammer(const ResonatorVoice& v0, const Params& p
     for(int k = 0; k < b.n; k++) gmax = std::max(gmax, std::fabs(v.gain[k]));
     for(int k = 0; k < ResonatorBank::kMax; k++) w[k] = (k < b.n && gmax > 0.f) ? std::fabs(v.gain[k]) / gmax : 0.f;
     Hammer h; h.Init();
-    h.k = (float)std::exp(p.lk); h.alpha = (float)p.alpha; h.mass = (float)std::exp(p.lmass);
+    h.k = (float)std::exp(p.lk); h.alpha = (float)p.alpha; h.mass = (float)std::exp(p.lmass); h.mu = (float)std::exp(p.lmu);
     if(g_refweights)
     {
         /* the fitted gains are the ring after the RECORDED hammer, its felt's
@@ -165,20 +194,38 @@ static std::vector<float> RenderHammer(const ResonatorVoice& v0, const Params& p
            the felt has let go, and divide it out: at the reference speed the
            ring is the fitted instrument's, and the other speeds move it by
            the felt's physics alone */
-        static ResonatorVoice r; r = v;
-        float one[ResonatorBank::kMax]; for(int k = 0; k < ResonatorBank::kMax; k++) one[k] = k < b.n ? 1.f : 0.f;
-        Hammer hr = h; hr.Strike((float)std::exp(p.lspeed[1]), 0.f);
-        float tmp[64]; int ran = 0;
-        while(ran < 4000 && ProcessStruck(r.bank, tmp, 1, one, hr, (float)sr, 0.01f)) ran++;
-        float amax = 0.f, a[ResonatorBank::kMax];
-        for(int k = 0; k < b.n; k++)
+        /* the reference strike with the weights themselves, again and again:
+           the contact is nonlinear, so a strike through equal weights is not
+           the strike through these, and one division left the reference
+           speed's own ring 10 dB off the fitted one at the 3rd harmonic.
+           Three passes bring each mode's amplitude after the contact to the
+           fitted gain's proportion */
+        float target[ResonatorBank::kMax];
+        for(int k = 0; k < b.n; k++) target[k] = w[k];
+        for(int pass = 0; pass < 3; pass++)
         {
-            const float r2 = -r.bank.c2[k], rr = r2 > 0.f ? std::sqrt(r2) : 0.f, cw = rr > 0.f ? r.bank.c1[k] / (2.f * rr) : 1.f;
-            const float s2 = std::max(1e-6f, 1.f - cw * cw), ry = rr * r.bank.y2[k];
-            a[k] = std::sqrt(std::max(0.f, (r.bank.y1[k] * r.bank.y1[k] + ry * ry - 2.f * r.bank.y1[k] * ry * cw) / s2));
+            static ResonatorVoice r; r = v;
+            for(int k = 0; k < ResonatorBank::kMax; k++) { r.bank.y1[k] = r.bank.y2[k] = 0.f; }
+            Hammer hr = h; hr.Strike((float)std::exp(p.lspeed[1]), 0.f);
+            float tmp[1]; int ran = 0;
+            while(ran < 4000 && ProcessStruck(r.bank, tmp, 1, w, hr, (float)sr, 0.01f)) ran++;
+            float a[ResonatorBank::kMax], ratio_max = 0.f;
+            for(int k = 0; k < b.n; k++)
+            {
+                const float r2 = -r.bank.c2[k], rr = r2 > 0.f ? std::sqrt(r2) : 0.f, cw = rr > 0.f ? r.bank.c1[k] / (2.f * rr) : 1.f;
+                const float s2 = std::max(1e-6f, 1.f - cw * cw), ry = rr * r.bank.y2[k];
+                a[k] = std::sqrt(std::max(0.f, (r.bank.y1[k] * r.bank.y1[k] + ry * ry - 2.f * r.bank.y1[k] * ry * cw) / s2));
+            }
+            float amax = 0.f; for(int k = 0; k < b.n; k++) amax = std::max(amax, a[k]);
+            if(amax <= 0.f) break;
+            for(int k = 0; k < b.n; k++)
+            {
+                const float got = a[k] / amax;                 /* the ring's proportion now */
+                if(got > 1e-6f) w[k] *= std::min(8.f, std::max(0.125f, target[k] / got));
+                ratio_max = std::max(ratio_max, w[k]);
+            }
+            if(ratio_max > 0.f) for(int k = 0; k < b.n; k++) w[k] /= ratio_max;
         }
-        for(int k = 0; k < b.n; k++) { w[k] = a[k] > 1e-12f ? w[k] / a[k] : 0.f; amax = std::max(amax, w[k]); }
-        if(amax > 0.f) for(int k = 0; k < b.n; k++) w[k] /= amax;
     }
     h.Strike((float)std::exp(p.lspeed[layer]), 0.f);
     const int n = (int)(kSec * sr);
@@ -202,6 +249,27 @@ static std::vector<float> RenderRecorded(const ResonatorVoice& v0, float vel, in
     return y;
 }
 
+/* the first eight harmonics' levels in dB over the whole window, each re
+   the take's loudness (level-matched as the loss is): a number for "the
+   deeper harmonics" */
+static void Harmonics(const std::vector<float>& y0, double rms_to, int sr, float f0, double* db)
+{
+    std::vector<float> y(y0);
+    const double r0 = Rms(y);
+    if(r0 > 0) { const float g = (float)(rms_to / r0); for(float& v : y) v *= g; }
+    for(int h = 1; h <= 8; h++)
+    {
+        double best = 0;
+        for(int c = -20; c <= 20; c++)            /* within 40 cents either way: stretched partials */
+        {
+            const double f = h * f0 * std::pow(2.0, c / 1200.0 * 2);
+            double re = 0, im = 0;
+            for(size_t i = 0; i < y.size(); i++) { const double ph = 2 * M_PI * f * i / sr; re += y[i] * std::cos(ph); im += y[i] * std::sin(ph); }
+            best = std::max(best, std::sqrt(re * re + im * im) / y.size());
+        }
+        db[h - 1] = 20 * std::log10(best + 1e-12);
+    }
+}
 static void Where(const std::vector<float>& y0, const Target& t, int sr, double& att, double& ring, double& envdb)
 {
     std::vector<float> y(y0);
@@ -225,6 +293,7 @@ int main(int argc, char** argv)
     { FILE* f = std::fopen(argv[1], "rb"); if(!f) { std::perror(argv[1]); return 1; } std::fseek(f, 0, SEEK_END); blob.resize(std::ftell(f)); std::fseek(f, 0, SEEK_SET); if(std::fread(blob.data(), 1, blob.size(), f) != blob.size()) return 1; std::fclose(f); }
     const float midi = (float)std::atof(argv[2]);
     g_refweights = std::getenv("EXCFIT_WEIGHTS") && std::string(std::getenv("EXCFIT_WEIGHTS")) == "ref";
+    g_bands = !(std::getenv("EXCFIT_BINS") && std::atoi(std::getenv("EXCFIT_BINS")));   /* EXCFIT_BINS=1: the old linear bins, to compare */
     const std::string prefix = argv[3];
     std::vector<Target> takes;
     int sr = 0;
@@ -236,7 +305,7 @@ int main(int argc, char** argv)
         std::vector<float> x; int tsr = 0;
         if(!kykdesk::ReadWav(t.path, x, tsr)) { std::fprintf(stderr, "cannot read %s\n", t.path.c_str()); return 1; }
         if(sr && tsr != sr) { std::fprintf(stderr, "the takes' rates differ\n"); return 1; }
-        sr = tsr;
+        sr = tsr; g_sr = sr;
         t.x = Onset(x, sr);
         t.rms = Rms(t.x);
         for(int r = 0; r < 3; r++) { t.floor[r] = FloorOf(t.x, kSizes[r]); t.s[r] = LogSpec(t.x, kSizes[r], t.floor[r]); }
@@ -262,11 +331,13 @@ int main(int argc, char** argv)
         Params p0; p0.lk = rnd(std::log(1e7), std::log(1e10)); p0.alpha = rnd(2.2, 3.5); p0.lmass = rnd(std::log(0.003), std::log(0.02)); p0.lgain = rnd(-2, 4);
         for(int i = 0; i < 3; i++) p0.lspeed[i] = std::log(0.3 * std::pow(16.0, takes.size() > (size_t)i ? takes[i].vel : 0.5)) + rnd(-0.3, 0.3);
         p0.lnoise = rnd(std::log(1e-9), std::log(1e-5)); p0.lnfc = rnd(std::log(500.0), std::log(8000.0));
+        p0.lmu = rnd(std::log(0.01), std::log(3.0));
         ToVec(p0, simplex[0]);
-        const double step[kDim] = {1.0, 0.3, 0.5, 1.0, 0.4, 0.4, 0.4, 1.5, 0.5};
+        const double step[kDim] = {1.0, 0.3, 0.5, 1.0, 0.4, 0.4, 0.4, 1.5, 0.5, 1.0};
         for(int i = 1; i <= kDim; i++) { for(int d = 0; d < kDim; d++) simplex[i][d] = simplex[0][d]; simplex[i][i - 1] += step[i - 1]; }
         auto clampv = [](double* v) { v[1] = std::min(4.0, std::max(1.5, v[1])); for(int i = 4; i < 7; i++) v[i] = std::min(std::log(30.0), std::max(std::log(0.01), v[i]));
-                                   v[8] = std::min(std::log(16000.0), std::max(std::log(100.0), v[8])); };
+                                   v[8] = std::min(std::log(16000.0), std::max(std::log(100.0), v[8]));
+                                   v[9] = std::min(std::log(30.0), std::max(std::log(1e-4), v[9])); };
         for(int i = 0; i <= kDim; i++) { clampv(simplex[i]); f[i] = total(FromVec(simplex[i])); evals++; }
         for(int it = 0; it < 220; it++)
         {
@@ -296,7 +367,7 @@ int main(int argc, char** argv)
         if(f[bi] < bestL) { bestL = f[bi]; best = FromVec(simplex[bi]); }
         std::printf("  start %d: loss %.3f\n", start, f[bi]);
     }
-    std::printf("trained hammer (%d renders): felt k %.3g alpha %.2f, mass %.1f g, gain %.3g, noise %.3g at %.0f Hz, speeds", evals, std::exp(best.lk), best.alpha, 1000 * std::exp(best.lmass), std::exp(best.lgain), std::exp(best.lnoise), std::exp(best.lnfc));
+    std::printf("trained hammer (%d renders): felt k %.3g alpha %.2f, mass %.1f g, gain %.3g, noise %.3g at %.0f Hz, mu %.3g s/m, speeds", evals, std::exp(best.lk), best.alpha, 1000 * std::exp(best.lmass), std::exp(best.lgain), std::exp(best.lnoise), std::exp(best.lnfc), std::exp(best.lmu));
     for(size_t i = 0; i < takes.size(); i++) std::printf(" %s %.2f m/s", takes[i].layer.c_str(), std::exp(best.lspeed[i]));
     std::printf("\n%-6s %10s %10s\n", "layer", "hammer", "recorded");
     for(size_t i = 0; i < takes.size(); i++)
@@ -305,6 +376,12 @@ int main(int argc, char** argv)
         double ah, rh, eh, ar, rr, er;
         Where(yh, takes[i], sr, ah, rh, eh); Where(yr, takes[i], sr, ar, rr, er);
         std::printf("%-6s %10.3f %10.3f    attack %.2f / %.2f  ring %.2f / %.2f  envelope %.1f / %.1f dB\n", takes[i].layer.c_str(), Loss(yh, takes[i], sr), Loss(yr, takes[i], sr), ah, ar, rh, rr, eh, er);
+        const float f0 = 440.f * std::pow(2.f, (midi - 69.f) / 12.f);
+        double ht[8], hh[8], hr[8];
+        Harmonics(takes[i].x, takes[i].rms, sr, f0, ht); Harmonics(yh, takes[i].rms, sr, f0, hh); Harmonics(yr, takes[i].rms, sr, f0, hr);
+        std::printf("       h1-h8, hammer and recorded voice against the take (dB):");
+        for(int h = 0; h < 8; h++) std::printf(" %+.0f/%+.0f", hh[h] - ht[h], hr[h] - ht[h]);
+        std::printf("\n");
         kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-hammer.wav", yh.data(), yh.size(), sr);
         kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-recorded.wav", yr.data(), yr.size(), sr);
         kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-target.wav", takes[i].x.data(), takes[i].x.size(), sr);
