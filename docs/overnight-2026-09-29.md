@@ -49,3 +49,30 @@ aa9e48d, with a brake on any runaway voice).
 ## Log
 
 - 00:58 — list written; check-ins at :13 and :43, wrap-up 07:52.
+- 01:00 — the pop, part one (ModalBake 6e6b3a2): cut-only weights, the 1 ms
+  onset term, the hammer's mass bounded 5-15 g and a width. C1 +8.7 -> +2.2
+  dB of early high band over the take; C4 about +1; C2 still about +8.
+- 01:03 — the grand retrained with them (iowa2), gated for level.
+- 01:20 — item 2 done (441889e): `?page=wavetable` and `?page=modal`, with
+  `modal.html` and `wavetable.html` forwarding to them; a banner when the
+  connected firmware is the other one.
+- 01:35 — **iowa2 refused by the level gate**: 222 of 830 strikes over twice
+  the recorded peak, all from MIDI 67 up. The card before it fails the same
+  gate (132); it predates tonight. RMS matches the recording (1.1-1.5x); the
+  peak is 5-9x: a smooth 2 ms bump at the contact. That is the pop.
+- 01:45 — item 3 done (83dbf80): Bow, Reed, Lips on the Exciter page
+  (between Pluck and Trained; Trained stays on top, so the default and old
+  presets are unchanged). Each driven by the velocity axis every block,
+  under a limiter at 0.8. What it took to play a fitted piano, not an ideal
+  string: the bow's force inside Schelleng's window; a string's losses (the
+  fundamental must be the least lossy mode, or the bow takes the octave);
+  a bore's losses for the winds (Q 30); only the note's harmonics driven
+  (ghost modes, the soundboard and body modes made the reed relax at 340 Hz
+  on a C5 and the lips play 100 cents sharp). Tuned within 40 cents across
+  C2-C5; 216 level corners bounded; seven mutations each caught.
+- 01:50 — **the pop's cause** (e6a4a58, ModalBake 709fb76): every mode was
+  pushed the same way, so all started in phase and piled into a pulse. Each
+  mode now takes its recorded polarity, sign(g cos phase). The contact can't
+  tell; the output can. D5 7.1x -> 1.3x the recorded peak before
+  retraining; two notes retrained with it: G4 0.8x, D5 1.6x, loudness 1.1x.
+  The grand is retraining with it (iowa3, launched 01:49).
