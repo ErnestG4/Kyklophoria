@@ -1,0 +1,13 @@
+the loudest ten, trained against recorded (a strike and a re-strike, every velocity):
+  note  96.0 velocity 0.1: 0.165 vs 0.084 (x1.98)
+  note  94.0 velocity 0.6: 0.811 vs 0.425 (x1.91)
+  note 102.0 velocity 0.1: 0.137 vs 0.072 (x1.90)
+  note  93.0 velocity 0.7: 0.590 vs 0.317 (x1.86)
+  note  94.0 velocity 0.5: 0.810 vs 0.444 (x1.82)
+  note  80.0 velocity 0.8: 0.903 vs 0.509 (x1.77)
+  note  61.0 velocity 0.1: 0.227 vs 0.129 (x1.76)
+  note  23.0 velocity 0.1: 0.188 vs 0.110 (x1.71)
+  note  91.0 velocity 0.1: 0.570 vs 0.334 (x1.71)
+  note  80.0 velocity 0.9: 1.300 vs 0.784 (x1.66)
+fast playing (2000 strikes, four voices, 5-40 ms apart): trained loudest 2.471 rms 0.3926, recorded 2.387 rms 0.3922 — safe
+out/exc/piano-iowa-vel-5soft.kykm: 65 notes with a trained exciter, 0 of 650 strikes over x2.0 or 2.0 — safe
