@@ -185,6 +185,43 @@ affordable at any polyphony; four at once is not the plan.
    input as one more force, the contact noise; the recorded attack stays as
    the default "strike" until the synthesised one has been heard against it.
 
+## Stage 4, built (28 September): trained exciters, full synthesis
+
+Combust: "We need to build modal towards the actual fully modeled version",
+"we are trying to move to full synthesis as well. We'll need to train exciters
+to match"; on the first trained, level-matched hammer: "that's freakin
+perfect". What exists now:
+
+- **The coupled strike in the engine** (EngineCore::SetExciterType, 58c07b8):
+  Hammer and Pluck take over the voice they strike until the contact lets go,
+  then hand the ring back to the ordinary loop. The felt has hysteresis
+  (Hunt-Crossley mu, 80ae55d), without which a clean pulse left a null near
+  3 f0 and the 3rd and 6th harmonics 6-19 dB short.
+- **The trainer** (ModalBake tools/excfit, built against this core): per note,
+  the felt (k, alpha, mu), the hammer's mass, a speed per velocity layer and
+  the contact noise, searched against each take's first 600 ms (sixth-octave
+  bands and the envelope, level-matched: the takes are levelled). The contact
+  drives each mode by weights iterated so that at the middle layer the ring
+  is the fitted instrument's — the fitted gains already hold the recorded
+  felt, and a synthetic felt through them filtered twice. tools/excsmooth.py
+  smooths a keyboard's hammers along the keys.
+- **Format 9** (799535f): each point's trained hammer after its attacks, the
+  weights one byte a mode, a level per layer that puts the hammer at today's
+  voice's loudness. tools/excbake writes it from a version 8 world; the
+  runtime plays it through ResExciter::Trained (with the page's shape as
+  offsets around it), and a point without one plays its recorded attack.
+  Trained end to end, the module's render of a note correlates 0.9999 with
+  the trainer's.
+- **The Exciter page** on the modal firmware (8b65c31): Recorded / Hammer /
+  Pluck / Trained (the default), timbre, position, noise, mass.
+- Measured on the Iowa grand's C4 against the recordings (loss, lower
+  better): pp 0.200 vs the recorded attack's 0.583, mf 0.247 vs 0.316, ff
+  0.192 vs 0.182, every ff harmonic within 2 dB.
+
+Still to come: the whole card trained (the Iowa grand first), the bow, reed
+and lips on the module (gate or axis-driven), J1 as a force, and the pp end's
+balance.
+
 ## Stage 4, proposed (28 September) — for Combust to decide
 
 What the module has now, so the proposal fits it: seven pages of six pots
