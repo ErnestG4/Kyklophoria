@@ -1499,9 +1499,26 @@ struct ResonatorVoice
     float          stage[8];          /* the stage it was built with, before the spin: h, w, K, fc, Q, the two swings, and 1 */
     uint32_t       burst_len;         /* samples in the burst it would play at swing 1, 0 for none */
     float          release_ms;        /* how long the last note's ring takes to fall 60 dB when the next note on this voice is at another pitch (Engine::SetReleaseMs) */
+    /* the point's trained exciter (format 9; ModalBake excfit, excbake): the
+       type (0 none — the recorded attack — 1 a hammer), the felt (k, alpha,
+       mu), the hammer's mass, a speed and a level for each of three layers
+       (velocity 0.15, 0.55, 0.95, the pp/mf/ff the takes stand for), the
+       contact noise (its level and band), and each mode's weight in the
+       contact — trained so that at the middle layer the ring is the fitted
+       instrument's. exc_wset: the weights are this voice's modes' (a point
+       played at its own note); a voice blended between two points has none
+       and the contact takes the fitted gains (EngineCore::StrikeCoupled) */
+    uint8_t        exc_type;
+    bool           exc_wset;
+    float          exc_k, exc_alpha, exc_mu, exc_mass, exc_noise, exc_nfc;
+    float          exc_speed[3], exc_gain[3];
+    float          exc_w[ResonatorBank::kMax];
 
     void Init()
     {
+        exc_type = 0; exc_wset = false; exc_k = exc_alpha = exc_mu = exc_mass = exc_noise = exc_nfc = 0.f;
+        for(int k = 0; k < 3; k++) exc_speed[k] = exc_gain[k] = 0.f;
+        for(int k = 0; k < ResonatorBank::kMax; k++) exc_w[k] = 0.f;
         bank.Init(); pickup.Init(); burst.Init(); wash.Init(); bursts = nullptr; release_ms = ResonatorDefaults::kReleaseMs; swing_soft = swing_hard = 1.f; burst_rate = 1.f; sr = 48000.f; burst_len = 0; burst_head = 10; burst_fade = 0; param = 1e9f; cap = 0; body_top = 0.f;
         for(int k = 0; k < ResonatorBank::kMax; k++) hz[k] = zeta[k] = gain[k] = phase[k] = 0.f;
         for(int k = 0; k < 8; k++) stage[k] = 0.f;
@@ -1622,6 +1639,10 @@ struct ResonatorVoice
             wash.gain[k] = f.wash.gain[k]; wash.level[k] = f.wash.level[k]; wash.fall[k] = f.wash.fall[k];
         }
         swing_soft = f.swing_soft; swing_hard = f.swing_hard;
+        exc_type = f.exc_type; exc_wset = f.exc_wset;
+        exc_k = f.exc_k; exc_alpha = f.exc_alpha; exc_mu = f.exc_mu; exc_mass = f.exc_mass; exc_noise = f.exc_noise; exc_nfc = f.exc_nfc;
+        for(int k = 0; k < 3; k++) { exc_speed[k] = f.exc_speed[k]; exc_gain[k] = f.exc_gain[k]; }
+        for(int k = 0; k < ResonatorBank::kMax; k++) exc_w[k] = f.exc_w[k];
     }
 };
 
@@ -1698,9 +1719,25 @@ struct ResonatorWorld
     {
         if(i < kMaxPoints) return blob + poff_[i];
         const uint8_t* q = blob + poff_[kMaxPoints - 1];
-        for(int j = kMaxPoints - 1; j < i; j++) q = BurstEnd(NoiseEnd(q + FixedBytes()));
+        for(int j = kMaxPoints - 1; j < i; j++) q = ExciterEnd(BurstEnd(NoiseEnd(q + FixedBytes())));
         return q;
     }
+    /* version 9: after its attacks, each point carries its trained exciter —
+       u8 type (0 none: the recorded attack plays), and for a type: f32 k,
+       alpha, mu, mass, noise, noise band, speed[3], gain[3] (48 bytes), then
+       one u8 weight a mode, in the point's own mode order, a weight w stored
+       as 255 + 40 log10 w (0: the mode takes no force). At the end so a
+       version 8 world is byte for byte what it was */
+    static constexpr uint32_t kExciterFixed = 48u;
+    const uint8_t* ExciterEnd(const uint8_t* e) const
+    {
+        if(ver < 9) return e;
+        return e[0] ? e + 1 + kExciterFixed + N : e + 1;
+    }
+    /* point i's own exciter block (never a referenced point's: a burst
+       reference is an attack's, and the exciter is this note's) */
+    const uint8_t* Exciter(int i) const { return ver >= 9 ? BurstEnd(NoiseEnd(Noise(i))) : nullptr; }
+    static float ExciterWeight(uint8_t b) { return b ? fastmath::Exp2((float)((int)b - 255) * 0.083048202f) : 0.f; }   /* 10^((b - 255) / 40) */
     /* and every point checked to lie inside the blob on the way: a world
        whose bytes run out — a truncated file, a version it was not written
        for (a version 6 world stamped 8 by a tool's bug read the start of its
@@ -1720,21 +1757,31 @@ struct ResonatorWorld
             b += 1 + 8u * b[0];
             if(b + 2 > end) return false;
             uint16_t nb; std::memcpy(&nb, b, 2);
+            const uint8_t* c;
             if(nb == 0xFFFFu)
             {
                 if(b + 4 > end) return false;
                 uint16_t r; std::memcpy(&r, b + 2, 2);
                 if(r >= P) return false;
-                q = b + 4;
-                continue;
+                c = b + 4;
             }
-            const uint8_t* c = b + 2;
-            for(uint16_t k = 0; k < nb; k++)
+            else
             {
-                if(c + bh > end) return false;
-                uint16_t n; std::memcpy(&n, c + 8, 2);
-                c += bh + 2u * n;
-                if(c > end) return false;
+                c = b + 2;
+                for(uint16_t k = 0; k < nb; k++)
+                {
+                    if(c + bh > end) return false;
+                    uint16_t n; std::memcpy(&n, c + 8, 2);
+                    c += bh + 2u * n;
+                    if(c > end) return false;
+                }
+            }
+            if(ver >= 9)
+            {
+                if(c + 1 > end) return false;
+                if(c[0] > 1) return false;                    /* a type this runtime does not know */
+                if(c + (c[0] ? 1 + kExciterFixed + N : 1) > end) return false;
+                c = ExciterEnd(c);
             }
             q = c;
         }
@@ -1796,7 +1843,7 @@ struct ResonatorWorld
         M = 0;
         if(kind == 2)
         {
-            if(v < 6 || v > 8 || size < kHeader + 1) return false;
+            if(v < 6 || v > 9 || size < kHeader + 1) return false;
             const uint8_t m = blob[kHeader];
             if(m == 0 || m > kMaxMembers || size < kHeader + 1 + 24u * m) return false;
             for(int i = 0; i < m; i++)
@@ -1810,7 +1857,7 @@ struct ResonatorWorld
             M = m;
             return N <= ResonatorBank::kMax;
         }
-        if(!((v >= 4 && v <= 8) && N <= ResonatorBank::kMax && size >= HeaderBytes() + (uint32_t)P * FixedBytes())) return false;
+        if(!((v >= 4 && v <= 9) && N <= ResonatorBank::kMax && size >= HeaderBytes() + (uint32_t)P * FixedBytes())) return false;
         return TablePoints();
     }
     /* the m-th instrument of a family, as a world of its own with this
@@ -2031,17 +2078,28 @@ const float wa = 1.f - wb;
     /* one point as it sounds at param: its modes (all, or the cap's
        loudest, on the bytes), transposed, at the point's level, and
        re-weighted by the body curve; its stage into stage when asked */
-    int Transposed(int near, float param, int cap, float* ha, float* za, float* ga, float* fa, float* stage) const
+    /* xw, when asked for and the point has a trained exciter: each mode's
+       weight in the contact, in the order the modes come out (the cap's
+       loudest, or all of them); true if it was filled */
+    int Transposed(int near, float param, int cap, float* ha, float* za, float* ga, float* fa, float* stage, float* xw = nullptr, bool* xwset = nullptr) const
     {
         int nd = N;
+        const uint8_t* ex = xw ? Exciter(near) : nullptr;
+        const bool has_w = ex && ex[0] != 0;
+        if(xwset) *xwset = has_w;
         if(cap > 0 && cap < N)
         {
             int idx[ResonatorBank::kMax];
             nd = Loudest(near, cap, idx);
             const uint8_t* m = Modes(near);
             for(int k = 0; k < nd; k++) DecodeMode(m, idx[k], k, ha, za, ga, fa);
+            if(has_w) for(int k = 0; k < nd; k++) xw[k] = ExciterWeight(ex[1 + kExciterFixed + idx[k]]);
         }
-        else Decode(near, ha, za, ga, fa);
+        else
+        {
+            Decode(near, ha, za, ga, fa);
+            if(has_w) for(int k = 0; k < nd; k++) xw[k] = ExciterWeight(ex[1 + kExciterFixed + k]);
+        }
         float st[8];
         std::memcpy(st, Stage(near), 32);
         if(stage) std::memcpy(stage, st, 32);
@@ -2098,6 +2156,7 @@ const float wa = 1.f - wb;
         float ha[ResonatorBank::kMax], za[ResonatorBank::kMax], ga[ResonatorBank::kMax], fa[ResonatorBank::kMax];
         float hb[ResonatorBank::kMax], zb[ResonatorBank::kMax], gb[ResonatorBank::kMax], fb[ResonatorBank::kMax];
         float st[8], sb[8];
+        float xw[ResonatorBank::kMax]; bool xwset = false;   /* the trained exciter's weights, when this is a point played at its own note */
         int nd = N;                   /* modes decoded */
         bool capped = false;          /* the voice's cap already applied, on the bytes */
         if(kind != 1)
@@ -2143,7 +2202,7 @@ const float wa = 1.f - wb;
             else
 #endif
             {
-                nd = Transposed(near, param, v.cap > 0 && v.cap < N ? v.cap : 0, ha, za, ga, fa, st);
+                nd = Transposed(near, param, v.cap > 0 && v.cap < N ? v.cap : 0, ha, za, ga, fa, st, xw, &xwset);
                 capped = v.cap > 0 && v.cap < N;
             }
             t = 0.f;
@@ -2223,8 +2282,11 @@ const float wa = 1.f - wb;
             }
             n = 0;
             for(int k = 0; k < N; k++) if(take[k]) { ha[n] = ha[k]; za[n] = za[k]; ga[n] = ga[k]; fa[n] = fa[k]; n++; }
+            xwset = false;                /* the modes reordered: the weights no longer line up */
         }
         for(int k = 0; k < n; k++) { v.hz[k] = ha[k]; v.zeta[k] = za[k]; v.gain[k] = ga[k]; v.phase[k] = fa[k]; }
+        v.exc_wset = xwset;
+        for(int k = 0; k < ResonatorBank::kMax; k++) v.exc_w[k] = xwset && k < n ? xw[k] : 0.f;
         for(int k = n; k < ResonatorBank::kMax; k++) { v.hz[k] = 0.f; v.zeta[k] = 0.f; v.gain[k] = 0.f; v.phase[k] = 0.f; }
         Build(param, v, sr, keep, strike, ha, za, ga, fa, n, st, near, a, b, t);
     }
@@ -2322,6 +2384,18 @@ const float wa = 1.f - wb;
             else v.wash.Set(la, ta, sr);
         }
         v.swing_soft = st[5]; v.swing_hard = st[6];
+        /* the point's trained exciter (version 9), the nearer point's on a
+           voice between two; the weights were set by At (or not) */
+        {
+            const uint8_t* ex = Exciter(near);
+            v.exc_type = ex ? ex[0] : 0;
+            if(v.exc_type)
+            {
+                float f[12]; std::memcpy(f, ex + 1, sizeof f);
+                v.exc_k = f[0]; v.exc_alpha = f[1]; v.exc_mu = f[2]; v.exc_mass = f[3]; v.exc_noise = f[4]; v.exc_nfc = f[5];
+                for(int k = 0; k < 3; k++) { v.exc_speed[k] = f[6 + k]; v.exc_gain[k] = f[9 + k]; }
+            }
+        }
         SetPickup(v, st, sr, keep);
     }
 

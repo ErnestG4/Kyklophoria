@@ -1108,6 +1108,69 @@ int main()
                c1, c2, p2 / p1, e1, e2, e3);
     }
 
+    /* 22l. format 9: each point carries its trained exciter (ModalBake
+       excfit, excbake) — full synthesis. The Piano fixture made version 9 by
+       appending a hammer to every point: it attaches, and cut short it is
+       refused; a voice at a point takes that point's weights, as stored; the
+       Trained exciter strikes through them, finite; on the version 8 fixture
+       Trained plays the recorded attack, sample for sample; and the trained
+       level scales the note — the contact and the ring after it, the same,
+       with no step where the contact lets go */
+    {
+        ResonatorWorld R8; R8.Init();
+        CHECK(R8.Attach(wblob.data(), (uint32_t)wblob.size()), "the fixture did not attach");
+        auto make9 = [&](float gain) {
+            std::vector<uint8_t> out(wblob.begin(), wblob.begin() + R8.HeaderBytes());
+            const uint16_t nine = 9; std::memcpy(out.data() + 4, &nine, 2);
+            for(int i = 0; i < R8.P; i++)
+            {
+                const uint8_t* a = R8.Point(i);
+                const uint8_t* e = R8.BurstEnd(R8.NoiseEnd(a + R8.FixedBytes()));
+                out.insert(out.end(), a, e);
+                out.push_back(1);
+                const float f[12] = {5e8f, 2.4f, 0.5f, 0.004f, 0.f, 2000.f, 0.8f, 2.f, 4.f, gain, gain, gain};
+                const uint8_t* fb = (const uint8_t*)f; out.insert(out.end(), fb, fb + sizeof f);
+                for(int k = 0; k < R8.N; k++) out.push_back((uint8_t)(255 - 2 * (k % 20)));    /* 0, -0.5, -1 ... dB */
+            }
+            return out;
+        };
+        const auto v9 = make9(1.f), v9x2 = make9(2.f);
+        ResonatorWorld R9; R9.Init();
+        const bool ok9 = R9.Attach(v9.data(), (uint32_t)v9.size());
+        ResonatorWorld Rcut; Rcut.Init();
+        const bool cut = Rcut.Attach(v9.data(), (uint32_t)v9.size() - 3);
+        CHECK(ok9 && !cut, "version 9: attached %d, cut short attached %d", ok9, cut);
+        World W9; W9.UseResonate(v9.data(), (uint32_t)v9.size());
+        World W9x2; W9x2.UseResonate(v9x2.data(), (uint32_t)v9x2.size());
+        /* the weights a voice takes at a point */
+        {
+            static ResonatorVoice v; v.Init(); R9.At(R9.Param(3), v, sr);
+            float worst = 0.f;
+            for(int k = 0; k < v.bank.n; k++) worst = std::fmax(worst, std::fabs(v.exc_w[k] - std::pow(10.f, -2.f * (k % 20) / 40.f)));
+            CHECK(v.exc_type == 1 && v.exc_wset && worst < 1e-4f && std::fabs(v.exc_k - 5e8f) < 1.f, "a voice at a point: type %d, weights %d (off by %.2g), k %.3g", v.exc_type, v.exc_wset, worst, v.exc_k);
+        }
+        auto play = [&](const World& w, ResExciter t, std::vector<float>& y, int& coupled) {
+            Engine e; e.Init(&w, sr); e.gain = 1.f; e.SetExciterType(t);
+            e.SetF0(440.f * std::exp2((R9.Param(3) - 69.f) / 12.f)); e.Strike(0.7f);
+            coupled = e.CoupledVoice();
+            y.clear(); RunOn(e, y, 200);
+        };
+        std::vector<float> yt, yt2, yr8, yt8; int c9, c9b, c8r, c8t;
+        play(W9, ResExciter::Trained, yt, c9); play(W9x2, ResExciter::Trained, yt2, c9b);
+        play(piano, ResExciter::Recorded, yr8, c8r); play(piano, ResExciter::Trained, yt8, c8t);
+        bool finite = true; float pk = 0.f; for(float s : yt) { finite = finite && std::isfinite(s); pk = std::fmax(pk, std::fabs(s)); }
+        CHECK(c9 >= 0 && finite && pk > 1e-5f, "a trained strike: coupled %d, finite %d, peak %.3g", c9, finite, pk);
+        float d8 = 0.f; for(size_t i = 0; i < yr8.size(); i++) d8 = std::fmax(d8, std::fabs(yr8[i] - yt8[i]));
+        CHECK(c8t < 0 && d8 == 0.f, "Trained on a version 8 world: coupled %d, off the recorded attack by %.3g", c8t, d8);
+        /* the level: twice the gain, twice the note, all of it */
+        float r = 0.f; for(size_t i = 0; i < yt.size(); i++) if(std::fabs(yt[i]) > 1e-6f) r = std::fmax(r, std::fabs(yt2[i] / yt[i] - 2.f));
+        float step = 0.f, ring = 0.f;
+        for(size_t i = 1; i < yt2.size(); i++) { const float d = std::fabs(yt2[i] - yt2[i - 1]); if(i < 1200) step = std::fmax(step, d); else if(i < 4800) ring = std::fmax(ring, d); }
+        CHECK(r < 1e-3f, "twice the trained level is not twice the note: off by %.3g", r);
+        printf("  format 9: a trained hammer from each point, its weights as stored; version 8 plays its recorded attack; the level scales the whole note (x2 within %.1g)\n", r);
+        (void)step; (void)ring;
+    }
+
     /* 22c. the position a resonate world reports as heard (Position(), which
        telemetry sends as posL and the page's model sliders follow) moves with
        the axes. The skipped render was the only thing that folded it, so it

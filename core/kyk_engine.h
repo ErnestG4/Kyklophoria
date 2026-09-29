@@ -84,8 +84,11 @@ struct ResonatorVoices
    the recorded attack played beside the modes, as the worlds were fitted, or
    an exciter coupled to the modes — its force computed every sample from where
    the string is under it, and put back into the modes. Hammer and Pluck leave
-   the string when the contact ends; Bow, Reed and Lips are to come */
-enum class ResExciter : uint8_t { Recorded = 0, Hammer = 1, Pluck = 2 };
+   the string when the contact ends; Bow, Reed and Lips are to come.
+   Trained: the hammer each point was trained with (format 9, ModalBake
+   excfit) — full synthesis; a world or a point without one plays its
+   recorded attack */
+enum class ResExciter : uint8_t { Recorded = 0, Hammer = 1, Pluck = 2, Trained = 3 };
 
 class EngineCore
 {
@@ -223,7 +226,7 @@ public:
         if(vtrack_ != 0.f) { const float d = rdens_ > 6.f ? 1.f : rdens_ / 6.f; v += vtrack_ * 0.5f * d; v = v > 1.f ? 1.f : v; }
         rdens_ += 1.f;
         rlast_v_ = v;
-        if(rexc_ == ResExciter::Recorded) rvoices_[ractive_].Strike(v);
+        if(rexc_ == ResExciter::Recorded || (rexc_ == ResExciter::Trained && !rvoices_[ractive_].exc_type)) rvoices_[ractive_].Strike(v);
         else StrikeCoupled(rvoices_[ractive_], v);
         rforce_ = 1e9f;
     }
@@ -364,6 +367,7 @@ public:
                 for(int k = 0; k < 8; k++) st[k] = (1.f - t) * sa.stage[k] + t * sb.stage[k];
                 const ResonatorWorld& W = t < 0.5f ? A : B;
                 int a, b; float tt; const int near = W.NearPoint(param, a, b, tt);
+                v.exc_wset = false;       /* a blend of two members: no point's weights line up with it */
                 W.Build(param, v, sr_, keep, strike, h, z, g, f, m, st, near, a, b, tt);
                 return;
             }
@@ -1081,10 +1085,12 @@ public:
         }
         const float amount = std::fabs(rexc_pos_ - 0.5f) * 2.f;
         const float pos = 0.05f + 0.45f * rexc_pos_;
+        const bool trained = rexc_ == ResExciter::Trained && vv.exc_type == 1;
         float xc = 0.f;
         for(int k = 0; k < ResonatorBank::kMax; k++)
         {
             if(k >= b.n || gmax <= 0.f) { rcw_[k] = 0.f; continue; }
+            const float base = trained && vv.exc_wset ? vv.exc_w[k] : std::fabs(vv.gain[k]) / gmax;
             float comb = 1.f;
             if(amount > 1e-3f && f1 < 1e8f)
             {
@@ -1093,11 +1099,37 @@ public:
                 float w = 2.f * (sn < 0.f ? -sn : sn); w = w > 1.f ? 1.f : w;
                 comb = (1.f - amount) + amount * w;
             }
-            rcw_[k] = std::fabs(vv.gain[k]) / gmax * comb;
+            rcw_[k] = base * comb;
             xc += rcw_[k] * b.y1[k];
         }
         b.quiet = false;
         const float v = vel < 0.f ? 0.f : vel > 1.f ? 1.f : vel;
+        rcg_ = 1.f;
+        if(trained)
+        {
+            /* the point's hammer, the page's shape as offsets around it (the
+               centre of each is the hammer as trained): timbre the felt's
+               stiffness, x/÷ 30 at the ends; mass x/÷ 3; the noise from none
+               to 4x. The speed and the level between the three layers'
+               (velocity 0.15, 0.55, 0.95), in logs, held past the ends */
+            auto lerp3 = [&](const float* q) {
+                const float lo = 0.15f, mid = 0.55f, hi = 0.95f;
+                const float a0 = std::log(q[0] > 1e-9f ? q[0] : 1e-9f), a1 = std::log(q[1] > 1e-9f ? q[1] : 1e-9f), a2 = std::log(q[2] > 1e-9f ? q[2] : 1e-9f);
+                const float x = v < lo ? lo : v > hi ? hi : v;
+                return std::exp(x < mid ? a0 + (a1 - a0) * (x - lo) / (mid - lo) : a1 + (a2 - a1) * (x - mid) / (hi - mid));
+            };
+            rham_.Init();
+            rham_.k     = vv.exc_k * std::exp(6.8f * (rexc_timbre_ - 0.5f));
+            rham_.alpha = vv.exc_alpha;
+            rham_.mu    = vv.exc_mu;
+            rham_.mass  = vv.exc_mass * std::exp(2.2f * (rexc_mass_ - 0.5f));
+            rham_.Strike(lerp3(vv.exc_speed), xc);
+            rcg_ = lerp3(vv.exc_gain);
+            const float nm = 2.f * rexc_noise_;                                 /* none, as trained at the centre, 4x at the top */
+            rcn_.Init(sr_, vv.exc_nfc > 20.f ? vv.exc_nfc : 2000.f, 0.7f, vv.exc_noise * nm * nm);
+            rcv_ = ractive_;
+            return;
+        }
         if(rexc_ == ResExciter::Hammer)
         {
             rham_.Init();
@@ -1124,9 +1156,18 @@ public:
     bool RunCoupled(ResonatorVoice& vv, float* out, int m)
     {
         ContactNoise* cn = rexc_noise_ > 0.f ? &rcn_ : nullptr;
-        const bool on = rexc_ == ResExciter::Hammer
+        const bool on = rexc_ != ResExciter::Pluck
             ? ProcessStruck(vv.bank, out, m, rcw_, rham_, sr_, kModalMass, cn)
             : ProcessPlucked(vv.bank, out, m, rcw_, rplk_, sr_, kModalMass, cn);
+        /* the trained level: the contact runs in the hammer's own units and
+           the voice is heard at the level it was trained to (the voice's
+           today at that velocity) — the output scaled now, and the ring by
+           the same when the contact lets go, so the hand-over is seamless */
+        if(rcg_ != 1.f)
+        {
+            for(int k = 0; k < m; k++) out[k] *= rcg_;
+            if(!on) { for(int k = 0; k < vv.bank.n; k++) { vv.bank.y1[k] *= rcg_; vv.bank.y2[k] *= rcg_; } rcg_ = 1.f; }
+        }
         vv.bank.ProcessTail(out, m);
         vv.pickup.Process(out, m);
         vv.burst.Process(out, m);
@@ -1342,8 +1383,9 @@ private:
     int            rlate_n_ = 0;         /* blocks a late CV has stood, no strike arriving */
     float          rforce_ = 1e9f;
     ResExciter     rexc_ = ResExciter::Recorded;
-    float          rexc_timbre_ = 0.5f, rexc_pos_ = 0.5f, rexc_noise_ = 0.f, rexc_mass_ = 0.5f;
+    float          rexc_timbre_ = 0.5f, rexc_pos_ = 0.5f, rexc_noise_ = 0.5f, rexc_mass_ = 0.5f;   /* the centre of each: a trained exciter as trained */
     int            rcv_ = -1;            /* the voice a coupled contact is driving, -1 none */
+    float          rcg_ = 1.f;           /* the trained level the coupled voice is heard at, applied to its ring when the contact lets go */
     Hammer         rham_;
     Pluck          rplk_;
     ContactNoise   rcn_;
