@@ -76,3 +76,26 @@ aa9e48d, with a brake on any runaway voice).
   tell; the output can. D5 7.1x -> 1.3x the recorded peak before
   retraining; two notes retrained with it: G4 0.8x, D5 1.6x, loudness 1.1x.
   The grand is retraining with it (iowa3, launched 01:49).
+- 02:00 — **a sustained voice let go came back at the wrong level** (285eb8e):
+  the fast-playing level check caught a reed coming back 3.3x louder when the
+  next note took the exciter (3.35 peak). The same hand-over as the trained
+  contact's now. Lifted and put back: a step of x1.24 at most.
+- 02:08 — **J1 into the loop** (b362be1), item 4's third part: bowed, blown
+  and struck notes hear J1 as a force at the contact. Two runaways found on
+  the way by the level checks (J1's gain over the limiter; a reed opening
+  without limit at C6) and fixed.
+- 02:21 — iowa3 **refused by the gate again**, 131 of 830 (from 222). What
+  was left: the treble's pop as a smooth 1.5 ms bump the loss could not
+  hear, and an A3 whose near-rigid trained felt ran away struck again (6.97,
+  the brake caught it).
+- 02:35 — fixes: the trainer hears the onset's peak (ModalBake 461c1a9; six
+  treble notes back to the recording's peak), a contact step's impulse
+  capped at an elastic collision's, ghost modes not struck (109309a). The
+  grand is retraining with all of it (iowa4, launched 02:32).
+- The modal firmware's room: **not done, on purpose**. It is at 99.30% SRAM
+  (3.4 KB free). A `KYK_WAVETABLE` switch would take out about 35 KB (the
+  sine table and morph world, 8 KB each; the spectra, shapes, lattice and
+  aim search, about 20 KB). But the oscillator and the resonator share one
+  render path, and the page's telemetry reads the rendered frame on resonate
+  worlds too. So it wants a modal-only desktop build checked against the
+  page, not a 2 am edit.
