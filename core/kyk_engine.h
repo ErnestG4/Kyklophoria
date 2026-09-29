@@ -149,7 +149,7 @@ public:
         dirty_ = true;
         for(int v = 0; v < rcap_; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rgen_++; if(rplan_) rplan_->state = 0u;
-        rcv_ = -1; rsv_ = -1;          /* a contact or a bow under way belonged to the voices just rebuilt */
+        rcv_ = -1; rsv_ = -1; rsdrv_ = -1;   /* a contact or a bow under way belonged to the voices just rebuilt */
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rpoly_ = 1; rmember_ = 0; rdriven_ = 0; rhold_ = false;
         for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
@@ -229,6 +229,7 @@ public:
         if(vtrack_ != 0.f) { const float d = rdens_ > 6.f ? 1.f : rdens_ / 6.f; v += vtrack_ * 0.5f * d; v = v > 1.f ? 1.f : v; }
         rdens_ += 1.f;
         rlast_v_ = v;
+        SustainedHandBack();                       /* whatever the strike does to the voice a bow was on, it meets it in the output's units */
         if(Sustained(rexc_)) rsv_ = -1;            /* no attack: the bow, the reed or the lips take the new voice next block */
         else if(rexc_ == ResExciter::Recorded || (rexc_ == ResExciter::Trained && !rvoices_[ractive_].exc_type)) rvoices_[ractive_].Strike(v);
         else StrikeCoupled(rvoices_[ractive_], v);
@@ -867,6 +868,13 @@ public:
             float tmp[48], tmpR[48];
             const bool lr = rout_ != nullptr && world_->Res().kind != 1;
             if(rout_) for(int i = 0; i < n; i++) rout_[i] = 0.f;
+            {
+                /* a sustained drive ending (the bow lifted, the type changed,
+                   another note taking it) hands its voice back before any
+                   voice runs, at the gain it was last heard at */
+                const int drv = Sustained(rexc_) && (c_[1] > 1e-3f || rsv_ != ractive_) ? ractive_ : -1;
+                if(rsdrv_ >= 0 && rsdrv_ != drv) SustainedHandBack();
+            }
             for(int v = 0; v < rcap_; v++)
             {
                 /* a voice past the count rings out and is then skipped */
@@ -897,7 +905,21 @@ public:
                     if(Sustained(rexc_) && v == ractive_ && (c_[1] > 1e-3f || rsv_ != v))
                     {
                         if(rsv_ != v) { StartSustained(v); rsv_ = v; }
+                        if(rsdrv_ != v)
+                        {
+                            /* the voice into the exciter's units: it rang in
+                               the output's, which is these times rsg_ rslim_
+                               — taken as it is, a ringing reed came back 3.3x
+                               louder when let go, and a bow met a string 500x
+                               too big (the trained re-strike's runaway, 28
+                               September, the same shape) */
+                            ResonatorBank& b = rvoices_[v].bank;
+                            const float inv = 1.f / (rsg_ * rslim_);
+                            for(int k = 0; k < b.n; k++) { b.y1[k] *= inv; b.y2[k] *= inv; }
+                            rsdrv_ = v;
+                        }
                         RunSustained(rvoices_[v], tmp, m);
+                        rsgl_ = rsg_ * rslim_;
                         if(lr) for(int k = 0; k < m; k++) tmpR[k] = tmp[k];
                     }
                     else if(v == rcv_)
@@ -926,6 +948,7 @@ public:
                         rvoices_[v].Init();
                         if(v == rcv_) rcv_ = -1;
                         if(v == rsv_) rsv_ = -1;
+                        if(v == rsdrv_) rsdrv_ = -1;
                         rvoices_[v].cap = rpoly_ > 1 ? ResonatorBank::kMax / rpoly_ : 0;
                         rvoices_[v].release_ms = rrelease_ms_;
                         rvnote_[v] = 1e9f; rvdirty_[v] = false;
@@ -1076,7 +1099,7 @@ public:
          * is the same as starting in it */
         for(int v = 0; v < rcap_; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rgen_++; if(rplan_) rplan_->state = 0u;
-        rcv_ = -1; rsv_ = -1;          /* a contact or a bow under way belonged to the voices just rebuilt */
+        rcv_ = -1; rsv_ = -1; rsdrv_ = -1;   /* a contact or a bow under way belonged to the voices just rebuilt */
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rmember_ = 0;
         for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
@@ -1310,6 +1333,15 @@ public:
        the tail beside them, the pickup; the output scaled, and under a peak
        limiter of its own at 0.8 (instant down, a second back up) — a bow
        pushed past its band or a reed over-blown must not rail */
+    /* the driven voice back in the output's units: its state times the
+       gain it was last heard at, so the ring carries on at the level it had */
+    void SustainedHandBack()
+    {
+        if(rsdrv_ < 0 || rsdrv_ >= rcap_) { rsdrv_ = -1; return; }
+        ResonatorBank& b = rvoices_[rsdrv_].bank;
+        for(int k = 0; k < b.n; k++) { b.y1[k] *= rsgl_; b.y2[k] *= rsgl_; }
+        rsdrv_ = -1;
+    }
     void RunSustained(ResonatorVoice& vv, float* out, int m)
     {
         const float energy = c_[1] < 0.f ? 0.f : c_[1] > 1.f ? 1.f : c_[1];
@@ -1382,7 +1414,6 @@ public:
                 ProcessLipped(vv.bank, out, m, rsw_, rlips_, 30.f, sr_);
             }
         }
-        vv.bank.ProcessTail(out, m);
         for(int k = 0; k < m; k++)
         {
             float y = out[k] * rsg_;
@@ -1391,6 +1422,7 @@ public:
             else rslim_ += (1.f - rslim_) * (1.f / sr_);                            /* back over about a second */
             out[k] = y * rslim_;
         }
+        vv.bank.ProcessTail(out, m);        /* the tail rings beside, undriven, in the output's units */
         vv.pickup.Process(out, m);
         vv.burst.Process(out, m);
         vv.wash.Process(out, m);
@@ -1615,6 +1647,8 @@ private:
     Reed           rreed_;
     Lips           rlips_;
     int            rsv_ = -1;            /* the voice the sustained exciter is driving, -1 none */
+    int            rsdrv_ = -1;          /* the voice whose state is in the exciter's units, -1 none */
+    float          rsgl_ = 1.f;          /* the gain it was last heard at (rsg_ rslim_) */
     float          rsw_[ResonatorBank::kMax];   /* its weights on that voice's modes */
     float          rsg_ = 1.f, rslim_ = 1.f, rsf1_ = 110.f, rsbeta_ = 0.2f, rsreg_[4] = {1.f, 2.f, 3.f, 4.f}, rsq1_ = 0.f;   /* its output's scale, its limiter, the note's fundamental, the bow's place (a fraction of the string), the lips' four registers (harmonic numbers, as this voice has them), the fundamental's Q (the bow's losses) */
     Pluck          rplk_;

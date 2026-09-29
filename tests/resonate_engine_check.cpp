@@ -1315,6 +1315,54 @@ int main()
               "the throw: bowed %.3g at 0.4, %.3g at 1; the reed at the top %.3g (at 50-100 ms %.3g), the lips %.3g (%.3g)", b4, b1, rf, er1, lf, el1);
         printf("  the throw: bowed %.3f at 0.4 and %.3f at 1; at the top the reed %.3f and the lips %.3f, each at %.0f%% and %.0f%% of it by 50-100 ms\n",
                b4, b1, rf, lf, 100 * er1 / rf, 100 * el1 / lf);
+        /* lifted and put back: each type driven half a second, let go (the
+           energy to none), then driven again — the ring carries on at the
+           level it had, no step either way (the voice's state was in the
+           exciter's units: let go, a reed came back 3.3x louder and a bow
+           500x quieter) */
+        {
+            float worst_step = 1.f, worst_pk = 0.f;
+            for(ResExciter t : {ResExciter::Bow, ResExciter::Reed, ResExciter::Lips})
+            {
+                Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetExciterType(t); e.SetExciterShape(0.5f, 0.3f, 0.f, 0.5f);
+                float c[4] = {0.5f, 0.7f, 0.5f, 0.5f}; e.SetPosition(c, 4); e.SetF0(130.81f); e.Strike(0.8f);
+                std::vector<float> z; RunOn(e, z, 500);
+                c[1] = 0.f; e.SetPosition(c, 4); RunOn(e, z, 1);
+                c[1] = 0.f; e.SetPosition(c, 4); RunOn(e, z, 100);
+                c[1] = 0.7f; e.SetPosition(c, 4); RunOn(e, z, 200);
+                const double before = rms(z, 24000 - 960, 24000), after = rms(z, 24000 + 48, 24000 + 48 + 960);
+                const float step = (float)(after / (before + 1e-12));
+                worst_step = std::fmax(worst_step, std::fmax(step, 1.f / std::fmax(step, 1e-6f)));
+                for(float q : z) worst_pk = std::fmax(worst_pk, std::fabs(q));
+            }
+            CHECK(worst_step < 1.5f && worst_pk < 0.81f, "lifted and put back: a step of x%.2f at the lift, the loudest %.3g", worst_step, worst_pk);
+            printf("  lifted and put back: the ring carries on (a step of x%.2f at most), the loudest %.2f\n", worst_step, worst_pk);
+        }
+        /* fast playing: four voices, a strike every 5-40 ms at random notes,
+           the energy and the shape moving, each type — the newest note takes
+           the exciter and the one before rings free. Bounded as the trained
+           random play is: finite, and under four of a single sustained
+           note's peak */
+        {
+            uint32_t rng = 12345u;
+            auto rnd = [&]() { rng = rng * 1664525u + 1013904223u; return (float)(rng >> 8) / 16777216.f; };
+            float worst = 0.f; bool finite = true;
+            for(ResExciter t : {ResExciter::Bow, ResExciter::Reed, ResExciter::Lips})
+            {
+                Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4); e.SetExciterType(t);
+                std::vector<float> z;
+                for(int s = 0; s < 80; s++)
+                {
+                    float c[4] = {0.5f, rnd(), 0.5f, 0.5f}; e.SetPosition(c, 4);
+                    e.SetExciterShape(rnd(), rnd(), rnd(), rnd());
+                    e.SetF0(440.f * std::exp2((36.f + 48.f * rnd() - 69.f) / 12.f)); e.Strike(rnd());
+                    z.clear(); RunOn(e, z, 5 + (int)(35.f * rnd()));
+                    for(float q : z) { finite = finite && std::isfinite(q); worst = std::fmax(worst, std::fabs(q)); }
+                }
+            }
+            CHECK(finite && worst < 4.f * 0.8f, "fast sustained playing: finite %d, the loudest %.3g", finite, worst);
+            printf("  fast sustained playing (240 strikes, four voices, every type): the loudest %.2f\n", worst);
+        }
         /* every corner, both worlds */
         float worst = 0.f; bool finite = true; int runs = 0;
         for(const World* w : {&piano, &rw})
