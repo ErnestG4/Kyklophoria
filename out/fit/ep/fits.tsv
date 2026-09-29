@@ -5,7 +5,7 @@ ep002	ep	midi	70	MAX	MAX/a#3 max.wav	35	0.3948	0.048	1.016
 ep003	ep	midi	82	MAX	MAX/a#4 max.wav	28	0.4340	0.051	0.939
 ep004	ep	midi	94	MAX	MAX/a#5 max.wav	15	0.3949	0.018	0.926
 ep005	ep	midi	106	MAX	MAX/a#6 max.wav	15	0.4579	0.008	0.927
-ep006	ep	midi	118	MAX	MAX/a#7 max.wav	13	0.7359	0.007	0.697
+ep006	ep	midi	118	MAX	MAX/a#7 max.wav	10	0.7227	0.010	0.857
 ep007	ep	midi	45	MAX	MAX/a1 max.wav	43	0.7264	0.020	1.781
 ep008	ep	midi	57	MAX	MAX/a2 max.wav	42	0.5623	0.075	1.059
 ep009	ep	midi	69	MAX	MAX/a3 max.wav	31	0.4141	0.052	0.952
@@ -41,7 +41,7 @@ ep038	ep	midi	63	MAX	MAX/d#3 max.wav	33	0.5072	0.038	1.053
 ep039	ep	midi	75	MAX	MAX/d#4 max.wav	38	0.3799	0.028	0.938
 ep040	ep	midi	87	MAX	MAX/d#5 max.wav	33	0.3556	0.028	1.004
 ep041	ep	midi	99	MAX	MAX/d#6 max.wav	15	0.4064	0.014	0.916
-ep042	ep	midi	111	MAX	MAX/d#7 max.wav	14	0.5740	0.016	0.831
+ep042	ep	midi	111	MAX	MAX/d#7 max.wav	11	0.4726	0.028	0.504
 ep043	ep	midi	38	MAX	MAX/d1 max.wav	44	0.8322	0.015	1.079
 ep044	ep	midi	50	MAX	MAX/d2 max.wav	42	0.6766	0.058	1.104
 ep045	ep	midi	62	MAX	MAX/d3 max.wav	33	0.5704	0.075	1.062
@@ -55,28 +55,28 @@ ep052	ep	midi	64	MAX	MAX/e3 max.wav	30	0.5461	0.060	1.063
 ep053	ep	midi	76	MAX	MAX/e4 max.wav	39	0.3624	0.034	0.950
 ep054	ep	midi	88	MAX	MAX/e5 max.wav	28	0.4289	0.026	0.910
 ep055	ep	midi	100	MAX	MAX/e6 max.wav	13	0.4072	0.014	0.900
-ep056	ep	midi	112	MAX	MAX/e7 max.wav	11	0.5805	0.003	0.788
+ep056	ep	midi	112	MAX	MAX/e7 max.wav	11	0.4842	0.007	1.048
 ep057	ep	midi	42	MAX	MAX/f#1 max.wav	45	0.8448	0.027	1.152
 ep058	ep	midi	54	MAX	MAX/f#2 max.wav	40	0.6607	0.075	1.109
 ep059	ep	midi	66	MAX	MAX/f#3 max.wav	40	0.5649	0.066	1.060
 ep060	ep	midi	78	MAX	MAX/f#4 max.wav	24	0.3619	0.021	0.949
 ep061	ep	midi	90	MAX	MAX/f#5 max.wav	32	0.3962	0.025	0.773
 ep062	ep	midi	102	MAX	MAX/f#6 max.wav	16	0.4715	0.012	0.883
-ep063	ep	midi	114	MAX	MAX/f#7 max.wav	15	0.6237	0.005	0.778
+ep063	ep	midi	114	MAX	MAX/f#7 max.wav	6	0.5080	0.006	1.133
 ep064	ep	midi	41	MAX	MAX/f1 max.wav	44	0.7937	0.012	1.145
 ep065	ep	midi	53	MAX	MAX/f2 max.wav	39	0.6191	0.060	1.102
 ep066	ep	midi	65	MAX	MAX/f3 max.wav	39	0.5238	0.045	1.048
 ep067	ep	midi	77	MAX	MAX/f4 max.wav	43	0.3820	0.033	0.917
 ep068	ep	midi	89	MAX	MAX/f5 max.wav	29	0.4357	0.013	0.915
 ep069	ep	midi	101	MAX	MAX/f6 max.wav	15	0.4150	0.007	0.959
-ep070	ep	midi	113	MAX	MAX/f7 max.wav	12	0.6078	0.010	0.753
+ep070	ep	midi	113	MAX	MAX/f7 max.wav	12	0.5591	0.009	0.885
 ep071	ep	midi	44	MAX	MAX/g#1 max.wav	42	0.7671	0.014	1.122
 ep072	ep	midi	56	MAX	MAX/g#2 max.wav	42	0.5595	0.054	1.053
 ep073	ep	midi	68	MAX	MAX/g#3 max.wav	40	0.5347	0.059	1.076
 ep074	ep	midi	80	MAX	MAX/g#4 max.wav	23	0.3612	0.037	0.942
 ep075	ep	midi	92	MAX	MAX/g#5 max.wav	31	0.4046	0.025	0.913
 ep076	ep	midi	104	MAX	MAX/g#6 max.wav	10	0.3946	0.013	0.776
-ep077	ep	midi	116	MAX	MAX/g#7 max.wav	13	0.5000	0.020	0.034
+ep077	ep	midi	116	MAX	MAX/g#7 max.wav	6	0.6026	0.017	0.981
 ep078	ep	midi	43	MAX	MAX/g1 max.wav	41	0.7562	0.016	1.100
 ep079	ep	midi	55	MAX	MAX/g2 max.wav	43	0.6192	0.085	1.099
 ep080	ep	midi	67	MAX	MAX/g3 max.wav	38	0.5213	0.066	1.038
@@ -89,7 +89,7 @@ ep086	ep	midi	58	MED	MED/a#2.wav	25	0.3978	0.022	1.006
 ep087	ep	midi	70	MED	MED/a#3.wav	23	0.3001	0.021	0.979
 ep088	ep	midi	82	MED	MED/a#4.wav	6	0.3668	0.022	0.991
 ep089	ep	midi	94	MED	MED/a#5.wav	8	0.3876	0.017	0.895
-ep090	ep	midi	106	MED	MED/a#6.wav	6	2.0135	0.020	0.906
+ep090	ep	midi	106	MED	MED/a#6.wav	7	0.3113	0.023	1.004
 ep091	ep	midi	118	MED	MED/a#7.wav	4	0.3780	0.021	0.961
 ep092	ep	midi	45	MED	MED/a1.wav	35	0.6486	0.014	0.992
 ep093	ep	midi	57	MED	MED/a2.wav	31	0.3537	0.024	0.999
