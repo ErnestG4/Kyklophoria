@@ -114,3 +114,4 @@ aa9e48d, with a brake on any runaway voice).
   moved the telemetry's kcut, and this check caught it), and a wavetable
   world through it is silence. One consequence to know: a wavetable world
   sent to the modal firmware now plays silence.
+- 02:53 — check-in. iowa4 at note 66 of 108; waiting on it, then its level gate.
