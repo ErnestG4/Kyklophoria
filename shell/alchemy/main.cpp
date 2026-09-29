@@ -1168,6 +1168,7 @@ struct ModuleSource : ExtSource
         s.at_per_s      = gAtPerS;
         s.strike_max    = gCycStrikeMaxWin;
         s.staged_per_s  = gStagedPerS;
+        s.hurried_per_s = gHurriedPerS;
     }
     const World*  ResonateWorld() override { const World* w = gEng.L.WorldPtr(); return w && w->IsResonate() ? w : nullptr; }
     const EngineCore* ResonateEngine() override { return &gEng.L; }
@@ -1553,7 +1554,7 @@ struct ModuleSource : ExtSource
     }
 
     uint32_t gBlobCrc   = 0;
-    uint32_t gCycMaxWin = 0, gCycAvgWin = 0, gCycEngMaxWin = 0, gAtPerS = 0, gCycStrikeMaxWin = 0, gStagedPerS = 0;
+    uint32_t gCycMaxWin = 0, gCycAvgWin = 0, gCycEngMaxWin = 0, gAtPerS = 0, gCycStrikeMaxWin = 0, gStagedPerS = 0, gHurriedPerS = 0;
 };
 static ModuleSource  gSource;
 static KykExt         gExt(gSource);
@@ -2091,6 +2092,9 @@ static void OnFrame()
         static uint32_t st_last = 0;
         const uint32_t st_now = gEng.L.PlansTaken();
         gSource.gStagedPerS = st_now - st_last; st_last = st_now;
+        static uint32_t hu_last = 0;
+        const uint32_t hu_now = gEng.L.Hurried();
+        gSource.gHurriedPerS = hu_now - hu_last; hu_last = hu_now;
         gCycSum = 0; gCycN = 0; gCycMax = 0; gCycEngMax = 0; gCycStrikeMax = 0;
         win_t = now_ms;
     }

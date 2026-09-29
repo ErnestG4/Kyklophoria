@@ -931,6 +931,7 @@ inline int Serve(kyk::StereoEngine& eng, kyk::World& world, std::vector<uint8_t>
             src.stats.cycles_avg = (uint32_t)(acc_ns / acc_n); acc_ns = 0; acc_n = 0; win_t = Now(); src.stats.cycles_max = 0; src.stats.engine_max = 0; src.stats.strike_max = 0;
             static uint32_t at_last = 0; const uint32_t at_now = eng.L.AtCount(); src.stats.at_per_s = at_now - at_last; at_last = at_now;
             static uint32_t st_last = 0; const uint32_t st_now = eng.L.PlansTaken(); src.stats.staged_per_s = st_now - st_last; st_last = st_now;
+            static uint32_t hu_last = 0; const uint32_t hu_now = eng.L.Hurried(); src.stats.hurried_per_s = hu_now - hu_last; hu_last = hu_now;
         }
 
         /* serve the link */

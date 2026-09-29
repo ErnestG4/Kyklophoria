@@ -199,7 +199,7 @@ def stdio_tests():
     ty, seq, r, ok = link.request(0x63)
     last, mx, avg = struct.unpack('<III', r[1:13]); budget = struct.unpack('<I', r[18:22])[0]
     check(r[0] == 0 and budget == 500000 and 0 < last < budget, f'stats last {last} budget {budget}')
-    check(len(r) == 38, f'stats ends with the engine peak, the At() rate, the strike peak and the staged rate ({len(r)} bytes)')
+    check(len(r) == 42, f'stats ends with the engine peak, the At() rate, the strike peak, the staged rate and the hurried blocks a second ({len(r)} bytes)')
     body = struct.pack('<fB', 440.0, 4) + struct.pack('<4f', 0.1, 0.2, 0.3, 0.4) + bytes([6]) + struct.pack('<6f', 0.05, 0, 0, 0, 0, 0) + struct.pack('<f', 0.02)
     ty, seq, r, ok = link.request(0x6E, body)
     check(r[0] == 0, 'SET_CONTROL accepted')
