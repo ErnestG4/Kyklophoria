@@ -7,9 +7,12 @@ against the code, the campaign scripts and the git history on 28 September
 2026. Where something is not recorded in the repository, the guide says so
 instead of guessing.
 
-"Training" here does not mean a neural network. Every note of every
-instrument gets its own small model, fitted by gradient descent on the GPU
-(torch, Adam) against that note's recording:
+"Training" here means fitting a small physical model to each note's
+recording. There is no neural network, and nothing is learned across
+notes. Every note of every instrument gets its own model, whose numbers
+are found by gradient descent on the GPU (torch, Adam): the optimiser is
+only how the numbers are searched for, and any search would do (the
+exciter trainer, excfit, uses Nelder-Mead and no gradients at all):
 
 - **The resonator** is a bank of decaying sinusoids: a frequency, decay,
   amplitude and phase for each mode. Electric pianos also get a pickup
