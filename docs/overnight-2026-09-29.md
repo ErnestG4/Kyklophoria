@@ -99,3 +99,8 @@ aa9e48d, with a brake on any runaway voice).
   render path, and the page's telemetry reads the rendered frame on resonate
   worlds too. So it wants a modal-only desktop build checked against the
   page, not a 2 am edit.
+- 02:43 — check-in. iowa4 training (note 39 of 108, about 03:25 to go).
+  Both firmwares build (wavetable SRAM 82.68%, modal 99.34%). Demos of the
+  bow, reed and lips on the Iowa grand are in `build/demos/` (not in git).
+  The sustained loops cost about 20 M7 instructions a mode a sample, about
+  10% of the block at one voice's 48 modes and 2.5% at four voices' share.
