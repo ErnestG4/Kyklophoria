@@ -123,3 +123,20 @@ aa9e48d, with a brake on any runaway voice).
   stored hammer to them, so a card baked earlier is safe too (6d92e44).
   iowa5 launched 03:09, gating both the smoothed and raw bakes.
 - 03:21 — check-in. iowa5 training (note 48 done).
+- 03:43 — iowa5 (a hammer's numbers bounded) refused smoothed (58) and raw
+  (47), on different handfuls of keys. **A level-safe card now exists**:
+  ModalBake tools/excpick.py takes each note's hammer from the first bake in
+  which exclevel passed it (70 smoothed, 15 raw), and 36 and 40 keep their
+  recorded attack. Gated whole: 0 of 810 strikes over. exclevel now also
+  plays fast (2000 strikes, 4 voices, 5-40 ms): 2.47 against the recorded
+  2.39. The card is **ModalBake/out/card-exc5/kyklophoria** (db782f8).
+  Yesterday's trained world still fails through tonight's engine (24 over,
+  fast playing 4.06), so use card-exc5, not card-exc.
+- 03:50 — the pop against the takes (the first 3 ms's high band):
+  bass +3.1 dB median (yesterday +10.5), mid +1.9 (+7.7), treble +4.1
+  (+5.4). By layer it's now a pianissimo problem: pp median +8.9 dB, ff
+  -0.1. A real felt's exponent (alpha >= 2.2) was tried on six notes and was
+  mixed; it's an option, not the default (ModalBake 3be2a2b). The trainer is
+  resting here: the card is level-safe, and ears on it will say more than
+  another retrain. On the module, Exciter page Timbre (the felt's
+  stiffness) turned down softens every trained attack.
