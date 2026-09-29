@@ -326,7 +326,20 @@ int main(int argc, char** argv)
     std::mt19937 rng(7);
     auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
     Params best{}; double bestL = 1e18; int evals = 0;
-    const int starts = std::getenv("EXCFIT_STARTS") ? std::atoi(std::getenv("EXCFIT_STARTS")) : 8;   /* fewer, for a quick look */
+    /* EXCFIT_PARAMS="k alpha mu mass noise nfc speed_pp speed_mf speed_ff":
+       no search — the hammer given (a keyboard's smoothed values, excsmooth),
+       only its weights, levels and renders worked out and written */
+    int starts = std::getenv("EXCFIT_STARTS") ? std::atoi(std::getenv("EXCFIT_STARTS")) : 8;   /* fewer, for a quick look */
+    if(const char* fixed = std::getenv("EXCFIT_PARAMS"))
+    {
+        double k, a, mu, ms, nz, nf, sp[3];
+        if(std::sscanf(fixed, "%lf %lf %lf %lf %lf %lf %lf %lf %lf", &k, &a, &mu, &ms, &nz, &nf, &sp[0], &sp[1], &sp[2]) != 9) { std::fprintf(stderr, "EXCFIT_PARAMS wants nine numbers\n"); return 2; }
+        best.lk = std::log(k); best.alpha = a; best.lmu = std::log(mu); best.lmass = std::log(ms); best.lnoise = std::log(nz > 0 ? nz : 1e-12); best.lnfc = std::log(nf); best.lgain = 0;
+        /* the takes' speeds by their layers (pp, mf, ff in that order among those given) */
+        const char* names[3] = {"pp", "mf", "ff"};
+        for(size_t i = 0; i < takes.size(); i++) for(int L = 0; L < 3; L++) if(takes[i].layer == names[L]) best.lspeed[i] = std::log(sp[L]);
+        bestL = total(best); starts = 0;
+    }
     for(int start = 0; start < starts; start++)
     {
         double simplex[kDim + 1][kDim], f[kDim + 1];
