@@ -12,13 +12,17 @@
 # firmwares ... users swap from the SD"): each with the whole RAM, the pots and
 # the jacks to itself.
 #   make MODE=wavetable   -> build-wavetable/kyklophoria-wavetable.bin
-#   make MODE=modal       -> build-modal/kyklophoria-modal.bin
+#   make MODE=modal       -> build-modal/bongs.bin (the modal firmware is Bongs)
 #   make both             -> the two
 MODE ?= modal
 ifeq ($(filter $(MODE),wavetable modal),)
 $(error MODE is wavetable or modal, not "$(MODE)")
 endif
+ifeq ($(MODE),modal)
+TARGET = bongs
+else
 TARGET = kyklophoria-$(MODE)
+endif
 # the SDK's Makefile sets BUILD_DIR plainly; a mode's objects are its own
 override BUILD_DIR := build-$(MODE)
 BOARD ?= v2

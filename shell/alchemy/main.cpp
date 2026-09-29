@@ -1470,7 +1470,7 @@ static ModuleSource  gSource;
 static KykExt         gExt(gSource);
 /* the name says which firmware this is: the page shows that firmware's controls */
 #if KYK_MODE_MODAL
-static hostlink::Host host(presets, "kyk", "Kyklophoria Modal", KYK_FW_VERSION, KYK_GIT_HASH);
+static hostlink::Host host(presets, "kyk", "Bongs", KYK_FW_VERSION, KYK_GIT_HASH);   /* the modal firmware's name (Combust, 29 September); the page reads "bongs" or "modal" as it */
 #else
 static hostlink::Host host(presets, "kyk", "Kyklophoria Wavetable", KYK_FW_VERSION, KYK_GIT_HASH);
 #endif
