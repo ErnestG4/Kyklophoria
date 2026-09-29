@@ -61,7 +61,11 @@ using namespace kyk;
 
 static AlchemyLab  hw;
 static ControlLoop loop(hw);
+#if KYK_MODE_MODAL
+static Pager       pager(hw.buttons[kButtonB1], 8, kNumPots);   /* the eighth: the Exciter (docs/exciters.md) */
+#else
 static Pager       pager(hw.buttons[kButtonB1], 7, kNumPots);
+#endif
 static Presets     presets(hw.seed.qspi);
 static Settings    settings(hw, &pager);
 
@@ -73,6 +77,7 @@ static constexpr LedPanel::Rgb kOrbit  = {0xFD, 0xE0, 0x68};
 static constexpr LedPanel::Rgb kCouple = {0xF0, 0xA0, 0xD8};
 static constexpr LedPanel::Rgb kKepler = {0x9A, 0xE6, 0xB4};
 static constexpr LedPanel::Rgb kWorld  = {0xF7, 0xC0, 0x8A};
+static constexpr LedPanel::Rgb kExcite = {0xFF, 0x8A, 0x5B};
 
 static VirtualKnob k_coarse = VirtualKnob(0, "Coarse").Linear(-3.f, 3.f).Unit("oct").Ident("pitch.coarse").Ring(Level(kPlay));
 static VirtualKnob k_fine   = VirtualKnob(1, "Fine").Linear(-1.f, 1.f).Unit("st").Ident("pitch.fine").Ring(Level(kPlay));
@@ -242,6 +247,17 @@ static VirtualKnob k_kmass  = VirtualKnob(4, "Company").Ident("kep.mass").Ring(L
  * the page; how far is a performance one and belongs under a finger. */
 #if KYK_MODE_MODAL
 static VirtualKnob k_morph  = VirtualKnob(5, "—").Ident("world.morph").Ring(Level(kCouple));
+/* The Exciter page (docs/exciters.md, stage 4): what strikes the resonator.
+ * Trained by default — each point's own hammer, trained to the recordings
+ * (ModalBake excfit; format 9), the recorded attack where a world has none —
+ * with the shape as offsets around it, the centre of each as trained. */
+static const char* const kExciterNames[4] = {"Recorded", "Hammer", "Pluck", "Trained"};
+static VirtualKnob k_etype  = VirtualKnob(0, "Exciter").Selector(4).Labels(kExciterNames, 4).Ident("exc.type").Ring(Level(kExcite));
+static VirtualKnob k_etimb  = VirtualKnob(1, "Timbre").Ident("exc.timbre").Ring(Level(kExcite));
+static VirtualKnob k_epos   = VirtualKnob(2, "Position").Ident("exc.pos").Ring(Level(kExcite));
+static VirtualKnob k_enoise = VirtualKnob(3, "Noise").Ident("exc.noise").Ring(Level(kExcite));
+static VirtualKnob k_emass  = VirtualKnob(4, "Mass").Ident("exc.mass").Ring(Level(kExcite));
+static Page page_exciter = Page(7).Name("Exciter").Color("#ff8a5b").Knobs(k_etype, k_etimb, k_epos, k_enoise, k_emass);
 #else
 static VirtualKnob k_morph  = VirtualKnob(5, "World morph").Ident("world.morph").Ring(Level(kCouple));
 #endif
@@ -941,6 +957,12 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     {
         const World* lw = gEng.L.WorldPtr();
         if(lw && lw->IsResonate()) gEng.SetExciter(in[0], 0.02f * k_cvdep.Norm());
+#if KYK_MODE_MODAL
+        /* the Exciter page: the type and the shape, read every block (a strike
+           takes them when it fires) */
+        gEng.L.SetExciterType((ResExciter)(int)(k_etype.Value() + 0.5f));
+        gEng.L.SetExciterShape(k_etimb.Norm(), k_epos.Norm(), k_enoise.Norm(), k_emass.Norm());
+#endif
     }
     gEng.SetControl(c, kMaxN);
     const uint32_t t1 = Cycles();
@@ -2024,7 +2046,11 @@ int main()
      * pages against the SDK's limit of eight. */
     host.Pages(page_play, page_rotate, page_stereo, page_orbit, page_kepler, page_couple, page_world);
 
+#if KYK_MODE_MODAL
+    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(page_couple).Use(page_world).Use(page_exciter).Use(host).OnFrame(OnFrame).OnPoll(OnPoll);
+#else
     loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(page_couple).Use(page_world).Use(host).OnFrame(OnFrame).OnPoll(OnPoll);
+#endif
 
     /* The Rate multiplier is centred on 1x, so a stored zero would silently
      * run every orbit at an eighth speed on a fresh boot — which reads as
@@ -2063,6 +2089,12 @@ int main()
      * would boot a world you wrote into half a wavefolder. */
     pager.SetStored(6, 0, 0.f, phys);
     pager.SetStored(6, 1, 0.f, phys);
+#if KYK_MODE_MODAL
+    /* the exciter Trained (the top of the selector): full synthesis where a
+       world has trained exciters, its recorded attack where not; the shape's
+       four at their centre, which is the exciter as trained */
+    pager.SetStored(7, 0, 1.f, phys);
+#endif
 
     gSd.Init();
     ScanCard();          /* so the folder is already listed when a page connects */
