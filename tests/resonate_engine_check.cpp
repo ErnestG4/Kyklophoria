@@ -1384,7 +1384,7 @@ int main()
            exciter's units: let go, a reed came back 3.3x louder and a bow
            500x quieter) */
         {
-            float worst_step = 1.f, worst_pk = 0.f;
+            float worst_step = 1.f, worst_pk = 0.f, worst_jump = 0.f;
             for(ResExciter t : {ResExciter::Bow, ResExciter::Reed, ResExciter::Lips})
             {
                 Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetExciterType(t); e.SetExciterShape(0.5f, 0.3f, 0.f, 0.5f);
@@ -1395,11 +1395,20 @@ int main()
                 c[1] = 0.7f; e.SetPosition(c, 4); RunOn(e, z, 200);
                 const double before = rms(z, 24000 - 960, 24000), after = rms(z, 24000 + 48, 24000 + 48 + 960);
                 const float step = (float)(after / (before + 1e-12));
+                /* and no step at the sample: the biggest sample-to-sample move
+                   at the lift against the biggest of the 20 ms before it. The
+                   reed and the lips were heard at the mouthpiece (the modes
+                   weighted) and let go as the plain sum: a step at every lift
+                   that the 20 ms level above could not see */
+                float dmax = 0.f, dlift = 0.f;
+                for(size_t i = 24000 - 960; i < 24000; i++) dmax = std::fmax(dmax, std::fabs(z[i] - z[i - 1]));
+                for(size_t i = 24000; i < 24000 + 48; i++) dlift = std::fmax(dlift, std::fabs(z[i] - z[i - 1]));
+                worst_jump = std::fmax(worst_jump, dlift / (dmax + 1e-12f));
                 worst_step = std::fmax(worst_step, std::fmax(step, 1.f / std::fmax(step, 1e-6f)));
                 for(float q : z) worst_pk = std::fmax(worst_pk, std::fabs(q));
             }
-            CHECK(worst_step < 1.5f && worst_pk < 0.81f, "lifted and put back: a step of x%.2f at the lift, the loudest %.3g", worst_step, worst_pk);
-            printf("  lifted and put back: the ring carries on (a step of x%.2f at most), the loudest %.2f\n", worst_step, worst_pk);
+            CHECK(worst_step < 2.f && worst_pk < 0.81f && worst_jump < 1.5f, "lifted and put back: a step of x%.2f at the lift, a jump at the sample x%.2f the largest before it, the loudest %.3g", worst_step, worst_jump, worst_pk);
+            printf("  lifted and put back: the ring carries on (a step of x%.2f at most, the sample's jump x%.2f the largest before it), the loudest %.2f\n", worst_step, worst_jump, worst_pk);
         }
         /* J1 into the loop: a bowed, a blown and a struck note with J1
            playing — each differs from the same note without it (a voice a

@@ -1423,7 +1423,7 @@ public:
             {
                 rreed_.gamma = 0.2f + 0.75f * energy;                               /* speaks at about a fifth of the throw, nearly shut at the top */
                 rreed_.zeta  = 0.1f + 0.5f * rexc_timbre_;                          /* the embouchure */
-                ProcessBlown(vv.bank, out, m, rsw_, rreed_, 10.f + 50.f * rexc_mass_, nullptr, ext, eg);
+                ProcessBlown(vv.bank, out, m, rsw_, rreed_, 10.f + 50.f * rexc_mass_, nullptr, ext, eg, true);
             }
             else
             {
@@ -1439,7 +1439,7 @@ public:
                 rlips_.gamma = 0.95f * energy;
                 rlips_.f_lip = rsf1_ * (rsreg_[reg] - (reg ? 0.4f : 0.25f) + 0.15f * (tr - (float)reg));
                 rlips_.q     = 10.f + 10.f * rexc_mass_;
-                ProcessLipped(vv.bank, out, m, rsw_, rlips_, 30.f, sr_, ext, eg);
+                ProcessLipped(vv.bank, out, m, rsw_, rlips_, 30.f, sr_, ext, eg, true);
             }
         }
         for(int k = 0; k < m; k++)

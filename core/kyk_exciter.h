@@ -295,7 +295,11 @@ struct Lips
 };
 
 /* a bank blown through the lips, as ProcessBlown through a reed */
-inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float* w, Lips& l, float z, float sr, const float* ext = nullptr, float eg = 0.f)
+/* sum: the output is the modes' plain sum (as the bank's own Process, and
+   the bow's), not the pressure at the mouthpiece — the engine's, so that a
+   voice let go rings on as the same signal: the mouthpiece's weighted sum
+   against the plain one was a step at every lift (earcheck, every world) */
+inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float* w, Lips& l, float z, float sr, const float* ext = nullptr, float eg = 0.f, bool sum = false)
 {
     float bk[ResonatorBank::kMax];
     for(int k = 0; k < b.n; k++)
@@ -316,7 +320,7 @@ inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float*
         {
             const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * bk[k] * du + w[k] * e;
             b.y2[k] = b.y1[k]; b.y1[k] = y;
-            o += w[k] * y;
+            o += sum ? y : w[k] * y;
         }
         out[s] = o;
     }
@@ -328,7 +332,7 @@ inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float*
    units: a clarinet's is some tens). Each mode is driven so that its own
    peak is z: driven raw, a lightly damped mode's peak was 1 / (1 - r), five
    thousand at 147 Hz, and the loop ran away at any pressure */
-inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* w, Reed& r, float z, ContactNoise* cn = nullptr, const float* ext = nullptr, float eg = 0.f)
+inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* w, Reed& r, float z, ContactNoise* cn = nullptr, const float* ext = nullptr, float eg = 0.f, bool sum = false)
 {
     float bk[ResonatorBank::kMax];
     for(int k = 0; k < b.n; k++)
@@ -352,7 +356,7 @@ inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* 
         {
             const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * bk[k] * du + w[k] * e;
             b.y2[k] = b.y1[k]; b.y1[k] = y;
-            o += w[k] * y;
+            o += sum ? y : w[k] * y;
         }
         out[s] = cn ? o + cn->Next(u) : o;                  /* breath through the reed: as much as flows */
     }
