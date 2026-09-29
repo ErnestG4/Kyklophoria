@@ -208,7 +208,7 @@
 </head>
 <body>
 <header>
-  <span class="name">Kyklophoria</span><span id="fwMode" style="color:var(--dim)"></span>
+  <span class="name" id="fwName">Kyklophoria</span><span id="fwMode" style="color:var(--dim)"></span>
   <span id="pageLinks" style="color:var(--dim)"></span>
   <a id="pageSwitch" hidden style="color:#ffb454"></a>
   <button class="tab on" id="tabPlay">play</button>
@@ -3398,7 +3398,10 @@ renderTour();
    and the page offers everything as it did. Each firmware's page shows only
    what that firmware does. */
 let fwMode = 'both';
-function fwModeOf(name) { return /modal/i.test(name || '') ? 'modal' : /wavetable/i.test(name || '') ? 'wavetable' : 'both'; }
+/* the modal firmware is Bongs (Combust, 29 September); "Kyklophoria Modal"
+   is what it said before, and still reads as it */
+function fwModeOf(name) { return /bongs|modal/i.test(name || '') ? 'modal' : /wavetable/i.test(name || '') ? 'wavetable' : 'both'; }
+const FW_TITLE = { modal: 'Bongs', wavetable: 'Kyklophoria' };
 /* Each firmware has its own page (Combust, 29 September: "work on getting
    each webserial page separated"): ?page=wavetable and ?page=modal, one
    source, each fixed to its firmware from the moment it loads — before
@@ -3414,9 +3417,9 @@ function renderPageLinks() {
   const links = $('pageLinks'); links.innerHTML = '';
   const add = (label, q) => { const a = document.createElement('a'); a.textContent = label; a.href = q; a.style.color = 'var(--dim)'; a.style.marginLeft = '8px'; links.appendChild(a); };
   if (pageMode !== 'wavetable') add('wavetable page', '?page=wavetable');
-  if (pageMode !== 'modal') add('modal page', '?page=modal');
+  if (pageMode !== 'modal') add('Bongs page', '?page=modal');
   if (pageMode) add('both', '?');
-  document.title = pageMode ? `Kyklophoria — ${pageMode}` : 'Kyklophoria';
+  document.title = pageMode === 'modal' ? 'Bongs' : pageMode ? `Kyklophoria — ${pageMode}` : 'Kyklophoria';
 }
 /* the module the page reached runs the other firmware: say so, and link the
    page that is its */
@@ -3424,16 +3427,23 @@ function pageMismatch(mod) {
   const sw = $('pageSwitch');
   const wrong = !!(pageMode && (mod === 'modal' || mod === 'wavetable') && mod !== pageMode);
   sw.hidden = !wrong;
-  if (wrong) { sw.textContent = `this module runs the ${mod} firmware — open the ${mod} page`; sw.href = `?page=${mod}`; }
+  if (wrong) { sw.textContent = mod === 'modal' ? 'this module runs Bongs — open its page' : `this module runs the ${mod} firmware — open the ${mod} page`; sw.href = `?page=${mod}`; }
   return wrong;
 }
+/* Bongs, the modal firmware, has one playing view: the model tab, called
+   play there (Combust, 29 September: "remove the play page from the modal
+   web and rename Model to Play"). The wavetable's play view — the space, the
+   motion, the world bar — is the wavetable firmware's */
 function applyFwMode() {
   const modal = fwMode === 'modal', wave = fwMode === 'wavetable';
-  $('fwMode').textContent = modal ? ' modal' : wave ? ' wavetable' : '';
+  $('fwName').textContent = modal ? 'Bongs' : 'Kyklophoria';
+  $('fwMode').textContent = modal ? '' : wave ? ' wavetable' : '';
+  $('tabPlay').hidden = modal;
   $('tabModel').hidden = wave;
+  $('tabModel').textContent = modal ? 'play' : 'model';
   $('tabBuild').hidden = modal;
   for (const id of ['morphCap', 'morphSel', 'morphDirect', 'morphAim', 'morphState', 'tourRow']) $(id).hidden = modal;
-  if ((wave && viewMode === 'model') || (modal && viewMode === 'build')) setView(modal ? 'model' : 'play');
+  if ((wave && viewMode === 'model') || (modal && (viewMode === 'build' || viewMode === 'play'))) setView(modal ? 'model' : 'play');
 }
 let viewMode = 'play';
 function setView(m) {

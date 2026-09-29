@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'fwMode pageLinks pageSwitch morphCap tourRow axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
+const IDS = 'fwName fwMode pageLinks pageSwitch morphCap tourRow axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -1495,17 +1495,23 @@ for (const [name, t, r] of CASES) {
 {
   const fails = [];
   const want = (name, mode) => { const m = P.fwModeOf(name); if (m !== mode) fails.push(`"${name}" read as ${m}, not ${mode}`); };
-  want('Kyklophoria Modal', 'modal'); want('Kyklophoria Wavetable', 'wavetable'); want('Kyklophoria', 'both'); want(undefined, 'both');
+  want('Bongs', 'modal'); want('Kyklophoria Modal', 'modal'); want('Kyklophoria Wavetable', 'wavetable'); want('Kyklophoria', 'both'); want(undefined, 'both');
   const shows = (mode, view, tabs, rows) => {
     P.setView(view); P.setFwMode(mode); P.applyFwMode();
-    const t = { model: !els.tabModel.hidden, build: !els.tabBuild.hidden }, r = { tour: !els.tourRow.hidden, morph: !els.morphSel.hidden };
+    const t = { play: !els.tabPlay.hidden, model: !els.tabModel.hidden, build: !els.tabBuild.hidden }, r = { tour: !els.tourRow.hidden, morph: !els.morphSel.hidden };
     for (const k in tabs) if (t[k] !== tabs[k]) fails.push(`${mode}: the ${k} tab ${t[k] ? 'shown' : 'hidden'}`);
     for (const k in rows) if (r[k] !== rows[k]) fails.push(`${mode}: the ${k} row ${r[k] ? 'shown' : 'hidden'}`);
     return P.getView();
   };
-  if (shows('wavetable', 'model', { model: false, build: true }, { tour: true, morph: true }) !== 'play') fails.push('wavetable: left on the model tab');
-  if (shows('modal', 'build', { model: true, build: false }, { tour: false, morph: false }) !== 'model') fails.push('modal: left on the build tab');
-  shows('both', 'play', { model: true, build: true }, { tour: true, morph: true });
+  if (shows('wavetable', 'model', { play: true, model: false, build: true }, { tour: true, morph: true }) !== 'play') fails.push('wavetable: left on the model tab');
+  if (shows('modal', 'build', { play: false, model: true, build: false }, { tour: false, morph: false }) !== 'model') fails.push('modal: left on the build tab');
+  /* Bongs (the modal firmware): no wavetable play view — a view left on it
+     moves to the model tab, which is called play there — and its own name */
+  if (shows('modal', 'play', { play: false, model: true, build: false }, { tour: false, morph: false }) !== 'model') fails.push('modal: left on the wavetable play tab');
+  if (els.tabModel.textContent !== 'play') fails.push(`modal: the model tab is labelled "${els.tabModel.textContent}", not play`);
+  if (els.fwName.textContent !== 'Bongs') fails.push(`modal: the page is named "${els.fwName.textContent}", not Bongs`);
+  shows('both', 'play', { play: true, model: true, build: true }, { tour: true, morph: true });
+  if (els.tabModel.textContent !== 'model' || els.fwName.textContent !== 'Kyklophoria') fails.push('both: the model tab or the name not put back');
   /* each firmware's own page (?page=): the mode fixed; a module on the
      other firmware named, with a link; the same firmware, nothing said */
   P.setPageMode('modal'); P.renderPageLinks();
