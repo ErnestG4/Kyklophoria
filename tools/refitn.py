@@ -253,6 +253,12 @@ def main():
                 w = 2 * math.pi * fr[i]
                 o.write('mode %d hz %.6f zeta %.9g phase %.5f gains %s\n' % (kk, fr[i], r[i] / w, ph[i], ' '.join('%.9g' % amp[i] for _ in range(12))))
         sf.write(os.path.join(a.fitdir, mid + '-resynth.wav'), np.clip(y / (np.max(np.abs(y)) or 1) * 0.5, -1, 1), sr)
+        # the target as fitset writes it: the window this fit was timed from.
+        # Left as it was — already trimmed by an earlier bursts.py — the next
+        # bursts.py found nothing to cut, wrote `trimmed 0`, and the new
+        # modes stayed timed 5-12 ms before the burst they sit under (the
+        # training guide's finding; the backups said 259-550 samples)
+        sf.write(os.path.join(a.fitdir, mid + '-target.wav'), np.clip(x * 0.5, -1, 1), sr)
         row['modes'], row['loss'], row['excess_db'], row['decay_ratio'] = str(len(order)), '%.4f' % loss, '%.3f' % ex, '%.3f' % dr
         write_manifest()
         print('  %-10s refitted from %s: score %.3f -> %.3f' % (mid, seed, old, s))
