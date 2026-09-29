@@ -163,8 +163,22 @@ static double Loss(const std::vector<float>& y0, const Target& t, int sr)
     const auto o = Onset30(y, t.rms, sr);
     const size_t no = std::min(o.size(), t.onset.size());
     double dn = 0; for(size_t i = 0; i < no; i++) dn += std::fabs(o[i] - t.onset[i]);
+    /* and the onset's peak: the loudest sample of the first 30 ms over the
+       take's, in dB, only when over it. The harshness term is a high band,
+       and the treble's pop after the polarity fix was a smooth bump — a
+       1.5 ms pulse at 3-8x the recording's peak at the same loudness
+       (exclevel, iowa3), 20x the note's own ring — which a first difference
+       barely sees */
+    double over = 0;
+    {
+        const size_t n30 = std::min({y.size(), t.x.size(), (size_t)(0.03 * sr)});
+        float py = 0.f, pt = 0.f;
+        for(size_t i = 0; i < n30; i++) { py = std::max(py, std::fabs(y[i])); pt = std::max(pt, std::fabs(t.x[i])); }
+        if(pt > 0.f && py > pt) over = 20.0 * std::log10(py / pt);
+    }
     return l / 3.0 + (ne ? de / ne / 20.0 : 1.0)      /* dB over 20: an envelope 20 dB out costs as much as a spectrum e-fold out */
-                   + (no ? 3.0 * dn / no / 20.0 : 0.0);   /* and the onset's harshness three times over: a pop is what the ear objects to first */
+                   + (no ? 3.0 * dn / no / 20.0 : 0.0)    /* and the onset's harshness three times over: a pop is what the ear objects to first */
+                   + 3.0 * over / 20.0;
 }
 
 /* the take from its onset (the first 10 ms window within 30 dB of the peak,
