@@ -122,3 +122,4 @@ aa9e48d, with a brake on any runaway voice).
   only a hammer's ranges (ModalBake c3f8eea), and the engine holds any
   stored hammer to them, so a card baked earlier is safe too (6d92e44).
   iowa5 launched 03:09, gating both the smoothed and raw bakes.
+- 03:21 — check-in. iowa5 training (note 48 done).
