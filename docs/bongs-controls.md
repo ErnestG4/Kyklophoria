@@ -4,9 +4,15 @@ Combust, 29 September: "The Modal firmware is named Bongs. Let's fully rework
 the panel controls and web controls to be optimized for modal. Page 1 is fine,
 everything else needs thought."
 
-A proposal, not built. Done so far: the name (firmware, binary `bongs.bin`,
-page), and on the page the wavetable's play tab removed with model renamed
-play (2011bf5).
+Combust's answers (29 September): six pages named Play, Exciter,
+Resonator, Space, Motion, Kepler; Kepler stays ("an orbital decay or
+resonance twister ... much better than the motion/orbits themselves for
+modal"); the pitch pot on the Resonator page; the page mirrors every pot
+through one "set pot" command.
+
+Built: the name (firmware, `bongs.bin`, the page) and the page's single play
+view (2011bf5); Listen in the engine (53a9fc9); the six-page panel (below).
+To build: the "set pot" command and the page's rows of sliders.
 
 ## What Bongs has today
 
@@ -35,14 +41,14 @@ family's body axis morphing its members or switching, and the pitch lock
 |---|---|---|---|---|---|---|
 | 1 **Play** (as now) | Coarse | Fine | Body | Velocity | Decay | Coil |
 | 2 **Exciter** | Type | Timbre | Position | Noise | Mass | J1 in |
-| 3 **Voices** | Voices (1 / 2 / 4) | Release | Dig in | Family (switch / morph) | Pitch (lock / bend) | Level |
+| 3 **Resonator** | Voices (1 / 2 / 4) | Release | Dig in | Family (switch / morph) | Pitch (lock / bend) | Level |
 | 4 **Space** | Spread (the ears apart) | Listen (where along the string) | Ear orbit (which plane spins them) | — | — | — |
 | 5 **Motion** | Body·Velocity | Body·Decay | Body·Coil | Velocity·Decay | Velocity·Coil | Decay·Coil |
 | 6 **Kepler** | Gravity | Eccentricity | Plane | Damping | Radius | Coupling |
 
 - **Exciter gets J1's amount** (from Stereo P6): J1 is now a force into the
   exciter's loop, so it belongs with the exciter.
-- **Voices collects the playing controls** that had no pot. Pitch as a pot
+- **Resonator collects the playing controls** that had no pot. Pitch as a pot
   and B3 both flip the lock. Level moves here from Stereo: the page you adjust
   a performance on.
 - **Space is the ears.** Listen is new: the ears' centre set directly, where
@@ -79,3 +85,33 @@ where they are.
    struck instrument the Motion page may be enough.
 3. Pitch lock as a pot on Voices as well as B3, or B3 only?
 4. The page mirroring every pot through one "set pot" command: yes?
+
+## As built (the panel)
+
+As the table above, with the Resonator page's name. Details:
+- Knobs with no page on Bongs (Rotate's angles, Softening, Reach, Rate,
+  Bodies, Company, morph sharpness, render divider, axes 4-5, the tour's
+  glide and rate, World morph) are held at the value their stored default
+  had, so the engine hears what it heard before the pages went.
+- The Resonator page's pots take effect when moved, so a setting made from
+  the page holds until a hand moves the pot. B3 still flips the lock and
+  moves the Pitch pot's stored value with it, to be caught.
+- Boot defaults: Exciter Trained; release 40 ms; no dig-in; family switch;
+  pitch locked; Listen at its centre (a quarter of the string, as before).
+- **Saved Bongs presets disappear**: the pager's schema includes its page
+  count, so the old eight-page slots read as empty instead of loading into
+  the wrong pots.
+
+## Backport to Kyklophoria (the wavetable firmware)
+
+Kept as the Bongs work goes:
+- **The "set pot" command** (to build) and the page's rows of sliders from
+  the descriptor: the same code serves the wavetable's seven pages.
+- **The descriptor's page list** carried every page Bongs has; check the
+  wavetable one keeps listing all of its own if a page is ever added (the
+  Exciter was missing from it on Bongs).
+- **Axis-named orbit and plane labels** (Body-Velocity...): the wavetable's
+  worlds name their axes too (the page knows them), so its Orbit, Kepler and
+  Stereo plane labels could say which axes they turn instead of "0,1".
+- **A Listen-like direct control** is Bongs-only (the wavetable's stereo is
+  a rotation), nothing to port.

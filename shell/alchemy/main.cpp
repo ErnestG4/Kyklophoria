@@ -62,7 +62,7 @@ using namespace kyk;
 static AlchemyLab  hw;
 static ControlLoop loop(hw);
 #if KYK_MODE_MODAL
-static Pager       pager(hw.buttons[kButtonB1], 8, kNumPots);   /* the eighth: the Exciter (docs/exciters.md) */
+static Pager       pager(hw.buttons[kButtonB1], 6, kNumPots);   /* Bongs: Play, Exciter, Resonator, Space, Motion, Kepler (docs/bongs-controls.md) */
 #else
 static Pager       pager(hw.buttons[kButtonB1], 7, kNumPots);
 #endif
@@ -78,6 +78,14 @@ static constexpr LedPanel::Rgb kCouple = {0xF0, 0xA0, 0xD8};
 static constexpr LedPanel::Rgb kKepler = {0x9A, 0xE6, 0xB4};
 static constexpr LedPanel::Rgb kWorld  = {0xF7, 0xC0, 0x8A};
 static constexpr LedPanel::Rgb kExcite = {0xFF, 0x8A, 0x5B};
+#if KYK_MODE_MODAL
+static constexpr LedPanel::Rgb kReson  = {0xF7, 0xC0, 0x8A};
+/* Bongs has six pages (docs/bongs-controls.md, Combust, 29 September). The
+   wavetable's pots it has no page for are held where their stored value sat
+   before the pages went (the SDK seeds 0.5, the boot seeded a few), so the
+   engine sees what it saw: the same reads, a constant behind them */
+struct HeldKnob { float n, v; float Norm() const { return n; } float Value() const { return v; } };
+#endif
 
 static VirtualKnob k_coarse = VirtualKnob(0, "Coarse").Linear(-3.f, 3.f).Unit("oct").Ident("pitch.coarse").Ring(Level(kPlay));
 static VirtualKnob k_fine   = VirtualKnob(1, "Fine").Linear(-1.f, 1.f).Unit("st").Ident("pitch.fine").Ring(Level(kPlay));
@@ -86,6 +94,9 @@ static VirtualKnob k_pos1   = VirtualKnob(3, "Position 1").Ident("pos.1").Ring(L
 static VirtualKnob k_pos2   = VirtualKnob(4, "Position 2").Ident("pos.2").Ring(Level(kPlay));
 static VirtualKnob k_pos3   = VirtualKnob(5, "Position 3").Ident("pos.3").Ring(Level(kPlay));
 
+#if KYK_MODE_MODAL
+static const HeldKnob k_ang[6] = {{0.5f, 0.5f}, {0.5f, 0.5f}, {0.5f, 0.5f}, {0.5f, 0.5f}, {0.5f, 0.5f}, {0.5f, 0.5f}};
+#else
 static VirtualKnob k_ang[6] = {
     VirtualKnob(0, "Angle 0,1").Unit("turn").Ident("rot.01").Ring(Level(kRotate)),
     VirtualKnob(1, "Angle 0,2").Unit("turn").Ident("rot.02").Ring(Level(kRotate)),
@@ -94,7 +105,20 @@ static VirtualKnob k_ang[6] = {
     VirtualKnob(4, "Angle 1,3").Unit("turn").Ident("rot.13").Ring(Level(kRotate)),
     VirtualKnob(5, "Angle 2,3").Unit("turn").Ident("rot.23").Ring(Level(kRotate)),
 };
+#endif
 
+#if KYK_MODE_MODAL
+/* the Motion page: on a four-axis world the six planes are the six pairs of
+   body, velocity, decay and coil, so each rate is named for the pair it turns */
+static VirtualKnob k_rate[6] = {
+    VirtualKnob(0, "Body-Velocity").Unit("t/s").Ident("orb.01").Ring(Level(kOrbit)),
+    VirtualKnob(1, "Body-Decay").Unit("t/s").Ident("orb.02").Ring(Level(kOrbit)),
+    VirtualKnob(2, "Body-Coil").Unit("t/s").Ident("orb.03").Ring(Level(kOrbit)),
+    VirtualKnob(3, "Velocity-Decay").Unit("t/s").Ident("orb.12").Ring(Level(kOrbit)),
+    VirtualKnob(4, "Velocity-Coil").Unit("t/s").Ident("orb.13").Ring(Level(kOrbit)),
+    VirtualKnob(5, "Decay-Coil").Unit("t/s").Ident("orb.23").Ring(Level(kOrbit)),
+};
+#else
 static VirtualKnob k_rate[6] = {
     VirtualKnob(0, "Orbit 0,1").Unit("t/s").Ident("orb.01").Ring(Level(kOrbit)),
     VirtualKnob(1, "Orbit 0,2").Unit("t/s").Ident("orb.02").Ring(Level(kOrbit)),
@@ -103,6 +127,7 @@ static VirtualKnob k_rate[6] = {
     VirtualKnob(4, "Orbit 1,3").Unit("t/s").Ident("orb.13").Ring(Level(kOrbit)),
     VirtualKnob(5, "Orbit 2,3").Unit("t/s").Ident("orb.23").Ring(Level(kOrbit)),
 };
+#endif
 
 /* Centre is stopped, and the useful rates are slow, so a linear knob would
  * bunch everything worth having into the last few degrees. Exponential either
@@ -123,16 +148,26 @@ static float RateFromKnob(float norm)
  * Gravity at the bottom of its travel means off, and winding it up from
  * there launches the body. Radius re-launches too, with a deadband so ADC
  * jitter does not re-launch it forty times a second. */
+#if KYK_MODE_MODAL
+static const char* kPlaneNames[6] = {"Body-Vel", "Body-Decay", "Body-Coil", "Vel-Decay", "Vel-Coil", "Decay-Coil"};
+#else
 static const char* kPlaneNames[6] = {"0,1", "0,2", "0,3", "1,2", "1,3", "2,3"};
+#endif
 static VirtualKnob k_grav   = VirtualKnob(0, "Gravity").Ident("kep.g").Ring(Level(kKepler));
 static VirtualKnob k_ecc    = VirtualKnob(1, "Eccentricity").Ident("kep.ecc").Ring(Level(kKepler));
 static VirtualKnob k_kplane = VirtualKnob(2, "Orbit plane").Selector(6).Labels(kPlaneNames, 6).Ident("kep.plane").Ring(Level(kKepler));
 /* Normalised, and mapped exponentially where it is read — the same shape as
  * Gravity, and for the same reason: what this knob really controls is how far
  * the orbit is from closing, and that is not linear in the softening radius. */
+#if KYK_MODE_MODAL
+static const HeldKnob k_soft = {0.25f, 0.f};   /* the quarter turn the boot seeded */
+static VirtualKnob k_damp   = VirtualKnob(3, "Damping").Linear(0.f, 1.2f).Unit("/s").Ident("kep.damp").Ring(Level(kKepler));
+static VirtualKnob k_radius = VirtualKnob(4, "Radius").Linear(0.08f, 0.55f).Ident("kep.r").Ring(Level(kKepler));
+#else
 static VirtualKnob k_soft   = VirtualKnob(3, "Softening").Ident("kep.soft").Ring(Level(kKepler));
 static VirtualKnob k_damp   = VirtualKnob(4, "Damping").Linear(0.f, 1.2f).Unit("/s").Ident("kep.damp").Ring(Level(kKepler));
 static VirtualKnob k_radius = VirtualKnob(5, "Radius").Linear(0.08f, 0.55f).Ident("kep.r").Ring(Level(kKepler));
+#endif
 /* Divider 1 (a frame every block, twice over in stereo) overran the block on
  * the bench at 160% of budget and took the module down. The real IFFT bought
  * about 2x, which is not yet enough headroom to offer it, so the knob starts
@@ -142,27 +177,35 @@ static VirtualKnob k_radius = VirtualKnob(5, "Radius").Linear(0.08f, 0.55f).Iden
 static const uint8_t kDivValues[4] = {2, 3, 4, 6};
 static const char*   kDivNames[4]  = {"2", "3", "4", "6"};
 static VirtualKnob k_spread = VirtualKnob(0, "Spread").Linear(0.f, 0.1f).Unit("turn").Ident("st.spread").Ring(Level(kStereo));
+#if KYK_MODE_MODAL
+/* the Space page: a resonator's two ears — how far apart, where along the
+   string, and which orbit plane swings them */
+static VirtualKnob k_listen = VirtualKnob(1, "Listen").Ident("st.listen").Ring(Level(kStereo));
+static VirtualKnob k_plane  = VirtualKnob(2, "Ear orbit").Selector(6).Labels(kPlaneNames, 6).Ident("st.plane").Ring(Level(kStereo));
+#else
 static VirtualKnob k_plane  = VirtualKnob(1, "Stereo plane").Selector(6).Labels(kPlaneNames, 6).Ident("st.plane").Ring(Level(kStereo));
+#endif
 /* P3 was CV-out depth, which only moves a voltage on J8 and reads as a dead
  * knob to a player. Sharpness is the audible control the survey said to steal
  * (Plaits' quantization ramp, Piston Honda's morph resolution): smooth morph
  * at one end, a bank of discrete waves at the other. CV depth moved to P6. */
 #if KYK_MODE_MODAL
-static VirtualKnob k_sharp  = VirtualKnob(2, "—").Unit("sharp").Ident("morph.sharp").Ring(Level(kStereo));
+static const HeldKnob k_sharp = {0.5f, 0.f};
 #else
 static VirtualKnob k_sharp  = VirtualKnob(2, "Morph").Unit("sharp").Ident("morph.sharp").Ring(Level(kStereo));
 #endif
 #if KYK_MODE_MODAL
 /* the modal firmware: pots that belong to the wavetable say so ("—"), and
    the two the resonator uses are named for what they do there */
-static VirtualKnob k_rdiv   = VirtualKnob(3, "—").Selector(4).Labels(kDivNames, 4).Ident("eng.rdiv").Ring(Level(kStereo));
+static const HeldKnob k_rdiv = {0.5f, 2.f};
 #else
 static VirtualKnob k_rdiv   = VirtualKnob(3, "Render div").Selector(4).Labels(kDivNames, 4).Ident("eng.rdiv").Ring(Level(kStereo));
 #endif
-static VirtualKnob k_level  = VirtualKnob(4, "Level").Ident("out.level").Ring(Level(kStereo));
 #if KYK_MODE_MODAL
-static VirtualKnob k_cvdep  = VirtualKnob(5, "Exciter (J1)").Ident("res.exciter").Ring(Level(kStereo));
+static VirtualKnob k_level  = VirtualKnob(5, "Level").Ident("out.level").Ring(Level(kReson));
+static VirtualKnob k_cvdep  = VirtualKnob(5, "J1 in").Ident("res.exciter").Ring(Level(kExcite));   /* J1 a force into the exciter's loop */
 #else
+static VirtualKnob k_level  = VirtualKnob(4, "Level").Ident("out.level").Ring(Level(kStereo));
 static VirtualKnob k_cvdep  = VirtualKnob(5, "CV out A depth").Ident("lane.cva").Ring(Level(kStereo));
 #endif
 
@@ -178,8 +221,12 @@ static VirtualKnob k_cvdep  = VirtualKnob(5, "CV out A depth").Ident("lane.cva")
  * world with n=4 these two do nothing at all, which is why they are on a page
  * of their own rather than taking a Play knob from something that always
  * works: Engine::SetControl only slews the axes the live world actually has. */
+#if KYK_MODE_MODAL
+static const HeldKnob k_pos4 = {0.f, 0.f}, k_pos5 = {0.f, 0.f};
+#else
 static VirtualKnob k_pos4   = VirtualKnob(0, "Position 4").Ident("pos.4").Ring(Level(kWorld));
 static VirtualKnob k_pos5   = VirtualKnob(1, "Position 5").Ident("pos.5").Ring(Level(kWorld));
+#endif
 /* The world tour's three setup knobs. Which worlds are in the loop is a list
  * and comes from the page; how fast, how far and how smoothly it travels are
  * performance and belong under a finger.
@@ -193,15 +240,16 @@ static const char* kDivNamesTour[8] = {"1", "2", "3", "4", "6", "8", "12", "16"}
 static const uint8_t kDivValuesTour[8] = {1, 2, 3, 4, 6, 8, 12, 16};
 #if KYK_MODE_MODAL
 static const char* const kVoiceNames[3] = {"1", "2", "4"};
-static VirtualKnob k_tdiv   = VirtualKnob(2, "Voices").Selector(3).Labels(kVoiceNames, 3).Ident("res.voices").Ring(Level(kWorld));
-static VirtualKnob k_tglide = VirtualKnob(3, "—").Ident("tour.glide").Ring(Level(kWorld));
-static VirtualKnob k_trate  = VirtualKnob(4, "—").Unit("s").Ident("tour.rate").Ring(Level(kWorld));
+static VirtualKnob k_tdiv   = VirtualKnob(0, "Voices").Selector(3).Labels(kVoiceNames, 3).Ident("res.voices").Ring(Level(kReson));
+static const HeldKnob k_tglide = {0.5f, 0.f}, k_trate = {0.5f, 0.f};
 #else
 static VirtualKnob k_tdiv   = VirtualKnob(2, "Tour division").Selector(8).Labels(kDivNamesTour, 8).Ident("tour.div").Ring(Level(kWorld));
 static VirtualKnob k_tglide = VirtualKnob(3, "Tour glide").Ident("tour.glide").Ring(Level(kWorld));
 static VirtualKnob k_trate  = VirtualKnob(4, "Tour free-run").Unit("s").Ident("tour.rate").Ring(Level(kWorld));
 #endif
+#if !KYK_MODE_MODAL
 static Page page_world  = Page(6).Name("World").Color("#f7c08a").Knobs(k_pos4, k_pos5, k_tdiv, k_tglide, k_trate);
+#endif
 
 /* A resonate world has no page of its own, on purpose. Combust: "I really
  * don't understand why we can't make it the same interface as wavetable
@@ -216,9 +264,11 @@ static Page page_world  = Page(6).Name("World").Color("#f7c08a").Knobs(k_pos4, k
  * J4 is the trigger. B2 taps a strike at axis 1, B3 flips the pitch lock. */
 
 static Page page_play   = Page(0).Name("Play").Color("#67e8f9").Knobs(k_coarse, k_fine, k_pos0, k_pos1, k_pos2, k_pos3);
+#if !KYK_MODE_MODAL
 static Page page_rotate = Page(1).Name("Rotate").Color("#fca5a5").Knobs(k_ang[0], k_ang[1], k_ang[2], k_ang[3], k_ang[4], k_ang[5]);
 static Page page_orbit  = Page(3).Name("Orbit").Color("#fde068").Knobs(k_rate[0], k_rate[1], k_rate[2], k_rate[3], k_rate[4], k_rate[5]);
 static Page page_kepler = Page(4).Name("Kepler").Color("#9ae6b4").Knobs(k_grav, k_ecc, k_kplane, k_soft, k_damp, k_radius);
+#endif
 /* ── Couple page ──────────────────────────────────────────────────────
  * Three knobs, and the page is deliberately not padded out to six with
  * things that do not need a knob.
@@ -235,18 +285,27 @@ static Page page_kepler = Page(4).Name("Kepler").Color("#9ae6b4").Knobs(k_grav, 
  * the full staircase. Rate scales all six orbit knobs at once, which matters
  * because the six of them are a page away. */
 static const char* kReachNames[5] = {"1", "2", "3", "4", "5"};
+#if KYK_MODE_MODAL
+static VirtualKnob k_couple = VirtualKnob(5, "Coupling").Ident("orb.couple").Ring(Level(kKepler));
+static const HeldKnob k_reach = {0.5f, 2.f}, k_ratex = {0.5f, 0.f};
+#else
 static VirtualKnob k_couple = VirtualKnob(0, "Coupling").Ident("orb.couple").Ring(Level(kCouple));
 static VirtualKnob k_reach  = VirtualKnob(1, "Reach").Selector(5).Labels(kReachNames, 5).Ident("orb.reach").Ring(Level(kCouple));
 static VirtualKnob k_ratex  = VirtualKnob(2, "Rate").Unit("x").Ident("orb.ratex").Ring(Level(kCouple));
+#endif
 /* The falling body's company lives on this page rather than on Kepler's,
  * which is full, and it belongs here anyway: both knobs are about motions
  * pulling on each other. One body closes, two beat, three never repeat. */
+#if KYK_MODE_MODAL
+static const HeldKnob k_kbody = {0.5f, 4.f}, k_kmass = {0.5f, 0.f};
+#else
 static VirtualKnob k_kbody  = VirtualKnob(3, "Bodies").Selector(8).Ident("kep.bodies").Ring(Level(kCouple));
 static VirtualKnob k_kmass  = VirtualKnob(4, "Company").Ident("kep.mass").Ring(Level(kCouple));
+#endif
 /* How far towards the other world. Which world is a setup choice and lives on
  * the page; how far is a performance one and belongs under a finger. */
 #if KYK_MODE_MODAL
-static VirtualKnob k_morph  = VirtualKnob(5, "—").Ident("world.morph").Ring(Level(kCouple));
+static const HeldKnob k_morph = {0.f, 0.f};
 /* The Exciter page (docs/exciters.md, stage 4): what strikes the resonator.
  * Trained by default — each point's own hammer, trained to the recordings
  * (ModalBake excfit; format 9), the recorded attack where a world has none —
@@ -262,12 +321,28 @@ static VirtualKnob k_etimb  = VirtualKnob(1, "Timbre").Ident("exc.timbre").Ring(
 static VirtualKnob k_epos   = VirtualKnob(2, "Position").Ident("exc.pos").Ring(Level(kExcite));
 static VirtualKnob k_enoise = VirtualKnob(3, "Noise").Ident("exc.noise").Ring(Level(kExcite));
 static VirtualKnob k_emass  = VirtualKnob(4, "Mass").Ident("exc.mass").Ring(Level(kExcite));
-static Page page_exciter = Page(7).Name("Exciter").Color("#ff8a5b").Knobs(k_etype, k_etimb, k_epos, k_enoise, k_emass);
+static Page page_exciter = Page(1).Name("Exciter").Color("#ff8a5b").Knobs(k_etype, k_etimb, k_epos, k_enoise, k_emass, k_cvdep);
+/* The Resonator page: how the notes are played out — the voices, how long a
+   stolen one takes to go, the strike harder with fast playing, a family's body
+   axis a switch or a morph, the pitch locked or bending (B3 flips it too) —
+   and the level */
+static const char* const kFamilyNames[2] = {"Switch", "Morph"};
+static const char* const kPitchNames[2]  = {"Lock", "Bend"};
+static VirtualKnob k_release = VirtualKnob(1, "Release").Unit("ms").Ident("res.release").Ring(Level(kReson));
+static VirtualKnob k_dig     = VirtualKnob(2, "Dig in").Ident("res.dig").Ring(Level(kReson));
+static VirtualKnob k_family  = VirtualKnob(3, "Family").Selector(2).Labels(kFamilyNames, 2).Ident("res.family").Ring(Level(kReson));
+static VirtualKnob k_pitch   = VirtualKnob(4, "Pitch").Selector(2).Labels(kPitchNames, 2).Ident("res.pitch").Ring(Level(kReson));
+static Page page_resonator = Page(2).Name("Resonator").Color("#f7c08a").Knobs(k_tdiv, k_release, k_dig, k_family, k_pitch, k_level);
+static Page page_space     = Page(3).Name("Space").Color("#c4b5fd").Knobs(k_spread, k_listen, k_plane);
+static Page page_motion    = Page(4).Name("Motion").Color("#fde068").Knobs(k_rate[0], k_rate[1], k_rate[2], k_rate[3], k_rate[4], k_rate[5]);
+static Page page_kepler    = Page(5).Name("Kepler").Color("#9ae6b4").Knobs(k_grav, k_ecc, k_kplane, k_damp, k_radius, k_couple);
 #else
 static VirtualKnob k_morph  = VirtualKnob(5, "World morph").Ident("world.morph").Ring(Level(kCouple));
 #endif
+#if !KYK_MODE_MODAL
 static Page page_couple = Page(5).Name("Couple").Color("#f0a0d8").Knobs(k_couple, k_reach, k_ratex, k_kbody, k_kmass, k_morph);
 static Page page_stereo = Page(2).Name("Stereo").Color("#c4b5fd").Knobs(k_spread, k_plane, k_sharp, k_rdiv, k_level, k_cvdep);
+#endif
 
 /* ── jacks (descriptor metadata; the web panel mirror reads these) ───────── */
 /* Combust, on the bench with the first resonate worlds: "everything needs
@@ -888,6 +963,20 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
     /* 0.23 is the headroom the measured crest factor needs; the knob scales
      * from silence to that, so a cell can no longer peak past full scale. */
     gEng.SetGain(0.23f * k_level.Norm());
+#if KYK_MODE_MODAL
+    /* the Resonator page, each taken when it moves, so the page's own
+       settings (ACTION tune, release, dig-in, member morph, lock) hold until
+       a hand does; and where the ears listen, every block */
+    {
+        static float lr = -1.f, ld = -1.f, lf = -1.f, lp = -1.f;
+        const float r = k_release.Norm(), d = k_dig.Norm(), fm = k_family.Value(), pv = k_pitch.Value();
+        if(std::fabs(r - lr) > 0.004f) { lr = r; gEng.SetReleaseMs(5.f * exp2f(r * 7.644f)); }   /* 5 ms .. 1 s */
+        if(std::fabs(d - ld) > 0.004f) { ld = d; gEng.SetVelocityTrack(d); }
+        if(fm != lf) { lf = fm; gEng.SetMemberMorph(fm > 0.5f); }
+        if(pv != lp) { lp = pv; gEng.SetPitchLock(pv < 0.5f); }
+        gEng.listen_at = 0.02f + 0.46f * k_listen.Norm();    /* a quarter of the string at the centre of the pot, as it was */
+    }
+#endif
     if(gResetPhase) { gEng.L.ResetPhase(); gEng.R.ResetPhase(); gResetPhase = 0; }
 
     gEng.SetF0(f0);
@@ -1973,7 +2062,16 @@ static void OnPoll(uint32_t t_ms)
     static uint32_t b3_down = 0u; static bool b3_alone = false;
     if(b3.RisingEdge()) { b3_down = t_ms; b3_alone = !b2.Pressed(); }
     if(b2.Pressed()) b3_alone = false;
-    if(b3.FallingEdge() && b3_alone && t_ms - b3_down < 500u) gEng.SetPitchLock(!gEng.L.PitchLock());
+    if(b3.FallingEdge() && b3_alone && t_ms - b3_down < 500u)
+    {
+        gEng.SetPitchLock(!gEng.L.PitchLock());
+#if KYK_MODE_MODAL
+        /* and the Resonator page's Pitch pot says so, to be caught there */
+        float phys[kNumPots];
+        for(uint8_t i = 0; i < kNumPots; i++) phys[i] = hw.pots[i].Value();
+        pager.SetStored(2, 4, gEng.L.PitchLock() ? 0.25f : 0.75f, phys);
+#endif
+    }
 }
 
 static void OnFrame()
@@ -2052,11 +2150,13 @@ int main()
      * panel, so the web page cannot say what any knob does — the names, idents
      * and units are all declared above and were simply never published. Seven
      * pages against the SDK's limit of eight. */
-    host.Pages(page_play, page_rotate, page_stereo, page_orbit, page_kepler, page_couple, page_world);
-
 #if KYK_MODE_MODAL
-    loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(page_couple).Use(page_world).Use(page_exciter).Use(host).OnFrame(OnFrame).OnPoll(OnPoll);
+    /* all six: the Exciter was not published before, so the page could not
+       show it (Combust: "it's not showing up at all") */
+    host.Pages(page_play, page_exciter, page_resonator, page_space, page_motion, page_kepler);
+    loop.Use(pager).Use(settings).Use(page_play).Use(page_exciter).Use(page_resonator).Use(page_space).Use(page_motion).Use(page_kepler).Use(host).OnFrame(OnFrame).OnPoll(OnPoll);
 #else
+    host.Pages(page_play, page_rotate, page_stereo, page_orbit, page_kepler, page_couple, page_world);
     loop.Use(pager).Use(settings).Use(page_play).Use(page_rotate).Use(page_stereo).Use(page_orbit).Use(page_kepler).Use(page_couple).Use(page_world).Use(host).OnFrame(OnFrame).OnPoll(OnPoll);
 #endif
 
@@ -2075,6 +2175,7 @@ int main()
      * shipped with. */
     float phys[kNumPots];
     for(uint8_t i = 0; i < kNumPots; i++) phys[i] = hw.pots[i].Value();
+#if !KYK_MODE_MODAL
     pager.SetStored(5, 2, 0.5f, phys);
     /* Softening at a quarter turn: about 0.014, roughly 2.5 degrees of drift
      * per orbit, which reads as an orbit rather than a wash. The default that
@@ -2097,11 +2198,17 @@ int main()
      * would boot a world you wrote into half a wavefolder. */
     pager.SetStored(6, 0, 0.f, phys);
     pager.SetStored(6, 1, 0.f, phys);
-#if KYK_MODE_MODAL
+#else
     /* the exciter Trained (the top of the selector): full synthesis where a
        world has trained exciters, its recorded attack where not; the shape's
        four at their centre, which is the exciter as trained */
-    pager.SetStored(7, 0, 1.f, phys);
+    pager.SetStored(1, 0, 1.f, phys);
+    /* the Resonator page as the engine starts: release 40 ms (KYK_TAIL_MS),
+       no dig-in, a family switching, the pitch locked */
+    pager.SetStored(2, 1, 0.392f, phys);
+    pager.SetStored(2, 2, 0.f, phys);
+    pager.SetStored(2, 3, 0.f, phys);
+    pager.SetStored(2, 4, 0.f, phys);
 #endif
 
     gSd.Init();
