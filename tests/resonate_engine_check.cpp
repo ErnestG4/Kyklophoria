@@ -1268,6 +1268,25 @@ int main()
             CHECK(fin && first > 1e-4f && first < 1.f && again < 1.f, "a near-rigid felt, struck and struck again: first %.3g, again %.3g (a struck note peaks under 1)", first, again);
             printf("  a near-rigid felt struck again while it rings: %.3f, the first strike %.3f\n", again, first);
         }
+        /* a hammer that is no hammer, as an unbounded search stored one
+           (iowa4's C2: K 4.4e13, mu 30, speeds 0.017-29.6 m/s, levels 2225 to
+           0.0077): held to a hammer's numbers, it stays bounded at every
+           velocity, struck and struck again (15-19x the recording before) */
+        {
+            const float wild[12] = {4.41e13f, 1.96f, 30.f, 0.0144f, 0.f, 2000.f, 0.017f, 1.666f, 29.63f, 2225.f, 0.8797f, 0.007749f};
+            const auto vw = make9(1.f, wild);
+            World Ww; Ww.UseResonate(vw.data(), (uint32_t)vw.size());
+            float worst = 0.f; bool fin = true;
+            for(float hz : {65.41f, 130.81f}) for(float vel : {0.1f, 0.3f, 0.5f, 0.7f, 0.9f})
+            {
+                Engine e; e.Init(&Ww, sr); e.gain = 1.f; e.SetPolyphony(4); e.SetExciterType(ResExciter::Trained);
+                e.SetF0(hz); e.Strike(vel);
+                std::vector<float> z; RunOn(e, z, 100); e.Strike(vel); RunOn(e, z, 300);
+                for(float q : z) { fin = fin && std::isfinite(q); worst = std::fmax(worst, std::fabs(q)); }
+            }
+            CHECK(fin && worst < 1.f, "a hammer that is no hammer: the loudest strike or re-strike %.3g", worst);
+            printf("  a hammer that is no hammer (K 4e13, mu 30, 30 m/s), held to a hammer's numbers: the loudest strike or re-strike %.3f\n", worst);
+        }
         printf("  format 9: a trained hammer from each point, its weights as stored; version 8 plays its recorded attack; the level scales the whole note (x2 within %.1g)\n", r);
         (void)step; (void)ring;
     }

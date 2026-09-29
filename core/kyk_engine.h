@@ -1182,10 +1182,18 @@ public:
                 const float x = v < lo ? lo : v > hi ? hi : v;
                 return std::exp(x < mid ? a0 + (a1 - a0) * (x - lo) / (mid - lo) : a1 + (a2 - a1) * (x - mid) / (hi - mid));
             };
+            /* the stored hammer held to a hammer's numbers first — the felt
+               1e6-1e11, mu under 5 s/m, the speeds 0.1-8 m/s (ModalBake excfit
+               searches only there now). An earlier search found corners that
+               fit the spectra and are no hammer (a C2 at K 4.4e13, mu 30,
+               29.6 m/s), and struck again while ringing they ran to 15-19x;
+               a card baked then still carries them */
+            auto held = [](float x, float lo, float hi) { return x < lo ? lo : x > hi ? hi : x; };
+            float spd[3]; for(int q = 0; q < 3; q++) spd[q] = held(vv.exc_speed[q], 0.1f, 8.f);
             rham_.Init();
-            rham_.k     = vv.exc_k * std::exp(6.8f * (rexc_timbre_ - 0.5f));
+            rham_.k     = held(vv.exc_k, 1e6f, 1e11f) * std::exp(6.8f * (rexc_timbre_ - 0.5f));
             rham_.alpha = vv.exc_alpha;
-            rham_.mu    = vv.exc_mu;
+            rham_.mu    = held(vv.exc_mu, 0.f, 5.f);
             rham_.mass  = vv.exc_mass * std::exp(2.2f * (rexc_mass_ - 0.5f));
             rcg_ = lerp3(vv.exc_gain);
             /* the contact runs in the hammer's own units and is heard at rcg_
@@ -1203,7 +1211,7 @@ public:
                 for(int k = 0; k < b.n; k++) { b.y1[k] *= inv; b.y2[k] *= inv; }
             }
             xc = 0.f; for(int k = 0; k < b.n; k++) xc += rcw_[k] * b.y1[k];
-            rham_.Strike(lerp3(vv.exc_speed), xc);
+            rham_.Strike(lerp3(spd), xc);
             const float nm = 2.f * rexc_noise_;                                 /* none, as trained at the centre, 4x at the top */
             rcn_.Init(sr_, vv.exc_nfc > 20.f ? vv.exc_nfc : 2000.f, 0.7f, vv.exc_noise * nm * nm);
             rcv_ = ractive_;
