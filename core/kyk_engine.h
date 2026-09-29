@@ -1119,7 +1119,16 @@ public:
                 float w = 2.f * (sn < 0.f ? -sn : sn); w = w > 1.f ? 1.f : w;
                 comb = (1.f - amount) + amount * w;
             }
-            rcw_[k] = base * comb;
+            /* each mode's polarity as the recording has it: the sign of its
+               sine component at the strike, g cos(phase). The contact cannot
+               tell (the force comes back through sum w y, and y goes as w, so
+               w^2), but the output sums the modes as they are: all pushed the
+               same way they started in phase and piled into a pulse — in the
+               treble a 2 ms bump 5-9x the recording's peak at the same
+               loudness (the pop; exclevel), where the recording's modes start
+               with a coherence of 0.06-0.32 */
+            float cp, sp; fastmath::SinCos(vv.phase[k] > 3.1415927f ? vv.phase[k] - 6.2831853f : vv.phase[k], sp, cp);
+            rcw_[k] = vv.gain[k] * cp < 0.f ? -base * comb : base * comb;
             xc += rcw_[k] * b.y1[k];
         }
         b.quiet = false;

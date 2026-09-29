@@ -1091,6 +1091,27 @@ int main()
         CHECK(p2 > 2.f * p1 && e2 > e1 + 0.05, "harder is not louder and brighter: peak %.3g against %.3g, centroid h%.2f against h%.2f", p2, p1, e2, e1);
         CHECK(std::fabs(e3 - e2) > 0.05, "the position moved nothing: centroid h%.2f at the centre, h%.2f at 0.95", e2, e3);
         CHECK(cp > 0 && pp > 1e-4f && lp > 0.f, "the pluck: contact %d blocks, peak %.3g, ringing %.3g", cp, pp, lp);
+        /* each mode pushed the way the recording's started, sign(g cos
+           phase): a millisecond into the contact every mode under 300 Hz is
+           inside its first half period, so its displacement's sign is its
+           push's. All pushed alike, the modes started in phase and piled into
+           a pulse — the treble pop, 5-9x the recording's peak (exclevel) */
+        {
+            Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetExciterType(ResExciter::Hammer);
+            e.SetF0(65.41f); e.Strike(0.8f);
+            std::vector<float> y; RunOn(e, y, 1);
+            const ResonatorVoice& v = e.Voice();
+            int agree = 0, differ = 0, down = 0;
+            for(int k = 0; k < v.bank.n; k++)
+            {
+                if(v.gain[k] == 0.f || v.hz[k] > 300.f || std::fabs(v.bank.y1[k]) < 1e-9f) continue;
+                const bool want = v.gain[k] * std::cos(v.phase[k]) < 0.f;
+                if(want) down++;
+                ((v.bank.y1[k] < 0.f) == want ? agree : differ)++;
+            }
+            CHECK(down > 0 && differ == 0, "the modes' polarity: %d as recorded, %d not (%d recorded downward)", agree, differ, down);
+            printf("  polarity: %d modes under 300 Hz each pushed as the recording's started (%d of them downward)\n", agree, down);
+        }
         /* a strike at another note during the contact */
         {
             Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4); e.SetExciterType(ResExciter::Hammer);
