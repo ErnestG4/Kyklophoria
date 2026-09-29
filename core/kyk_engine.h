@@ -21,6 +21,7 @@
 #define KYK_RESONATOR 1
 #endif
 #include "kyk_resonate.h"
+#include "kyk_exciter.h"
 #include "kyk_fft.h"
 #include "kyk_osc.h"
 
@@ -79,6 +80,13 @@ struct ResonatorVoices
     int            w_n[kN];
 };
 
+/* what strikes a resonator (EngineCore::SetExciterType; docs/exciters.md):
+   the recorded attack played beside the modes, as the worlds were fitted, or
+   an exciter coupled to the modes — its force computed every sample from where
+   the string is under it, and put back into the modes. Hammer and Pluck leave
+   the string when the contact ends; Bow, Reed and Lips are to come */
+enum class ResExciter : uint8_t { Recorded = 0, Hammer = 1, Pluck = 2 };
+
 class EngineCore
 {
     static constexpr bool kResonator = KYK_RESONATOR != 0;
@@ -135,6 +143,7 @@ public:
         dirty_ = true;
         for(int v = 0; v < rcap_; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rgen_++; if(rplan_) rplan_->state = 0u;
+        rcv_ = -1;                     /* a contact under way belonged to the voices just rebuilt */
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rpoly_ = 1; rmember_ = 0; rdriven_ = 0; rhold_ = false;
         for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
@@ -214,7 +223,8 @@ public:
         if(vtrack_ != 0.f) { const float d = rdens_ > 6.f ? 1.f : rdens_ / 6.f; v += vtrack_ * 0.5f * d; v = v > 1.f ? 1.f : v; }
         rdens_ += 1.f;
         rlast_v_ = v;
-        rvoices_[ractive_].Strike(v);
+        if(rexc_ == ResExciter::Recorded) rvoices_[ractive_].Strike(v);
+        else StrikeCoupled(rvoices_[ractive_], v);
         rforce_ = 1e9f;
     }
     /* 1, 2 or 4 voices. Changing it cuts nothing: a voice past the new
@@ -603,6 +613,20 @@ public:
     bool MemberMorph() const { return rmorph_; }
     /* two members and two voices of room for the morph (trivially
        constructible, so SDRAM will do); null takes it away */
+    /* the exciter: its type, and its shape — timbre (the felt's hardness,
+       the plectrum's stiffness), position (along the string: 0.5 as fitted,
+       away from it a comb over the harmonics), noise (the contact's own, 0..1)
+       and mass (the hammer's, and where the finger lets go). A struck exciter
+       takes over the voice it strikes until its contact ends; the recorded
+       attack is the default, and what the worlds were fitted with */
+    void SetExciterType(ResExciter t) { rexc_ = t; }
+    ResExciter ExciterType() const { return rexc_; }
+    void SetExciterShape(float timbre01, float position01, float noise01, float mass01)
+    {
+        auto c = [](float x) { return x < 0.f ? 0.f : x > 1.f ? 1.f : x; };
+        rexc_timbre_ = c(timbre01); rexc_pos_ = c(position01); rexc_noise_ = c(noise01); rexc_mass_ = c(mass01);
+    }
+    int CoupledVoice() const { return rcv_; }   /* the voice a contact is driving now, -1 none */
     /* the staged strike's room (StrikePlan); none lent, every strike builds inline */
     void SetStrikePlan(StrikePlan* p) { rplan_ = p; if(p) p->state = 0u; }
     uint32_t PlansTaken() const { return rplan_taken_; }   /* strikes that took a staged voice */
@@ -858,7 +882,14 @@ public:
                 {
                     const int m = n - i < 48 ? n - i : 48;
                     const bool drive = v == ractive_ && exciter_ && exgain_ > 0.f;
-                    if(lr) rvoices_[v].ProcessLR(tmp, tmpR, m, wl, wr, drive ? exciter_ + i : nullptr, exgain_);
+                    if(v == rcv_)
+                    {
+                        /* the contact is driving this voice: sample by
+                           sample, mono for its few milliseconds */
+                        if(!RunCoupled(rvoices_[v], tmp, m)) rcv_ = -1;
+                        if(lr) for(int k = 0; k < m; k++) tmpR[k] = tmp[k];
+                    }
+                    else if(lr) rvoices_[v].ProcessLR(tmp, tmpR, m, wl, wr, drive ? exciter_ + i : nullptr, exgain_);
                     else rvoices_[v].Process(tmp, m, drive ? exciter_ + i : nullptr, exgain_);
                     /* a voice that has gone to infinity or NaN stays there —
                        a linear bank's state is fed back forever — so it is
@@ -870,6 +901,7 @@ public:
                     if(!(sum - sum == 0.f))
                     {
                         rvoices_[v].Init();
+                        if(v == rcv_) rcv_ = -1;
                         rvoices_[v].cap = rpoly_ > 1 ? ResonatorBank::kMax / rpoly_ : 0;
                         rvoices_[v].release_ms = rrelease_ms_;
                         rvnote_[v] = 1e9f; rvdirty_[v] = false;
@@ -1020,12 +1052,90 @@ public:
          * is the same as starting in it */
         for(int v = 0; v < rcap_; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rgen_++; if(rplan_) rplan_->state = 0u;
+        rcv_ = -1;                     /* a contact under way belonged to the voices just rebuilt */
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rmember_ = 0;
         for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
         rframe_ = false;
         if(kResonator && w && w->IsResonate() && rcap_) { rmember_ = ResMemberOf(c_[0]); rvnote_[0] = ResParam(); Tuned().At(rvnote_[0], rvoices_[0], sr_); }
     }
+
+    /* ── the coupled exciter ─────────────────────────────────────────────── */
+    /* a strike by a coupled exciter: the voice's strike banks folded (a
+       struck exciter drives the main state itself), the contact's weights —
+       each mode driven as strongly as the fitted instrument has it, the
+       mode's unit-strike gain over the loudest, with the position's comb on
+       top — and the hammer or the finger set going at the string where it is.
+       No recorded attack. The voice then runs coupled (RunCoupled) until the
+       contact ends */
+    void StrikeCoupled(ResonatorVoice& vv, float vel)
+    {
+        ResonatorBank& b = vv.bank;
+        for(int q = 0; q < ResonatorBank::kStrikes; q++) if(b.ramping[q]) b.Fold(q);
+        float gmax = 0.f, f1 = 1e9f;
+        for(int k = 0; k < b.n; k++)
+        {
+            const float g = std::fabs(vv.gain[k]);
+            if(g > gmax) gmax = g;
+            if(g > 0.f && vv.hz[k] > 0.f && vv.hz[k] < f1) f1 = vv.hz[k];
+        }
+        const float amount = std::fabs(rexc_pos_ - 0.5f) * 2.f;
+        const float pos = 0.05f + 0.45f * rexc_pos_;
+        float xc = 0.f;
+        for(int k = 0; k < ResonatorBank::kMax; k++)
+        {
+            if(k >= b.n || gmax <= 0.f) { rcw_[k] = 0.f; continue; }
+            float comb = 1.f;
+            if(amount > 1e-3f && f1 < 1e8f)
+            {
+                float x = pos * vv.hz[k] / f1; x -= std::floor(x);
+                float sn, cs; fastmath::SinCos(3.1415927f * x, sn, cs);
+                float w = 2.f * (sn < 0.f ? -sn : sn); w = w > 1.f ? 1.f : w;
+                comb = (1.f - amount) + amount * w;
+            }
+            rcw_[k] = std::fabs(vv.gain[k]) / gmax * comb;
+            xc += rcw_[k] * b.y1[k];
+        }
+        b.quiet = false;
+        const float v = vel < 0.f ? 0.f : vel > 1.f ? 1.f : vel;
+        if(rexc_ == ResExciter::Hammer)
+        {
+            rham_.Init();
+            rham_.mass  = 0.003f + 0.017f * rexc_mass_;                          /* 3 to 20 g */
+            rham_.k     = 1e7f * fastmath::Exp2(9.9657843f * rexc_timbre_);    /* 1e7 to 1e10: the felt soft to hard */
+            rham_.alpha = 2.2f + 1.3f * rexc_timbre_;
+            rham_.Strike(0.3f * fastmath::Exp2(4.f * v), xc);                  /* 0.3 to 4.8 m/s */
+        }
+        else
+        {
+            rplk_.Init();
+            rplk_.k       = 200.f * fastmath::Exp2(6.643856f * rexc_timbre_);  /* 200 to 20 000 N/m */
+            rplk_.v       = 0.05f + 0.45f * v;                                 /* the finger's speed */
+            rplk_.release = (0.3f + 3.7f * v) * (0.5f + rexc_mass_);           /* the force it lets go at */
+            rplk_.Start(xc);
+        }
+        rcn_.Init(sr_, 1500.f + 6500.f * rexc_timbre_, 0.7f, 2e-5f * rexc_noise_);
+        rcv_ = ractive_;
+    }
+    /* the coupled voice's block: its main modes run with the contact, its
+       tail beside them, then the pickup, the old attack still fading and the
+       wash as Process has them. False when the contact has ended: the voice
+       goes back to the ordinary loop, ringing as the contact left it */
+    bool RunCoupled(ResonatorVoice& vv, float* out, int m)
+    {
+        ContactNoise* cn = rexc_noise_ > 0.f ? &rcn_ : nullptr;
+        const bool on = rexc_ == ResExciter::Hammer
+            ? ProcessStruck(vv.bank, out, m, rcw_, rham_, sr_, kModalMass, cn)
+            : ProcessPlucked(vv.bank, out, m, rcw_, rplk_, sr_, kModalMass, cn);
+        vv.bank.ProcessTail(out, m);
+        vv.pickup.Process(out, m);
+        vv.burst.Process(out, m);
+        vv.wash.Process(out, m);
+        return on;
+    }
+    /* the modal mass the contact's force moves (kg): one number for every
+       world until the exciter is trained per note (docs/exciters.md) */
+    static constexpr float kModalMass = 0.01f;
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
     /* Match another voice's phase and block count without rendering. */
@@ -1231,6 +1341,13 @@ private:
     bool           rlate_ = false;       /* the late-CV retune has been taken since the last strike */
     int            rlate_n_ = 0;         /* blocks a late CV has stood, no strike arriving */
     float          rforce_ = 1e9f;
+    ResExciter     rexc_ = ResExciter::Recorded;
+    float          rexc_timbre_ = 0.5f, rexc_pos_ = 0.5f, rexc_noise_ = 0.f, rexc_mass_ = 0.5f;
+    int            rcv_ = -1;            /* the voice a coupled contact is driving, -1 none */
+    Hammer         rham_;
+    Pluck          rplk_;
+    ContactNoise   rcn_;
+    float          rcw_[ResonatorBank::kMax];   /* the contact's weights on the coupled voice's modes */
     uint32_t       rhurried_ = 0u;       /* the note a strike takes from the staged voice, 1e9 for none */
     const float*   exciter_ = nullptr;   /* this block's drive, or null */
     float          exgain_ = 0.f;

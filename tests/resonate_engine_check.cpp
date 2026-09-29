@@ -1054,6 +1054,60 @@ int main()
         printf("  the voices lent: the stereo pair's L four, R none; a copied Engine plays its own\n");
     }
 
+    /* 22k. a coupled exciter strikes the resonator (SetExciterType; the road
+       to full synthesis, docs/exciters.md). The Piano fixture struck by the
+       hammer: it sounds, bounded, with no recorded attack; the contact ends
+       within 10 ms and the voice rings on after it; harder is louder and
+       brighter (the felt stiffening, nothing scripted); the position away
+       from the centre moves the balance; the pluck the same; a strike at
+       another note during a contact takes the contact and nothing goes
+       non-finite; and on a pickup world (the tine) it stays bounded. The
+       recorded attack stays the default, the goldens its witness */
+    {
+        auto centroid = [&](const std::vector<float>& y, int a, int len, float f0) {
+            double num = 0, den = 0;
+            for(int h = 1; h <= 16; h++) { double re = 0, im = 0; for(int i = a; i < a + len; i++) { const double ph = 6.283185307 * h * f0 * i / sr; re += y[i] * std::cos(ph); im += y[i] * std::sin(ph); } const double m = std::sqrt(re * re + im * im); num += h * m; den += m; }
+            return den > 0 ? num / den : 0.0;
+        };
+        auto strike = [&](const World& w, ResExciter t, float vel, float pos, int& contact_blocks, float& peak, float& late, double& cen) {
+            Engine e; e.Init(&w, sr); e.gain = 1.f; e.SetExciterType(t); e.SetExciterShape(0.5f, pos, 0.f, 0.5f);
+            e.SetF0(130.81f); e.Strike(vel);
+            std::vector<float> y; contact_blocks = 0;
+            for(int b = 0; b < 400; b++) { RunOn(e, y, 1); if(e.CoupledVoice() >= 0) contact_blocks++; }
+            peak = 0.f; for(float s : y) peak = std::fmax(peak, std::fabs(s));
+            late = 0.f; for(size_t i = 9600; i < 12000; i++) late = std::fmax(late, std::fabs(y[i]));
+            cen = centroid(y, 0, 2400, 130.81f);
+            bool finite = true; for(float s : y) finite = finite && std::isfinite(s);
+            return finite;
+        };
+        int c1, c2, c3, cp; float p1, p2, p3, pp, l1, l2, l3, lp; double e1, e2, e3, ep;
+        const bool f1 = strike(piano, ResExciter::Hammer, 0.3f, 0.5f, c1, p1, l1, e1);
+        const bool f2 = strike(piano, ResExciter::Hammer, 1.0f, 0.5f, c2, p2, l2, e2);
+        const bool f3 = strike(piano, ResExciter::Hammer, 1.0f, 0.95f, c3, p3, l3, e3);
+        const bool fp = strike(piano, ResExciter::Pluck, 0.7f, 0.5f, cp, pp, lp, ep);
+        CHECK(f1 && f2 && f3 && fp, "a coupled strike went non-finite");
+        CHECK(p1 > 1e-4f && p2 < 50.f && l1 > 0.f && l2 > 0.f, "the hammer: peaks %.3g / %.3g, ringing 200 ms on %.3g / %.3g", p1, p2, l1, l2);
+        CHECK(c1 > 0 && c1 <= 10 && c2 > 0 && c2 <= 10, "the hammer's contact lasted %d and %d blocks of 1 ms (want 1..10)", c1, c2);
+        CHECK(p2 > 2.f * p1 && e2 > e1 + 0.05, "harder is not louder and brighter: peak %.3g against %.3g, centroid h%.2f against h%.2f", p2, p1, e2, e1);
+        CHECK(std::fabs(e3 - e2) > 0.05, "the position moved nothing: centroid h%.2f at the centre, h%.2f at 0.95", e2, e3);
+        CHECK(cp > 0 && pp > 1e-4f && lp > 0.f, "the pluck: contact %d blocks, peak %.3g, ringing %.3g", cp, pp, lp);
+        /* a strike at another note during the contact */
+        {
+            Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4); e.SetExciterType(ResExciter::Hammer);
+            std::vector<float> y;
+            e.SetF0(130.81f); e.Strike(0.8f); RunOn(e, y, 1);
+            const int first = e.CoupledVoice();
+            e.SetF0(196.f); e.Strike(0.8f); RunOn(e, y, 200);
+            bool finite = true; for(float s : y) finite = finite && std::isfinite(s);
+            CHECK(finite && first >= 0 && e.CoupledVoice() != first, "a strike during a contact: finite %d, the contact moved from voice %d to %d", finite, first, e.CoupledVoice());
+        }
+        int ct; float pt, lt; double et;
+        const bool ft = strike(rw, ResExciter::Hammer, 1.0f, 0.5f, ct, pt, lt, et);
+        CHECK(ft && pt < 50.f && pt > 1e-5f, "the hammer on the tine (a pickup world): finite %d, peak %.3g", ft, pt);
+        printf("  the coupled hammer: contact %d / %d ms, peak x%.1f and centroid h%.2f -> h%.2f from soft to hard; position moves it to h%.2f; the pluck rings; a pickup world bounded\n",
+               c1, c2, p2 / p1, e1, e2, e3);
+    }
+
     /* 22c. the position a resonate world reports as heard (Position(), which
        telemetry sends as posL and the page's model sliders follow) moves with
        the axes. The skipped render was the only thing that folded it, so it

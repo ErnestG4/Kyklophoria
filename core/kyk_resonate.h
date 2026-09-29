@@ -924,6 +924,39 @@ struct ResonatorBank
         }
     }
 
+    /* the tail alone, added into out: a voice driven by a coupled exciter
+       (Engine, kyk_exciter.h) runs its main modes sample by sample with the
+       contact's force, and the last note's tail rings on beside it as it
+       would in Process — paired, the same sums in the same order */
+    void ProcessTail(float* out, int frames)
+    {
+        if(tn <= 0 || tail_left <= 0) return;
+        const int mt = frames < tail_left ? frames : tail_left;
+        const float tc = tail_c, tc2_ = tail_c * tail_c;
+        int i = 0;
+        for(; i + 1 < tn; i += 2)
+        {
+            const float a0 = tc1[i] * tc, b0 = tc2[i] * tc2_, a1 = tc1[i + 1] * tc, b1 = tc2[i + 1] * tc2_;
+            float p1 = ty1[i], p2 = ty2[i], q1 = ty1[i + 1], q2 = ty2[i + 1];
+            for(int k = 0; k < mt; k++)
+            {
+                const float yp = a0 * p1 + b0 * p2, yq = a1 * q1 + b1 * q2;
+                p2 = p1; p1 = yp; q2 = q1; q1 = yq;
+                float o = out[k]; o += yp; o += yq; out[k] = o;
+            }
+            ty1[i] = p1; ty2[i] = p2; ty1[i + 1] = q1; ty2[i + 1] = q2;
+        }
+        for(; i < tn; i++)
+        {
+            const float a = tc1[i] * tc, b = tc2[i] * tc2_;
+            float u1 = ty1[i], u2 = ty2[i];
+            for(int k = 0; k < mt; k++) { const float y = a * u1 + b * u2; u2 = u1; u1 = y; out[k] += y; }
+            ty1[i] = u1; ty2[i] = u2;
+        }
+        tail_left -= mt;
+        if(tail_left <= 0) tn = 0;
+    }
+
     /* the bank heard from two places: the same modes, the same state, into
        two outputs, each mode weighted by where that ear listens (wl, wr, one
        a mode; Engine computes them from the stereo spread as two points along
