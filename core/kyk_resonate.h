@@ -1866,7 +1866,8 @@ struct ResonatorWorld
     {
         w.Init();
         if(kind != 2) { w = *this; return true; }
-        if(m < 0) m = 0; if(m >= M) m = M - 1;
+        if(m < 0) m = 0;
+        if(m >= M) m = M - 1;
         if(!w.Attach(blob + member_off[m], member_len[m])) return false;
         w.voicing = voicing; w.decay = decay; w.coil = coil;
         return true;
