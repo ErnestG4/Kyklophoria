@@ -186,3 +186,4 @@ aa9e48d, with a brake on any runaway voice).
   (ModalBake fix committed); modal-mode.md's region sizes corrected
   (156d8ba). A/B renders of the new card, trained against recorded at three
   velocities, are in `build/demos/grand-*.wav`.
+- 03:56 — check-in. Card-exc5 level-safe; the pp pop is the open part of item 1, being looked at.
