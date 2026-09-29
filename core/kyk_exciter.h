@@ -121,12 +121,19 @@ struct Hammer
 {
     float mass;       /* kg */
     float k, alpha;   /* felt stiffness and exponent */
+    /* the felt's hysteresis (Hunt-Crossley): F = K d^alpha (1 + mu d'), d' the
+       rate the felt is being compressed. Felt pushes back harder going in than
+       coming out, so the contact's pulse leans, and a clean pulse's nulls — a
+       hammer contact of about three periods left a C4's 3rd and 6th harmonics
+       6-15 dB short of the recording (ModalBake excfit) — fill in. 0, the
+       elastic felt this hammer was until then, and every check of it stands */
+    float mu;
     float x, v;       /* the hammer's position and velocity, toward the string (+) */
     float xc_prev;
     int   contact;    /* samples in contact so far; */
     bool  gone;       /* left the string */
-    void Init() { mass = 0.008f; k = 1e8f; alpha = 2.5f; x = 0.f; v = 0.f; xc_prev = 0.f; contact = 0; gone = true; }
-    void Strike(float velocity, float xc) { v = velocity; x = xc; gone = false; contact = 0; }
+    void Init() { mass = 0.008f; k = 1e8f; alpha = 2.5f; mu = 0.f; x = 0.f; v = 0.f; xc_prev = 0.f; contact = 0; gone = true; }
+    void Strike(float velocity, float xc) { v = velocity; x = xc; xc_prev = xc; gone = false; contact = 0; }
 };
 
 /* a bank struck by a hammer: frames samples of its displacement into out
@@ -142,7 +149,14 @@ inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float*
             float xc = 0.f;
             for(int k = 0; k < b.n; k++) xc += w[k] * b.y1[k];
             const float d = h.x - xc;
-            if(d > 0.f) { f = h.k * std::pow(d, h.alpha); h.contact++; }
+            const float dd = h.v - (xc - h.xc_prev) * sr;                  /* the felt's compression rate */
+            h.xc_prev = xc;
+            if(d > 0.f)
+            {
+                f = h.k * std::pow(d, h.alpha) * (1.f + h.mu * dd);
+                if(f < 0.f) f = 0.f;                                          /* a felt pushes; it does not pull */
+                h.contact++;
+            }
             else if(h.contact > 0 && h.v <= 0.f) h.gone = true;          /* the felt has let go and the hammer is falling back */
             h.v -= f / h.mass * dt;
             h.x += h.v * dt;

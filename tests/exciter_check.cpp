@@ -237,6 +237,30 @@ int main()
         CHECK(std::fabs(bal) < 0.1, "the pluck's energy does not balance: the finger put in %.3g, the spring kept %.3g, the string has %.3g (%+.0f%%)", wk, left, es, 100 * bal);
         printf("  the pluck: at the middle the even harmonics %.0f dB under the odd; a stiffer plectrum lets go in %d samples, not %d, centroid h%.2f against h%.2f\n", ev, h2, h1, cs2, cs);
     }
+    /* 8b. the felt's hysteresis (Hammer::mu, Hunt-Crossley): a felt that
+       pushes back harder going in than coming out loses energy in the
+       contact, so the hammer leaves the string slower than an elastic one —
+       and the string gets less of what the hammer brought. mu 0 is the
+       elastic felt, as every check above had it */
+    {
+        auto strike = [&](float mu, float& vout, double& estring) {
+            ResonatorBank b; b.Init();
+            float hz[12], z[12], g[12];
+            for(int k = 0; k < 12; k++) { hz[k] = f0 * (k + 1); z[k] = 0.0005f; g[k] = 0.f; }
+            b.Set(hz, z, g, 12, sr);
+            float w[12]; for(int k = 0; k < 12; k++) w[k] = std::sin(3.14159265f * 0.12f * (k + 1));
+            Hammer h; h.Init(); h.mu = mu; h.Strike(2.f, 0.f);
+            std::vector<float> y(4800);
+            ProcessStruck(b, y.data(), 4800, w, h, sr, mass);
+            vout = h.v;
+            estring = 0; for(int k = 0; k < 12; k++) estring += (double)b.y1[k] * b.y1[k] + (double)b.y2[k] * b.y2[k];
+        };
+        float v0, v1; double e0, e1;
+        strike(0.f, v0, e0); strike(0.5f, v1, e1);
+        CHECK(v0 < 0.f && v1 < 0.f && -v1 < 0.9f * -v0 && e1 < e0, "hysteresis: the hammer leaves at %.3f m/s (elastic %.3f), the string holds %.3g (elastic %.3g)", -v1, -v0, e1, e0);
+        printf("  the felt's hysteresis: the hammer comes off at %.2f m/s where an elastic felt returns %.2f, the string keeps less of it\n", -v1, -v0);
+    }
+
     /* 9. the contact's noise (ContactNoise): as loud as the contact, so it
        lives exactly while the contact does and cannot stack — the fix the
        design note gives for the "snare chain" of noise bands falling on their
