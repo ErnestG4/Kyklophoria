@@ -23,6 +23,13 @@
  * So: analytic where a formula exists, tabulated where one does not.
  */
 #pragma once
+/* KYK_WAVETABLE 0: a build that renders no wavetable (the modal firmware,
+   shell/alchemy MODE=modal), the mirror of KYK_RESONATOR. Every world then
+   evaluates to silence, as a resonate world always did, so the evaluators and
+   the frame's transform are not linked. 1 (the default) everywhere else */
+#ifndef KYK_WAVETABLE
+#define KYK_WAVETABLE 1
+#endif
 #include "kyk_interp.h"
 #include "kyk_eigen_basis.h"
 #include "kyk_fm.h"
@@ -440,6 +447,12 @@ public:
      * left empty otherwise. */
     void Evaluate(const float* p01, float sharp, float* mags, float* payload, Weights& wt) const
     {
+#if !KYK_WAVETABLE
+        (void)p01; (void)sharp; (void)payload;
+        wt.n_corners = 0;
+        for(int k = 0; k < kMaxK; k++) mags[k] = 0.f;
+        return;
+#endif
         if(kind_ == Kind::Lattice)
         {
             LatticeWeights(*space_, p01, wt);

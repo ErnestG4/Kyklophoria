@@ -58,7 +58,7 @@ C_DEFS += -ffp-contract=off
 ifeq ($(MODE),wavetable)
 C_DEFS += -DKYK_MODE_WAVETABLE=1 -DKYK_RESONATOR=0
 else
-C_DEFS += -DKYK_MODE_MODAL=1 -DKYK_RESONATOR=1
+C_DEFS += -DKYK_MODE_MODAL=1 -DKYK_RESONATOR=1 -DKYK_WAVETABLE=0
 endif
 # extra defines for a variant build, e.g. make KYK_DEFS=-DKYK_RES_NEAREST
 C_DEFS += $(KYK_DEFS)

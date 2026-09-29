@@ -773,7 +773,7 @@ public:
             for(int a = 0; a < kMaxN; a++) rendered_[a] = c_[a];
             morph_r_ = morph_;
             world_->Fold(c_, p_);
-            world_->Evaluate(p_, sharp, mags_, payload_, wt_);
+            world_->Evaluate(p_, sharp, mags_, payload_, wt_);   /* silence under KYK_WAVETABLE 0 (kyk_world.h) */
             /* Blend a second world in, if one is set.
              *
              * This is the whole of cross-world morphing on the audio side, and
@@ -792,7 +792,7 @@ public:
              * place for the translation is the host, which has every
              * evaluator and can search for the matching point before it asks
              * for the morph. */
-            if(morph_ > 0.f && morph_world_ && morph_world_->Ready()
+            if(KYK_WAVETABLE && morph_ > 0.f && morph_world_ && morph_world_->Ready()
                && morph_world_->K() == world_->K())
             {
                 float mb[kMaxK], pb[kMaxP];
@@ -817,7 +817,13 @@ public:
              * Each shaper is the identity at zero, so a node of a shape table
              * with both shaper axes down is exactly the waveform the table
              * names. */
-            if(world_->HasShaper())
+            /* the modal firmware (KYK_WAVETABLE 0) renders no wavetable: every
+               world's spectrum is silence there, so the frame is left as it
+               is (silence from Init) and the transform is not linked. The
+               bookkeeping around it — the fold, the band limit, the counts —
+               stays, since the page reads it */
+            if(!KYK_WAVETABLE) {}
+            else if(world_->HasShaper())
             {
                 RenderFrame(mags_bl_, cph_, sph_, kcut_, shape_, sc_);
                 world_->Shape(osc_.Back(), shape_, kFrame, p_);

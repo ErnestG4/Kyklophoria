@@ -15,7 +15,7 @@ LINK_FLAGS = -Ishell/common -I$(SDK_DIR)/framework/include -DALCHEMY_HOSTLINK_MA
 CORE_HDRS  = $(wildcard core/*.h) $(wildcard shell/common/*.h)
 
 .PHONY: host test tables clean
-host: build/host/kykdesk build/host/kykdesk-wavetable build/host/kykspace build/host/kykeigen build/host/kykworlds \
+host: build/host/kykdesk build/host/kykdesk-wavetable build/host/kykdesk-modal build/host/kykspace build/host/kykeigen build/host/kykworlds \
       build/host/alias_check
 
 build/host/kykdesk: shell/desktop/main.cpp shell/desktop/wavio.h shell/desktop/script.h shell/desktop/serve.h $(CORE_HDRS)
@@ -28,6 +28,12 @@ build/host/kykdesk: shell/desktop/main.cpp shell/desktop/wavio.h shell/desktop/s
 build/host/kykdesk-wavetable: shell/desktop/main.cpp shell/desktop/wavio.h shell/desktop/script.h shell/desktop/serve.h $(CORE_HDRS)
 	@mkdir -p build/host
 	$(CXX) $(CORE_FLAGS) $(LINK_FLAGS) -DKYK_RESONATOR=0 shell/desktop/main.cpp -o $@
+
+# and as the modal firmware builds it: no wavetable rendered (KYK_WAVETABLE=0).
+# Every resonate golden and its telemetry through it, bit for bit
+build/host/kykdesk-modal: shell/desktop/main.cpp shell/desktop/wavio.h shell/desktop/script.h shell/desktop/serve.h $(CORE_HDRS)
+	@mkdir -p build/host
+	$(CXX) $(CORE_FLAGS) $(LINK_FLAGS) -DKYK_WAVETABLE=0 shell/desktop/main.cpp -o $@
 
 build/host/kykspace: tools/kykspace/main.cpp $(CORE_HDRS)
 	@mkdir -p build/host

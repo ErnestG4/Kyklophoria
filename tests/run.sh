@@ -193,6 +193,38 @@ PY
 then echo "  ok   a resonator through the wavetable core is silence"
 else echo "  FAIL a resonator sounds through the wavetable core: the resonator is not compiled out"; fail=1; fi
 
+# The modal firmware builds the core without the wavetable (KYK_WAVETABLE=0,
+# shell/alchemy MODE=modal): every resonate golden again through that core,
+# bit for bit, and its telemetry (what the page draws) line for line — a
+# resonate world's frame was always silence, so nothing may move. And a
+# wavetable world through it is silence: the flag really takes the renderer
+# out, or this proves nothing.
+echo "== golden, the modal firmware's core =="
+for script in tests/scripts/m4_*.txt; do
+    name=$(basename "$script" .txt)
+    case "$name" in
+        m4_resonate*) args="--gen --seed 1 --resonate tests/data/piano.kykm";;
+        m4_sweep_note*) args="--gen --seed 1 --resonate tests/data/tine.kykm";;
+        m4_sweep_index*) args="--gen --seed 1 --resonate tests/data/bodies.kykm";;
+        *) continue;;
+    esac
+    build/host/kykdesk-modal $args --script "$script" --out "$OUT/md_$name.wav" --telemetry "$OUT/md_$name.csv" > /dev/null || { fail=1; continue; }
+    "$OUT/wavdiff" "$OUT/md_$name.wav" "tests/golden/$name.wav" 1e-6 > /dev/null || { echo "  FAIL $name differs through the modal core"; fail=1; continue; }
+    cmp -s "$OUT/md_$name.csv" "$OUT/$name.csv" || { echo "  FAIL $name's telemetry differs through the modal core"; fail=1; continue; }
+    echo "  ok   $name"
+done
+build/host/kykdesk-modal --gen --seed 1 --world 11 --script tests/scripts/m3_shapes.txt --out "$OUT/md_m3.wav" > /dev/null 2>&1
+if python3 - "$OUT/md_m3.wav" <<'PY'
+import struct, sys
+b = open(sys.argv[1], 'rb').read()
+i = b.find(b'data'); n = struct.unpack('<I', b[i + 4:i + 8])[0]; d = b[i + 8:i + 8 + n]
+fmt = struct.unpack('<H', b[20:22])[0]
+x = struct.unpack('<%df' % (len(d) // 4), d) if fmt == 3 else struct.unpack('<%dh' % (len(d) // 2), d)
+sys.exit(0 if max(abs(v) for v in x) == 0 else 1)
+PY
+then echo "  ok   a wavetable world through the modal core is silence"
+else echo "  FAIL a wavetable world sounds through the modal core: the renderer is not compiled out"; fail=1; fi
+
 # Every fitted world carries burst audio — a window of the recording it was
 # fitted from — so publishing one publishes that. tests/data/SOURCES.md is the
 # record of which recording, and a fixture that is not in it is one nobody has
