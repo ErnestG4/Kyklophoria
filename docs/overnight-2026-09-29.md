@@ -140,3 +140,11 @@ aa9e48d, with a brake on any runaway voice).
   resting here: the card is level-safe, and ears on it will say more than
   another retrain. On the module, Exciter page Timbre (the felt's
   stiffness) turned down softens every trained attack.
+- 04:05 — ModalBake housekeeping from the training guide's findings:
+  `make check-runtime` passes again (runtime/kyk_resonate.h refreshed,
+  5cd2091); refitn's misalignment confirmed (a refitted banjo record 9.7 ms
+  off its burst) and fixed for future refits, but the records already
+  refitted need re-bursting and re-exporting, which is Combust's call
+  (ModalBake fix committed); modal-mode.md's region sizes corrected
+  (156d8ba). A/B renders of the new card, trained against recorded at three
+  velocities, are in `build/demos/grand-*.wav`.
