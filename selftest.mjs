@@ -110,6 +110,9 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
 
   const st = KYK.parseStats(await link.request(KYK.CMD.stats));
   check(st && st.renderDiv >= 1, 'stats');
+  /* the load governor's count (blocks a second it hurried the tails): a pop
+     with no overrun has to be visible somewhere */
+  check(st && st.hurriedPerS !== null && st.hurriedPerS !== undefined, 'stats carry the hurried blocks a second');
   console.log(`  stats: cycles last ${st.cyclesLast} max ${st.cyclesMax} avg ${st.cyclesAvg} budget ${st.cyclesBudget} overruns ${st.overruns} dropped ${st.dropped}`);
 
   /* The FM world's formula, and the page's port of it against the module's.

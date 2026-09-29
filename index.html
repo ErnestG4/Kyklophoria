@@ -4070,7 +4070,7 @@ function drawStatus() {
   if (link) { const s = link.stats; setText('sLink', `${s.rttAvg.toFixed(1)} ms · ${fpsWin.fps.toFixed(0)} fps · ${s.kbps.toFixed(1)} KB/s${s.timeouts ? ' · ' + s.timeouts + ' timeouts' : ''}`); }
   if (stats) {
     const pct = v => stats.cyclesBudget ? (100 * v / stats.cyclesBudget).toFixed(0) + '%' : v;
-    setText('sCpu', `${pct(stats.cyclesLast)} last · ${pct(stats.cyclesAvg)} avg · ${pct(stats.cyclesMax)} max${stats.engineMax != null ? ' · engine ' + pct(stats.engineMax) : ''}${stats.strikeMax != null && tel && tel.resonate ? ' · strike ' + pct(stats.strikeMax) : ''}${stats.atPerS != null && tel && tel.resonate ? ' · ' + stats.atPerS + ' At/s' : ''}${stats.stagedPerS != null && tel && tel.resonate ? ' · ' + stats.stagedPerS + ' staged/s' : ''} · div ${stats.renderDiv}${stats.overruns ? ' · ' + stats.overruns + ' overruns' : ''}${stats.dropped ? ' · ' + stats.dropped + ' dropped' : ''}`);
+    setText('sCpu', `${pct(stats.cyclesLast)} last · ${pct(stats.cyclesAvg)} avg · ${pct(stats.cyclesMax)} max${stats.engineMax != null ? ' · engine ' + pct(stats.engineMax) : ''}${stats.strikeMax != null && tel && tel.resonate ? ' · strike ' + pct(stats.strikeMax) : ''}${stats.atPerS != null && tel && tel.resonate ? ' · ' + stats.atPerS + ' At/s' : ''}${stats.stagedPerS != null && tel && tel.resonate ? ' · ' + stats.stagedPerS + ' staged/s' : ''}${stats.hurriedPerS ? ' · ' + stats.hurriedPerS + ' hurried/s' : ''} · div ${stats.renderDiv}${stats.overruns ? ' · ' + stats.overruns + ' overruns' : ''}${stats.dropped ? ' · ' + stats.dropped + ' dropped' : ''}`);
     $('sCpuWrap').classList.toggle('warn', stats.overruns > 0 || (stats.cyclesBudget && stats.cyclesMax > 0.7 * stats.cyclesBudget));
   }
 }
