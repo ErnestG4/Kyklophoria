@@ -1,0 +1,313 @@
+/* excfit — train a coupled exciter to a note's recordings (the road to full
+ * synthesis: Combust, 28 September, "we are trying to move to full synthesis
+ * as well. We'll need to train exciters to match").
+ *
+ *   excfit <world.kykm> <midi> <out-prefix> <target.wav>:<layer> [...]
+ *     layer: pp, mf or ff (or a number 0..1, the velocity the take stands for)
+ *
+ * A world's modes were fitted with the recorded attack playing beside them.
+ * Here the attack is the hammer: the voice's modes, driven through the coupled
+ * loop the module runs (Kyklophoria core/kyk_exciter.h ProcessStruck, the
+ * weights EngineCore::StrikeCoupled uses), and the hammer's felt, mass and the
+ * speed of each layer searched (Nelder-Mead, restarted) so the first 600 ms
+ * match each take: a multi-resolution log-magnitude STFT and the 10 ms
+ * envelope, the two summed. One felt and one mass for all the layers — the
+ * velocity's brightness has to come out of the physics, not a fit per layer.
+ *
+ * Built against Kyklophoria's core itself, not a copy: what is trained is what
+ * plays. Prints the loss of the trained hammer against the loss of today's
+ * voice (the recorded attack) on the same takes, and writes both renders:
+ * <out-prefix>-<layer>-hammer.wav, -recorded.wav, and the take, -target.wav.
+ */
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
+#include <string>
+#include <vector>
+#include <algorithm>
+#include <random>
+#include "kyk_exciter.h"
+#include "wavio.h"
+
+using namespace kyk;
+
+static const float kSec = 0.6f;          /* how much of each take the loss sees */
+static bool g_refweights = false;       /* EXCFIT_WEIGHTS=ref: the fitted gains over the synthetic felt's own spectrum */
+
+/* ── a small radix-2 FFT for the loss ─────────────────────────────────── */
+static void Fft(std::vector<double>& re, std::vector<double>& im)
+{
+    const size_t n = re.size();
+    for(size_t i = 1, j = 0; i < n; i++)
+    {
+        size_t bit = n >> 1;
+        for(; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if(i < j) { std::swap(re[i], re[j]); std::swap(im[i], im[j]); }
+    }
+    for(size_t len = 2; len <= n; len <<= 1)
+    {
+        const double a = -2.0 * M_PI / (double)len;
+        for(size_t i = 0; i < n; i += len)
+            for(size_t k = 0; k < len / 2; k++)
+            {
+                const double c = std::cos(a * k), s = std::sin(a * k);
+                const double xr = re[i + k + len / 2] * c - im[i + k + len / 2] * s;
+                const double xi = re[i + k + len / 2] * s + im[i + k + len / 2] * c;
+                re[i + k + len / 2] = re[i + k] - xr; im[i + k + len / 2] = im[i + k] - xi;
+                re[i + k] += xr; im[i + k] += xi;
+            }
+    }
+}
+/* log-magnitude frames of x, window n, hop n/4, Hann, floored at `floor`
+   (a magnitude): the take's hiss is not a thing to match */
+static std::vector<std::vector<float>> LogSpec(const std::vector<float>& x, int n, double floor)
+{
+    std::vector<std::vector<float>> out;
+    std::vector<double> re(n), im(n);
+    for(size_t at = 0; at + n <= x.size(); at += n / 4)
+    {
+        for(int i = 0; i < n; i++) { const double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / n); re[i] = x[at + i] * w; im[i] = 0; }
+        Fft(re, im);
+        std::vector<float> f(n / 2);
+        for(int k = 0; k < n / 2; k++) f[k] = (float)std::log(std::max(std::sqrt(re[k] * re[k] + im[k] * im[k]), floor));
+        out.push_back(std::move(f));
+    }
+    return out;
+}
+struct Target { std::vector<float> x; std::vector<std::vector<float>> s[3]; double floor[3]; double rms; std::vector<float> env; float vel; std::string layer, path; };
+static double Rms(const std::vector<float>& x) { double e = 0; for(float v : x) e += (double)v * v; return std::sqrt(e / (x.size() ? x.size() : 1)); }
+/* the loudest bin of any frame at window n, and the floor 50 dB under it */
+static double FloorOf(const std::vector<float>& x, int n)
+{
+    const auto s = LogSpec(x, n, 1e-30);
+    float mx = -1e30f; for(auto& f : s) for(float v : f) mx = std::max(mx, v);
+    return std::exp(mx) * std::pow(10.0, -50.0 / 20.0);
+}
+static std::vector<float> Env(const std::vector<float>& x, int sr)
+{
+    const int w = sr / 100; std::vector<float> e;
+    for(size_t at = 0; at + w <= x.size(); at += w / 2) { double s = 0; for(int i = 0; i < w; i++) s += (double)x[at + i] * x[at + i]; e.push_back((float)(10 * std::log10(s / w + 1e-12))); }
+    return e;
+}
+static const int kSizes[3] = {256, 1024, 4096};
+/* where a loss sits: the 256-point spectrum's error in the first 50 ms and
+   after it, and the envelope's in dB — a report, not the loss */
+static void Where(const std::vector<float>& y0, const Target& t, int sr, double& att, double& ring, double& envdb);
+/* the takes are levelled (the Iowa set's peak at -6 dBFS whatever the
+   dynamic), so each render is matched to its take's loudness before it is
+   compared: the loss is the timbre and the envelope's shape, and the speed
+   explains what it can — the attack's length and brightness */
+static double Loss(const std::vector<float>& y0, const Target& t, int sr)
+{
+    std::vector<float> y(y0);
+    const double r0 = Rms(y);
+    if(r0 > 0) { const float g = (float)(t.rms / r0); for(float& v : y) v *= g; }
+    double l = 0;
+    for(int r = 0; r < 3; r++)
+    {
+        const auto s = LogSpec(y, kSizes[r], t.floor[r]);
+        const size_t nf = std::min(s.size(), t.s[r].size());
+        double d = 0; size_t c = 0;
+        for(size_t f = 0; f < nf; f++) for(size_t k = 0; k < s[f].size(); k++) { d += std::fabs(s[f][k] - t.s[r][f][k]); c++; }
+        l += c ? d / c : 10.0;
+    }
+    const auto e = Env(y, sr);
+    const size_t ne = std::min(e.size(), t.env.size());
+    double de = 0; for(size_t i = 0; i < ne; i++) de += std::fabs(e[i] - t.env[i]);
+    return l / 3.0 + (ne ? de / ne / 20.0 : 1.0);     /* dB over 20: an envelope 20 dB out costs as much as a spectrum e-fold out */
+}
+
+/* the take from its onset (the first 10 ms window within 30 dB of the peak,
+   backed off 5 ms), kSec long */
+static std::vector<float> Onset(const std::vector<float>& x, int sr)
+{
+    float pk = 0; for(float v : x) pk = std::max(pk, std::fabs(v));
+    size_t at = 0;
+    for(size_t i = 0; i < x.size(); i++) if(std::fabs(x[i]) > pk * 0.0316f) { at = i; break; }
+    at = at > (size_t)(0.005f * sr) ? at - (size_t)(0.005f * sr) : 0;
+    const size_t n = (size_t)(kSec * sr);
+    std::vector<float> y(n, 0.f);
+    for(size_t i = 0; i < n && at + i < x.size(); i++) y[i] = x[at + i];
+    return y;
+}
+
+/* the hammer's parameters, searched in logs: felt k, alpha, hammer mass,
+   the output's scale (the modal mass it moves), and one speed a layer */
+/* ... and the contact's noise (ContactNoise): its level over the force, and
+   its band's centre — a hard hit's knock, which the modes cannot carry */
+struct Params { double lk, alpha, lmass, lgain, lspeed[3], lnoise, lnfc; };
+static const int kDim = 9;
+static void ToVec(const Params& p, double* v) { v[0] = p.lk; v[1] = p.alpha; v[2] = p.lmass; v[3] = p.lgain; for(int i = 0; i < 3; i++) v[4 + i] = p.lspeed[i]; v[7] = p.lnoise; v[8] = p.lnfc; }
+static Params FromVec(const double* v) { Params p; p.lk = v[0]; p.alpha = v[1]; p.lmass = v[2]; p.lgain = v[3]; for(int i = 0; i < 3; i++) p.lspeed[i] = v[4 + i]; p.lnoise = v[7]; p.lnfc = v[8]; return p; }
+
+/* one layer struck by the hammer, kSec long: the voice's modes from rest,
+   driven through the coupled loop with EngineCore::StrikeCoupled's weights
+   (each mode's unit-strike gain over the loudest; position at the centre) */
+static std::vector<float> RenderHammer(const ResonatorVoice& v0, const Params& p, int layer, int sr)
+{
+    static ResonatorVoice v; v = v0;
+    ResonatorBank& b = v.bank;
+    for(int k = 0; k < ResonatorBank::kMax; k++) { b.y1[k] = b.y2[k] = 0.f; for(int q = 0; q < ResonatorBank::kStrikes; q++) b.s1[q][k] = b.s2[q][k] = 0.f; }
+    b.tn = 0; b.tail_left = 0;
+    float w[ResonatorBank::kMax], gmax = 0.f;
+    for(int k = 0; k < b.n; k++) gmax = std::max(gmax, std::fabs(v.gain[k]));
+    for(int k = 0; k < ResonatorBank::kMax; k++) w[k] = (k < b.n && gmax > 0.f) ? std::fabs(v.gain[k]) / gmax : 0.f;
+    Hammer h; h.Init();
+    h.k = (float)std::exp(p.lk); h.alpha = (float)p.alpha; h.mass = (float)std::exp(p.lmass);
+    if(g_refweights)
+    {
+        /* the fitted gains are the ring after the RECORDED hammer, its felt's
+           spectrum already in them: driven through them, a synthetic felt
+           filters twice. So strike once at the reference speed (the middle
+           layer's) with every mode alike, read each mode's amplitude when
+           the felt has let go, and divide it out: at the reference speed the
+           ring is the fitted instrument's, and the other speeds move it by
+           the felt's physics alone */
+        static ResonatorVoice r; r = v;
+        float one[ResonatorBank::kMax]; for(int k = 0; k < ResonatorBank::kMax; k++) one[k] = k < b.n ? 1.f : 0.f;
+        Hammer hr = h; hr.Strike((float)std::exp(p.lspeed[1]), 0.f);
+        float tmp[64]; int ran = 0;
+        while(ran < 4000 && ProcessStruck(r.bank, tmp, 1, one, hr, (float)sr, 0.01f)) ran++;
+        float amax = 0.f, a[ResonatorBank::kMax];
+        for(int k = 0; k < b.n; k++)
+        {
+            const float r2 = -r.bank.c2[k], rr = r2 > 0.f ? std::sqrt(r2) : 0.f, cw = rr > 0.f ? r.bank.c1[k] / (2.f * rr) : 1.f;
+            const float s2 = std::max(1e-6f, 1.f - cw * cw), ry = rr * r.bank.y2[k];
+            a[k] = std::sqrt(std::max(0.f, (r.bank.y1[k] * r.bank.y1[k] + ry * ry - 2.f * r.bank.y1[k] * ry * cw) / s2));
+        }
+        for(int k = 0; k < b.n; k++) { w[k] = a[k] > 1e-12f ? w[k] / a[k] : 0.f; amax = std::max(amax, w[k]); }
+        if(amax > 0.f) for(int k = 0; k < b.n; k++) w[k] /= amax;
+    }
+    h.Strike((float)std::exp(p.lspeed[layer]), 0.f);
+    const int n = (int)(kSec * sr);
+    std::vector<float> y(n, 0.f);
+    ContactNoise cn; cn.Init((float)sr, (float)std::exp(p.lnfc), 0.7f, (float)std::exp(p.lnoise));
+    ProcessStruck(b, y.data(), n, w, h, (float)sr, 0.01f, &cn);
+    if(v.pickup.on) v.pickup.Process(y.data(), n);
+    const float g = (float)std::exp(p.lgain);
+    for(float& s : y) s *= g;
+    return y;
+}
+/* today's voice at the layer's velocity: the recorded attack and the modes
+   ramping in under it */
+static std::vector<float> RenderRecorded(const ResonatorVoice& v0, float vel, int sr)
+{
+    static ResonatorVoice v; v = v0;
+    v.Strike(vel);
+    const int n = (int)(kSec * sr);
+    std::vector<float> y(n, 0.f);
+    for(int i = 0; i < n; i += 48) v.Process(y.data() + i, std::min(48, n - i));
+    return y;
+}
+
+static void Where(const std::vector<float>& y0, const Target& t, int sr, double& att, double& ring, double& envdb)
+{
+    std::vector<float> y(y0);
+    const double r0 = Rms(y);
+    if(r0 > 0) { const float g = (float)(t.rms / r0); for(float& v : y) v *= g; }
+    const auto s = LogSpec(y, 256, t.floor[0]);
+    const size_t cut = (size_t)(0.05 * sr / 64);                 /* frames in the first 50 ms (hop 64) */
+    double a = 0, b = 0; size_t na = 0, nb = 0;
+    for(size_t f = 0; f < std::min(s.size(), t.s[0].size()); f++)
+        for(size_t k = 0; k < s[f].size(); k++) { const double d = std::fabs(s[f][k] - t.s[0][f][k]); if(f < cut) { a += d; na++; } else { b += d; nb++; } }
+    att = na ? a / na : 0; ring = nb ? b / nb : 0;
+    const auto e = Env(y, sr); double de = 0; const size_t ne = std::min(e.size(), t.env.size());
+    for(size_t i = 0; i < ne; i++) de += std::fabs(e[i] - t.env[i]);
+    envdb = ne ? de / ne : 0;
+}
+
+int main(int argc, char** argv)
+{
+    if(argc < 5) { std::fprintf(stderr, "excfit <world.kykm> <midi> <out-prefix> <target.wav>:<layer> [...]\n"); return 2; }
+    std::vector<uint8_t> blob;
+    { FILE* f = std::fopen(argv[1], "rb"); if(!f) { std::perror(argv[1]); return 1; } std::fseek(f, 0, SEEK_END); blob.resize(std::ftell(f)); std::fseek(f, 0, SEEK_SET); if(std::fread(blob.data(), 1, blob.size(), f) != blob.size()) return 1; std::fclose(f); }
+    const float midi = (float)std::atof(argv[2]);
+    g_refweights = std::getenv("EXCFIT_WEIGHTS") && std::string(std::getenv("EXCFIT_WEIGHTS")) == "ref";
+    const std::string prefix = argv[3];
+    std::vector<Target> takes;
+    int sr = 0;
+    for(int a = 4; a < argc; a++)
+    {
+        std::string s = argv[a]; const size_t c = s.rfind(':');
+        Target t; t.path = s.substr(0, c); t.layer = c == std::string::npos ? "mf" : s.substr(c + 1);
+        t.vel = t.layer == "pp" ? 0.15f : t.layer == "mf" ? 0.55f : t.layer == "ff" ? 0.95f : (float)std::atof(t.layer.c_str());
+        std::vector<float> x; int tsr = 0;
+        if(!kykdesk::ReadWav(t.path, x, tsr)) { std::fprintf(stderr, "cannot read %s\n", t.path.c_str()); return 1; }
+        if(sr && tsr != sr) { std::fprintf(stderr, "the takes' rates differ\n"); return 1; }
+        sr = tsr;
+        t.x = Onset(x, sr);
+        t.rms = Rms(t.x);
+        for(int r = 0; r < 3; r++) { t.floor[r] = FloorOf(t.x, kSizes[r]); t.s[r] = LogSpec(t.x, kSizes[r], t.floor[r]); }
+        t.env = Env(t.x, sr);
+        takes.push_back(std::move(t));
+    }
+    if(takes.size() > 3) { std::fprintf(stderr, "three layers at most\n"); return 2; }
+    ResonatorWorld R; R.Init();
+    if(!R.Attach(blob.data(), (uint32_t)blob.size())) { std::fprintf(stderr, "not a world: %s\n", argv[1]); return 1; }
+    static ResonatorVoice v0; v0.Init(); v0.cap = 0; R.At(midi, v0, (float)sr);
+    std::printf("%s at %.0f: %d modes, %d takes at %d Hz\n", argv[1], midi, v0.bank.n, (int)takes.size(), sr);
+
+    auto total = [&](const Params& p) { double l = 0; for(size_t i = 0; i < takes.size(); i++) l += Loss(RenderHammer(v0, p, (int)i, sr), takes[i], sr); return l / takes.size(); };
+
+    /* Nelder-Mead from a spread of starts; the best kept */
+    std::mt19937 rng(7);
+    auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
+    Params best{}; double bestL = 1e18; int evals = 0;
+    const int starts = std::getenv("EXCFIT_STARTS") ? std::atoi(std::getenv("EXCFIT_STARTS")) : 8;   /* fewer, for a quick look */
+    for(int start = 0; start < starts; start++)
+    {
+        double simplex[kDim + 1][kDim], f[kDim + 1];
+        Params p0; p0.lk = rnd(std::log(1e7), std::log(1e10)); p0.alpha = rnd(2.2, 3.5); p0.lmass = rnd(std::log(0.003), std::log(0.02)); p0.lgain = rnd(-2, 4);
+        for(int i = 0; i < 3; i++) p0.lspeed[i] = std::log(0.3 * std::pow(16.0, takes.size() > (size_t)i ? takes[i].vel : 0.5)) + rnd(-0.3, 0.3);
+        p0.lnoise = rnd(std::log(1e-9), std::log(1e-5)); p0.lnfc = rnd(std::log(500.0), std::log(8000.0));
+        ToVec(p0, simplex[0]);
+        const double step[kDim] = {1.0, 0.3, 0.5, 1.0, 0.4, 0.4, 0.4, 1.5, 0.5};
+        for(int i = 1; i <= kDim; i++) { for(int d = 0; d < kDim; d++) simplex[i][d] = simplex[0][d]; simplex[i][i - 1] += step[i - 1]; }
+        auto clampv = [](double* v) { v[1] = std::min(4.0, std::max(1.5, v[1])); for(int i = 4; i < 7; i++) v[i] = std::min(std::log(30.0), std::max(std::log(0.01), v[i]));
+                                   v[8] = std::min(std::log(16000.0), std::max(std::log(100.0), v[8])); };
+        for(int i = 0; i <= kDim; i++) { clampv(simplex[i]); f[i] = total(FromVec(simplex[i])); evals++; }
+        for(int it = 0; it < 220; it++)
+        {
+            int o[kDim + 1]; for(int i = 0; i <= kDim; i++) o[i] = i;
+            std::sort(o, o + kDim + 1, [&](int a, int b) { return f[a] < f[b]; });
+            double c[kDim] = {0};
+            for(int i = 0; i < kDim; i++) for(int d = 0; d < kDim; d++) c[d] += simplex[o[i]][d] / kDim;
+            const int wst = o[kDim];
+            double xr[kDim]; for(int d = 0; d < kDim; d++) xr[d] = c[d] + (c[d] - simplex[wst][d]); clampv(xr);
+            const double fr = total(FromVec(xr)); evals++;
+            if(fr < f[o[0]])
+            {
+                double xe[kDim]; for(int d = 0; d < kDim; d++) xe[d] = c[d] + 2 * (c[d] - simplex[wst][d]); clampv(xe);
+                const double fe = total(FromVec(xe)); evals++;
+                if(fe < fr) { std::memcpy(simplex[wst], xe, sizeof xe); f[wst] = fe; } else { std::memcpy(simplex[wst], xr, sizeof xr); f[wst] = fr; }
+            }
+            else if(fr < f[o[kDim - 1]]) { std::memcpy(simplex[wst], xr, sizeof xr); f[wst] = fr; }
+            else
+            {
+                double xc[kDim]; for(int d = 0; d < kDim; d++) xc[d] = c[d] + 0.5 * (simplex[wst][d] - c[d]); clampv(xc);
+                const double fc = total(FromVec(xc)); evals++;
+                if(fc < f[wst]) { std::memcpy(simplex[wst], xc, sizeof xc); f[wst] = fc; }
+                else for(int i = 1; i <= kDim; i++) { for(int d = 0; d < kDim; d++) simplex[o[i]][d] = simplex[o[0]][d] + 0.5 * (simplex[o[i]][d] - simplex[o[0]][d]); clampv(simplex[o[i]]); f[o[i]] = total(FromVec(simplex[o[i]])); evals++; }
+            }
+        }
+        int bi = 0; for(int i = 1; i <= kDim; i++) if(f[i] < f[bi]) bi = i;
+        if(f[bi] < bestL) { bestL = f[bi]; best = FromVec(simplex[bi]); }
+        std::printf("  start %d: loss %.3f\n", start, f[bi]);
+    }
+    std::printf("trained hammer (%d renders): felt k %.3g alpha %.2f, mass %.1f g, gain %.3g, noise %.3g at %.0f Hz, speeds", evals, std::exp(best.lk), best.alpha, 1000 * std::exp(best.lmass), std::exp(best.lgain), std::exp(best.lnoise), std::exp(best.lnfc));
+    for(size_t i = 0; i < takes.size(); i++) std::printf(" %s %.2f m/s", takes[i].layer.c_str(), std::exp(best.lspeed[i]));
+    std::printf("\n%-6s %10s %10s\n", "layer", "hammer", "recorded");
+    for(size_t i = 0; i < takes.size(); i++)
+    {
+        const auto yh = RenderHammer(v0, best, (int)i, sr), yr = RenderRecorded(v0, takes[i].vel, sr);
+        double ah, rh, eh, ar, rr, er;
+        Where(yh, takes[i], sr, ah, rh, eh); Where(yr, takes[i], sr, ar, rr, er);
+        std::printf("%-6s %10.3f %10.3f    attack %.2f / %.2f  ring %.2f / %.2f  envelope %.1f / %.1f dB\n", takes[i].layer.c_str(), Loss(yh, takes[i], sr), Loss(yr, takes[i], sr), ah, ar, rh, rr, eh, er);
+        kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-hammer.wav", yh.data(), yh.size(), sr);
+        kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-recorded.wav", yr.data(), yr.size(), sr);
+        kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-target.wav", takes[i].x.data(), takes[i].x.size(), sr);
+    }
+    return 0;
+}
