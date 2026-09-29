@@ -44,7 +44,45 @@ aa9e48d, with a brake on any runaway voice).
 
 ## For the morning (needs Combust)
 
-(written at the end)
+(Drafted at 03:58, refreshed at the end.)
+
+**To try, in this order:**
+
+1. **The modal firmware** (`shell/alchemy`, `make MODE=modal`, build at the
+   end) with the card **ModalBake/out/card-exc5/kyklophoria**, the
+   level-safe trained grand. Not `card-exc` from yesterday: its trained
+   world still fails the level gate through tonight's engine (24 strikes
+   over, fast playing 4.06). If you did load yesterday's card, the engine
+   now holds its hammers to physical ranges; it's safer, but still not
+   what to judge.
+   - The pop: medians against the recordings are now +2 to +4 dB (they were
+     +5 to +10). It's now mostly **pianissimo** (ff matches). Listen for
+     that first: soft notes may still click.
+   - Before flashing, you can listen to `build/demos/grand-{recorded,trained}-v20|v55|v90.wav`.
+2. **The Exciter page's new types**: Bow, Reed, Lips (between Pluck and
+   Trained; Trained is still the default). **Play P4 (velocity) is the
+   energy**: turn it down and a bow lifts. Timbre is bow pressure, the
+   reed's embouchure, or the lips' register (four quarters). Mass is the
+   reed's impedance or the lip's Q. Demos are in `build/demos/`
+   (bow/reed/lips phrases). J1 now plays *into* a bow or reed as a force.
+3. **Both pages**: `?page=wavetable` and `?page=modal` (or `modal.html` /
+   `wavetable.html`). The pages branch is rebuilt at the end.
+
+**Decisions:**
+
+- The **pp pop**: the trainer's felt sits at its exponent floor (1.5) on
+  half the keys. A real felt's exponent was mixed on six notes. Your ears on
+  card-exc5 decide whether the next step is the trainer, the takes (the
+  treble pp takes fit badly even with the recorded attack), or fine as is.
+- **Refitted records are misaligned** 5-12 ms with their bursts (the
+  training guide's finding, confirmed). It's fixed for future refits;
+  existing refitted sets need re-bursting and re-exporting, which changes
+  worlds on the card.
+- **J4 as a gate** for the sustained exciters: energy alone articulates
+  them today.
+- Still waiting from before: the dark stereo circle and trail on a
+  wavetable world (a screenshot, the world, whether the ground is dark
+  too); the EP-bass refit; Epi's licence line.
 
 ## Log
 
