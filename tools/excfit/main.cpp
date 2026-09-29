@@ -174,7 +174,7 @@ static Params FromVec(const double* v) { Params p; p.lk = v[0]; p.alpha = v[1]; 
 /* one layer struck by the hammer, kSec long: the voice's modes from rest,
    driven through the coupled loop with EngineCore::StrikeCoupled's weights
    (each mode's unit-strike gain over the loudest; position at the centre) */
-static std::vector<float> RenderHammer(const ResonatorVoice& v0, const Params& p, int layer, int sr)
+static std::vector<float> RenderHammer(const ResonatorVoice& v0, const Params& p, int layer, int sr, float* wout = nullptr, bool raw = false)
 {
     static ResonatorVoice v; v = v0;
     ResonatorBank& b = v.bank;
@@ -227,12 +227,14 @@ static std::vector<float> RenderHammer(const ResonatorVoice& v0, const Params& p
             if(ratio_max > 0.f) for(int k = 0; k < b.n; k++) w[k] /= ratio_max;
         }
     }
+    if(wout) for(int k = 0; k < ResonatorBank::kMax; k++) wout[k] = w[k];
     h.Strike((float)std::exp(p.lspeed[layer]), 0.f);
     const int n = (int)(kSec * sr);
     std::vector<float> y(n, 0.f);
     ContactNoise cn; cn.Init((float)sr, (float)std::exp(p.lnfc), 0.7f, (float)std::exp(p.lnoise));
     ProcessStruck(b, y.data(), n, w, h, (float)sr, 0.01f, &cn);
     if(v.pickup.on) v.pickup.Process(y.data(), n);
+    if(raw) return y;                          /* the hammer's own units, as the module's contact runs */
     const float g = (float)std::exp(p.lgain);
     for(float& s : y) s *= g;
     return y;
@@ -396,6 +398,44 @@ int main(int argc, char** argv)
         kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-hammer.wav", wh.data(), wh.size(), sr);
         kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-recorded.wav", wr.data(), wr.size(), sr);
         kykdesk::WriteWavFloat(prefix + "-" + takes[i].layer + "-target.wav", takes[i].x.data(), takes[i].x.size(), sr);
+    }
+    /* the result, for excbake (EXCFIT_RESULTS=<file>, appended): the
+       parameters, a speed and a level for each layer (pp, mf, ff — the
+       velocity 0.15, 0.55, 0.95 the runtime interpolates between), and the
+       weights the contact uses, in the point's mode order. The level is the
+       ratio that puts the hammer, in its own units, at today's voice's
+       loudness at that velocity: switching exciter does not jump */
+    if(const char* rp = std::getenv("EXCFIT_RESULTS"))
+    {
+        float w[ResonatorBank::kMax];
+        double speed[3] = {0, 0, 0}, gain[3] = {0, 0, 0};
+        const char* names[3] = {"pp", "mf", "ff"};
+        const float vels[3] = {0.15f, 0.55f, 0.95f};
+        for(int L = 0; L < 3; L++)
+        {
+            int ti = -1; for(size_t i = 0; i < takes.size(); i++) if(takes[i].layer == names[L]) ti = (int)i;
+            /* a layer with no take: its speed from its neighbours in logs */
+            Params q = best;
+            if(ti < 0) { const int a = L == 0 ? 1 : L - 1; q.lspeed[0] = best.lspeed[a < (int)takes.size() ? a : 0]; ti = -1; }
+            const int li = ti >= 0 ? ti : 0;
+            speed[L] = std::exp(ti >= 0 ? best.lspeed[ti] : q.lspeed[0]);
+            const auto yh = RenderHammer(v0, best, li, sr, w, true);
+            const auto yr = RenderRecorded(v0, vels[L], sr);
+            const double rh = Rms(yh), rr = Rms(yr);
+            gain[L] = rh > 0 ? rr / rh : 1.0;
+        }
+        RenderHammer(v0, best, takes.size() > 1 ? 1 : 0, sr, w, true);      /* the weights: the reference (middle) layer's iteration */
+        FILE* f = std::fopen(rp, "a");
+        if(f)
+        {
+            std::fprintf(f, "%.3f\t%.6g\t%.6g\t%.6g\t%.6g\t%.6g\t%.6g", midi, std::exp(best.lk), best.alpha, std::exp(best.lmu), std::exp(best.lmass), std::exp(best.lnoise), std::exp(best.lnfc));
+            for(int L = 0; L < 3; L++) std::fprintf(f, "\t%.6g", speed[L]);
+            for(int L = 0; L < 3; L++) std::fprintf(f, "\t%.6g", gain[L]);
+            std::fprintf(f, "\t%d", v0.bank.n);
+            for(int k = 0; k < v0.bank.n; k++) std::fprintf(f, "\t%.6g", w[k]);
+            std::fprintf(f, "\n");
+            std::fclose(f);
+        }
     }
     return 0;
 }
