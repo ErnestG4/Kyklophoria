@@ -1132,7 +1132,13 @@ public:
         float xc = 0.f;
         for(int k = 0; k < ResonatorBank::kMax; k++)
         {
-            if(k >= b.n || gmax <= 0.f) { rcw_[k] = 0.f; continue; }
+            /* a ghost (gain 0, zeta 1: the padding of a voice with fewer
+               modes than N) is not struck. The trainer gives it 0, the byte
+               format the least it holds (4e-7), and a ghost parked at 20 Hz
+               is nearly a spring: its displacement follows the force, a
+               bump the contact's shape — in the treble 3-8x the recording's
+               peak, 20x its own ring */
+            if(k >= b.n || gmax <= 0.f || vv.gain[k] == 0.f) { rcw_[k] = 0.f; continue; }
             const float base = trained && vv.exc_wset ? vv.exc_w[k] : std::fabs(vv.gain[k]) / gmax;
             float comb = 1.f;
             if(amount > 1e-3f && f1 < 1e8f)

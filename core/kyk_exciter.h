@@ -142,6 +142,15 @@ struct Hammer
 inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float* w, Hammer& h, float sr, float m, ContactNoise* cn = nullptr, const float* ext = nullptr, float eg = 0.f)
 {
     const float dt = 1.f / sr, kin = dt * dt / m;
+    /* the most a step may push: what a perfectly elastic collision would,
+       2 m_r v_rel, m_r the hammer against the string's mass at the contact
+       (the modal mass over sum w^2). A felt the step resolves never comes
+       near it; a near-rigid one does not resolve — ModalBake excfit found a
+       two-sample contact at A3 (K 7e8, mu 4), and struck again while it rang
+       one step computed 2e6 N against a string closing at 40 m/s, and the
+       note ran away inside a millisecond */
+    float w2 = 0.f; for(int k = 0; k < b.n; k++) w2 += w[k] * w[k];
+    const float ms = w2 > 1e-12f ? m / w2 : 1e9f, mr = h.mass * ms / (h.mass + ms);
     for(int s = 0; s < frames; s++)
     {
         const float e = ext ? eg * ext[s] : 0.f;             /* an outside force at the contact (J1), in the loop's own units */
@@ -157,6 +166,8 @@ inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float*
             {
                 f = h.k * std::pow(d, h.alpha) * (1.f + h.mu * dd);
                 if(f < 0.f) f = 0.f;                                          /* a felt pushes; it does not pull */
+                const float fmax = 2.f * mr * (dd > 0.f ? dd : 0.f) * sr + h.k * std::pow(d, h.alpha);
+                if(f > fmax) f = fmax;                                        /* at most an elastic collision's impulse over the step, and never under the felt's spring */
                 h.contact++;
             }
             else if(h.contact > 0 && h.v <= 0.f) h.gone = true;          /* the felt has let go and the hammer is falling back */

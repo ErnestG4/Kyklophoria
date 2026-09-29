@@ -1140,7 +1140,7 @@ int main()
     {
         ResonatorWorld R8; R8.Init();
         CHECK(R8.Attach(wblob.data(), (uint32_t)wblob.size()), "the fixture did not attach");
-        auto make9 = [&](float gain) {
+        auto make9 = [&](float gain, const float* hp = nullptr) {
             std::vector<uint8_t> out(wblob.begin(), wblob.begin() + R8.HeaderBytes());
             const uint16_t nine = 9; std::memcpy(out.data() + 4, &nine, 2);
             for(int i = 0; i < R8.P; i++)
@@ -1149,8 +1149,9 @@ int main()
                 const uint8_t* e = R8.BurstEnd(R8.NoiseEnd(a + R8.FixedBytes()));
                 out.insert(out.end(), a, e);
                 out.push_back(1);
-                const float f[12] = {5e8f, 2.4f, 0.5f, 0.004f, 0.f, 2000.f, 0.8f, 2.f, 4.f, gain, gain, gain};
-                const uint8_t* fb = (const uint8_t*)f; out.insert(out.end(), fb, fb + sizeof f);
+                const float f0[12] = {5e8f, 2.4f, 0.5f, 0.004f, 0.f, 2000.f, 0.8f, 2.f, 4.f, gain, gain, gain};
+                const float* f = hp ? hp : f0;
+                const uint8_t* fb = (const uint8_t*)f; out.insert(out.end(), fb, fb + 12 * sizeof(float));
                 for(int k = 0; k < R8.N; k++) out.push_back((uint8_t)(255 - 2 * (k % 20)));    /* 0, -0.5, -1 ... dB */
             }
             return out;
@@ -1223,6 +1224,49 @@ int main()
             y.clear(); RunOn(e, y, 3);
             float late = 0.f; for(size_t i = 48; i < y.size(); i++) late = std::fmax(late, std::fabs(y[i]));
             CHECK(late == 0.f, "a runaway voice was not reset: it still peaks %.3g two blocks on", late);
+        }
+        /* a ghost is not struck: the modes a voice is padded with (gain 0)
+           stay at rest through a trained contact, whatever weight the world
+           stores for them — the fixture stores 0 to -9.5 dB for every mode,
+           and a ghost parked at 20 Hz is nearly a spring, its displacement
+           the contact's own shape */
+        {
+            int ghosts = 0, moved = 0;
+            for(float hz : {130.81f, 523.25f, 1046.5f})
+            {
+                Engine e; e.Init(&W9, sr); e.gain = 1.f; e.SetExciterType(ResExciter::Trained);
+                e.SetF0(hz); e.Strike(0.8f);
+                std::vector<float> z; RunOn(e, z, 2);
+                const ResonatorVoice& v = e.Voice();
+                for(int k = 0; k < v.bank.n; k++) if(v.gain[k] == 0.f) { ghosts++; if(v.bank.y1[k] != 0.f) moved++; }
+            }
+            CHECK(ghosts > 0 && moved == 0, "ghosts struck: %d of %d moved", moved, ghosts);
+            printf("  a trained strike leaves the voice's %d ghost modes at rest\n", ghosts);
+        }
+        /* a near-rigid felt struck again while it rings: ModalBake excfit
+           found one at A3 (K 7.4e8, alpha 1.5, mu 4, a two-sample contact),
+           and struck again one step computed 2e6 N against a string closing
+           at 40 m/s — the note ran away inside a millisecond (6.97 against
+           a first strike of 0.49) and only the brake stopped it. A step now
+           pushes at most what an elastic collision would. Bounded as a
+           struck note is, under 1 in the voice's units, struck and struck
+           again (uncapped, 2.76 and 6.1) */
+        {
+            const float stiff[12] = {5e9f, 1.5f, 4.01f, 0.0137f, 0.f, 2000.f, 0.398f, 2.059f, 6.98f, 12.f, 12.f, 12.f};   /* A3's, stiffer: on this fixture it runs away (0.086 -> 6.24 uncapped) */
+            const auto vs = make9(1.f, stiff);
+            World Ws; Ws.UseResonate(vs.data(), (uint32_t)vs.size());
+            float first = 0.f, again = 0.f; bool fin = true;
+            for(float hz : {440.f, 880.f}) for(float vel : {0.5f, 1.f})
+            {
+                Engine e; e.Init(&Ws, sr); e.gain = 1.f; e.SetPolyphony(4); e.SetExciterType(ResExciter::Trained);
+                e.SetF0(hz); e.Strike(vel);
+                std::vector<float> z; RunOn(e, z, 100);
+                for(float q : z) { fin = fin && std::isfinite(q); first = std::fmax(first, std::fabs(q)); }
+                e.Strike(vel); z.clear(); RunOn(e, z, 300);
+                for(float q : z) { fin = fin && std::isfinite(q); again = std::fmax(again, std::fabs(q)); }
+            }
+            CHECK(fin && first > 1e-4f && first < 1.f && again < 1.f, "a near-rigid felt, struck and struck again: first %.3g, again %.3g (a struck note peaks under 1)", first, again);
+            printf("  a near-rigid felt struck again while it rings: %.3f, the first strike %.3f\n", again, first);
         }
         printf("  format 9: a trained hammer from each point, its weights as stored; version 8 plays its recorded attack; the level scales the whole note (x2 within %.1g)\n", r);
         (void)step; (void)ring;
