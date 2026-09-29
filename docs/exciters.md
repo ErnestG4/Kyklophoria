@@ -218,9 +218,57 @@ perfect". What exists now:
   better): pp 0.200 vs the recorded attack's 0.583, mf 0.247 vs 0.316, ff
   0.192 vs 0.182, every ff harmonic within 2 dB.
 
-Still to come: the whole card trained (the Iowa grand first), the bow, reed
+Still to come (written 28 September; see stage 5 for what was built next): the whole card trained (the Iowa grand first), the bow, reed
 and lips on the module (gate or axis-driven), J1 as a force, and the pp end's
 balance.
+
+## Stage 5, built (29 September, overnight): bow, reed, lips; J1; the pop
+
+- **Bow, Reed, Lips on the Exciter page** (83dbf80), between Pluck and
+  Trained. Trained stays at the top, so the stored default and presets saved
+  with four zones still land on it. They drive the newest note while the
+  velocity axis (axis 1, read every block) gives them energy. A strike only
+  chooses the note, and at no energy the bow is lifted and the note rings
+  free. Timbre is the bow's pressure, the reed's embouchure, or the lips'
+  register. Mass is the reed's impedance or the lip's Q. Position is where
+  the bow sits. Each has a limiter at 0.8.
+
+  What the desktop prototypes needed to play a *fitted* world rather than an
+  ideal string or bore:
+  - **The bow's force inside Schelleng's window**, as a fraction of the
+    most force that holds the Helmholtz motion, 2 Z0 v / (Δμ β).
+  - **A string's losses:** no mode sharper than the fundamental's Q / √h.
+    A piano's unison has a second polarisation (C4's octave rings at Q 4478
+    against the fundamental's 427), and without this the bow took it.
+  - **A bore's losses for the winds** (Q 30). A piano mode's instability
+    grows over seconds, so the high partials won.
+  - **Only the note's harmonics driven.** Ghost modes (gain 0, the padding
+    of a voice with fewer modes than N), soundboards and body modes made
+    the reed relax at 340 Hz on a C5 and the lips play 100 cents sharp.
+  - **The lip tuned under each harmonic** the voice actually has, by a
+    fraction of the spacing.
+
+  Tuned within 40 cents C2–C5 (reed −5, lips +14 to +33 including the
+  piano's stretch).
+- **The hand-over** (285eb8e): a driven voice runs in the exciter's units.
+  It is taken and let go at the gain it is heard at, as the trained contact
+  is, or a released reed came back 3.3× louder.
+- **J1 as a force into the loop** (b362be1), the proposal's P6. It enters at
+  the contact through the contact's weights, in the loop's units, so the
+  bow sticks and slips against it and the reed's bore carries it. The
+  pressure a reed or the lips feel is saturated at 4 closing pressures:
+  without that, J1 at full scale on a C6 opened the reed without limit.
+  There is no P6 pot yet; J1's amount is Stereo P6's, as before.
+- **The pop's cause** (e6a4a58): every coupled strike pushed every mode the
+  same way, so all started in phase and their displacements piled into a
+  2 ms pulse. In the treble that pulse was 5–9× the recording's peak at the
+  same loudness. Each mode now takes its recorded polarity, sign(g cos φ).
+  The contact can't tell the difference; the output can. excfit renders the
+  same (ModalBake 709fb76), and the grand was retrained with it.
+
+Still open: J4 as a gate for the sustained ones, since energy alone
+articulates them now. Also an honest bench listen: the bowed piano is a
+fitted piano bowed, not a cello.
 
 ## Stage 4, proposed (28 September) — for Combust to decide
 
