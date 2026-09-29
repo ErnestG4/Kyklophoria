@@ -53,6 +53,7 @@ class StereoEngine
 {
 public:
     float spread       = 0.f;    /* turns; 0 = mono */
+    float listen_at    = 0.25f;  /* a resonator's ears: where along the string their centre sits (0..0.5; Bongs' Space page), an orbit on the stereo plane swinging it 0.2 either way */
     int   spread_plane = 0;      /* plane index, see Rotation::PlaneAxes */
     float pivot        = 0.5f;   /* rotation centre on every axis */
 
@@ -240,7 +241,7 @@ public:
             if(listen)
             {
                 float sn, cs; SinCosTurns(rot.Angle(spread_plane), sn, cs);
-                L.SetListen(outR, spread / 0.1f, 0.25f + 0.2f * sn);
+                L.SetListen(outR, spread / 0.1f, listen_at + 0.2f * sn);
             }
             L.Process(outL, n);
             if(!listen) for(int i = 0; i < n; i++) outR[i] = outL[i];

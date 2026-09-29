@@ -1607,9 +1607,9 @@ int main()
         for(int i = 0; i < 9600; i++) { dsum = std::fmax(dsum, std::fabs(L[i] + R[i] - M[i])); dlr = std::fmax(dlr, std::fabs(L[i] - R[i])); pk = std::fmax(pk, std::fabs(M[i])); }
         CHECK(dsum < 1e-4f * pk && dlr > 0.1f * pk, "two ears on the bank: L+R differs from mono by %.3g, L from R by %.3g (peak %.3g)", dsum, dlr, pk);
 
-        auto ears = [&](float spread, float rate, std::vector<float>& l, std::vector<float>& r) {
+        auto ears = [&](float spread, float rate, std::vector<float>& l, std::vector<float>& r, float listen = 0.25f) {
             StereoEngine se; se.Init(&piano, sr); se.L.gain = 1.f;
-            se.spread = spread; se.spread_plane = 0; if(rate != 0.f) se.rot.SetRate(0, rate);
+            se.spread = spread; se.spread_plane = 0; se.listen_at = listen; if(rate != 0.f) se.rot.SetRate(0, rate);
             se.SetF0(261.63f); se.Strike(0.8f);
             l.assign(24000, 0.f); r.assign(24000, 0.f);
             for(int i = 0; i < 24000; i += 24) se.Process(l.data() + i, r.data() + i, 24);
@@ -1628,7 +1628,13 @@ int main()
         CHECK(same == 0.0, "no spread and the ears differ by %.3g", same);
         CHECK(std::fabs(sumdb) < 3.0 && lrdb > -30.0, "full spread: the sum %+.1f dB from mono, the ears %.1f dB apart (of the left)", sumdb, lrdb);
         CHECK(spin > 1e-3 * el, "an orbit on the stereo plane did not move the ears: %.3g of the left's energy", spin / el);
-        printf("  two ears: L+R is mono on the bank; no spread is one output, full spread two ears (sum %+.1f dB, apart %.1f dB); an orbit spins them\n", sumdb, lrdb);
+        /* (d) Listen (Bongs' Space page) sets the ears' centre along the
+           string: moved from a quarter to nearly the middle, the ears hear
+           something else */
+        std::vector<float> l3, r3; ears(0.1f, 0.f, l3, r3, 0.45f);
+        double moved = 0; for(int i = 0; i < 24000; i++) moved += (double)(l3[i] - l1[i]) * (l3[i] - l1[i]);
+        CHECK(moved > 1e-3 * el, "Listen did not move the ears: %.3g of the left's energy", moved / el);
+        printf("  two ears: L+R is mono on the bank; no spread is one output, full spread two ears (sum %+.1f dB, apart %.1f dB); an orbit spins them, Listen moves them\n", sumdb, lrdb);
     }
 
     /* 24. a family's body axis as a morph (SetMemberMorph): between two
