@@ -84,11 +84,12 @@ struct Bow
 
 /* a bank bowed at a point: frames samples of its displacement summed into
    out (overwrite), w the modes' weights at the contact, m the modal mass */
-inline void ProcessBowed(ResonatorBank& b, float* out, int frames, const float* w, Bow& bow, float sr, float m, ContactNoise* cn = nullptr)
+inline void ProcessBowed(ResonatorBank& b, float* out, int frames, const float* w, Bow& bow, float sr, float m, ContactNoise* cn = nullptr, const float* ext = nullptr, float eg = 0.f)
 {
     const float kin = 1.f / (sr * sr * m);
     for(int s = 0; s < frames; s++)
     {
+        const float e = ext ? eg * ext[s] : 0.f;             /* an outside force at the contact (J1), in the loop's own units */
         float xc = 0.f;
         for(int k = 0; k < b.n; k++) xc += w[k] * b.y1[k];
         const float vc = (xc - bow.xc_prev) * sr;
@@ -102,7 +103,7 @@ inline void ProcessBowed(ResonatorBank& b, float* out, int frames, const float* 
         float o = 0.f;
         for(int k = 0; k < b.n; k++)
         {
-            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * f;
+            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * f + w[k] * e;
             b.y2[k] = b.y1[k]; b.y1[k] = y;
             o += y;
         }
@@ -138,11 +139,12 @@ struct Hammer
 
 /* a bank struck by a hammer: frames samples of its displacement into out
    (overwrite); returns true while the hammer is still in contact */
-inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float* w, Hammer& h, float sr, float m, ContactNoise* cn = nullptr)
+inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float* w, Hammer& h, float sr, float m, ContactNoise* cn = nullptr, const float* ext = nullptr, float eg = 0.f)
 {
     const float dt = 1.f / sr, kin = dt * dt / m;
     for(int s = 0; s < frames; s++)
     {
+        const float e = ext ? eg * ext[s] : 0.f;             /* an outside force at the contact (J1), in the loop's own units */
         float f = 0.f;
         if(!h.gone)
         {
@@ -164,7 +166,7 @@ inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float*
         float o = 0.f;
         for(int k = 0; k < b.n; k++)
         {
-            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * f * kin;
+            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * f * kin + w[k] * e;
             b.y2[k] = b.y1[k]; b.y1[k] = y;
             o += y;
         }
@@ -189,6 +191,11 @@ struct Reed
     void Init() { gamma = 0.f; zeta = 0.3f; u_prev = 0.f; }
     float Flow(float p) const
     {
+        /* the pressure it feels saturated at 4 closing pressures: the
+           opening 1 - gamma + p has no top, and a bore pushed hard from
+           outside (J1 at full scale on a C6) opened the reed wider, the flow
+           fed it, and it grew to 1e28. A played reed stays under about 2 */
+        p = p > 4.f ? 4.f : p < -4.f ? -4.f : p;
         const float open = 1.f - gamma + p;
         if(open <= 0.f) return 0.f;
         const float d = gamma - p;
@@ -220,11 +227,12 @@ struct Pluck
 
 /* a bank plucked: frames samples of its displacement into out (overwrite);
    true while the finger still holds the string */
-inline bool ProcessPlucked(ResonatorBank& b, float* out, int frames, const float* w, Pluck& pk, float sr, float m, ContactNoise* cn = nullptr)
+inline bool ProcessPlucked(ResonatorBank& b, float* out, int frames, const float* w, Pluck& pk, float sr, float m, ContactNoise* cn = nullptr, const float* ext = nullptr, float eg = 0.f)
 {
     const float dt = 1.f / sr, kin = dt * dt / m;
     for(int s = 0; s < frames; s++)
     {
+        const float e = ext ? eg * ext[s] : 0.f;             /* an outside force at the contact (J1), in the loop's own units */
         float f = 0.f;
         if(!pk.gone)
         {
@@ -238,7 +246,7 @@ inline bool ProcessPlucked(ResonatorBank& b, float* out, int frames, const float
         float o = 0.f;
         for(int k = 0; k < b.n; k++)
         {
-            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * f * kin;
+            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * f * kin + w[k] * e;
             b.y2[k] = b.y1[k]; b.y1[k] = y;
             o += y;
         }
@@ -265,6 +273,7 @@ struct Lips
     float Step(float p, float sr)
     {
         const float w = 6.2831853f * f_lip, dt = 1.f / sr;
+        p = p > 4.f ? 4.f : p < -4.f ? -4.f : p;                              /* saturated as the reed's (Reed::Flow) */
         const float dp = gamma - p;
         const float acc = -w * w * (h - h0) - (w / q) * hv + w * w * dp;    /* pushed open by the pressure, in units of the closing pressure */
         hv += acc * dt; h += hv * dt;                                        /* semi-implicit: stable for a lip well under the rate */
@@ -275,7 +284,7 @@ struct Lips
 };
 
 /* a bank blown through the lips, as ProcessBlown through a reed */
-inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float* w, Lips& l, float z, float sr)
+inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float* w, Lips& l, float z, float sr, const float* ext = nullptr, float eg = 0.f)
 {
     float bk[ResonatorBank::kMax];
     for(int k = 0; k < b.n; k++)
@@ -285,6 +294,7 @@ inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float*
     }
     for(int s = 0; s < frames; s++)
     {
+        const float e = ext ? eg * ext[s] : 0.f;             /* an outside force at the contact (J1), in the loop's own units */
         float p = 0.f;
         for(int k = 0; k < b.n; k++) p += w[k] * b.y1[k];
         const float u = l.Step(p, sr);
@@ -293,7 +303,7 @@ inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float*
         float o = 0.f;
         for(int k = 0; k < b.n; k++)
         {
-            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * bk[k] * du;
+            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * bk[k] * du + w[k] * e;
             b.y2[k] = b.y1[k]; b.y1[k] = y;
             o += w[k] * y;
         }
@@ -307,7 +317,7 @@ inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float*
    units: a clarinet's is some tens). Each mode is driven so that its own
    peak is z: driven raw, a lightly damped mode's peak was 1 / (1 - r), five
    thousand at 147 Hz, and the loop ran away at any pressure */
-inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* w, Reed& r, float z, ContactNoise* cn = nullptr)
+inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* w, Reed& r, float z, ContactNoise* cn = nullptr, const float* ext = nullptr, float eg = 0.f)
 {
     float bk[ResonatorBank::kMax];
     for(int k = 0; k < b.n; k++)
@@ -320,6 +330,7 @@ inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* 
     }
     for(int s = 0; s < frames; s++)
     {
+        const float e = ext ? eg * ext[s] : 0.f;             /* an outside force at the contact (J1), in the loop's own units */
         float p = 0.f;
         for(int k = 0; k < b.n; k++) p += w[k] * b.y1[k];
         const float u = r.Flow(p);
@@ -328,7 +339,7 @@ inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* 
         float o = 0.f;
         for(int k = 0; k < b.n; k++)
         {
-            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * bk[k] * du;
+            const float y = b.c1[k] * b.y1[k] + b.c2[k] * b.y2[k] + w[k] * bk[k] * du + w[k] * e;
             b.y2[k] = b.y1[k]; b.y1[k] = y;
             o += w[k] * y;
         }

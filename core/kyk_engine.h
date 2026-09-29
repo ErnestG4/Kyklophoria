@@ -918,7 +918,7 @@ public:
                             for(int k = 0; k < b.n; k++) { b.y1[k] *= inv; b.y2[k] *= inv; }
                             rsdrv_ = v;
                         }
-                        RunSustained(rvoices_[v], tmp, m);
+                        RunSustained(rvoices_[v], tmp, m, drive ? exciter_ + i : nullptr);
                         rsgl_ = rsg_ * rslim_;
                         if(lr) for(int k = 0; k < m; k++) tmpR[k] = tmp[k];
                     }
@@ -926,7 +926,7 @@ public:
                     {
                         /* the contact is driving this voice: sample by
                            sample, mono for its few milliseconds */
-                        if(!RunCoupled(rvoices_[v], tmp, m)) rcv_ = -1;
+                        if(!RunCoupled(rvoices_[v], tmp, m, drive ? exciter_ + i : nullptr)) rcv_ = -1;
                         if(lr) for(int k = 0; k < m; k++) tmpR[k] = tmp[k];
                     }
                     else if(lr) rvoices_[v].ProcessLR(tmp, tmpR, m, wl, wr, drive ? exciter_ + i : nullptr, exgain_);
@@ -1220,12 +1220,19 @@ public:
        tail beside them, then the pickup, the old attack still fading and the
        wash as Process has them. False when the contact has ended: the voice
        goes back to the ordinary loop, ringing as the contact left it */
-    bool RunCoupled(ResonatorVoice& vv, float* out, int m)
+    /* J1 (ext, this block's drive, or null) is one more force at the
+       contact, in the loop's own units — the output's over the gain the loop
+       is heard at — so what it adds by itself is what it adds to a free
+       voice, and the contact feels it: a bow sticks and slips against it, a
+       reed's bore carries it. Before, a voice a contact or a bow held heard
+       nothing of J1 */
+    bool RunCoupled(ResonatorVoice& vv, float* out, int m, const float* ext = nullptr)
     {
         ContactNoise* cn = rexc_noise_ > 0.f ? &rcn_ : nullptr;
+        const float eg = ext && rcg_ > 0.f ? exgain_ / rcg_ : 0.f;
         const bool on = rexc_ != ResExciter::Pluck
-            ? ProcessStruck(vv.bank, out, m, rcw_, rham_, sr_, kModalMass, cn)
-            : ProcessPlucked(vv.bank, out, m, rcw_, rplk_, sr_, kModalMass, cn);
+            ? ProcessStruck(vv.bank, out, m, rcw_, rham_, sr_, kModalMass, cn, ext, eg)
+            : ProcessPlucked(vv.bank, out, m, rcw_, rplk_, sr_, kModalMass, cn, ext, eg);
         /* the trained level: the contact runs in the hammer's own units and
            the voice is heard at the level it was trained to (the voice's
            today at that velocity) — the output scaled now, and the ring by
@@ -1342,8 +1349,9 @@ public:
         for(int k = 0; k < b.n; k++) { b.y1[k] *= rsgl_; b.y2[k] *= rsgl_; }
         rsdrv_ = -1;
     }
-    void RunSustained(ResonatorVoice& vv, float* out, int m)
+    void RunSustained(ResonatorVoice& vv, float* out, int m, const float* ext = nullptr)
     {
+        const float eg = ext ? exgain_ / rsg_ : 0.f;      /* over the scale, not the limiter: over both, the harder the limiter pulled the harder J1 pushed (5e33) */
         const float energy = c_[1] < 0.f ? 0.f : c_[1] > 1.f ? 1.f : c_[1];
         if(rexc_ == ResExciter::Bow)
         {
@@ -1375,7 +1383,7 @@ public:
                     if(b.rq[k] > rc) { b.rq[k] = rc; b.lrq[k] = -a; b.c1[k] = 2.f * rc * b.cwq[k]; b.c2[k] = -rc * rc; }
                 }
             }
-            ProcessBowed(vv.bank, out, m, rsw_, rbow_, sr_, kModalMass);
+            ProcessBowed(vv.bank, out, m, rsw_, rbow_, sr_, kModalMass, nullptr, ext, eg);
         }
         else
         {
@@ -1395,7 +1403,7 @@ public:
             {
                 rreed_.gamma = 0.2f + 0.75f * energy;                               /* speaks at about a fifth of the throw, nearly shut at the top */
                 rreed_.zeta  = 0.1f + 0.5f * rexc_timbre_;                          /* the embouchure */
-                ProcessBlown(vv.bank, out, m, rsw_, rreed_, 10.f + 50.f * rexc_mass_);
+                ProcessBlown(vv.bank, out, m, rsw_, rreed_, 10.f + 50.f * rexc_mass_, nullptr, ext, eg);
             }
             else
             {
@@ -1411,7 +1419,7 @@ public:
                 rlips_.gamma = 0.95f * energy;
                 rlips_.f_lip = rsf1_ * (rsreg_[reg] - (reg ? 0.4f : 0.25f) + 0.15f * (tr - (float)reg));
                 rlips_.q     = 10.f + 10.f * rexc_mass_;
-                ProcessLipped(vv.bank, out, m, rsw_, rlips_, 30.f, sr_);
+                ProcessLipped(vv.bank, out, m, rsw_, rlips_, 30.f, sr_, ext, eg);
             }
         }
         for(int k = 0; k < m; k++)

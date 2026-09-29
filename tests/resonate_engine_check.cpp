@@ -1338,6 +1338,60 @@ int main()
             CHECK(worst_step < 1.5f && worst_pk < 0.81f, "lifted and put back: a step of x%.2f at the lift, the loudest %.3g", worst_step, worst_pk);
             printf("  lifted and put back: the ring carries on (a step of x%.2f at most), the loudest %.2f\n", worst_step, worst_pk);
         }
+        /* J1 into the loop: a bowed, a blown and a struck note with J1
+           playing — each differs from the same note without it (a voice a
+           bow or a contact held heard nothing of J1), and J1 loud (noise at
+           full scale, the pot at full) into every type stays finite and
+           under the limiter where there is one */
+        {
+            auto withj1 = [&](ResExciter t, float amp, bool noise, std::vector<float>& z) {
+                Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetExciterType(t); e.SetExciterShape(0.5f, 0.3f, 0.f, 0.5f);
+                float c[4] = {0.5f, 0.7f, 0.5f, 0.5f}; e.SetPosition(c, 4); e.SetF0(130.81f); e.Strike(0.8f);
+                std::vector<float> x(48); uint32_t r = 1u; z.assign(48 * 300, 0.f);
+                for(int b = 0; b < 300; b++)
+                {
+                    for(int i = 0; i < 48; i++)
+                    {
+                        r = r * 1664525u + 1013904223u;
+                        x[i] = noise ? amp * ((float)(r >> 8) / 8388608.f - 1.f) : amp * std::sin(6.2831853f * 654.f * (b * 48 + i) / sr);
+                    }
+                    e.SetExciter(x.data(), 0.02f);
+                    e.Process(z.data() + b * 48, 48);
+                }
+            };
+            double dmin = 1e9; float loud = 0.f; bool finite = true;
+            for(ResExciter t : {ResExciter::Bow, ResExciter::Reed, ResExciter::Hammer})
+            {
+                std::vector<float> a, b; withj1(t, 0.5f, false, a); withj1(t, 0.f, false, b);
+                const size_t from = t == ResExciter::Hammer ? 0 : 4800, to = t == ResExciter::Hammer ? 96 : a.size();
+                double d = 0, s = 0; for(size_t i = from; i < to; i++) { d += (a[i] - b[i]) * (a[i] - b[i]); s += b[i] * b[i]; }
+                dmin = std::fmin(dmin, std::sqrt(d / (s + 1e-20)));
+            }
+            for(ResExciter t : {ResExciter::Bow, ResExciter::Reed, ResExciter::Lips})
+            {
+                std::vector<float> z; withj1(t, 1.f, true, z);
+                for(float q : z) { finite = finite && std::isfinite(q); loud = std::fmax(loud, std::fabs(q)); }
+            }
+            /* and J1 a full-scale sine on the note itself, C2 and C6: the
+               reed at C6 opened without limit (the opening 1 - gamma + p has
+               no top) and grew to 1e28, past everything */
+            float onnote = 0.f;
+            for(ResExciter t : {ResExciter::Bow, ResExciter::Reed, ResExciter::Lips})
+                for(float hz : {65.41f, 1046.5f})
+                {
+                    Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetExciterType(t); e.SetExciterShape(1.f, 0.f, 0.f, 1.f);
+                    float c[4] = {0.5f, 1.f, 0.5f, 0.5f}; e.SetPosition(c, 4); e.SetF0(hz); e.Strike(1.f);
+                    std::vector<float> x(48), z(48);
+                    for(int b = 0; b < 1500; b++)
+                    {
+                        for(int i = 0; i < 48; i++) x[i] = std::sin(6.2831853f * hz * (b * 48 + i) / sr);
+                        e.SetExciter(x.data(), 0.02f); e.Process(z.data(), 48);
+                        for(float q : z) { finite = finite && std::isfinite(q); onnote = std::fmax(onnote, std::fabs(q)); }
+                    }
+                }
+            CHECK(dmin > 1e-3 && finite && loud < 0.81f && onnote < 2.f, "J1 into the loop: the least change %.3g of the note, loud J1 finite %d peaking %.3g, on the note %.3g", dmin, finite, loud, onnote);
+            printf("  J1 into the loop: a bowed, a blown and a struck note each changed by it (at least %.2g of the note); full-scale noise into every sustained type peaks %.2f, a full-scale sine on the note at C2 and C6 %.2f\n", dmin, loud, onnote);
+        }
         /* fast playing: four voices, a strike every 5-40 ms at random notes,
            the energy and the shape moving, each type — the newest note takes
            the exciter and the one before rings free. Bounded as the trained
