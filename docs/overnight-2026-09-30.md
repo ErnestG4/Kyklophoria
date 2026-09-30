@@ -12,7 +12,68 @@ every velocity) before it is offered. Check-ins at :13 and :43, wrap-up at
 
 ## For the morning
 
-(written at the wrap-up)
+(07:55. Both firmwares built at the final commit: `shell/alchemy/build-modal/bongs.bin`
+and `build-wavetable/kyklophoria-wavetable.bin`. `make test` green. Nothing
+pushed; the Forgejo push is yours.)
+
+**Flash** `bongs.bin`. The wavetable firmware shares the core, but none of
+tonight's changes touch its sound (its goldens are unchanged).
+
+**What changed, and what to listen for:**
+- **Turning Play P3/P5/P6 under a ringing note no longer crackles**
+  (29c66f5, db5b976): the rebuild's level change glides over 10 ms, and a
+  pickup's coil crossfade is no longer restarted halfway. Wurlitzer
+  voicing 43 clicks a turn -> 0, Guitar brightness 36 -> 0, Cello family
+  switch 6 -> 0. Listen: turn P3 and P6 under a long note on the
+  Wurlitzer, an EP and a Guitar. P4 under the reed passes through the
+  reed's buzz; that is its waveform, not a crackle.
+- **The bow** (672e424): it no longer pushes a DC offset onto the output
+  (+0.05 to +0.18 of full scale before), and it speaks on lossy strings:
+  every pizzicato world, the Guitar and the Iowa C2 were only the offset
+  before. Lifting it no longer thumps (the offset swinging back, up to
+  x16000 the note's own step: likely some of the bowed pops). Listen: the
+  Bow on bass-pizz, cello-pizz, Guitar; lifts with P4 or the gate.
+- **The hand's hammer** is at the recorded attack's level (f8bbad4): -3.0
+  dB on average (its intended trim), from -4.8 with outliers at -19. The
+  pluck is steady across its stiffness. Listen: Hammer on the tine, EP and
+  reed worlds, and at soft velocities up the keyboard.
+- **Gates** (4ad1855): a note struck under a shut gate no longer starts
+  blowing ten seconds later, when the gate's hold lapses.
+- **Guitar's lips at 55 and 60, and the tine/EP/reed worlds' lips, speak**
+  (b1d0618, from last evening).
+- **The Play tab** keeps one control per setting (3684c2a): planes that
+  repeated a panel pot are gone; the strike pads are gates while held.
+
+**Mallets and bells, trained and level-gated** (ModalBake 0576f06,
+687d3f4; gated on tonight's core):
+- marimba-vel: 42 of 61 notes trained, 19 keep the recorded attack; 0 of
+  420 strikes over; fast playing 5.15 against the recorded 5.34.
+- vibraphone-vel: 42 of 42; 0 of 420 over; 2.48 against 2.81.
+- bells-vel: 34 of 37 (88, 91, 93 recorded); 0 of 340 over; 3.78
+  against 4.15.
+- The grand on card-exc5 still passes on tonight's core (0 of 810).
+- To try them: `ModalBake/out/card-exc6` is card-exc5 with the three
+  trained worlds in. **Nothing is on your SD card**: that is your call
+  after listening.
+
+**Needs your decision or your hands:**
+- **Salamander's overruns**: the desktop rules out everything it can (see
+  the log, 02:10). Please send the page's whole CPU line while it overruns
+  (avg, max, engine, strike, At/s, staged/s, hurried/s), and the same on
+  the Iowa grand played the same way.
+- **The sustained exciters' level** against each world's: reed-vel's reed
+  and lips about 14 dB under, the pianos 7-10 over. A per-note level check
+  like the hammer's would even them; it changes how bowed and blown notes
+  sit, so it waits for your ears.
+- **The hammer on the pickup worlds** is still the lowest (-6 to -8 dB),
+  and on EP-vel its fast playing peaks at 1.60x the recorded attack's
+  (1.65 before tonight; the trained gate asks 1.5; the output limiter
+  holds it).
+- **The wavetable backports** (docs/bongs-controls.md): the panel rows on
+  its page and axis-named labels change its layout.
+- Still waiting from before: the dark stereo circle (a screenshot), the
+  EP-bass refit, Epi's licence line, the refitted records' alignment.
+- Modal SRAM is 96.36% (about 17 KB free); tonight's work cost about 7 KB.
 
 ## Where it stood at 00:41
 
@@ -116,3 +177,4 @@ every velocity) before it is offered. Check-ins at :13 and :43, wrap-up at
 - 06:16 — check-in. Nothing new; nothing running.
 - 06:46 — check-in. Nothing new; nothing running.
 - 07:16 — check-in. Nothing new; nothing running.
+- 07:55 — wrap-up: both firmwares rebuilt, the morning section written.
