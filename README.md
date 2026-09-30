@@ -52,9 +52,10 @@ Timbre, Position, Noise and Mass shape each type:
   the lips' register.
 - **Mass:** the hammer's mass, the reed's impedance, or the lip's Q.
 
-**Gates:** J4 held high, B2 held, or the web page's pad held. A gate owns
-the articulation for ten seconds after it was last high. With nothing
-gating, energy alone plays the sustained types.
+**Gates:** J4 held high, B2 held, or a pad on the web page held (the axis
+or a strike pad). A gate owns the articulation for ten seconds after it was
+last held. A note whose gate has shut rings free until the next strike. With
+nothing gating, energy alone plays the sustained types.
 
 The web page for Bongs is `?page=modal`. Its play view shows the instrument,
 its modes, and a row of controls for each panel page, which move the
