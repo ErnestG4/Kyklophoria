@@ -90,3 +90,5 @@ every velocity) before it is offered. Check-ins at :13 and :43, wrap-up at
   glide fixed with it: moving a mode's radius without rewriting its second
   sample misread the ring's amplitude and phase under low modes.
   Modal SRAM 96.36%.
+- 02:06 — the pluck steady across its stiffness now too (timbre 1: -2.4, -0.7, -3.8 dB on the tine, the grand, the guitar; -14, -10, -17 before). bells-vel campaign started (the one other set with fits and a card world).
+- 02:08 — the sustained exciters' level against each world's (reed-vel reed/lips -14 dB, the pianos +7..+10): not the world's displacement scale (no correlation over 24 worlds), so no change; a per-note level check like the hammer's is possible and is left for your ears.

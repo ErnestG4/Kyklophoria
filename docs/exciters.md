@@ -266,9 +266,47 @@ balance.
   The contact can't tell the difference; the output can. excfit renders the
   same (ModalBake 709fb76), and the grand was retrained with it.
 
-Still open: J4 as a gate for the sustained ones, since energy alone
-articulates them now. Also an honest bench listen: the bowed piano is a
-fitted piano bowed, not a cello.
+Still open then: J4 as a gate for the sustained ones (built the next day,
+stage 6). Also an honest bench listen: the bowed piano is a fitted piano
+bowed, not a cello.
+
+## Stage 6, built (29-30 September): gates, the bow, the hand's hammer
+
+- **Gates** (docs/bongs-controls.md): J4 held high, B2 held, a pad on the
+  page held. A gate owns the articulation for ten seconds after it was
+  last held; a note whose gate has shut rings free until the next strike,
+  and the hold lapsing lifts it too (`GateOwner`).
+- **The bow's force floor** (672e424). Steady sliding under a bow is
+  stable until the friction's fall with the slip, f_n |μ'(v)| w², beats the
+  fundamental's damping, 2 m ζ ω. On a string lossier than about Q 120
+  (every pizzicato world, the Guitar, the Iowa C2) the bow slid without a
+  sound. The force is now at least 1.5× that, at most half Schelleng's
+  most: 169 of 169 bowed notes over 13 string worlds sound (135 before),
+  162 in tune within 25 cents (130).
+- **The bow's deflection off the output** (672e424). The bow's mean
+  friction holds the string aside, and the output is the modes'
+  displacement: +0.05 to +0.18 of full scale DC on every bowed world, and a
+  thump at every lift as it swung back (x326-x16000 the note's own step). A
+  7 Hz DC blocker a voice, before the voice's limiter, kept on after the
+  drive until it has settled.
+- **The hand's hammer at the recording's level** (f8bbad4). Its level was
+  predicted as an impulse's ring, and the hammer bounces off the string's
+  stiffness over the length of the note's own period. So the ring it
+  actually leaves is checked when the contact lets go (carried to the
+  moment the recording's ring is taken, weighted by how long each mode
+  rings) and glided there over 3 ms. Card: -3.0 dB on average (the 0.7
+  trim), -8.4..-0.8 from -18.8..+4.3. The pluck the same, now steady across
+  its stiffness.
+- **The glide** (29c66f5, f8bbad4). A ring carried into a rebuild changes
+  level through the pole's radius over 10 ms instead of in a sample, which
+  is what took the crackle out of turning a Play pot under a ringing note;
+  the hammer's check uses the same. A radius change rewrites the second
+  state sample, or the recursion reads another amplitude and phase.
+
+Open: the sustained exciters' level against each world's (reed-vel's reed
+and lips 14 dB under, the pianos 7-10 over). It is not the world's
+displacement scale; a per-note check like the hammer's would do it, and
+changes how bowed and blown notes sit, so it waits for a listen.
 
 ## Stage 4, proposed (28 September) — for Combust to decide
 
