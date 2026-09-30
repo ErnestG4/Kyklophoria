@@ -23,7 +23,7 @@ const CMD = {
   telemetry: 0x60, spaceInfo: 0x61, cell: 0x62, stats: 0x63, action: 0x64,
   worlds: 0x65, basis: 0x66, putWorld: 0x67, cardWorlds: 0x68,
   putSlot: 0x69, slots: 0x6a, saveCard: 0x6b, getSlot: 0x6c, tour: 0x6d, setControl: 0x6e,
-  resonate: 0x6f,
+  resonate: 0x6f, pots: 0x70,
 };
 /* 0x6D TOUR ops (shell/common/kyk_ext.h) */
 const TOUR = { get: 0, set: 1, tick: 2, max: 8 };
@@ -762,6 +762,20 @@ function parseStats(b) {
   s.hurriedPerS = b.length >= 42 ? u32(b, 38) : null;
   return s;
 }
+/* 0x70 POTS: every pot's stored value, and one set (Bongs' page mirror) */
+function parsePots(b) {
+  if (!b || b.length < 4 || b[0] !== 0) return null;
+  const pages = b[1], pots = b[2], live = b[3];
+  if (b.length < 4 + 2 * pages * pots) return null;
+  const vals = [];
+  for (let p = 0; p < pages; p++) { const row = []; for (let k = 0; k < pots; k++) row.push(u16(b, 4 + 2 * (p * pots + k)) / 65535); vals.push(row); }
+  return { pages, pots, live, vals };
+}
+async function getPots(link) { return parsePots(await link.request(CMD.pots, new Uint8Array([0]))); }
+async function setPot(link, page, pot, v) {
+  const q = Math.max(0, Math.min(65535, Math.round(v * 65535)));
+  return link.request(CMD.pots, new Uint8Array([1, page & 0xff, pot & 0xff, q & 0xff, q >> 8]));
+}
 /* 0x64 ACTION */
 function actionReq(op, args = []) { return Uint8Array.of(op & 0xff, ...args); }
 
@@ -1281,7 +1295,7 @@ const planeCount = n => n * (n - 1) / 2;
 const api = {
   CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
-  TOUR, tourReq, parseTour, fetchResonate,
+  TOUR, tourReq, parseTour, fetchResonate, parsePots, getPots, setPot,
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, putSlot, fetchSlots,
   MORPH_USER, SLOT_COUNT, STAT_CARD_EXISTS, SHAPER, SHAPER_NAME, buildUserWorld, parseUserWorld,

@@ -899,6 +899,16 @@ console.log('\n== the card: write, list, read back, and refuse to clobber');
   try { await act(KYK.ACT.release, 0); } catch (e) { bad = e.message; }
   check(bad === 'BAD_ARGS', `a release of 0 is refused (${bad || 'accepted'})`);
   await act(KYK.ACT.memberMorph, 0); await act(KYK.ACT.release, 8);
+  /* the panel's pots (0x70): every page's read, one set and read back, and
+     a pot past the panel refused */
+  const pots0 = await KYK.getPots(link);
+  check(pots0 && pots0.pages >= 1 && pots0.pots >= 1 && pots0.vals.length === pots0.pages, `the pots: ${pots0 && pots0.pages} pages of ${pots0 && pots0.pots}`);
+  await KYK.setPot(link, 1, 0, 0.25);
+  const pots1 = await KYK.getPots(link);
+  check(pots1 && Math.abs(pots1.vals[1][0] - 0.25) < 1e-3, `a pot set and read back (${pots1 && pots1.vals[1][0].toFixed(4)})`);
+  let badPot = '';
+  try { await KYK.setPot(link, 99, 0, 0.5); } catch (e) { badPot = e.message; }
+  check(badPot === 'BAD_ARGS', `a pot past the panel is refused (${badPot || 'accepted'})`);
   /* the gate: open and shut from the page, and a value past 1 refused */
   check((await act(KYK.ACT.gate, 1))[0] === 0 && (await act(KYK.ACT.gate, 0))[0] === 0, 'the gate opened and shut from the page');
   let badGate = '';
