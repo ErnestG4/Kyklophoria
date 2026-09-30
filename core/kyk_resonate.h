@@ -219,6 +219,18 @@ struct ResonatorBank
     float p1[kMax], p2[kMax];            /* the state a unit strike starts from: A sin(phi-w)/r, A sin(phi-2w)/r^2 */
     float g[kMax];                       /* each mode's gain at a unit strike, for the carry's level */
     float y1[kMax], y2[kMax];
+    /* the carry's level change, glided: a ring carried into a rebuild at the
+       level the new mode would have was scaled there, in a sample — a step
+       in every mode at every rebuild, and a pot turned under a ringing note
+       rebuilds it every 2 ms: the crackle under Play P3 and P6 (Combust),
+       43 clicks on the Wurlitzer's voicing over a second's turn and 36 on
+       the Guitar's brightness, none with the ring carried unscaled. Now the
+       pole's radius carries it: r x 2^glq a sample for glide_left samples
+       — the same ratio arrived at over 10 ms, and nothing per sample, since
+       every loop reads c1 and c2 already. glq is log2 of that factor; rq
+       stays the pole as built (GlideTick puts it back) */
+    float glq[kMax];
+    int   glide_left;
     /* the main state is exactly zero — a note struck at another note starts
        from nothing, its old ring gone to the tail, and stays at nothing until
        the strike ramping in folds into it at the end of its fade. Running the
@@ -320,9 +332,12 @@ struct ResonatorBank
         for(int i = 0; i < n; i++) if(std::fabs(y1[i]) > 1e-7f || std::fabs(y2[i]) > 1e-7f) { any = true; break; }
         for(int i = 0; i < n; i++)
         {
-            if(any) { cc1[m] = c1[i]; cc2[m] = c2[i]; cy1[m] = y1[i]; cy2[m] = y2[i]; m++; }
+            /* the pole as built, not a glide's: a glide's may sit over 1 */
+            const bool gl = glide_left > 0 && glq[i] != 0.f && c2[i] < 0.f;
+            if(any) { cc1[m] = gl ? 2.f * rq[i] * cwq[i] : c1[i]; cc2[m] = gl ? -rq[i] * rq[i] : c2[i]; cy1[m] = y1[i]; cy2[m] = y2[i]; m++; }
             y1[i] = y2[i] = 0.f;
         }
+        if(glide_left > 0) { glide_left = 1; GlideTick(1); }
         quiet = true;
         if(tn > 0 && tail_left > 0)
             for(int i = 0; i < tn; i++)
@@ -376,6 +391,19 @@ struct ResonatorBank
         damp_left = 0; damp_c = 1.f;
         tn = 0; tail_left = 0; tail_c = 1.f;
         quiet = true;
+        for(int i = 0; i < kMax; i++) glq[i] = 0.f;
+        glide_left = 0;
+    }
+    /* the glide's clock: the voice's samples as they are run (Engine, each
+       chunk); at its end the poles are the ones built */
+    void GlideTick(int frames)
+    {
+        if(glide_left <= 0) return;
+        glide_left -= frames;
+        if(glide_left > 0) return;
+        glide_left = 0;
+        for(int i = 0; i < n; i++)
+            if(glq[i] != 0.f) { glq[i] = 0.f; if(c2[i] < 0.f) { c1[i] = 2.f * rq[i] * cwq[i]; c2[i] = -rq[i] * rq[i]; } }
     }
     bool Ringing() const
     {
@@ -430,15 +458,16 @@ struct ResonatorBank
            scale its coil and K then undo — and a Wurlitzer C3's tine
            carried as it stood into the next point's pickup came out at
            3.7 where a strike there peaks at 0.6. At most 12 dB up. */
-        float sp[1 + kStrikes][kMax], cp[1 + kStrikes][kMax], w0[kMax], g0[kMax];
+        float sp[1 + kStrikes][kMax], cp[1 + kStrikes][kMax], w0[kMax], g0[kMax], gl0[kMax];
         bool  has[kMax], claimed[kMax];
+        const int left0 = keep ? glide_left : 0;
         if(keep)
         {
             for(int q = 0; q < kStrikes; q++) if(held[q] > 0.f) { Advance(q, held[q]); held[q] = 0.f; }   /* read as it is now, not as it was */
             float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
             for(int i = 0; i < n0; i++)
             {
-                has[i] = false; claimed[i] = false; g0[i] = g[i]; w0[i] = wq[i];
+                has[i] = false; claimed[i] = false; g0[i] = g[i]; w0[i] = wq[i]; gl0[i] = glq[i];
                 if(!(c2[i] < 0.f)) continue;
                 const float r0 = rq[i], cw = cwq[i];
                 const float sw0 = swq[i] > 1e-6f ? swq[i] : 1e-6f;
@@ -526,7 +555,7 @@ struct ResonatorBank
                the rate can hold */
             if(!(w < kWMax))
             {
-                c1[i] = c2[i] = 0.f; wq[i] = cwq[i] = swq[i] = rq[i] = lrq[i] = 0.f;
+                c1[i] = c2[i] = 0.f; wq[i] = cwq[i] = swq[i] = rq[i] = lrq[i] = 0.f; glq[i] = 0.f;
                 p1[i] = p2[i] = 0.f; g[i] = 0.f; y1[i] = y2[i] = 0.f;
                 for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f;
                 continue;
@@ -545,15 +574,29 @@ struct ResonatorBank
             const float c1w = cph * cwn + sph * swn;
             p1[i] = gain[i] * s1w / r;
             p2[i] = gain[i] * (s1w * cwn - c1w * swn) / (r * r);
+            glq[i] = 0.f;
             if(from >= 0)
             {
                 const float go = std::fabs(g0[from]), gn = std::fabs(gain[i]);
-                const float lv = go > 1e-9f ? (gn / go > lv_max ? lv_max : gn / go) : 1.f;
+                float lv = go > 1e-9f ? (gn / go > lv_max ? lv_max : gn / go) : 1.f;
+                lv = lv > 1e-6f ? lv : 1e-6f;
+                /* the level glided (glq), with what the last glide had still
+                   to go; a strike bank still sitting out its lead is not run
+                   under the poles, so it takes its share now */
+                glq[i] = (fastmath::Log2(lv) + (left0 > 0 ? gl0[from] * (float)left0 : 0.f)) * (1.f / (0.01f * sr));
+                if(std::fabs(glq[i]) < 1e-9f) glq[i] = 0.f;
                 float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
                 for(int q = 0; q < 1 + kStrikes; q++)
                 {
-                    a[q][i] = lv * sp[q][from];
-                    b[q][i] = lv * (sp[q][from] * cwn - cp[q][from] * swn) / r;             /* A sin(phi - w) / r */
+                    const float now = q > 0 && ramping[q - 1] && ramp_n[q - 1] < ramp_lead[q - 1] ? lv : 1.f;
+                    a[q][i] = now * sp[q][from];
+                    b[q][i] = now * (sp[q][from] * cwn - cp[q][from] * swn) / r;             /* A sin(phi - w) / r */
+                }
+                if(glq[i] != 0.f)
+                {
+                    const float rg = r * fastmath::Exp2(glq[i]);
+                    c1[i] = 2.0f * rg * cwn;
+                    c2[i] = -rg * rg;
                 }
             }
             else { y1[i] = y2[i] = 0.f; for(int q = 0; q < kStrikes; q++) s1[q][i] = s2[q][i] = 0.f; }
@@ -566,6 +609,9 @@ struct ResonatorBank
            a step the ear-check caught on four worlds */
         if(!keep) for(int q = 0; q < kStrikes; q++) { ramp_len[q] = 0.003f * sr; ramp_lead[q] = 0.f; ramping[q] = false; }
         quiet = keep ? false : true;     /* carried, the ring may be anything; fresh, every mode was zeroed above */
+        glide_left = 0;
+        for(int i = 0; i < n; i++) if(glq[i] != 0.f) { glide_left = (int)(0.01f * sr); break; }
+        for(int i = n; i < kMax; i++) glq[i] = 0.f;
     }
 
     /* what Set(..., keep = false) leaves, taken from a bank Set fresh with
@@ -588,6 +634,8 @@ struct ResonatorBank
         }
         for(int q = 0; q < kStrikes; q++) { ramp_len[q] = 0.003f * sr; ramp_lead[q] = 0.f; ramping[q] = false; }
         quiet = true;
+        for(int i = 0; i < kMax; i++) glq[i] = 0.f;
+        glide_left = 0;
     }
 
     /* the hammer: the strike bank set to the given swing at every mode's
@@ -640,8 +688,9 @@ struct ResonatorBank
             }
             const float r = fastmath::ExpNegSmall(zeta[i] * w);
             float sw, cw; fastmath::SinCos(w, sw, cw);
-            c1[i] = 2.0f * r * cw;
-            c2[i] = -r * r;
+            const float rg = glide_left > 0 && glq[i] != 0.f ? r * fastmath::Exp2(glq[i]) : r;   /* a glide under way goes on */
+            c1[i] = 2.0f * rg * cw;
+            c2[i] = -rg * rg;
             wq[i] = w; cwq[i] = cw; swq[i] = sw; rq[i] = r; lrq[i] = -zeta[i] * w;
         }
     }
@@ -1118,6 +1167,13 @@ struct Pickup
        clicked at 7x the signal's slope with the state simply kept) */
     float ob0, ob1, ob2, oa1, oa2, oz1, oz2;
     float xfade_n, xfade_len;
+    /* a coil asked for while a crossfade is under way waits here and is
+       crossed into when that one lands: restarted mid-way, the part of the
+       output still on the coil being left dropped out in a sample — a turn
+       of the coil pot retunes every 2 ms against a 10 ms crossfade, 22
+       clicks a second's turn on the tine */
+    float pb0, pb1, pb2, pa1, pa2;
+    bool  pend;
     float prev, rest, z1, z2;     /* the last flux, and the flux at rest for this pole */
     float u_last;                 /* the last displacement in, for a retune: the flux under the new pole at the tine's actual place */
 
@@ -1125,6 +1181,15 @@ struct Pickup
     {
         on = gap = false; h = h_t = 0.f; inv_w = K = inv_w_t = K_t = 1.f; b0 = 1.f; b1 = b2 = a1 = a2 = 0.f; prev = rest = z1 = z2 = 0.f; u_last = 0.f;
         ob0 = 1.f; ob1 = ob2 = oa1 = oa2 = oz1 = oz2 = 0.f; xfade_n = xfade_len = 0.f;
+        pb0 = 1.f; pb1 = pb2 = pa1 = pa2 = 0.f; pend = false;
+    }
+    /* a new coil: crossed into now, or after the crossfade under way */
+    void Retarget(float nb0, float nb1, float nb2, float na1, float na2, float sr)
+    {
+        if(xfade_n < xfade_len) { pb0 = nb0; pb1 = nb1; pb2 = nb2; pa1 = na1; pa2 = na2; pend = true; return; }
+        Leave(sr);
+        b0 = nb0; b1 = nb1; b2 = nb2; a1 = na1; a2 = na2;
+        z1 = z2 = 0.f;      /* the new coil starts from rest and is crossed into */
     }
     /* keep the coil that is playing, so a Set can be crossed into */
     void Leave(float sr)
@@ -1144,6 +1209,7 @@ struct Pickup
         const float cw = std::cos(w0), a0 = 1.f + alpha;
         b0 = (1.f - cw) * 0.5f / a0; b1 = (1.f - cw) / a0; b2 = b0;
         a1 = -2.f * cw / a0; a2 = (1.f - alpha) / a0;
+        pend = false; xfade_n = xfade_len = 0.f;
         const float u0 = (0.f - h) * inv_w;
         rest = prev = 1.f / (1.f + u0 * u0);     /* the field at rest: no click at power-on */
         z1 = z2 = 0.f;
@@ -1199,6 +1265,13 @@ struct Pickup
                 const float t = xfade_n / xfade_len;
                 y = yo + t * (y - yo);
                 xfade_n += 1.f;
+                if(pend && !(xfade_n < xfade_len))
+                {
+                    /* landed: the coil waiting is crossed into next, from the one just arrived at */
+                    ob0 = b0; ob1 = b1; ob2 = b2; oa1 = a1; oa2 = a2; oz1 = z1; oz2 = z2;
+                    b0 = pb0; b1 = pb1; b2 = pb2; a1 = pa1; a2 = pa2; z1 = z2 = 0.f;
+                    xfade_n = 0.f; pend = false;
+                }
             }
             io[k] = K * y;
         }
@@ -2425,13 +2498,10 @@ const float wa = 1.f - wb;
             Pickup fresh = v.pickup;
             if(form == 1) fresh.Set(st[0], st[1], st[2], st[3], st[4], sr);
             else if(form == 2) fresh.SetGap(st[1], st[2], st[3], st[4], sr);
-            const bool coil_moved = fresh.b0 != v.pickup.b0 || fresh.a1 != v.pickup.a1 || fresh.a2 != v.pickup.a2;
-            if(coil_moved)
-            {
-                v.pickup.Leave(sr);
-                v.pickup.b0 = fresh.b0; v.pickup.b1 = fresh.b1; v.pickup.b2 = fresh.b2; v.pickup.a1 = fresh.a1; v.pickup.a2 = fresh.a2;
-                v.pickup.z1 = v.pickup.z2 = 0.f;      /* the new coil starts from rest and is crossed into */
-            }
+            const Pickup& pk = v.pickup;
+            const bool coil_moved = pk.pend ? (fresh.b0 != pk.pb0 || fresh.a1 != pk.pa1 || fresh.a2 != pk.pa2)
+                                            : (fresh.b0 != pk.b0 || fresh.a1 != pk.a1 || fresh.a2 != pk.a2);
+            if(coil_moved) v.pickup.Retarget(fresh.b0, fresh.b1, fresh.b2, fresh.a1, fresh.a2, sr);
             /* the field and the gain are targets; the pickup slews from
                where it is, so a point change is a glide and not a step */
             v.pickup.h_t = fresh.h_t; v.pickup.inv_w_t = fresh.inv_w_t; v.pickup.K_t = fresh.K_t;

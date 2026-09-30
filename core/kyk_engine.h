@@ -533,7 +533,9 @@ public:
             if(late && !rstriking_) rlate_ = true;
             /* a tune change under the lock rebuilds the voice at the note
                it holds, not at wherever the pitch has gone since */
-            BuildVoice(move ? p : note, rvoices_[ractive_], true, rstriking_); at_count_++; rdid_ = true;
+            if(rstriking_) BuildVoice(move ? p : note, rvoices_[ractive_], true, true);
+            else RebuildKept(move ? p : note, ractive_);
+            at_count_++; rdid_ = true;
             if(move) note = p;
             rvdirty_[ractive_] = false;
             return;
@@ -551,7 +553,7 @@ public:
         {
             const int v = (ractive_ + k) % rcap_;
             if(!rvdirty_[v]) continue;
-            if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { BuildVoice(rvnote_[v], rvoices_[v], true, false); at_count_++; rdid_ = true; rsettle_ = 0; rvdirty_[v] = false; return; }
+            if(rvnote_[v] != 1e9f && rvoices_[v].Active()) { RebuildKept(rvnote_[v], v); at_count_++; rdid_ = true; rsettle_ = 0; rvdirty_[v] = false; return; }
             rvdirty_[v] = false;              /* silent, or never built: its next strike builds it */
         }
     }
@@ -953,6 +955,7 @@ public:
                     }
                     else if(lr) rvoices_[v].ProcessLR(tmp, tmpR, m, wl, wr, drive ? exciter_ + i : nullptr, exgain_);
                     else rvoices_[v].Process(tmp, m, drive ? exciter_ + i : nullptr, exgain_);
+                    rvoices_[v].bank.GlideTick(m);
                     /* a voice that has gone to infinity or NaN stays there —
                        a linear bank's state is fed back forever — so it is
                        reset, not played: silent until its next strike builds
@@ -1370,6 +1373,26 @@ public:
         ResonatorBank& b = vv.bank;
         for(int q = 0; q < ResonatorBank::kStrikes; q++) if(b.ramping[q]) b.Fold(q);
         b.quiet = false;
+        const float f1 = SustainedModes(v);
+        rbow_.Init(); rreed_.Init(); rlips_.Init();
+        rsatk_ = 0.f; rsp_[0] = 0.f; rsp_[1] = -1.f;  /* the attack from nothing; -1: the loop's first block takes its parameters as set */
+        rlips_.f_lip = f1;
+        rsg_ = rexc_ == ResExciter::Bow ? 6.2831853f * f1 * 1.35f : 0.3f;   /* the bow 7 dB up from 0.6: it sat under the recorded attack on the card (Combust: "very hard to hear") */
+        rslim_ = 1.f;
+    }
+    /* which of the voice's modes the exciter drives, and how hard: the
+       fundamental, the harmonics' weights (rsw_, by mode index), the lips'
+       registers. At the start of a drive, and again when the driven voice
+       is rebuilt with its ring carried (a Play pot turned: the voicing, the
+       decay, the coil, the instrument) — a rebuild re-orders the modes, and
+       weights left indexed to the old ones drove another set of modes at
+       every rebuild of a turn: the crackle under P3 (Combust), the bowed
+       cello x5600 over the untouched note's roughness. Nothing of the
+       exciter's own state is touched here, nor the scale it is heard at */
+    float SustainedModes(int v)
+    {
+        ResonatorVoice& vv = rvoices_[v];
+        ResonatorBank& b = vv.bank;
         /* the note's fundamental: the mode nearest the note it was struck
            at, when there is one within 6 %; else the lowest mode with a
            fifth of the loudest one's gain. Not the lowest mode: the Piano's
@@ -1432,13 +1455,20 @@ public:
             }
             rsreg_[n] = bw > 0.1f ? bh : n ? rsreg_[n - 1] : 1.f;
         }
-        rbow_.Init(); rreed_.Init(); rlips_.Init();
-        rsatk_ = 0.f; rsp_[0] = 0.f; rsp_[1] = -1.f;  /* the attack from nothing; -1: the loop's first block takes its parameters as set */
-        rlips_.f_lip = f1;
-        rsg_ = rexc_ == ResExciter::Bow ? 6.2831853f * f1 * 1.35f : 0.3f;   /* the bow 7 dB up from 0.6: it sat under the recorded attack on the card (Combust: "very hard to hear") */
         rsbeta_ = beta;
-        rslim_ = 1.f;
         rsf1_ = f1;
+        return f1;
+    }
+    /* a voice rebuilt with its ring carried (BuildVoice, keep, no strike):
+       the one the exciter drives is handed back to the output's units first,
+       which is what the carry scales a ring in, and taken again next block;
+       afterwards its modes are read again (SustainedModes) */
+    void RebuildKept(float param, int v)
+    {
+        const bool driven = v == rsv_ && Sustained(rexc_);
+        if(driven && rsdrv_ == v) SustainedHandBack();
+        BuildVoice(param, rvoices_[v], true, false);
+        if(driven) SustainedModes(v);
     }
     /* the sustained voice's block: the energy from the velocity axis, the
        shape from the page, the exciter coupled to the modes sample by sample,

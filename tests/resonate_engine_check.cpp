@@ -1539,6 +1539,48 @@ int main()
             CHECK(letgo && shutstruck && nogate, "the gate's hold lapsing: a note let go of stays down %d, one struck under the shut gate stays down %d, nothing gating plays %d", letgo, shutstruck, nogate);
             printf("  the gate's hold lapsing: a note let go of, and one struck while the gate was shut, stay down when the gate falls open; with nothing gating, energy plays\n");
         }
+        /* a Play pot turned under a ringing note (Combust: "it crackles when
+           adjusting some settings like knobs 3 and 4 on page 1"): with the
+           spin read from the pots, each move past the deadband rebuilds the
+           voice with its ring carried, every 2 ms under a turn. The carry's
+           change of level was a step in every mode at every rebuild, and the
+           pickup's coil crossfade was restarted half-way — the tine's coil
+           22 clicks and the bodies' row 128 over a second's turn. A click
+           here: a sample whose second difference is over 6x the rms of the
+           10 ms around it; the note untouched has none */
+        {
+            auto pb = slurp("tests/data/bodies.kykm");
+            World bw; bw.UseResonate(pb.data(), (uint32_t)pb.size());
+            auto turn = [&](World& w, int axis, bool turning) {
+                Engine e; e.Init(&w, sr); e.gain = 1.f; e.TuneFromControl(true);
+                float c[4] = {0.5f, 0.7f, 0.5f, 0.5f}; e.SetPosition(c, 4); e.SetF0(196.f); e.Strike(0.7f);
+                std::vector<float> z, y(24);
+                uint32_t r = 1u;
+                for(int b = 0; b < 4000; b++)
+                {
+                    if(turning && b >= 500 && b < 2500)
+                    {
+                        r = r * 1664525u + 1013904223u;
+                        c[axis] = 0.5f + 0.4f * std::sin(6.2831853f * (float)(b - 500) / 2000.f) + ((float)(r >> 8) / 16777216.f - 0.5f) * 0.002f;
+                        e.SetPosition(c, 4);
+                    }
+                    e.Process(y.data(), 24); z.insert(z.end(), y.begin(), y.end());
+                }
+                std::vector<double> d(z.size(), 0.0), cs(z.size() + 1, 0.0);
+                for(size_t i = 2; i < z.size(); i++) d[i] = (double)z[i] - 2.0 * z[i - 1] + z[i - 2];
+                for(size_t i = 0; i < z.size(); i++) cs[i + 1] = cs[i] + d[i] * d[i];
+                int clicks = 0;
+                for(size_t i = 500 * 24; i < 2500 * 24; i++)
+                {
+                    const double rr = std::sqrt((cs[i + 240] - cs[i - 240]) / 480.0);
+                    if(rr > 1e-9 && std::fabs(d[i]) > 6.0 * rr) { clicks++; i += 24; }
+                }
+                return clicks;
+            };
+            const int coil = turn(rw, 3, true), body = turn(bw, 0, true), still = turn(rw, 3, false) + turn(bw, 0, false);
+            CHECK(coil <= 2 && body <= 10 && still == 0, "a pot turned under a ringing note: the tine's coil %d clicks, the bodies' row %d, untouched %d", coil, body, still);
+            printf("  a pot turned under a ringing note: the tine's coil %d clicks, the row of bodies %d (22 with the crossfade restarted, 128 with the carry stepped), untouched %d\n", coil, body, still);
+        }
         /* the lips on a world with few harmonics (the tine fixture: three modes,
            the fundamental the only harmonic): every register falls back to the
            1st, and the lip is tuned for the 1st, so it speaks — tuned as the
