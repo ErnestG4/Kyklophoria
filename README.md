@@ -12,7 +12,56 @@ and presets persist. There is design work left: FM in is not read, most
 payload lanes are not routed, and the panel layout is still a first draft.
 J2 now clocks a loop of worlds.
 
-## Controls
+## Two firmwares: Kyklophoria and Bongs
+
+The module runs one of two firmwares, swapped from the SD card:
+
+- **Kyklophoria**, the wavetable firmware, is everything below this section.
+- **Bongs**, the modal firmware, plays physically modelled instruments. Each
+  is a bank of resonances fitted to recordings (ModalBake), struck, plucked,
+  bowed or blown by a modelled exciter.
+
+### Bongs
+
+**B1** steps through six pages. **B2** taps a strike, and held it is a gate.
+**B3** flips the pitch lock. **J4** is the trigger, and held high it is a gate.
+**J5-J8** move the four axes. **J1** is audio driven into the exciter as a
+force. The worlds are `.kykm` files in `/kyklophoria/` on the card.
+
+| | Play | Exciter | Resonator | Space | Motion | Kepler |
+|---|---|---|---|---|---|---|
+| P1 | Coarse pitch | Type | Voices (1/2/4) | Spread | Body-Velocity | Gravity |
+| P2 | Fine pitch | Timbre | Release | Listen | Body-Decay | Eccentricity |
+| P3 | Body | Position | Dig in | Ear orbit | Body-Coil | Plane |
+| P4 | Velocity (the energy) | Noise | Family (switch/morph) | | Velocity-Decay | Damping |
+| P5 | Decay | Mass | Pitch (lock/bend) | | Velocity-Coil | Radius |
+| P6 | Coil | J1 in | Level | | Decay-Coil | Coupling |
+
+**The exciter types** (Exciter P1):
+- **Recorded:** the fitted world's recorded attack.
+- **Hammer**, **Pluck:** a modelled felt hammer and plucking finger. The
+  hammer is a mallet on the marimba and vibraphone.
+- **Bow**, **Reed**, **Lips:** sustained. They drive the newest note while
+  there is energy (Play P4, or its CV) and, when gated, while the gate is
+  open. At no energy, or with the gate shut, the note rings free.
+- **Trained** (the default): a hammer trained per note to the recordings,
+  on the worlds that carry one. Elsewhere it plays the recorded attack.
+
+Timbre, Position, Noise and Mass shape each type:
+- **Timbre:** a felt's hardness, a bow's pressure, a reed's embouchure, or
+  the lips' register.
+- **Mass:** the hammer's mass, the reed's impedance, or the lip's Q.
+
+**Gates:** J4 held high, B2 held, or the web page's pad held. A gate owns
+the articulation for ten seconds after it was last high. With nothing
+gating, energy alone plays the sustained types.
+
+The web page for Bongs is `?page=modal`. Its play view shows the instrument,
+its modes, and a row of controls for each panel page, which move the
+module's pots (the pot under your hand catches the new value). The design is
+in `docs/bongs-controls.md`, and the exciters in `docs/exciters.md`.
+
+## Controls (Kyklophoria)
 
 **B1** taps through seven pages. **B2 + B3** held opens Settings. The page has
 three tabs: **play** is a readout of the instrument, **build** makes a world out
@@ -449,7 +498,8 @@ make host                 # build/host/{kykdesk,kykspace,kykeigen,kykworlds}
 make test                 # unit, continuity, aliasing, morph, golden WAVs, link
 KYK_NODE=1 make test      # the same plus the node web selftest
 make armcost              # M7 instruction counts for the audio-path inner loops
-cd shell/alchemy && make  # build/kyklophoria.bin
+cd shell/alchemy && make MODE=modal      # Bongs: build-modal/bongs.bin (the default MODE)
+cd shell/alchemy && make MODE=wavetable  # Kyklophoria: build-wavetable/kyklophoria-wavetable.bin
 make program-dfu          # with the module parked in the bootloader
 ```
 
