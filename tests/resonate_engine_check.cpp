@@ -1497,6 +1497,22 @@ int main()
             CHECK(silent && falls && jump < 1.5f, "the gate: shut at the strike silent %d, shut it rings down and opened plays again %d, a jump at its edge x%.2f", silent, falls, jump);
             printf("  the gate: shut at the strike, silent; shut after, the note rings down free and plays again when opened; at its edges no jump over x%.2f (shutting: the 20 ms before; opening: the note's own playing)\n", jump);
         }
+        /* the lips on a world with few harmonics (the tine fixture: three modes,
+           the fundamental the only harmonic): every register falls back to the
+           1st, and the lip is tuned for the 1st, so it speaks — tuned as the
+           register asked for (0.6 of the fundamental) it did not, 40 dB under
+           the recorded attack */
+        {
+            auto lv = [&](ResExciter t) {
+                Engine e; e.Init(&rw, sr); e.gain = 1.f; e.SetExciterType(t); e.SetExciterShape(0.6f, 0.5f, 0.f, 0.5f);
+                float c[4] = {0.5f, 0.7f, 0.5f, 0.5f}; e.SetPosition(c, 4); e.SetF0(130.81f); e.Strike(0.7f);
+                std::vector<float> z; RunOn(e, z, 500);
+                return 20.0 * std::log10(rms(z, 0, z.size()) + 1e-20);
+            };
+            const double d = lv(ResExciter::Lips) - lv(ResExciter::Recorded);
+            CHECK(d > -15.0, "the lips on the tine %.1f dB against its recorded attack: they do not speak", d);
+            printf("  the lips on a world of few harmonics (the tine): %+.1f dB against its recorded attack\n", d);
+        }
         /* the breath arrives: a reed or the lips started from silence kick the
            bore a fifth as hard at their first sample (the reed, with its
            fundamental seeded) or open over 8 ms (the lips) — their flow

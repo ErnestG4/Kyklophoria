@@ -1575,7 +1575,11 @@ public:
                 }
                 rlips_.gamma = rsp_[0]; rlips_.dgamma = (g_end - rsp_[0]) * inv_m; rsp_[0] = g_end;
                 rlips_.zeta  = rsp_[1]; rlips_.dzeta = (z_end - rsp_[1]) * inv_m; rsp_[1] = z_end;
-                rlips_.f_lip = rsf1_ * (rsreg_[reg] - (reg ? 0.4f : 0.25f) + 0.15f * (tr - (float)reg));
+                /* detuned by the register it plays, not the one asked for: a
+                   voice without the higher harmonics falls back to the 1st, and
+                   tuned as a higher register's (0.6 of it) the lip could not
+                   speak — the tine, the EP and the reed sets, 40-54 dB down */
+                rlips_.f_lip = rsf1_ * (rsreg_[reg] - (rsreg_[reg] < 1.5f ? 0.25f : 0.4f) + 0.15f * (tr - (float)reg));
                 rlips_.q     = 10.f + 10.f * rexc_mass_;
                 ProcessLipped(vv.bank, out, m, rsw_, rlips_, 30.f, sr_, ext, eg, true);
                 rlips_.gamma = g_end; rlips_.zeta = z_end;
