@@ -1435,6 +1435,19 @@ const strikeAt = v => act(MVL.ACT.strike, [Math.max(0, Math.min(255, v | 0))], '
    open while pressed, shut when let go — a struck one takes no notice */
 let padGate = false;
 const gateTo = open => { if (padGate === open) return; padGate = open; act(MVL.ACT.gate, [open ? 1 : 0], 'gate').catch(() => {}); };
+/* a strike pad is a gate while it is held, as the axis is: pressed, it opens
+   the gate and strikes; let go, it shuts. A click that struck on release met
+   a gate the module was holding shut (a gate owns the articulation for ten
+   seconds after it was last held), and a bow struck then waited, silent. The
+   click is still there for a keyboard, and a press's own click is not
+   struck twice */
+function padHold(b, fire) {
+  let pressed = false;
+  b.addEventListener('pointerdown', () => { pressed = true; gateTo(true); fire(); });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, () => { if (padGate) gateTo(false); });
+  b.onclick = () => { if (pressed) { pressed = false; return; } fire(); };
+  return b;
+}
 /* one of the resonator's axes — body 0, velocity 1, decay 2, coil 3 — as
    a slider: the axis is a position like any world's, so on the module the
    Play page pot and its CV own it (the slider only shows where it is) and
@@ -1523,12 +1536,12 @@ function renderModelChips() {
   {
     const box = $('strikeChips'); box.innerHTML = '';
     for (const [label, v] of [['soft', 77], ['mid', 153], ['hard', 230]]) {
-      const b = chip(label, false, `strike at ${(v / 255).toFixed(2)}`, () => strikeAt(v)); b.classList.add('pad'); b.disabled = !link || !live; box.appendChild(b);
+      const b = padHold(chip(label, false, `strike at ${(v / 255).toFixed(2)}`), () => strikeAt(v)); b.classList.add('pad'); b.disabled = !link || !live; box.appendChild(b);
     }
     const lab = dimText('pad vel', '0 0 0 8px');
     const s = document.createElement('input'); s.type = 'range'; s.min = 0; s.max = 255; s.value = vel; s.title = 'the velocity of this page\'s strike pad only; a trigger into J4 and a note jump strike at the trigger velocity (axis 1)';
     s.oninput = () => { vel = s.value | 0; };
-    const pad = chip('strike', false, 'strike at the pad velocity', () => strikeAt(vel)); pad.classList.add('pad'); pad.disabled = !link || !live;
+    const pad = padHold(chip('strike', false, 'strike at the pad velocity'), () => strikeAt(vel)); pad.classList.add('pad'); pad.disabled = !link || !live;
     box.appendChild(lab); box.appendChild(s); box.appendChild(pad);
     if (!bongs) {
     /* axis 1: what J4's trigger and a note jump strike at. The page never
