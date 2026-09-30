@@ -102,3 +102,4 @@ every velocity) before it is offered. Check-ins at :13 and :43, wrap-up at
   overruns, and the same on the Iowa grand. A safety sweep of tonight's
   core (every world, all seven exciters, a staged random roll with swells
   and lifts): finite throughout, nothing past the limiter, as before.
+- 02:10 — check-in. Since the last: the hammer's level check and the glide fix (f8bbad4), exciters doc (96d5dbc), Salamander ruled out on the desktop. Mallets finished and level-safe (01:07). In progress: bells-vel training (37 notes).
