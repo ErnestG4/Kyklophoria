@@ -108,3 +108,4 @@ every velocity) before it is offered. Check-ins at :13 and :43, wrap-up at
 - 02:16 — check-in. Since the last: bells-vel trained and level-safe (ModalBake 687d3f4), in card-exc6. Mallets finished (01:07). Nothing running; what is left on the list waits for Combust (Salamander's CPU line, the sustained exciters' level by ear, the wavetable backports).
 - 02:46 — check-in. Nothing new since 02:16; nothing running. The list waits on Combust.
 - 03:16 — check-in. Nothing new; nothing running. The list waits on Combust.
+- 03:46 — check-in. Nothing new; nothing running. The list waits on Combust.
