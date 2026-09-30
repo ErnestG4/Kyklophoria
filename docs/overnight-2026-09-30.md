@@ -103,3 +103,4 @@ every velocity) before it is offered. Check-ins at :13 and :43, wrap-up at
   core (every world, all seven exciters, a staged random roll with swells
   and lifts): finite throughout, nothing past the limiter, as before.
 - 02:10 — check-in. Since the last: the hammer's level check and the glide fix (f8bbad4), exciters doc (96d5dbc), Salamander ruled out on the desktop. Mallets finished and level-safe (01:07). In progress: bells-vel training (37 notes).
+- 02:11 — EP-vel's hammer under fast playing (1.60x the recorded loudest, 1.65 before tonight): its loudest is during a contact on a high note at full velocity, before the ring can be checked, at the predicted level. Capping the contact would distort the attack; left documented, the output limiter holds it.
