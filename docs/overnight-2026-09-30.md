@@ -1,0 +1,64 @@
+# Overnight, 30 September 2026
+
+Combust, 00:40: "OK please set the overnight timer until 8 am and continue
+with the roadmap. One extra thing is that it crackles when adjusting some
+settings like knobs 3 and 4 on page 1."
+
+Rules as before: every fix gets a test that fails without it, `make test`
+green, a commit; nothing pushed; nothing outside Kyklophoria and ModalBake;
+anything that makes sound is checked for level (a re-strike, fast playing,
+every velocity) before it is offered. Check-ins at :13 and :43, wrap-up at
+07:52.
+
+## For the morning
+
+(written at the wrap-up)
+
+## Where it stood at 00:41
+
+- Bongs at 4ad1855: gates lift a note until the next strike (B2, the pad, and
+  the lapse of a gate's hold); the Play tab keeps one hand on each setting;
+  Lips speak on the tine, EP and reed worlds and on Guitar at 55 and 60.
+- Salamander: 15-20 hurried/s on the module; the full CPU line is asked for.
+  On the desktop it is no heavier than Iowa or VCSL.
+- ModalBake: the marimba-vel campaign is on its smoothed pass; vibraphone-vel
+  follows (tools/exccampaign.sh).
+
+## The list, in order
+
+1. **The crackle on Play P3 and P4** (body and velocity) while turning them:
+   reproduce on the desktop against a ringing note, find what steps, fix it
+   without costing the M7 a rebuild per block.
+2. **The mallet campaigns**: gated for level; results reported, nothing put
+   on a card.
+3. **Roadmap**: the Salamander load (what the desktop can say about the
+   strike block on the M7: `make armcost`, the build path's instruction
+   count); the other pots checked for the same crackle as item 1; the
+   remaining open items in docs/bongs-controls.md.
+
+## Log
+
+- 00:41 — list written.
+- 01:03 — the crackle under P3/P5/P6 fixed (29c66f5): the carry's level glided, the coil's crossfade queued. Now P4 under the sustained exciters.
+- 01:05 — P4 checked: on struck notes it only sets the next strike's
+  velocity and is clean on every world. Under the reed it is the breath,
+  and the "clicks" a turn shows are the reed's own waveform corners, one a
+  period (245-246 samples apart at G3, the same in a steady note at that
+  pressure): its buzz, not a crackle. What is left on a turn: the Guitar
+  family's instruments switched on P3 (9-12 at about -60 dB, at the member
+  crossings); a unmatched-ring fade through the tail was tried and changed
+  nothing measurable, so it was taken out.
+- 01:07 — the mallet campaigns had trained through and stopped at the
+  bake: excbake refused the card's version 7 worlds. It takes 7s now
+  (ModalBake f16e9e2, the same layout), and exccampaign.sh resumes at the
+  bake (EXC_FROM=bake); both sets baking and gating. The Lips' "click
+  trains" (open since yesterday) are one a period on Guitar (245-246
+  samples at G3): the brassy waveform's corner, as the reed's, not a fault.
+- 01:09 — **mallets trained and level-safe** (ModalBake 0576f06):
+  marimba-vel 42 of 61 notes trained (19 keep the recorded attack),
+  vibraphone-vel 42 of 42; 0 of 420 strikes over for each, fast playing
+  under the recorded attack's loudest. Gated again on tonight's core (the
+  glide): the same figures, and the grand on card-exc5 still safe (0 of
+  810). A card to try them: ModalBake/out/card-exc6 (card-exc5 with the two
+  trained mallet worlds in). Nothing on your SD card. Both firmwares built
+  at 29c66f5.
