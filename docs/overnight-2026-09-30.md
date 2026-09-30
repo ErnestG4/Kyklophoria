@@ -76,3 +76,17 @@ every velocity) before it is offered. Check-ins at :13 and :43, wrap-up at
   slip, 122), the same in a steady note at that decay. The one irregular
   case is the Mandolin muted to a fortieth (decay pot about 0.2): 78-88
   samples apart, a raucous bow on a nearly dead string — silent before.
+- 02:05 — **the hand's hammer** (f8bbad4): it was 5-25 dB under the recorded
+  attack on most worlds because its level came from predicting an impulse's
+  ring, and the hammer bounces off the string's stiffness over 5-11 ms (a
+  slow heavy one on a high note mostly rests on the string). The ring it
+  actually leaves is now checked when the contact lets go and glided to the
+  recording's. Card: -3.0 dB on average (the 0.7 trim is -3.1), spread
+  -8.4..-0.8 from -18.8..+4.3; re-strikes x1.32 the recorded peak (x1.68
+  before), fast playing x1.60 its loudest on EP-vel (x1.65 before; the gate
+  for trained worlds asks 1.5, and this was over it before tonight too).
+  The pickup worlds are still the lowest (-6 to -8): the check compares the
+  modes' displacement, you hear the pickup's output. And a flaw in tonight's
+  glide fixed with it: moving a mode's radius without rewriting its second
+  sample misread the ring's amplitude and phase under low modes.
+  Modal SRAM 96.36%.
