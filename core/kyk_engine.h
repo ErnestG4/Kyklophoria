@@ -1217,6 +1217,74 @@ public:
             rcv_ = ractive_;
             return;
         }
+        /* and the hand's hammer and pluck strike the string: nothing under the
+           note's fundamental (a soundboard's, a body's) is driven by the
+           contact, as for the bow and the winds (StartSustained). A pluck
+           draws the string until it slips, and a soft low mode gives way
+           long before the force is reached: VCSL's C5, F#5 and G#5, plucked,
+           peaked 3-6x the recording (a mode at 82 Hz under the F#5, a heavy
+           damped one at 481 under the C5) */
+        if(!trained)
+        {
+            float fn = 0.f;
+            if(world_->Res().kind != 1 && rvnote_[ractive_] != 1e9f) fn = 440.f * fastmath::Exp2((rvnote_[ractive_] - 69.f) * (1.f / 12.f));
+            else for(int k = 0; k < b.n; k++) if(std::fabs(vv.gain[k]) >= 0.2f * gmax && vv.hz[k] > 0.f && (fn == 0.f || vv.hz[k] < fn)) fn = vv.hz[k];
+            if(fn > 0.f) for(int k = 0; k < b.n; k++) if(vv.hz[k] < 0.9f * fn) rcw_[k] = 0.f;
+        }
+        /* the hand's hammer and pluck heard at the world's level: the contact
+           runs in its own units, which left them 52 and 62 dB under the
+           recorded attack on the card's worlds (Combust: "very hard to
+           hear"). Scaled by the voice's loudest mode, so they follow each
+           world's level as the recorded attack does, with the same hand-over
+           as the trained one — the ring into the contact's units now, back
+           when it lets go */
+        {
+            /* the ring a recorded strike leaves (each mode its gain times the
+               take's swing at this velocity: ResonatorVoice::Strike) against
+               the ring this contact will leave — a hammer an impulse
+               (1 + e) m_r v, each mode w J / (m w_k); a pluck the string let
+               go from its force, each mode w F / (m w_k^2) — their energies'
+               ratio the gain. Scaled by the loudest mode alone, the worlds
+               spread 50 dB (a pickup world's gains are not a struck one's) */
+            const float sw = vv.swing_hard > vv.swing_soft ? vv.swing_soft * std::pow(vv.swing_hard / vv.swing_soft, v) : vv.swing_soft * v;
+            float w2 = 0.f; for(int k = 0; k < b.n; k++) w2 += rcw_[k] * rcw_[k];
+            const float ms = w2 > 1e-12f ? kModalMass / w2 : 1.f;
+            float drive;
+            if(rexc_ == ResExciter::Hammer)
+            {
+                const float mh = 0.003f + 0.017f * rexc_mass_, vh = 0.3f * fastmath::Exp2(4.f * v);
+                drive = 1.5f * (mh * ms / (mh + ms)) * vh;                              /* J, the impulse */
+            }
+            else drive = (0.3f + 3.7f * v) * (0.5f + rexc_mass_);                       /* F, the letting-go force */
+            /* the recording's ring as it is heard: its modes come in under the
+               attack's fade, so each is its gain times the swing, decayed to
+               the middle of that fade. At the strike itself — which no one
+               hears — VCSL's long attacks (370 ms) made the pluck 3-6x the
+               recording */
+            const float heard = vv.burst_fade ? ((float)vv.burst_len - 0.5f * (float)vv.burst_fade) / (vv.burst_rate > 0.f ? vv.burst_rate : 1.f) : 0.f;
+            double er = 0.0, eh = 0.0, pr = 0.0, ph = 0.0;
+            for(int k = 0; k < b.n; k++)
+            {
+                const float wk = 6.2831853f * (vv.hz[k] > 1.f ? vv.hz[k] : 1.f);
+                const float a = rcw_[k] * drive / (kModalMass * (rexc_ == ResExciter::Hammer ? wk : wk * wk));
+                const float dk = b.lrq[k] * heard;
+                const float r = vv.gain[k] * sw * (dk < -30.f ? 0.f : std::exp(dk));
+                eh += (double)a * a; er += (double)r * r;
+                ph += std::fabs(a); pr += std::fabs(r);
+            }
+            /* and no more than keeps the ring's worst peak (every mode in
+               step) under the recorded ring's: matched by energy alone, a
+               ring whose modes line up peaked 1.96 where the recording did
+               1.12 (VCSL's G#5, plucked) */
+            const double byE = eh > 1e-30 ? std::sqrt(er / eh) : 1.0, byP = ph > 1e-30 ? pr / ph : 1.0;
+            rcg_ = (rexc_ == ResExciter::Hammer ? kHammerGain : kPluckGain) * (float)(byE < byP ? byE : byP);
+        }
+        if(rcg_ > 0.f)
+        {
+            const float inv = 1.f / rcg_;
+            for(int k = 0; k < b.n; k++) { b.y1[k] *= inv; b.y2[k] *= inv; }
+        }
+        xc = 0.f; for(int k = 0; k < b.n; k++) xc += rcw_[k] * b.y1[k];
         if(rexc_ == ResExciter::Hammer)
         {
             rham_.Init();
@@ -1233,7 +1301,7 @@ public:
             rplk_.release = (0.3f + 3.7f * v) * (0.5f + rexc_mass_);           /* the force it lets go at */
             rplk_.Start(xc);
         }
-        rcn_.Init(sr_, 1500.f + 6500.f * rexc_timbre_, 0.7f, 2e-5f * rexc_noise_);
+        rcn_.Init(sr_, 1500.f + 6500.f * rexc_timbre_, 0.7f, 2e-5f * rexc_noise_ / (rcg_ > 0.f ? rcg_ : 1.f));   /* the scrape's level as it was heard, in the contact's units */
         rcv_ = ractive_;
     }
     /* the coupled voice's block: its main modes run with the contact, its
@@ -1349,8 +1417,9 @@ public:
             rsreg_[n] = bw > 0.1f ? bh : n ? rsreg_[n - 1] : 1.f;
         }
         rbow_.Init(); rreed_.Init(); rlips_.Init();
+        rsatk_ = 0.f; rsp_[0] = 0.f; rsp_[1] = -1.f;  /* the attack from nothing; -1: the loop's first block takes its parameters as set */
         rlips_.f_lip = f1;
-        rsg_ = rexc_ == ResExciter::Bow ? 6.2831853f * f1 * 0.6f : 0.3f;
+        rsg_ = rexc_ == ResExciter::Bow ? 6.2831853f * f1 * 1.35f : 0.3f;   /* the bow 7 dB up from 0.6: it sat under the recorded attack on the card (Combust: "very hard to hear") */
         rsbeta_ = beta;
         rslim_ = 1.f;
         rsf1_ = f1;
@@ -1360,6 +1429,20 @@ public:
        the tail beside them, the pickup; the output scaled, and under a peak
        limiter of its own at 0.8 (instant down, a second back up) — a bow
        pushed past its band or a reed over-blown must not rail */
+    /* a blown note's fundamental given a head start, as a tongue gives it:
+       its modes (the note's own, within 2 % of it) a small sine from zero —
+       no step — so the fundamental leads whatever the first kick. The kick
+       alone chose the register, and a smaller one left a C3 two octaves up */
+    void SeedFundamental(ResonatorVoice& vv)
+    {
+        ResonatorBank& b = vv.bank;
+        for(int k = 0; k < b.n; k++)
+        {
+            if(vv.gain[k] == 0.f || std::fabs(vv.hz[k] / rsf1_ - 1.f) > 0.02f) continue;
+            const float a = kSustainSeed / rsg_;                     /* in the loop's units, heard at kSustainSeed */
+            b.y1[k] += a * b.swq[k];                                  /* a sin(w n) at n = 1 and 0 */
+        }
+    }
     /* the driven voice back in the output's units: its state times the
        gain it was last heard at, so the ring carries on at the level it had */
     void SustainedHandBack()
@@ -1371,6 +1454,17 @@ public:
     }
     void RunSustained(ResonatorVoice& vv, float* out, int m, const float* ext = nullptr)
     {
+        /* the attack: a breath or a bow does not arrive in a sample. Over
+           kSustainAttackMs is the attack's clock; a reed's or the lips' flow
+           arrives with a fifth of its step (below), the bow at once (a
+           pressure brought up from nothing swept the reed through its
+           balance, where the loop chattered at Nyquist; a flow scaled up
+           from nothing left the fundamental unseeded); whatever the drive is set
+           to, a block's change is spread over its samples, not stepped once
+           a block (Combust: a pop at the start of each new note, blown) */
+        rsatk_ += (float)m / (kSustainAttackMs * 0.001f * sr_);
+        if(rsatk_ > 1.f) rsatk_ = 1.f;
+        const float atk = rsatk_, inv_m = 1.f / (float)m;
         const float eg = ext ? exgain_ / rsg_ : 0.f;      /* over the scale, not the limiter: over both, the harder the limiter pulled the harder J1 pushed (5e33) */
         const float energy = c_[1] < 0.f ? 0.f : c_[1] > 1.f ? 1.f : c_[1];
         if(rexc_ == ResExciter::Bow)
@@ -1383,9 +1477,16 @@ public:
                builds for seconds (a fixed 2 N did both: louder bowing came
                out quieter). The timbre is the fraction, a light surface
                (0.009) to a pressed one (0.07) */
-            rbow_.v_bow = 0.5f * energy;                                           /* 0 to 0.5 m/s */
-            const float fmax = 2.f * (4.f * kModalMass * rsf1_) * rbow_.v_bow / ((rbow_.mu_s - rbow_.mu_d) * rsbeta_);
-            rbow_.f_n   = fmax * 0.025f * fastmath::Exp2(3.f * (rexc_timbre_ - 0.5f));
+            /* the bow arrives at once (no attack: ramped in over 8 ms the
+               Piano's C3 took a second to settle into its Helmholtz motion,
+               a slow start's other regime); only its changes are spread */
+            const float v_end = 0.5f * energy;                                     /* 0 to 0.5 m/s */
+            const float fmax = 2.f * (4.f * kModalMass * rsf1_) * v_end / ((rbow_.mu_s - rbow_.mu_d) * rsbeta_);
+            const float f_end = fmax * 0.025f * fastmath::Exp2(3.f * (rexc_timbre_ - 0.5f));
+            rbow_.v_bow = rsp_[0]; rbow_.dv = (v_end - rsp_[0]) * inv_m;
+            if(rsp_[1] < 0.f) rsp_[1] = f_end;
+            rbow_.f_n   = rsp_[1]; rbow_.df = (f_end - rsp_[1]) * inv_m;
+            rsp_[0] = v_end; rsp_[1] = f_end;
             /* a string's losses: no mode sharper than the fundamental's Q
                over sqrt(h), so the fundamental is the one the bow holds. A
                piano's are not so — a unison's second polarisation rings far
@@ -1404,6 +1505,7 @@ public:
                 }
             }
             ProcessBowed(vv.bank, out, m, rsw_, rbow_, sr_, kModalMass, nullptr, ext, eg);
+            rbow_.v_bow = v_end; rbow_.f_n = f_end;
         }
         else
         {
@@ -1421,9 +1523,26 @@ public:
             }
             if(rexc_ == ResExciter::Reed)
             {
-                rreed_.gamma = 0.2f + 0.75f * energy;                               /* speaks at about a fifth of the throw, nearly shut at the top */
-                rreed_.zeta  = 0.1f + 0.5f * rexc_timbre_;                          /* the embouchure */
+                const float g_end = 0.2f + 0.75f * energy;                          /* speaks at about a fifth of the throw, nearly shut at the top */
+                const float z_end = 0.1f + 0.5f * rexc_timbre_;                     /* the embouchure */
+                if(rsp_[1] < 0.f)
+                {
+                    /* a note's first block: the pressure and the embouchure as
+                       set, and the flow remembered at most of what it will be,
+                       so its first sample kicks the bore a fifth as hard: the
+                       whole flow at once was the pop at a new note's start, and
+                       none of it left the fundamental unseeded (a C3 two
+                       octaves up) */
+                    rsp_[0] = g_end; rsp_[1] = z_end;
+                    rreed_.gamma = g_end; rreed_.zeta = z_end;
+                    SeedFundamental(vv);
+                    float p0 = 0.f; for(int k = 0; k < vv.bank.n; k++) p0 += rsw_[k] * vv.bank.y1[k];
+                    rreed_.u_prev = (1.f - kSustainKick) * rreed_.Flow(p0);
+                }
+                rreed_.gamma = rsp_[0]; rreed_.dgamma = (g_end - rsp_[0]) * inv_m; rsp_[0] = g_end;
+                rreed_.zeta  = rsp_[1]; rreed_.dzeta = (z_end - rsp_[1]) * inv_m; rsp_[1] = z_end;
                 ProcessBlown(vv.bank, out, m, rsw_, rreed_, 10.f + 50.f * rexc_mass_, nullptr, ext, eg, true);
+                rreed_.gamma = g_end; rreed_.zeta = z_end;
             }
             else
             {
@@ -1436,10 +1555,23 @@ public:
                    lip's small bend upward */
                 const float tr = (rexc_timbre_ < 0.f ? 0.f : rexc_timbre_ > 0.999f ? 0.999f : rexc_timbre_) * 4.f;
                 const int reg = (int)tr;
-                rlips_.gamma = 0.95f * energy;
+                const float g_end = 0.95f * energy, z_end = 0.3f * atk;             /* the lip's opening scale comes in over the attack: flung open by the whole pressure at once, the lip kicked the bore within a millisecond (its register is its own tuning's, so the attack does not move it, as it did the reed's) */
+                if(rsp_[1] < 0.f)
+                {
+                    /* the first block, as the reed's: the flow remembered at
+                       most of what it opens at */
+                    rsp_[0] = g_end; rsp_[1] = z_end;
+                    SeedFundamental(vv);
+                    float p0 = 0.f; for(int k = 0; k < vv.bank.n; k++) p0 += rsw_[k] * vv.bank.y1[k];
+                    const float dp = g_end - p0, open = rlips_.h > 0.f ? rlips_.h : 0.f, r = std::sqrt(std::sqrt(dp * dp + 1e-4f));
+                    rlips_.u_prev = (1.f - kSustainKick) * (dp < 0.f ? -z_end * open * r : z_end * open * r);
+                }
+                rlips_.gamma = rsp_[0]; rlips_.dgamma = (g_end - rsp_[0]) * inv_m; rsp_[0] = g_end;
+                rlips_.zeta  = rsp_[1]; rlips_.dzeta = (z_end - rsp_[1]) * inv_m; rsp_[1] = z_end;
                 rlips_.f_lip = rsf1_ * (rsreg_[reg] - (reg ? 0.4f : 0.25f) + 0.15f * (tr - (float)reg));
                 rlips_.q     = 10.f + 10.f * rexc_mass_;
                 ProcessLipped(vv.bank, out, m, rsw_, rlips_, 30.f, sr_, ext, eg, true);
+                rlips_.gamma = g_end; rlips_.zeta = z_end;
             }
         }
         for(int k = 0; k < m; k++)
@@ -1459,8 +1591,12 @@ public:
     /* the modal mass the contact's force moves (kg): one number for every
        world until the exciter is trained per note (docs/exciters.md) */
     static constexpr float kModalMass = 0.01f;
+    static constexpr float kHammerGain = 0.7f, kPluckGain = 1.f;   /* the hand's hammer and pluck at the recorded attack's level, a voice's loudest mode each (calibrated on the card) */
     static constexpr float kVoiceBrake = 8.f;   /* a voice's peak, in its own units, past which it is reset (a struck note peaks under 1) */
-    static constexpr float kBoreQ = 30.f;       /* the sharpest resonance a reed or the lips drive (RunSustained) */
+    static constexpr float kBoreQ = 30.f;
+    static constexpr float kSustainAttackMs = 8.f;   /* a breath's or a bow's arrival (RunSustained) */
+    static constexpr float kSustainKick = 0.2f;
+    static constexpr float kSustainSeed = 0.02f;     /* the fundamental's head start at a blown note's start, heard at (SeedFundamental) */      /* the share of a reed's or the lips' flow that arrives as a step at a note's first sample (RunSustained) */       /* the sharpest resonance a reed or the lips drive (RunSustained) */
 
     /* ── pairing (kyk_stereo.h) ──────────────────────────────────────────── */
     /* Match another voice's phase and block count without rendering. */
@@ -1678,7 +1814,7 @@ private:
     int            rsdrv_ = -1;          /* the voice whose state is in the exciter's units, -1 none */
     float          rsgl_ = 1.f;          /* the gain it was last heard at (rsg_ rslim_) */
     float          rsw_[ResonatorBank::kMax];   /* its weights on that voice's modes */
-    float          rsg_ = 1.f, rslim_ = 1.f, rsf1_ = 110.f, rsbeta_ = 0.2f, rsreg_[4] = {1.f, 2.f, 3.f, 4.f}, rsq1_ = 0.f;   /* its output's scale, its limiter, the note's fundamental, the bow's place (a fraction of the string), the lips' four registers (harmonic numbers, as this voice has them), the fundamental's Q (the bow's losses) */
+    float          rsg_ = 1.f, rslim_ = 1.f, rsf1_ = 110.f, rsbeta_ = 0.2f, rsreg_[4] = {1.f, 2.f, 3.f, 4.f}, rsq1_ = 0.f, rsatk_ = 1.f, rsp_[2] = {0.f, 0.f};   /* its output's scale, its limiter, the note's fundamental, the bow's place (a fraction of the string), the lips' four registers (harmonic numbers, as this voice has them), the fundamental's Q (the bow's losses) */
     Pluck          rplk_;
     ContactNoise   rcn_;
     float          rcw_[ResonatorBank::kMax];   /* the contact's weights on the coupled voice's modes */

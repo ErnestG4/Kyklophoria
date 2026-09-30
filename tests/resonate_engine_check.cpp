@@ -1464,6 +1464,68 @@ int main()
             CHECK(dmin > 1e-3 && finite && loud < 0.81f && onnote < 2.f, "J1 into the loop: the least change %.3g of the note, loud J1 finite %d peaking %.3g, on the note %.3g", dmin, finite, loud, onnote);
             printf("  J1 into the loop: a bowed, a blown and a struck note each changed by it (at least %.2g of the note); full-scale noise into every sustained type peaks %.2f, a full-scale sine on the note at C2 and C6 %.2f\n", dmin, loud, onnote);
         }
+        /* the breath arrives: a reed or the lips started from silence kick the
+           bore a fifth as hard at their first sample (the reed, with its
+           fundamental seeded) or open over 8 ms (the lips) — their flow
+           arrived whole at once and its step kicked every mode
+           together (Combust: a pop at the start of each new note, blown).
+           The first half millisecond's peak against the note's steady level:
+           0.34-0.46 with the whole flow at once, 0.04-0.16 now */
+        {
+            float worst = 0.f;
+            for(ResExciter t : {ResExciter::Reed, ResExciter::Lips})
+                for(float hz : {123.47f, 261.63f})
+                {
+                    Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetExciterType(t);
+                    float c[4] = {0.5f, 0.7f, 0.5f, 0.5f}; e.SetPosition(c, 4); e.SetF0(hz); e.Strike(0.7f);
+                    std::vector<float> z; RunOn(e, z, 1000);
+                    float first = 0.f; for(size_t i = 0; i < 24; i++) first = std::fmax(first, std::fabs(z[i]));
+                    const double steady = rms(z, 24000, 48000);
+                    worst = std::fmax(worst, first / (float)(steady + 1e-12));
+                }
+            CHECK(worst < 0.25f, "a blown note's first half millisecond peaks at %.3g of its steady level: the flow arrived at once", worst);
+            printf("  the breath arrives: a blown note's first half millisecond peaks at %.3f of its steady level at most\n", worst);
+        }
+        /* the hand's hammer and pluck heard: within 25 dB under and 10 over the recorded
+           attack over a note's first half second (they were 52 and 62 dB
+           under: Combust, "very hard to hear"), and as safe as it — a strike
+           and a re-strike under twice its peak at every velocity, fast
+           playing under 1.5x its loudest */
+        {
+            auto half = [&](ResExciter t, float hz, float vel, float& pk1) {
+                Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4); e.SetExciterType(t); e.SetF0(hz);
+                std::vector<float> z; e.Strike(vel); RunOn(e, z, 100); e.Strike(vel); RunOn(e, z, 400);
+                pk1 = 0.f; for(float q : z) pk1 = std::fmax(pk1, std::fabs(q));
+                double a = 0; for(size_t i = 0; i < 4800; i++) a += (double)z[i] * z[i];
+                return 10.0 * std::log10(a / 4800 + 1e-20);
+            };
+            double lvmin = 99, lvmax = -99; float rs = 0.f;
+            for(ResExciter t : {ResExciter::Hammer, ResExciter::Pluck})
+                for(float hz : {130.81f, 392.f})
+                    for(float vel : {0.2f, 0.5f, 0.8f, 1.f})
+                    {
+                        float pr, ph;
+                        const double lr = half(ResExciter::Recorded, hz, vel, pr), lh = half(t, hz, vel, ph);
+                        if(vel == 0.5f) { lvmin = std::fmin(lvmin, lh - lr); lvmax = std::fmax(lvmax, lh - lr); }
+                        rs = std::fmax(rs, ph / (pr + 1e-12f));
+                    }
+            uint32_t rng = 99u;
+            auto rnd = [&]() { rng = rng * 1664525u + 1013904223u; return (float)(rng >> 8) / 16777216.f; };
+            float loud[3] = {0.f, 0.f, 0.f};
+            const ResExciter types[3] = {ResExciter::Recorded, ResExciter::Hammer, ResExciter::Pluck};
+            for(int q = 0; q < 3; q++)
+            {
+                rng = 99u;
+                Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetPolyphony(4); e.SetExciterType(types[q]);
+                std::vector<float> z;
+                for(int s = 0; s < 150; s++) { e.SetF0(440.f * std::exp2((36.f + 48.f * rnd() - 69.f) / 12.f)); e.Strike(rnd()); z.clear(); RunOn(e, z, 5 + (int)(35.f * rnd())); for(float v : z) loud[q] = std::fmax(loud[q], std::fabs(v)); }
+            }
+            CHECK(lvmin > -25.0 && lvmax < 10.0 && rs < 2.f && loud[1] < 1.5f * loud[0] && loud[2] < 1.5f * loud[0],
+                  "the hand's hammer and pluck: %+.1f to %+.1f dB of the recorded attack, strikes to x%.2f its peak, fast playing %.2f and %.2f against its %.2f",
+                  lvmin, lvmax, rs, loud[1], loud[2], loud[0]);
+            printf("  the hand's hammer and pluck: %+.1f to %+.1f dB of the recorded attack; strikes and re-strikes to x%.2f its peak; fast playing %.2f and %.2f against its %.2f\n",
+                   lvmin, lvmax, rs, loud[1], loud[2], loud[0]);
+        }
         /* fast playing: four voices, a strike every 5-40 ms at random notes,
            the energy and the shape moving, each type — the newest note takes
            the exciter and the one before rings free. Bounded as the trained

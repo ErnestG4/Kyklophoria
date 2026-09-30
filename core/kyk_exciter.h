@@ -66,11 +66,12 @@ struct ContactNoise
 struct Bow
 {
     float v_bow;      /* the bow's velocity, m/s */
+    float dv, df;     /* what v_bow and f_n move by each sample: a block's change spread over its samples (0: they hold) */
     float f_n;        /* its pressure on the string, N */
     float mu_s, mu_d, v0, eps;
     float xc_prev;    /* the contact's displacement a sample ago */
 
-    void Init() { v_bow = 0.f; f_n = 0.f; mu_s = 0.8f; mu_d = 0.3f; v0 = 0.1f; eps = 1e-3f; xc_prev = 0.f; }
+    void Init() { v_bow = 0.f; f_n = 0.f; dv = df = 0.f; mu_s = 0.8f; mu_d = 0.3f; v0 = 0.1f; eps = 1e-3f; xc_prev = 0.f; }
     float Mu(float v) const
     {
         const float a = v < 0.f ? -v : v;
@@ -90,6 +91,7 @@ inline void ProcessBowed(ResonatorBank& b, float* out, int frames, const float* 
     for(int s = 0; s < frames; s++)
     {
         const float e = ext ? eg * ext[s] : 0.f;             /* an outside force at the contact (J1), in the loop's own units */
+        bow.v_bow += bow.dv; bow.f_n += bow.df;
         float xc = 0.f;
         for(int k = 0; k < b.n; k++) xc += w[k] * b.y1[k];
         const float vc = (xc - bow.xc_prev) * sr;
@@ -198,8 +200,9 @@ inline bool ProcessStruck(ResonatorBank& b, float* out, int frames, const float*
 struct Reed
 {
     float gamma, zeta;
+    float dgamma, dzeta;   /* what gamma and zeta move by each sample (0: they hold) */
     float u_prev;
-    void Init() { gamma = 0.f; zeta = 0.3f; u_prev = 0.f; }
+    void Init() { gamma = 0.f; zeta = 0.3f; dgamma = dzeta = 0.f; u_prev = 0.f; }
     float Flow(float p) const
     {
         /* the pressure it feels saturated at 4 closing pressures: the
@@ -275,11 +278,12 @@ inline bool ProcessPlucked(ResonatorBank& b, float* out, int frames, const float
 struct Lips
 {
     float gamma, zeta;       /* mouth pressure over the closing pressure, the lip's opening scale */
+    float dgamma, dzeta;     /* what gamma and zeta move by each sample (0: they hold) */
     float f_lip, q;          /* the lip's own frequency, Hz, and quality */
     float h0;                /* its opening at rest */
     float h, hv;             /* its opening and the opening's velocity */
     float u_prev;
-    void Init() { gamma = 0.f; zeta = 0.3f; f_lip = 200.f; q = 3.f; h0 = 0.1f; h = h0; hv = 0.f; u_prev = 0.f; }
+    void Init() { gamma = 0.f; zeta = 0.3f; dgamma = dzeta = 0.f; f_lip = 200.f; q = 3.f; h0 = 0.1f; h = h0; hv = 0.f; u_prev = 0.f; }
     /* one sample: the lip moved by the pressure across it, then the flow */
     float Step(float p, float sr)
     {
@@ -310,6 +314,7 @@ inline void ProcessLipped(ResonatorBank& b, float* out, int frames, const float*
     for(int s = 0; s < frames; s++)
     {
         const float e = ext ? eg * ext[s] : 0.f;             /* an outside force at the contact (J1), in the loop's own units */
+        l.gamma += l.dgamma; l.zeta += l.dzeta;
         float p = 0.f;
         for(int k = 0; k < b.n; k++) p += w[k] * b.y1[k];
         const float u = l.Step(p, sr);
@@ -346,6 +351,7 @@ inline void ProcessBlown(ResonatorBank& b, float* out, int frames, const float* 
     for(int s = 0; s < frames; s++)
     {
         const float e = ext ? eg * ext[s] : 0.f;             /* an outside force at the contact (J1), in the loop's own units */
+        r.gamma += r.dgamma; r.zeta += r.dzeta;
         float p = 0.f;
         for(int k = 0; k < b.n; k++) p += w[k] * b.y1[k];
         const float u = r.Flow(p);
