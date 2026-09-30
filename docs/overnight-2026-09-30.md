@@ -62,3 +62,17 @@ every velocity) before it is offered. Check-ins at :13 and :43, wrap-up at
   810). A card to try them: ModalBake/out/card-exc6 (card-exc5 with the two
   trained mallet worlds in). Nothing on your SD card. Both firmwares built
   at 29c66f5.
+- 01:34 — **the bow** (672e424), found chasing the P5 crackle under a bow:
+  its output carried the string's static deflection (+0.05 to +0.18 of
+  full scale, a DC offset on the module's output), and on any string lossier
+  than about Q 120 — every pizzicato world, the Guitar, the Iowa C2 — the bow
+  slid without a sound and the deflection was all there was. Letting go
+  swung it back at once: x326 to x16000 the note's own sample step at a lift
+  (a thump; likely some of the bowed pops). Now a DC blocker a voice, and
+  a force at least 1.5x the least that starts the string: 169 of 169
+  bowed notes sound (135 before), 162 in tune (130), every lift under
+  x1.06. What a P5 turn still counts under a bow is the bowed waveform:
+  one corner a period (Viola, Guitar: 245 samples at G3) or two (a double
+  slip, 122), the same in a steady note at that decay. The one irregular
+  case is the Mandolin muted to a fortieth (decay pot about 0.2): 78-88
+  samples apart, a raucous bow on a nearly dead string — silent before.
