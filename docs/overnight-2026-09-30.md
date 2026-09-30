@@ -92,3 +92,13 @@ every velocity) before it is offered. Check-ins at :13 and :43, wrap-up at
   Modal SRAM 96.36%.
 - 02:06 — the pluck steady across its stiffness now too (timbre 1: -2.4, -0.7, -3.8 dB on the tine, the grand, the guitar; -14, -10, -17 before). bells-vel campaign started (the one other set with fits and a card world).
 - 02:08 — the sustained exciters' level against each world's (reed-vel reed/lips -14 dB, the pianos +7..+10): not the world's displacement scale (no correlation over 24 worlds), so no change; a per-note level check like the hammer's is possible and is left for your ears.
+- 02:10 — Salamander's load, what the desktop can rule out: the same 48
+  modes and 88 points as the Iowa grand, the same strikes built in the
+  callback (4 of 400, every world alike), no point lookup walking the blob
+  (kMaxPoints 128), and its borrowed attacks (version 8) take the same path
+  as recorded ones. Its attacks do stay active longer (8.7 slots a block
+  against 5.1), a few microseconds a block. The module's CPU line is what
+  is left: avg, max, engine, strike, At/s, staged/s, hurried/s while it
+  overruns, and the same on the Iowa grand. A safety sweep of tonight's
+  core (every world, all seven exciters, a staged random roll with swells
+  and lifts): finite throughout, nothing past the limiter, as before.
