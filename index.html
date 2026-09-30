@@ -295,9 +295,9 @@
       <div class="plane"><span class="cap">PITCH</span><span id="lockChips"></span><span id="pitchNote" class="note"></span></div>
       <div class="plane"><span class="cap">STRIKE</span><span id="strikeChips"></span></div>
       <div class="plane"><span class="cap">BODY</span><span id="bodyChips"></span></div>
-      <div class="plane"><span class="cap">RING</span><span id="ringChips"></span></div>
-      <div class="plane"><span class="cap">VOICES</span><span id="voiceChips"></span></div>
-      <div class="plane"><span class="cap">EXCITER</span><span id="exciterNote" class="note"></span></div>
+      <div class="plane" id="ringPlane"><span class="cap">RING</span><span id="ringChips"></span></div>
+      <div class="plane" id="voicePlane"><span class="cap">VOICES</span><span id="voiceChips"></span></div>
+      <div class="plane" id="exciterPlane"><span class="cap">EXCITER</span><span id="exciterNote" class="note"></span></div>
     </div>
   </div>
   <div class="brow"><span id="modelHint"></span></div>
@@ -1463,6 +1463,16 @@ function positionSlider(a, label, title, steps) {
 let modelSig = '', readSig = '';
 function renderModelChips() {
   const r = reso, live = !!(tel && tel.resonate);
+  /* Bongs with its panel on the page: every pot is a row below, so a plane
+     that repeats one (the lock, the trigger velocity, dig in, the morph,
+     decay and coil, the voices and the release, the exciter) is left out
+     rather than drawn twice — two hands on one setting, one of them an
+     action the pot never hears of, so the pot and the page disagreed until
+     it was next turned. What stays is what no pot has: the pads, the pad
+     velocity, and which instrument of a family is sounding */
+  const bongs = !!potCtl;
+  for (const a in axisSliders) delete axisSliders[a];
+  for (const id of ['ringPlane', 'voicePlane', 'exciterPlane']) $(id).hidden = bongs;
   /* what the module says, when it says something new: a pot on the module
      or a button moves these too, and the readout is how the page hears of
      it. Taken only when the readout changes, so the page's own record of
@@ -1501,10 +1511,13 @@ function renderModelChips() {
   /* pitch: the lock, and what the pitch is against what is built */
   {
     const box = $('lockChips'); box.innerHTML = '';
+    if (bongs) { if (live) box.appendChild(dimText(lock ? 'locked' : 'free', '0')); }
+    else {
     const set = async on => { if (await act(MVL.ACT.pitchLock, [on ? 1 : 0], 'pitch lock')) { lock = on; renderModelChips(); } };
     box.appendChild(chip('locked', lock, 'the semitone nearest the pitch, taken at the strike; a ring keeps its note', () => set(true)));
     box.appendChild(chip('free', !lock, 'the ring follows the pitch by the cent: a bend', () => set(false)));
     for (const b of box.children) b.disabled = !link || !live;
+    }
   }
   /* strike: three pads, and one at the slider */
   {
@@ -1517,6 +1530,7 @@ function renderModelChips() {
     s.oninput = () => { vel = s.value | 0; };
     const pad = chip('strike', false, 'strike at the pad velocity', () => strikeAt(vel)); pad.classList.add('pad'); pad.disabled = !link || !live;
     box.appendChild(lab); box.appendChild(s); box.appendChild(pad);
+    if (!bongs) {
     /* axis 1: what J4's trigger and a note jump strike at. The page never
        showed it, so the velocity slider above looked like the strike's
        velocity and did nothing to a sequencer's (Combust: "strike VEL on the
@@ -1529,6 +1543,7 @@ function renderModelChips() {
     t.disabled = !link || !live;
     t.oninput = () => { velTrack = t.value | 0; act(MVL.ACT.velTrack, [velTrack], 'track'); };
     box.appendChild(tlab); box.appendChild(t);
+    }
   }
   /* body: the instrument of a family, the row of bodies, or the voicing */
   {
@@ -1543,7 +1558,7 @@ function renderModelChips() {
       }
       /* the morph: between two instruments of one kind, both, blended —
          what the module says it is doing, not what was last clicked */
-      if (r.morph != null) {
+      if (r.morph != null && !bongs) {
         const m = chip('morph', r.morph, r.morph ? 'the body axis morphs between the instruments (two of one kind: a pickup piano beside a plain one still switches) — click to switch instead'
                                                  : 'the body axis switches at the midpoint — click to morph between the instruments instead',
                        () => act(MVL.ACT.memberMorph, [r.morph ? 0 : 1], 'morph'));
@@ -1590,6 +1605,7 @@ function renderModelChips() {
     : 'on the module: J1 in, the Stereo page\'s sixth pot';
   $('modelHint').textContent = !link ? 'connect to a module or the bridge'
     : !live ? 'no resonator is playing — pick one above, or load a .kykm from the card'
+    : bongs ? 'the rows below are the panel, page by page: a slider moves the pot, a pot turned on the module moves its slider  ·  J4 trigger, B2 taps a strike or holds a gate, B3 flips the lock'
     : moduleOwns() ? 'Play P3–P6 plus J5–J8 are body · velocity · decay · coil, straight: the Rotate page leaves a resonator alone, an orbit or Kepler you run moves them  ·  J4 trigger, B2 taps a strike, B3 flips the lock  ·  World P3 voices · Stereo P6 exciter'
     : 'over the bridge the pitch is the drawer\'s f0 or a press on the axis; the axes are the drawer\'s too';
 }

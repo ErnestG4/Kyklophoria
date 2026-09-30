@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'fwName fwMode panelRows pageLinks pageSwitch morphCap tourRow axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
+const IDS = 'fwName fwMode panelRows pageLinks pageSwitch morphCap tourRow axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote ringPlane voicePlane exciterPlane modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -1259,6 +1259,26 @@ const parsed = P.parsePanel(DESC);
     P.drawModel();
     const vals = inputs().map(s => +s.value);
     T(vals.length === 4 && vals.join() === '100,200,800,900', `the four axis sliders follow the knobs over serial ${withPanel ? 'with' : 'without'} the panel descriptor (${vals.join()})`);
+  }
+  /* Bongs with its panel rows: a plane that repeats a pot is left out, so
+     the page has one hand on each setting — the pads, the pad velocity and
+     the family's members stay, the lock is a readout */
+  {
+    P.setLink({ kind: 'serial', request: async () => new Uint8Array([0]) });
+    P.setPanel(parsed); P.setFwMode('modal'); P.renderPanelRows();
+    P.setReso({ ...fam, morph: false }); P.setTel(tel({ ...RES, f0: 130.8 }));
+    P.renderModelChips();
+    const f = [];
+    if (!(els.ringPlane.hidden && els.voicePlane.hidden && els.exciterPlane.hidden)) f.push('ring, voices or exciter still drawn');
+    if (els.lockChips.children.some(c => c.tagName === 'button') || !/free|locked/.test(els.lockChips.children.map(c => c.textContent).join())) f.push('the lock is not a readout');
+    if (els.strikeChips.children.filter(c => c.tagName === 'button').length !== 4) f.push('the pads went');
+    if (els.strikeChips.children.filter(c => c.tagName === 'input').length !== 1) f.push('trigger vel or dig in still drawn beside the pad velocity');
+    if (els.bodyChips.children.length !== 3) f.push(`the body is ${els.bodyChips.children.length} things, not the three members without the morph`);
+    if (!/rows below/.test(els.modelHint.textContent)) f.push('the hint does not point at the rows');
+    /* and the page for both keeps every plane */
+    P.setFwMode('both'); P.renderPanelRows(); P.renderModelChips();
+    if (els.ringPlane.hidden || els.voicePlane.hidden || els.exciterPlane.hidden) f.push('a plane stayed hidden off Bongs');
+    T(!f.length, `on Bongs the planes that repeat a pot stand down${f.length ? ' — ' + f.join('; ') : ''}`);
   }
   P.setView('play'); P.setLink(null); P.setPanel(null); P.setTel(null);
 }
