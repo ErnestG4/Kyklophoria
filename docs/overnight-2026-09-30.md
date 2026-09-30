@@ -106,3 +106,4 @@ every velocity) before it is offered. Check-ins at :13 and :43, wrap-up at
 - 02:11 — EP-vel's hammer under fast playing (1.60x the recorded loudest, 1.65 before tonight): its loudest is during a contact on a high note at full velocity, before the ring can be checked, at the predicted level. Capping the contact would distort the attack; left documented, the output limiter holds it.
 - 02:13 — bells-vel trained and level-safe (ModalBake 687d3f4): 34 of 37 notes, 0 of 340 over, fast playing 3.78 against 4.15. In card-exc6 beside the mallets.
 - 02:16 — check-in. Since the last: bells-vel trained and level-safe (ModalBake 687d3f4), in card-exc6. Mallets finished (01:07). Nothing running; what is left on the list waits for Combust (Salamander's CPU line, the sustained exciters' level by ear, the wavetable backports).
+- 02:46 — check-in. Nothing new since 02:16; nothing running. The list waits on Combust.
