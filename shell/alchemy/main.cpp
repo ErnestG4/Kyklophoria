@@ -889,13 +889,10 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
                energy alone as it always did; B2 held and the page's pad held
                are gates too, and own it the same ten seconds — they owned it
                only while held, so letting go gave the gate straight back to
-               open and the bow played on. Once open again a note let go of
-               stays lifted until the next strike (EngineCore::SetGate) */
-            static uint32_t quiet = 0xFFFFFFFFu;
-            const bool held = armed || gB2Held || gWebGate;
-            if(held) quiet = 0u; else if(quiet < 0xFFFFFFFFu) quiet++;
-            const bool owned = quiet < (uint32_t)(10.f * 48000.f / (float)size);   /* ten seconds of blocks */
-            gEng.SetGate(!owned || held);
+               open and the bow played on. When the hold lapses the note is
+               lifted until the next strike (GateOwner) */
+            static GateOwner gate;
+            gate.Step(gEng, armed || gB2Held || gWebGate, (uint32_t)(10.f * 48000.f / (float)size));   /* ten seconds of blocks */
         }
         else gEng.SetGate(true);
     }

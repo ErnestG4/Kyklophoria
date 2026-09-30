@@ -150,3 +150,10 @@ three own it for the ten seconds, and a note whose gate has shut stays
 lifted until the next strike, so the fallback to open ten seconds later
 does not put the bow back on it. The page's strike pads are gates while
 held, as the axis is (pressed: gate open and strike; let go: shut).
+
+And after that (30 September): "it starts blowing etc after a short bit of
+inactivity". A note struck while the gate was shut was never lifted: a J4
+trigger shorter than the strike's wait for its pitch, or a note jump. When
+the ten seconds lapsed, the gate fell open and woke it. Now the lapse
+itself lifts the note (`GateOwner` in `core/kyk_engine.h`, which the
+firmware and the suite share).

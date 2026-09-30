@@ -1504,6 +1504,41 @@ int main()
             CHECK(silent && falls && stays && again && jump < 1.5f, "the gate: shut at the strike silent %d, shut it rings down %d, opened with no strike rings on down %d, struck plays %d, a jump at its edge x%.2f", silent, falls, stays, again, jump);
             printf("  the gate: shut at the strike, silent; shut after, the note rings down free, and opened again rings on down until struck; at its edges no jump over x%.2f (shutting: the 20 ms before; opening: the note's own playing)\n", jump);
         }
+        /* the gate's owner on the module (GateOwner): held, it owns the
+           articulation for a while after; when that lapses the gate falls
+           open, and nothing it finds may start playing — a note let go of,
+           or one struck while the gate was shut (a J4 trigger shorter than
+           the strike's wait for its pitch, a note jump). Combust: "it starts
+           blowing etc after a short bit of inactivity". Nothing ever gating,
+           energy alone plays. The hold here is 200 blocks of 48 */
+        {
+            const uint32_t own = 200;
+            bool letgo = true, shutstruck = true, nogate = true;
+            for(ResExciter t : {ResExciter::Bow, ResExciter::Reed, ResExciter::Lips})
+            {
+                auto run = [&](int scene) {
+                    Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetExciterType(t);
+                    float c[4] = {0.5f, 0.7f, 0.5f, 0.5f}; e.SetPosition(c, 4); e.SetF0(130.81f);
+                    GateOwner g; std::vector<float> z, y(48);
+                    for(int b = 0; b < 600; b++)
+                    {
+                        const bool held = scene != 2 && b < 50;
+                        g.Step(e, held, own);
+                        if(b == 0) e.Strike(0.7f);
+                        if(scene == 1 && b == 100) { e.SetF0(146.83f); e.Strike(0.7f); }   /* a note jump, the gate shut */
+                        e.Process(y.data(), 48); z.insert(z.end(), y.begin(), y.end());
+                    }
+                    return z;
+                };
+                const std::vector<float> a0 = run(0), a1 = run(1), a2 = run(2);
+                /* after the lapse (block 250: 50 held + 200) against just before it */
+                letgo = letgo && rms(a0, 560 * 48, 600 * 48) < 0.9 * rms(a0, 230 * 48, 250 * 48);
+                shutstruck = shutstruck && rms(a1, 560 * 48, 600 * 48) < 0.9 * rms(a1, 230 * 48, 250 * 48) + 1e-6;
+                nogate = nogate && rms(a2, 560 * 48, 600 * 48) > 1e-3;
+            }
+            CHECK(letgo && shutstruck && nogate, "the gate's hold lapsing: a note let go of stays down %d, one struck under the shut gate stays down %d, nothing gating plays %d", letgo, shutstruck, nogate);
+            printf("  the gate's hold lapsing: a note let go of, and one struck while the gate was shut, stay down when the gate falls open; with nothing gating, energy plays\n");
+        }
         /* the lips on a world with few harmonics (the tine fixture: three modes,
            the fundamental the only harmonic): every register falls back to the
            1st, and the lip is tuned for the 1st, so it speaks — tuned as the

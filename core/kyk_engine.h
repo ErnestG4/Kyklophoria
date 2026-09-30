@@ -332,6 +332,9 @@ public:
        gate open again had put the bow back on a note let go of ten seconds
        before. Every gate that opens strikes (J4's edge, B2, the page's pad) */
     void SetGate(bool open) { if(rgate_ && !open) rlifted_ = true; rgate_ = open; }
+    /* the note playing rings free until the next strike, whatever the gate
+       does meanwhile (GateOwner, when a gate's hold on it lapses) */
+    void Lift() { rlifted_ = true; }
     bool Gate() const { return rgate_; }
     void SetPitchLock(bool on) { if(pitch_lock_ != on) { pitch_lock_ = on; if(rcap_) rvnote_[ractive_] = 1e9f; } }   /* re-read: locked, the nearest semitone; free, the cent */
     void SetVelocityTrack(float amount) { vtrack_ = amount; }   /* 0..1: how much harder the strike gets with fast playing (0.5 of velocity at full, at six strikes a second) */
@@ -1920,6 +1923,28 @@ public:
     Engine& operator=(const Engine& o) { if(this != &o) { EngineCore::operator=(o); own_ = o.own_; LendVoices(&own_, false); } return *this; }
 private:
     ResonatorVoices own_;
+};
+
+/* who holds a sustained exciter's gate on the module: J4 held high, B2 held,
+ * the page's pad held. A gate owns the articulation for `own` blocks after it
+ * was last held; with nothing gating, the gate stays open and energy alone
+ * plays, as it did before there were gates. When the hold lapses the note
+ * playing is lifted: it was let go of, or struck while the gate was shut — a
+ * J4 trigger shorter than the strike's wait for its pitch, a note jump — and
+ * the gate falling open woke it (Combust: "it starts blowing etc after a
+ * short bit of inactivity"). A template so the shell's stereo pair and the
+ * suite's single engine both take it. */
+struct GateOwner
+{
+    uint32_t quiet = 0xFFFFFFFFu;       /* blocks since a gate was held */
+    template <class E>
+    void Step(E& eng, bool held, uint32_t own)
+    {
+        if(held) quiet = 0u;
+        else if(quiet < 0xFFFFFFFFu) quiet++;
+        if(quiet == own) eng.Lift();    /* the block the hold lapses */
+        eng.SetGate(quiet >= own || held);
+    }
 };
 
 } // namespace kyk
