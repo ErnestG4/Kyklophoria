@@ -1265,15 +1265,17 @@ struct Pickup
                 const float t = xfade_n / xfade_len;
                 y = yo + t * (y - yo);
                 xfade_n += 1.f;
-                if(pend && !(xfade_n < xfade_len))
-                {
-                    /* landed: the coil waiting is crossed into next, from the one just arrived at */
-                    ob0 = b0; ob1 = b1; ob2 = b2; oa1 = a1; oa2 = a2; oz1 = z1; oz2 = z2;
-                    b0 = pb0; b1 = pb1; b2 = pb2; a1 = pa1; a2 = pa2; z1 = z2 = 0.f;
-                    xfade_n = 0.f; pend = false;
-                }
             }
             io[k] = K * y;
+        }
+        /* landed: the coil waiting is crossed into next, from the one just
+           arrived at — here and not in the loop above, which stays as it was
+           (a block late at most) */
+        if(pend && !(xfade_n < xfade_len))
+        {
+            ob0 = b0; ob1 = b1; ob2 = b2; oa1 = a1; oa2 = a2; oz1 = z1; oz2 = z2;
+            b0 = pb0; b1 = pb1; b2 = pb2; a1 = pa1; a2 = pa2; z1 = z2 = 0.f;
+            xfade_n = 0.f; pend = false;
         }
     }
 };
