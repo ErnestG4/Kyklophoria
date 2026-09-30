@@ -102,6 +102,15 @@ As the table above, with the Resonator page's name. Details:
   count, so the old eight-page slots read as empty instead of loading into
   the wrong pots.
 
+The page (29 September, later): with the panel rows showing, the play tab's
+planes that repeated a pot are gone — the lock's chips (now a readout),
+trigger velocity, dig in, the morph chip, decay and coil, voices, release,
+and the exciter note. Two hands on one setting disagreed: the chips sent
+actions the pot never heard of, so the pot and the page differed until the
+pot was next turned. Left: the axis pad, the strike pads and their velocity,
+the family's members (a readout of which one sounds), the instruments and
+the card. The page for both firmwares and the bridge keep every plane.
+
 ## Backport to Kyklophoria (the wavetable firmware)
 
 Kept as the Bongs work goes:
