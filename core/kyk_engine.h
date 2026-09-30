@@ -1191,7 +1191,7 @@ public:
         }
         b.quiet = false;
         const float v = vel < 0.f ? 0.f : vel > 1.f ? 1.f : vel;
-        rcg_ = 1.f;
+        rcg_ = 1.f; rcer_ = rcpr_ = 0.f;
         if(trained)
         {
             /* the point's hammer, the page's shape as offsets around it (the
@@ -1285,7 +1285,7 @@ public:
                hears — VCSL's long attacks (370 ms) made the pluck 3-6x the
                recording */
             const float heard = vv.burst_fade ? ((float)vv.burst_len - 0.5f * (float)vv.burst_fade) / (vv.burst_rate > 0.f ? vv.burst_rate : 1.f) : 0.f;
-            double er = 0.0, eh = 0.0, pr = 0.0, ph = 0.0;
+            double er = 0.0, eh = 0.0, pr = 0.0, ph = 0.0, erw = 0.0;
             for(int k = 0; k < b.n; k++)
             {
                 const float wk = 6.2831853f * (vv.hz[k] > 1.f ? vv.hz[k] : 1.f);
@@ -1294,6 +1294,7 @@ public:
                 const float r = vv.gain[k] * sw * (dk < -30.f ? 0.f : std::exp(dk));
                 eh += (double)a * a; er += (double)r * r;
                 ph += std::fabs(a); pr += std::fabs(r);
+                erw += (double)r * r * RingWeight(b.lrq[k]);
             }
             /* and no more than keeps the ring's worst peak (every mode in
                step) under the recorded ring's: matched by energy alone, a
@@ -1301,6 +1302,8 @@ public:
                1.12 (VCSL's G#5, plucked) */
             const double byE = eh > 1e-30 ? std::sqrt(er / eh) : 1.0, byP = ph > 1e-30 ? pr / ph : 1.0;
             rcg_ = (rexc_ == ResExciter::Hammer ? kHammerGain : kPluckGain) * (float)(byE < byP ? byE : byP);
+            rcer_ = (float)erw; rcpr_ = (float)pr;      /* the recorded ring, for the level check when the contact lets go */
+            rcheard_ = heard; rcel_ = 0.f;
         }
         if(rcg_ > 0.f)
         {
@@ -1327,6 +1330,15 @@ public:
         rcn_.Init(sr_, 1500.f + 6500.f * rexc_timbre_, 0.7f, 2e-5f * rexc_noise_ / (rcg_ > 0.f ? rcg_ : 1.f));   /* the scrape's level as it was heard, in the contact's units */
         rcv_ = ractive_;
     }
+    /* what a mode of this decay (log r a sample) gives over the time it
+       rings, a unit amplitude: the sum of r^2n, 1 / (1 - r^2), held to half
+       a second — the time a note's loudness is heard over */
+    float RingWeight(float lrq) const
+    {
+        const float d = -2.f * lrq;
+        const float cap = 0.5f * sr_;
+        return d > 1.f / cap ? 1.f / d : cap;
+    }
     /* the coupled voice's block: its main modes run with the contact, its
        tail beside them, then the pickup, the old attack still fading and the
        wash as Process has them. False when the contact has ended: the voice
@@ -1344,6 +1356,7 @@ public:
         const bool on = rexc_ != ResExciter::Pluck
             ? ProcessStruck(vv.bank, out, m, rcw_, rham_, sr_, kModalMass, cn, ext, eg)
             : ProcessPlucked(vv.bank, out, m, rcw_, rplk_, sr_, kModalMass, cn, ext, eg);
+        rcel_ += (float)m;
         /* the trained level: the contact runs in the hammer's own units and
            the voice is heard at the level it was trained to (the voice's
            today at that velocity) — the output scaled now, and the ring by
@@ -1352,6 +1365,48 @@ public:
         {
             for(int k = 0; k < m; k++) out[k] *= rcg_;
             if(!on) { for(int k = 0; k < vv.bank.n; k++) { vv.bank.y1[k] *= rcg_; vv.bank.y2[k] *= rcg_; } rcg_ = 1.f; }
+        }
+        /* the hand's hammer and pluck, at the level they were predicted to
+           ring at — and checked, now the contact has let go and the ring is
+           linear: what it actually left, each mode's amplitude from its two
+           samples, against the recorded ring (by energy, and no more than
+           keeps the worst peak under the recording's, as the prediction was
+           held), and any difference glided out over 3 ms. The prediction is
+           an impulse, and the hammer is not one: it bounces off the string's
+           stiffness over 5-11 ms, the length of the note's own period, and
+           a slow heavy one on a high note mostly rests on the string — the
+           ring it left was +11 to -56 dB of the impulse's, and the hammer
+           5 to 25 dB under the recording (Combust: "very hard to hear") */
+        /* by the energy each mode gives over the time it rings (RingWeight),
+           not the energy at the instant: the hammer's is in the higher modes,
+           which are gone in a tenth of a second, the recording's in the
+           fundamental — matched at the instant, the tine's C3 hammered hard
+           rang 14 dB under the recording all the same */
+        if(!on && rcer_ > 0.f)
+        {
+            ResonatorBank& b = vv.bank;
+            double ea = 0.0, pa = 0.0;
+            for(int k = 0; k < b.n; k++)
+            {
+                if(!(b.c2[k] < 0.f)) continue;
+                const float r = b.rq[k], cw = b.cwq[k], sw = b.swq[k] > 1e-6f ? b.swq[k] : 1e-6f;
+                const float y1 = b.y1[k], ry2 = r * b.y2[k];
+                float a2 = (y1 * y1 + ry2 * ry2 - 2.f * y1 * ry2 * cw) / (sw * sw);
+                /* carried to the moment the recording's ring is taken at (the
+                   middle of its attack's fade), from now, a few ms in */
+                float dk = 2.f * b.lrq[k] * (rcheard_ - rcel_);
+                dk = dk < -60.f ? -60.f : dk > 60.f ? 60.f : dk;
+                a2 = (a2 > 0.f ? a2 : 0.f) * std::exp(dk);
+                ea += a2 * RingWeight(b.lrq[k]); pa += std::sqrt(a2);
+            }
+            if(ea > 1e-30 && pa > 1e-30)
+            {
+                const double byE = std::sqrt((double)rcer_ / ea), byP = (double)rcpr_ / pa;
+                float t = (rexc_ == ResExciter::Hammer ? kHammerGain : kPluckGain) * (float)(byE < byP ? byE : byP);
+                t = t < 0.1f ? 0.1f : t > 30.f ? 30.f : t;                      /* 20 dB down, 30 dB up at most */
+                if(std::fabs(t - 1.f) > 0.02f) b.GlideBy(t, (int)(0.003f * sr_));
+            }
+            rcer_ = 0.f;
         }
         vv.bank.ProcessTail(out, m);
         vv.pickup.Process(out, m);
@@ -1914,6 +1969,8 @@ private:
     float          rexc_timbre_ = 0.5f, rexc_pos_ = 0.5f, rexc_noise_ = 0.5f, rexc_mass_ = 0.5f;   /* the centre of each: a trained exciter as trained */
     int            rcv_ = -1;            /* the voice a coupled contact is driving, -1 none */
     float          rcg_ = 1.f;           /* the trained level the coupled voice is heard at, applied to its ring when the contact lets go */
+    float          rcer_ = 0.f, rcpr_ = 0.f;   /* the hand exciters' recorded ring, energy and summed amplitude, checked against the ring the contact leaves */
+    float          rcheard_ = 0.f, rcel_ = 0.f;   /* when the recorded ring is taken (samples after the strike), and the samples the contact has run */
     Hammer         rham_;
     Bow            rbow_;
     Reed           rreed_;

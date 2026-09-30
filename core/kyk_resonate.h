@@ -334,7 +334,7 @@ struct ResonatorBank
         {
             /* the pole as built, not a glide's: a glide's may sit over 1 */
             const bool gl = glide_left > 0 && glq[i] != 0.f && c2[i] < 0.f;
-            if(any) { cc1[m] = gl ? 2.f * rq[i] * cwq[i] : c1[i]; cc2[m] = gl ? -rq[i] * rq[i] : c2[i]; cy1[m] = y1[i]; cy2[m] = y2[i]; m++; }
+            if(any) { cc1[m] = gl ? 2.f * rq[i] * cwq[i] : c1[i]; cc2[m] = gl ? -rq[i] * rq[i] : c2[i]; cy1[m] = y1[i]; cy2[m] = gl ? y2[i] * fastmath::Exp2(glq[i]) : y2[i]; m++; }
             y1[i] = y2[i] = 0.f;
         }
         if(glide_left > 0) { glide_left = 1; GlideTick(1); }
@@ -394,6 +394,44 @@ struct ResonatorBank
         for(int i = 0; i < kMax; i++) glq[i] = 0.f;
         glide_left = 0;
     }
+    /* every mode brought by `ratio` (a level, not a log) over `len`
+       samples, through the poles as the carry's glide is, what a glide under
+       way still had to go carried in: the hand's hammer set to its level
+       once the contact has shown what it left (Engine::RunCoupled) */
+    void GlideBy(float ratio, int len)
+    {
+        if(!(ratio > 0.f) || len < 1) return;
+        const float l2 = fastmath::Log2(ratio);
+        /* a strike bank sitting out its lead does not run under the poles:
+           it takes the level now, as the carry has it */
+        for(int q = 0; q < kStrikes; q++) if(InLead(q)) for(int i = 0; i < n; i++) { s1[q][i] *= ratio; s2[q][i] *= ratio; }
+        for(int i = 0; i < n; i++)
+        {
+            if(!(c2[i] < 0.f)) continue;
+            const float was = glide_left > 0 ? glq[i] : 0.f;
+            glq[i] = (l2 + was * (float)(glide_left > 0 ? glide_left : 0)) / (float)len;
+            Repole(i, was, glq[i]);
+        }
+        glide_left = len;
+    }
+    /* a strike bank still sitting out its lead: not run under the poles */
+    bool InLead(int q) const { return ramping[q] && ramp_n[q] < ramp_lead[q]; }
+    /* mode i's pole moved from r 2^from to r 2^to: the state is two
+       samples, A sin(phi) and A sin(phi - w) / r, so the second is written
+       again under the new radius — left as it was, the recursion read it as
+       another amplitude and phase, wrong by about (r'/r - 1) / sin w, which
+       under a low mode is most of it (a 3 ms glide of 30x on the piano's C3
+       moved the ring's balance from h1.79 to h1.75, and every carry's glide
+       a little) */
+    void Repole(int i, float from, float to)
+    {
+        if(from == to) return;
+        const float k = fastmath::Exp2(from - to);
+        y2[i] *= k;
+        for(int q = 0; q < kStrikes; q++) if(!InLead(q)) s2[q][i] *= k;
+        const float rg = rq[i] * fastmath::Exp2(to);
+        c1[i] = 2.f * rg * cwq[i]; c2[i] = -rg * rg;
+    }
     /* the glide's clock: the voice's samples as they are run (Engine, each
        chunk); at its end the poles are the ones built */
     void GlideTick(int frames)
@@ -403,7 +441,7 @@ struct ResonatorBank
         if(glide_left > 0) return;
         glide_left = 0;
         for(int i = 0; i < n; i++)
-            if(glq[i] != 0.f) { glq[i] = 0.f; if(c2[i] < 0.f) { c1[i] = 2.f * rq[i] * cwq[i]; c2[i] = -rq[i] * rq[i]; } }
+            if(glq[i] != 0.f) { const float was = glq[i]; glq[i] = 0.f; if(c2[i] < 0.f) Repole(i, was, 0.f); }
     }
     bool Ringing() const
     {
@@ -469,11 +507,13 @@ struct ResonatorBank
             {
                 has[i] = false; claimed[i] = false; g0[i] = g[i]; w0[i] = wq[i]; gl0[i] = glq[i];
                 if(!(c2[i] < 0.f)) continue;
-                const float r0 = rq[i], cw = cwq[i];
+                const float cw = cwq[i];
+                const float rgl = left0 > 0 && glq[i] != 0.f ? rq[i] * fastmath::Exp2(glq[i]) : rq[i];   /* the radius a glide under way runs it at */
                 const float sw0 = swq[i] > 1e-6f ? swq[i] : 1e-6f;
                 float e = 0.f;
                 for(int q = 0; q < 1 + kStrikes; q++)
                 {
+                    const float r0 = q > 0 && InLead(q - 1) ? rq[i] : rgl;
                     sp[q][i] = a[q][i]; cp[q][i] = (a[q][i] * cw - b[q][i] * r0) / sw0;   /* A sin phi, A cos phi */
                     e += sp[q][i] * sp[q][i] + cp[q][i] * cp[q][i];
                 }
@@ -586,15 +626,16 @@ struct ResonatorBank
                 glq[i] = (fastmath::Log2(lv) + (left0 > 0 ? gl0[from] * (float)left0 : 0.f)) * (1.f / (0.01f * sr));
                 if(std::fabs(glq[i]) < 1e-9f) glq[i] = 0.f;
                 float* a[1 + kStrikes] = {y1, s1[0], s1[1]}; float* b[1 + kStrikes] = {y2, s2[0], s2[1]};
+                const float rg = glq[i] != 0.f ? r * fastmath::Exp2(glq[i]) : r;
                 for(int q = 0; q < 1 + kStrikes; q++)
                 {
-                    const float now = q > 0 && ramping[q - 1] && ramp_n[q - 1] < ramp_lead[q - 1] ? lv : 1.f;
+                    const bool lead = q > 0 && InLead(q - 1);
+                    const float now = lead ? lv : 1.f;
                     a[q][i] = now * sp[q][from];
-                    b[q][i] = now * (sp[q][from] * cwn - cp[q][from] * swn) / r;             /* A sin(phi - w) / r */
+                    b[q][i] = now * (sp[q][from] * cwn - cp[q][from] * swn) / (lead ? r : rg);   /* A sin(phi - w) / r, under the radius it runs at */
                 }
                 if(glq[i] != 0.f)
                 {
-                    const float rg = r * fastmath::Exp2(glq[i]);
                     c1[i] = 2.0f * rg * cwn;
                     c2[i] = -rg * rg;
                 }

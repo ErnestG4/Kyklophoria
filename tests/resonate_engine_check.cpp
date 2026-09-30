@@ -1605,6 +1605,55 @@ int main()
             CHECK(worst_dc < 0.005 && least_ac > 0.1, "the bow: the offset on the output %.4f, the quietest bowed note %.4f (a lossy string must sound)", worst_dc, least_ac);
             printf("  the bow on the piano at its decay and at a sixteenth of it: no offset over %.4f, the quietest note %.3f (0.0000 on the lossy string, under a 0.07-0.10 offset, before)\n", worst_dc, least_ac);
         }
+        /* a glide keeps the ring it scales (ResonatorBank::GlideBy, Repole):
+           the state is two samples, the second divided by the pole's
+           radius, so a glide that moved the radius without writing it again
+           had the recursion read another amplitude and phase — under a low
+           mode most of it: the piano's C3 hammered, glided 13x over 3 ms,
+           moved from h1.79 to h1.75. Glided or scaled at once, the same ring
+           once the glide is done */
+        {
+            ResonatorVoice v; v.Init(); piano.Res().At(48.f, v, sr); v.Strike(0.8f);
+            std::vector<float> w(48);
+            for(int k = 0; k < 1200; k++) v.Process(w.data(), 48);       /* past the attack's lead: the ring runs under the poles */
+            bool running = !v.bank.quiet; for(int q = 0; q < ResonatorBank::kStrikes; q++) running = running && !v.bank.InLead(q);
+            CHECK(running, "the glide's check found the ring still sitting out its lead");
+            ResonatorVoice g = v, s = v;
+            g.bank.GlideBy(13.f, 144);
+            for(int k = 0; k < s.bank.n; k++) { s.bank.y1[k] *= 13.f; s.bank.y2[k] *= 13.f; for(int q = 0; q < ResonatorBank::kStrikes; q++) { s.bank.s1[q][k] *= 13.f; s.bank.s2[q][k] *= 13.f; } }
+            std::vector<float> yg(48), ys(48); double dmax = 0.0, pk = 0.0;
+            for(int k = 0; k < 200; k++)
+            {
+                g.Process(yg.data(), 48); g.bank.GlideTick(48); s.Process(ys.data(), 48);
+                if(k >= 3) for(int i = 0; i < 48; i++) { dmax = std::fmax(dmax, std::fabs((double)yg[i] - ys[i])); pk = std::fmax(pk, std::fabs((double)ys[i])); }
+            }
+            CHECK(dmax < 1e-3 * pk, "a glide of 13x left the ring %.3g of its peak away from the ring scaled at once", dmax / (pk + 1e-30));
+            printf("  a glide keeps the ring it scales: after it, %.2g of the peak from the ring scaled at once\n", dmax / (pk + 1e-30));
+        }
+        /* the hand's hammer at the recording's ring (Engine::RunCoupled): the
+           prediction is an impulse and the hammer is not — it bounces off the
+           string's stiffness over the length of the note's own period, and a
+           slow one on a high note mostly rests on the string — so what the
+           contact left is checked when it lets go and glided to the recorded
+           ring. The piano's and the tine's C3 and G4, hammered at 0.5 and
+           0.8: their ring 0.3-0.6 s in against the recorded strike's, the
+           worst 43.6 dB under before */
+        {
+            double worst = 0.0;
+            for(World* w : {&piano, &rw})
+                for(float hz : {130.81f, 392.f})
+                    for(float vel : {0.5f, 0.8f})
+                    {
+                        auto ring = [&](ResExciter t) {
+                            Engine e; e.Init(w, sr); e.gain = 1.f; e.SetPolyphony(4); e.SetExciterType(t); e.SetF0(hz); e.Strike(vel);
+                            std::vector<float> z; RunOn(e, z, 600);
+                            return 10.0 * std::log10(rms(z, 14400, 28800) * rms(z, 14400, 28800) + 1e-30);
+                        };
+                        worst = std::fmin(worst, ring(ResExciter::Hammer) - ring(ResExciter::Recorded));
+                    }
+            CHECK(worst > -25.0, "the hand's hammer rings %.1f dB under the recorded strike", worst);
+            printf("  the hand's hammer rings within %.1f dB of the recorded strike (C3 and G4 at 0.5 and 0.8, the piano and the tine)\n", -worst);
+        }
         /* the lips on a world with few harmonics (the tine fixture: three modes,
            the fundamental the only harmonic): every register falls back to the
            1st, and the lip is tuned for the 1st, so it speaks — tuned as the
