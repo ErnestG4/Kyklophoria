@@ -52,6 +52,13 @@ struct Limiter
 class StereoEngine
 {
 public:
+    /* not copied: L borrows lvoices_, and a copy's L went on borrowing the
+       original's — two engines playing one set of voices, each advancing
+       them (a comparison of two copies read steps that were the copying).
+       Engine (kyk_engine.h) re-lends on copy; this has no use for a copy */
+    StereoEngine() = default;
+    StereoEngine(const StereoEngine&) = delete;
+    StereoEngine& operator=(const StereoEngine&) = delete;
     float spread       = 0.f;    /* turns; 0 = mono */
     float listen_at    = 0.25f;  /* a resonator's ears: where along the string their centre sits (0..0.5; Bongs' Space page), an orbit on the stereo plane swinging it 0.2 either way */
     int   spread_plane = 0;      /* plane index, see Rotation::PlaneAxes */
