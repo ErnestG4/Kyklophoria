@@ -120,7 +120,8 @@ Kept as the Bongs work goes:
   condition and find the rows a place on its play view.
 - **The descriptor's page list** carried every page Bongs has; check the
   wavetable one keeps listing all of its own if a page is ever added (the
-  Exciter was missing from it on Bongs).
+  Exciter was missing from it on Bongs). Checked 29 September: the
+  wavetable publishes all seven of its pages, the ones its loop uses.
 - **Axis-named orbit and plane labels** (Body-Velocity...): the wavetable's
   worlds name their axes too (the page knows them), so its Orbit, Kepler and
   Stereo plane labels could say which axes they turn instead of "0,1".
