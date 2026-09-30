@@ -175,7 +175,7 @@ static VirtualKnob k_radius = VirtualKnob(5, "Radius").Linear(0.08f, 0.55f).Iden
  * costs nothing measurable: the morph artifact at divider 4 is -82 dB and at
  * 1 it is -98 dB, both far below anything audible (docs/m2-notes.md). */
 static const uint8_t kDivValues[4] = {2, 3, 4, 6};
-static const char*   kDivNames[4]  = {"2", "3", "4", "6"};
+[[maybe_unused]] static const char*   kDivNames[4]  = {"2", "3", "4", "6"};
 static VirtualKnob k_spread = VirtualKnob(0, "Spread").Linear(0.f, 0.1f).Unit("turn").Ident("st.spread").Ring(Level(kStereo));
 #if KYK_MODE_MODAL
 /* the Space page: a resonator's two ears — how far apart, where along the
@@ -236,7 +236,7 @@ static VirtualKnob k_pos5   = VirtualKnob(1, "Position 5").Ident("pos.5").Ring(L
  * in the first few milliseconds and waits, which is a sequencer with a
  * crossfade rather than a morph. Free-run is for a rack with no clock in it —
  * at the bottom it is off and J2 is the only thing that moves the loop. */
-static const char* kDivNamesTour[8] = {"1", "2", "3", "4", "6", "8", "12", "16"};
+[[maybe_unused]] static const char* kDivNamesTour[8] = {"1", "2", "3", "4", "6", "8", "12", "16"};
 static const uint8_t kDivValuesTour[8] = {1, 2, 3, 4, 6, 8, 12, 16};
 #if KYK_MODE_MODAL
 static const char* const kVoiceNames[3] = {"1", "2", "4"};
@@ -284,7 +284,7 @@ static Page page_kepler = Page(4).Name("Kepler").Color("#9ae6b4").Knobs(k_grav, 
  * Reach says how exotic a ratio it will settle on: 1 is unison only, 5 opens
  * the full staircase. Rate scales all six orbit knobs at once, which matters
  * because the six of them are a page away. */
-static const char* kReachNames[5] = {"1", "2", "3", "4", "5"};
+[[maybe_unused]] static const char* kReachNames[5] = {"1", "2", "3", "4", "5"};
 #if KYK_MODE_MODAL
 static VirtualKnob k_couple = VirtualKnob(5, "Coupling").Ident("orb.couple").Ring(Level(kKepler));
 static const HeldKnob k_reach = {0.5f, 2.f}, k_ratex = {0.5f, 0.f};
@@ -789,6 +789,8 @@ static volatile int16_t  gStrike     = -1;     /* velocity 0-255 to strike with,
 static volatile uint8_t  gJ4Out      = 1u;     /* J4's DG411: 1 CV out A (a wavetable world), 0 the trigger in (a resonate one) */
 static volatile uint8_t  gPolyReq    = 0u;     /* a polyphony asked for over the wire, 0 = none */
 static bool              gStrikeFromJack = false;   /* the pending strike came from J4, not the page or a note jump */
+static volatile bool     gB2Held  = false;          /* B2 held on a resonator: the sustained exciter's gate, open (OnPoll) */
+static volatile bool     gWebGate = false;          /* the page's pad held: the gate open (ACTION gate) */
 /* what a strike hits with: axis 1 where the engine has it — the pot and J6
    through the slew and the rotations — so a motion through the velocity
    plane is a pattern of hits, as a motion through any axis is a pattern */
@@ -880,7 +882,18 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
             if(since < 0xFFFFu) since++;
             if(!armed && v > 1.0f && since > 4u) { armed = true; since = 0u; gStrike = (int16_t)(255.f * Velocity01()); gStrikeFromJack = true; }
             else if(armed && v < 0.5f) armed = false;
+            /* and J4 held is a gate (Combust: "How about gated exciters?"):
+               a sustained exciter drives the note while it is high and lifts
+               when it falls. A gate owns the articulation for ten seconds
+               after it was last high, so a patch with nothing in J4 plays on
+               energy alone as it always did; B2 held and the page's pad held
+               are gates too */
+            static uint32_t quiet = 0xFFFFFFFFu;
+            if(armed) quiet = 0u; else if(quiet < 0xFFFFFFFFu) quiet++;
+            const bool owned = quiet < (uint32_t)(10.f * 48000.f / (float)size) || gB2Held || gWebGate;   /* ten seconds of blocks */
+            gEng.SetGate(!owned || armed || gB2Held || gWebGate);
         }
+        else gEng.SetGate(true);
     }
 
     /* One multiplier over all six rate knobs, three octaves either side of
@@ -1291,6 +1304,14 @@ struct ModuleSource : ExtSource
                 const World* w = gEng.L.WorldPtr();
                 if(!w || !w->IsResonate()) return 3u;
                 gEng.SetReleaseMs(5.f * args[0]);
+                return 0u;
+            }
+            case kActGate:
+            {
+                if(len < 1 || args[0] > 1) return 2u;
+                const World* w = gEng.L.WorldPtr();
+                if(!w || !w->IsResonate()) return 3u;
+                gWebGate = args[0] != 0;          /* the audio callback folds it in with J4 and B2 */
                 return 0u;
             }
             case kActRenderDiv: (void)args; (void)len; return 1u;   /* the pot owns it on the module */
@@ -2053,8 +2074,9 @@ static void OnPoll(uint32_t t_ms)
        these polls. A world changes on this loop too, never under it */
     gEng.L.ServeStrikePlan();
     const World* lw = gEng.L.WorldPtr();
-    if(!lw || !lw->IsResonate() || settings.IsActive()) return;
+    if(!lw || !lw->IsResonate() || settings.IsActive()) { gB2Held = false; return; }
     auto& b2 = hw.buttons[kButtonB2]; auto& b3 = hw.buttons[kButtonB3];
+    gB2Held = b2.Pressed() && !b3.Pressed();          /* held, a sustained exciter's gate */
     if(b2.RisingEdge() && !b3.Pressed() && gStrike < 0)
     {
         gStrike = (int16_t)(255.f * Velocity01());

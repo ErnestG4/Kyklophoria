@@ -320,6 +320,13 @@ public:
        second"). A bank driven by the exciter with no strikes follows the
        pitch by the semitone, which is a quantiser. Unlocked, the ring
        follows the pitch by the cent: a bend, for whoever wants one. */
+    /* the gate for a sustained exciter (a bow, a reed, the lips): open, it
+       drives the newest note with the velocity axis's energy; closed, it is
+       lifted and the note rings free, as at no energy — the same hand-over.
+       Open by default: with nothing gating, the energy alone articulates.
+       The module opens it from J4 held high, B2 held, or the page's pad held */
+    void SetGate(bool open) { rgate_ = open; }
+    bool Gate() const { return rgate_; }
     void SetPitchLock(bool on) { if(pitch_lock_ != on) { pitch_lock_ = on; if(rcap_) rvnote_[ractive_] = 1e9f; } }   /* re-read: locked, the nearest semitone; free, the cent */
     void SetVelocityTrack(float amount) { vtrack_ = amount; }   /* 0..1: how much harder the strike gets with fast playing (0.5 of velocity at full, at six strikes a second) */
     float VelocityTrack() const { return vtrack_; }
@@ -878,7 +885,7 @@ public:
                 /* a sustained drive ending (the bow lifted, the type changed,
                    another note taking it) hands its voice back before any
                    voice runs, at the gain it was last heard at */
-                const int drv = Sustained(rexc_) && (c_[1] > 1e-3f || rsv_ != ractive_) ? ractive_ : -1;
+                const int drv = Sustained(rexc_) && rgate_ && c_[1] > 1e-3f ? ractive_ : -1;
                 if(rsdrv_ >= 0 && rsdrv_ != drv) SustainedHandBack();
             }
             for(int v = 0; v < rcap_; v++)
@@ -908,7 +915,7 @@ public:
                        it is lifted and the note rings free (a bow resting still
                        on a string would damp it), its state kept for when it
                        comes back down */
-                    if(Sustained(rexc_) && v == ractive_ && (c_[1] > 1e-3f || rsv_ != v))
+                    if(Sustained(rexc_) && v == ractive_ && rgate_ && c_[1] > 1e-3f)   /* a new note is taken when it is first driven: struck with the gate shut or at no energy it waits, silent (a reed's rest is 0.2 of its closing pressure, and one block of it was a blip) */
                     {
                         if(rsv_ != v) { StartSustained(v); rsv_ = v; }
                         if(rsdrv_ != v)
@@ -1466,7 +1473,7 @@ public:
         if(rsatk_ > 1.f) rsatk_ = 1.f;
         const float atk = rsatk_, inv_m = 1.f / (float)m;
         const float eg = ext ? exgain_ / rsg_ : 0.f;      /* over the scale, not the limiter: over both, the harder the limiter pulled the harder J1 pushed (5e33) */
-        const float energy = c_[1] < 0.f ? 0.f : c_[1] > 1.f ? 1.f : c_[1];
+        const float energy = !rgate_ ? 0.f : c_[1] < 0.f ? 0.f : c_[1] > 1.f ? 1.f : c_[1];   /* a closed gate is no energy */
         if(rexc_ == ResExciter::Bow)
         {
             /* the pressure with the speed, inside Schelleng's window: the
@@ -1812,6 +1819,7 @@ private:
     Lips           rlips_;
     int            rsv_ = -1;            /* the voice the sustained exciter is driving, -1 none */
     int            rsdrv_ = -1;          /* the voice whose state is in the exciter's units, -1 none */
+    bool           rgate_ = true;        /* the sustained exciter's gate (SetGate) */
     float          rsgl_ = 1.f;          /* the gain it was last heard at (rsg_ rslim_) */
     float          rsw_[ResonatorBank::kMax];   /* its weights on that voice's modes */
     float          rsg_ = 1.f, rslim_ = 1.f, rsf1_ = 110.f, rsbeta_ = 0.2f, rsreg_[4] = {1.f, 2.f, 3.f, 4.f}, rsq1_ = 0.f, rsatk_ = 1.f, rsp_[2] = {0.f, 0.f};   /* its output's scale, its limiter, the note's fundamental, the bow's place (a fraction of the string), the lips' four registers (harmonic numbers, as this voice has them), the fundamental's Q (the bow's losses) */

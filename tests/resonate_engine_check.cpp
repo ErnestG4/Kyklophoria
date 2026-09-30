@@ -1,3 +1,4 @@
+#include <cstdlib>
 /* resonate_engine_check — the resonate path inside the engine.
  *
  * Four things, each of which the design says must hold and each of which
@@ -1463,6 +1464,38 @@ int main()
                 }
             CHECK(dmin > 1e-3 && finite && loud < 0.81f && onnote < 2.f, "J1 into the loop: the least change %.3g of the note, loud J1 finite %d peaking %.3g, on the note %.3g", dmin, finite, loud, onnote);
             printf("  J1 into the loop: a bowed, a blown and a struck note each changed by it (at least %.2g of the note); full-scale noise into every sustained type peaks %.2f, a full-scale sine on the note at C2 and C6 %.2f\n", dmin, loud, onnote);
+        }
+        /* the gate (Combust: "How about gated exciters?"): a sustained exciter
+           drives only while its gate is open — J4 held, B2 held, the page's
+           pad held. Struck with the gate shut, nothing sounds; opened, it
+           plays; shut, the note rings down free; opened again, it plays —
+           and no sample's jump at a gate's edge stands out from the 20 ms
+           before it */
+        {
+            bool silent = true, falls = true; float jump = 0.f;
+            for(ResExciter t : {ResExciter::Bow, ResExciter::Reed, ResExciter::Lips})
+            {
+                Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetExciterType(t);
+                float c[4] = {0.5f, 0.7f, 0.5f, 0.5f}; e.SetPosition(c, 4); e.SetF0(130.81f);
+                e.SetGate(false); e.Strike(0.7f);
+                std::vector<float> z; RunOn(e, z, 100);
+                for(float q : z) silent = silent && std::fabs(q) < 1e-3f;
+                e.SetGate(true); RunOn(e, z, 400);          /* open: 4800 .. 24000 */
+                e.SetGate(false); RunOn(e, z, 200);         /* shut: 24000 .. 33600 */
+                e.SetGate(true); RunOn(e, z, 200);          /* open again */
+                const double shut0 = rms(z, 24000 + 480, 24000 + 1440), shut1 = rms(z, 33600 - 960, 33600);
+                falls = falls && shut1 < 0.9 * shut0 && rms(z, 33600 + 4800, 33600 + 9600) > 1e-3;
+                /* shutting against the 20 ms before; opening — a note's start
+                   again, from its ring or from silence — against the note's
+                   own playing (its jumps over the open stretch) */
+                auto jumps = [&](size_t a, size_t b) { float m = 0.f; for(size_t i = a; i < b; i++) m = std::fmax(m, std::fabs(z[i] - z[i - 1])); return m; };
+                const float playing = jumps(4800 + 4800, 24000);
+                jump = std::fmax(jump, jumps(24000, 24048) / (jumps(24000 - 960, 24000) + 1e-12f));
+                jump = std::fmax(jump, jumps(33600, 33648) / (playing + 1e-12f));
+                jump = std::fmax(jump, jumps(4800, 4848) / (playing + 1e-12f));
+            }
+            CHECK(silent && falls && jump < 1.5f, "the gate: shut at the strike silent %d, shut it rings down and opened plays again %d, a jump at its edge x%.2f", silent, falls, jump);
+            printf("  the gate: shut at the strike, silent; shut after, the note rings down free and plays again when opened; at its edges no jump over x%.2f (shutting: the 20 ms before; opening: the note's own playing)\n", jump);
         }
         /* the breath arrives: a reed or the lips started from silence kick the
            bore a fifth as hard at their first sample (the reed, with its

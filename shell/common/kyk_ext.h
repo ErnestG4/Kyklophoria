@@ -201,7 +201,13 @@ enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace =
                              how long a stolen voice's last note takes to fall
                              60 dB — Engine::SetReleaseMs. BAD_ARG at 0,
                              BAD_STATE when not a resonator */
-                          kActRelease     = 23 };
+                          kActRelease     = 23,
+                          /* u8 open: the page's gate for a sustained exciter
+                             (a bow, a reed, the lips), 1 while its pad is
+                             held, 0 when let go — Engine::SetGate. While
+                             open, the page owns the gate as J4 and B2 do.
+                             BAD_ARG past 1, BAD_STATE when not a resonator */
+                          kActGate        = 24 };
 /* the tune byte to its value, shared by the host and the module so a page
    sees one mapping */
 inline float TuneValue(uint8_t which, uint8_t v)

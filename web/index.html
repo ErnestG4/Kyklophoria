@@ -1419,6 +1419,10 @@ async function act(op, args, what) {
   catch (e) { say(what + ': ' + e.message, true); return false; }
 }
 const strikeAt = v => act(MVL.ACT.strike, [Math.max(0, Math.min(255, v | 0))], 'strike');
+/* the pad held is a gate for a sustained exciter (a bow, a reed, the lips):
+   open while pressed, shut when let go — a struck one takes no notice */
+let padGate = false;
+const gateTo = open => { if (padGate === open) return; padGate = open; act(MVL.ACT.gate, [open ? 1 : 0], 'gate').catch(() => {}); };
 /* one of the resonator's axes — body 0, velocity 1, decay 2, coil 3 — as
    a slider: the axis is a position like any world's, so on the module the
    Play page pot and its CV own it (the slider only shows where it is) and
@@ -1598,6 +1602,7 @@ function pressAxis(e) {
     const m = 30, note = reso.lo + (reso.hi - reso.lo) * Math.min(1, Math.max(0, (x - m) / Math.max(1, rect.width - 2 * m)));
     ctl.f0 = 440 * Math.pow(2, (Math.round(note) - 69) / 12); sendControl();
   }
+  gateTo(true);
   strikeAt(v);
 }
 $('modelCardLoad').onclick = async () => {
@@ -3514,7 +3519,8 @@ fwMode = pageMode || 'both'; applyFwMode(); renderPageLinks();
 if (pageMode === 'modal') setView('model');
 $('tabModel').onclick = () => setView('model');
 $('tabBuild').onclick = () => setView('build');
-ma.addEventListener('pointerdown', e => { pressAxis(e); e.preventDefault(); });
+ma.addEventListener('pointerdown', e => { if (e.pointerId !== undefined && ma.setPointerCapture) ma.setPointerCapture(e.pointerId); pressAxis(e); e.preventDefault(); });
+for (const ev of ['pointerup', 'pointercancel']) ma.addEventListener(ev, () => { if (padGate) gateTo(false); });
 $('tabLib').onclick = () => setView('worlds');
 
 /* How far past the edge the hand is pushing.

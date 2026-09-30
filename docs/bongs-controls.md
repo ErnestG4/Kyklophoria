@@ -115,3 +115,19 @@ Kept as the Bongs work goes:
   Stereo plane labels could say which axes they turn instead of "0,1".
 - **A Listen-like direct control** is Bongs-only (the wavetable's stereo is
   a rotation), nothing to port.
+
+## Gates (29 September)
+
+Combust: "How about gated exciters?" A sustained exciter (Bow, Reed, Lips)
+has a gate. While it is open, the exciter drives the newest note with the
+Play page's P4 (velocity) as its energy. Shut, the exciter lifts and the note
+rings free.
+
+- **J4 held high** is a gate. Its rising edge strikes, as before, and it
+  holds while J4 stays over 1 V (closing under 0.5 V).
+- **B2 held** is a gate: a tap still strikes; held, it blows or bows.
+- **The page's pad held** is a gate (`ACTION gate`, 24).
+- **Nothing gating:** with J4 not high in the last 10 s and neither held,
+  the gate stays open, and energy alone articulates as before.
+
+A struck exciter takes no notice of the gate.
