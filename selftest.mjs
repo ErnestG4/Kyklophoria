@@ -899,6 +899,12 @@ console.log('\n== the card: write, list, read back, and refuse to clobber');
   try { await act(KYK.ACT.release, 0); } catch (e) { bad = e.message; }
   check(bad === 'BAD_ARGS', `a release of 0 is refused (${bad || 'accepted'})`);
   await act(KYK.ACT.memberMorph, 0); await act(KYK.ACT.release, 8);
+  /* the gate: open and shut from the page, and a value past 1 refused */
+  check((await act(KYK.ACT.gate, 1))[0] === 0 && (await act(KYK.ACT.gate, 0))[0] === 0, 'the gate opened and shut from the page');
+  let badGate = '';
+  try { await act(KYK.ACT.gate, 2); } catch (e) { badGate = e.message; }
+  check(badGate === 'BAD_ARGS', `a gate of 2 is refused (${badGate || 'accepted'})`);
+  await act(KYK.ACT.gate, 1);
   let refused = '';
   try { await act(KYK.ACT.slotTarget, 10); } catch (e) { refused = e.message; }
   check(refused === 'BAD_STATE', `it is not a morph target (${refused || 'accepted'})`);
