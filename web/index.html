@@ -131,6 +131,16 @@
      whatever the last resize left in the attribute: the tab opened with the
      panes collapsed or overgrown until the window was resized. Combust:
      "some parts require resizing on the build page". */
+  /* Bongs' panel, a row a page: every pot the module has, named as the
+     module names it, and moved from here as a hand moves it there */
+  #panelRows { padding: 4px 12px 8px; font-size: 11px; color: var(--dim); }
+  #panelRows .prow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 3px 0; border-bottom: 1px solid var(--line); }
+  #panelRows .pname { width: 72px; flex: none; letter-spacing: .1em; font-size: 10px; }
+  #panelRows .pot { display: flex; flex-direction: column; gap: 1px; width: 118px; }
+  #panelRows .pot .pl { display: flex; justify-content: space-between; gap: 4px; }
+  #panelRows .pot .pv { color: var(--fg, #cfd6dd); }
+  #panelRows .pot input[type=range] { width: 100%; margin: 0; }
+  #panelRows .pot select { width: 100%; background: #0f141a; color: inherit; border: 1px solid #263039; }
   #buildMain { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; min-height: 0; }
   #buildMain .brow, #modelMain .brow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
                      padding: 5px 12px; border-bottom: 1px solid var(--line);
@@ -291,6 +301,7 @@
     </div>
   </div>
   <div class="brow"><span id="modelHint"></span></div>
+<div id="panelRows" hidden></div>
 </section>
 <section id="buildMain" hidden>
   <div class="brow">
@@ -563,6 +574,7 @@ async function connect(transport) {
     info = await MVL.hello(link);
     desc = await MVL.getDescriptor(link, info).catch(() => null);
     panel = parsePanel(desc);
+    renderPanelRows();
     /* An analytic world has no lattice, so 0x61 refuses — that is not a
      * failure to connect. */
     space = await refreshSpace();
@@ -596,7 +608,7 @@ async function connect(transport) {
      answering; a fresh module is at its fitted centre and one voice */
   reso = null; poly = 1; lock = true; lastStrikeN = -1;
   renderModelChips();
-  polling = true; pollTelemetry(); pollStats(); pollResonate();
+  polling = true; pollTelemetry(); pollStats(); pollResonate(); pollPots();
 }
 async function disconnect() {
   polling = false;
@@ -1794,6 +1806,96 @@ async function pollResonate() {
       try { reso = await MVL.fetchResonate(link); } catch { reso = null; }
     } else reso = null;
     await new Promise(r => setTimeout(r, 125));
+  }
+}
+/* Bongs' panel on the page (docs/bongs-controls.md): a row a page, a
+   control a pot, built from the descriptor — a selector's labels as a menu,
+   anything else a slider with its value in its own units — and the module's
+   stored values read four times a second. Moving one here stores it there
+   (0x70), where the pot under a hand catches it as it would after a page
+   change. A control the hand here moved in the last second is not
+   overwritten by what the module says meanwhile */
+let potCtl = null, potTouched = {}, potSending = {}, potQueued = {};
+function potText(disp, v) {
+  if (!disp || disp.kind === 'norm' || disp.kind == null) return Math.round(100 * v) + '%';
+  if (disp.kind === 'snap') { const L = disp.labels || []; return L.length ? L[Math.min(L.length - 1, Math.floor(v * L.length))] : ''; }
+  const lo = +disp.lo, hi = +disp.hi, u = disp.unit ? ' ' + disp.unit : '';
+  if (!isFinite(lo) || !isFinite(hi)) return Math.round(100 * v) + '%';
+  const x = disp.kind === 'exp' && lo > 0 && hi > 0 ? lo * Math.pow(hi / lo, v) : lo + v * (hi - lo);
+  const a = Math.abs(x);
+  return (a >= 100 ? x.toFixed(0) : a >= 10 ? x.toFixed(1) : x.toFixed(2)) + u;
+}
+function renderPanelRows() {
+  const box = $('panelRows');
+  box.innerHTML = ''; potCtl = null;
+  if (!panel || fwMode !== 'modal') { box.hidden = true; return; }
+  box.hidden = false;
+  potCtl = [];
+  for (let p = 0; p < panel.pages; p++) {
+    potCtl.push([]);
+    const row = document.createElement('div'); row.className = 'prow';
+    const nm = document.createElement('span'); nm.className = 'pname'; nm.textContent = (panel.names[p] || 'page ' + (p + 1)).toUpperCase();
+    if (panel.colors[p]) nm.style.color = panel.colors[p];
+    row.appendChild(nm);
+    for (let k = 0; k < panel.pots; k++) {
+      const f = panel.grid[p][k];
+      if (!f) { potCtl[p].push(null); continue; }
+      const cell = document.createElement('div'); cell.className = 'pot';
+      const head = document.createElement('div'); head.className = 'pl';
+      const lab = document.createElement('span'); lab.textContent = f.name;
+      const val = document.createElement('span'); val.className = 'pv';
+      head.appendChild(lab); head.appendChild(val); cell.appendChild(head);
+      let el;
+      const snap = f.disp && f.disp.kind === 'snap' && Array.isArray(f.disp.labels) && f.disp.labels.length;
+      if (snap) {
+        el = document.createElement('select');
+        f.disp.labels.forEach((t, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = t; el.appendChild(o); });
+        el.onchange = () => { const n = f.disp.labels.length; potMove(p, k, (Number(el.value) + 0.5) / n); };
+      } else {
+        el = document.createElement('input'); el.type = 'range'; el.min = '0'; el.max = '1'; el.step = '0.001';
+        el.oninput = () => potMove(p, k, Number(el.value));
+      }
+      cell.appendChild(el); row.appendChild(cell);
+      potCtl[p].push({ el, val, disp: f.disp, snap: !!snap });
+    }
+    box.appendChild(row);
+  }
+}
+function showPot(c, v) {
+  if (!c) return;
+  if (c.snap) { const n = c.disp.labels.length; c.el.value = String(Math.min(n - 1, Math.floor(v * n))); }
+  else c.el.value = String(v);
+  c.val.textContent = potText(c.disp, v);
+}
+/* a move sends at once, and one more with the latest value if moves came
+   while it was in flight — a slider is sixty moves a second and the one
+   that matters is the last */
+async function potMove(p, k, v) {
+  const key = p + ':' + k;
+  potTouched[key] = performance.now();
+  if (potCtl && potCtl[p]) { const c = potCtl[p][k]; if (c) c.val.textContent = potText(c.disp, v); }
+  if (!link) return;
+  if (potSending[key]) { potQueued[key] = v; return; }
+  potSending[key] = true;
+  try { await MVL.setPot(link, p, k, v); } catch (e) { say('pot: ' + e.message, true); }
+  potSending[key] = false;
+  if (potQueued[key] != null) { const q = potQueued[key]; potQueued[key] = null; potMove(p, k, q); }
+}
+function applyPots(r) {
+  if (!r || !potCtl) return;
+  const now = performance.now();
+  for (let p = 0; p < Math.min(r.pages, potCtl.length); p++)
+    for (let k = 0; k < Math.min(r.pots, potCtl[p].length); k++) {
+      if (now - (potTouched[p + ':' + k] || -1e9) < 1000) continue;
+      showPot(potCtl[p][k], r.vals[p][k]);
+    }
+}
+async function pollPots() {
+  while (polling && link) {
+    if (potCtl && fwMode === 'modal' && viewMode === 'model') {
+      try { applyPots(await MVL.getPots(link)); } catch {}
+    }
+    await new Promise(r => setTimeout(r, 250));
   }
 }
 async function pollStats() {
@@ -3447,6 +3549,7 @@ function applyFwMode() {
   $('tabModel').hidden = wave;
   $('tabModel').textContent = modal ? 'play' : 'model';
   $('tabBuild').hidden = modal;
+  renderPanelRows();
   for (const id of ['morphCap', 'morphSel', 'morphDirect', 'morphAim', 'morphState', 'tourRow']) $(id).hidden = modal;
   if ((wave && viewMode === 'model') || (modal && (viewMode === 'build' || viewMode === 'play'))) setView(modal ? 'model' : 'play');
 }

@@ -1244,6 +1244,30 @@ struct ModuleSource : ExtSource
         return n;
     }
 
+    /* the panel's pots for the page (0x70): every stored value, the page on
+       show, and one set as the pager sets one — its catch re-armed, so the
+       pot under a hand does nothing until it is turned through the value */
+    bool Pots(uint8_t& pages, uint8_t& pots, uint8_t& live, uint16_t* vals, int cap) override
+    {
+        pages = pager.NumPages(); pots = pager.NumPots(); live = pager.Page();
+        if(pages * pots > cap) return false;
+        for(uint8_t pg = 0; pg < pages; pg++)
+            for(uint8_t k = 0; k < pots; k++)
+            {
+                float v = pager.Stored(pg, k);
+                v = v < 0.f ? 0.f : v > 1.f ? 1.f : v;
+                vals[pg * pots + k] = (uint16_t)(v * 65535.f + 0.5f);
+            }
+        return true;
+    }
+    uint8_t SetPot(uint8_t page, uint8_t pot, uint16_t v) override
+    {
+        if(page >= pager.NumPages() || pot >= pager.NumPots()) return 2u;
+        float phys[kNumPots];
+        for(uint8_t i = 0; i < kNumPots; i++) phys[i] = hw.pots[i].Value();
+        pager.SetStored(page, pot, (float)v / 65535.f, phys);
+        return 0u;
+    }
     uint8_t Action(uint8_t op, const uint8_t* args, int len) override
     {
         switch(op)

@@ -504,6 +504,27 @@ public:
         return n;
     }
 
+    /* the panel's pots (0x70): the desktop has no panel, so a table of
+       Bongs' six pages of six, each at the SDK's 0.5 to start, that the page
+       reads back what it set — the round trip the module does, without the
+       engine hearing it */
+    uint16_t pots_[6 * 6];
+    bool pots_init_ = false;
+    bool Pots(uint8_t& pages, uint8_t& pots, uint8_t& live, uint16_t* vals, int cap) override
+    {
+        if(!pots_init_) { for(auto& v : pots_) v = 32768u; pots_init_ = true; }
+        pages = 6; pots = 6; live = 0;
+        if(cap < 36) return false;
+        for(int i = 0; i < 36; i++) vals[i] = pots_[i];
+        return true;
+    }
+    uint8_t SetPot(uint8_t page, uint8_t pot, uint16_t v) override
+    {
+        if(!pots_init_) { for(auto& q : pots_) q = 32768u; pots_init_ = true; }
+        if(page >= 6 || pot >= 6) return 2u;
+        pots_[page * 6 + pot] = v;
+        return 0u;
+    }
     uint8_t Action(uint8_t op, const uint8_t* args, int len) override
     {
         if(!eng) return 3u;

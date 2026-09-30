@@ -85,6 +85,16 @@ constexpr uint8_t kCmdSetControl = 0x6E;   /* desktop bridge only */
    name (zero members for a plain world). The axis and modes reported are
    the member's. BAD_STATE when what is playing is not a resonator. */
 constexpr uint8_t kCmdResonate   = 0x6F;
+/* 0x70 POTS: the panel's pots as the page's (Bongs, docs/bongs-controls.md:
+   "the page mirrors every pot through one set pot command").
+     u8 op 0 (get)                 -> u8 status, u8 pages, u8 pots, u8 live
+                                      page, then pages x pots u16 values
+                                      (each pot's stored value x 65535)
+     u8 op 1, u8 page, u8 pot, u16 -> u8 status: the value stored, pot-catch
+                                      re-armed, as a page change leaves it
+   UNSUPPORTED (1) from a shell with no panel */
+constexpr uint8_t kCmdPots       = 0x70;
+constexpr int     kPotsMax       = 8 * 8;
 enum TourOp : uint8_t { kTourGet = 0, kTourSet = 1, kTourTick = 2 };
 
 enum ActionOp : uint8_t { kActResetPhase = 0, kActNextSpace = 1, kActLoadSpace = 2, kActRenderDiv = 3,
@@ -318,6 +328,12 @@ struct ExtSource
     { (void)live; (void)target; (void)names; (void)max; return -1; }
 
     /* the live world if it is a resonator, and the engine playing it */
+    /* the panel's stored pot values (x 65535, page by page) and the page on
+       show; false where there is no panel. SetPot: one stored, catch re-armed
+       (0 ok, 2 out of range) */
+    virtual bool Pots(uint8_t& pages, uint8_t& pots, uint8_t& live, uint16_t* vals, int cap)
+    { (void)pages; (void)pots; (void)live; (void)vals; (void)cap; return false; }
+    virtual uint8_t SetPot(uint8_t page, uint8_t pot, uint16_t v) { (void)page; (void)pot; (void)v; return 1u; }
     virtual const World*  ResonateWorld() { return nullptr; }
     virtual const EngineCore* ResonateEngine() { return nullptr; }
 
@@ -347,7 +363,7 @@ public:
     explicit KykExt(ExtSource& src) : src_(src) {}
 
     uint8_t     FirstCmd() const override { return 0x60u; }
-    uint8_t     LastCmd() const override { return 0x6Fu; }
+    uint8_t     LastCmd() const override { return 0x70u; }   /* 0x70 POTS: Bongs' page mirror */
     const char* DescriptorRootJson() const override
     {
         return "\"kyk\":{\"ext\":6,\"telemetry\":96,\"space\":97,\"cell\":98,\"stats\":99,\"action\":100,"
@@ -654,6 +670,22 @@ public:
             {
                 if(f.len < 1) { w.U8(2u); return; }
                 w.U8(src_.Action(f.body[0], f.body + 1, (int)f.len - 1));
+                return;
+            }
+            case kCmdPots:
+            {
+                if(f.len >= 1 && f.body[0] == 1u)
+                {
+                    if(f.len < 5) { w.U8(2u); return; }
+                    uint16_t v; std::memcpy(&v, f.body + 3, 2);
+                    w.U8(src_.SetPot(f.body[1], f.body[2], v));
+                    return;
+                }
+                if(f.len >= 1 && f.body[0] != 0u) { w.U8(2u); return; }
+                uint8_t pages = 0u, pots = 0u, live = 0u; uint16_t vals[kPotsMax];
+                if(!src_.Pots(pages, pots, live, vals, kPotsMax) || pages * pots > kPotsMax) { w.U8(1u); return; }
+                w.U8(0u); w.U8(pages); w.U8(pots); w.U8(live);
+                for(int i = 0; i < pages * pots; i++) w.U16(vals[i]);
                 return;
             }
             case kCmdTour:

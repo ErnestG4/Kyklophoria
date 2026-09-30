@@ -12,7 +12,7 @@ through one "set pot" command.
 
 Built: the name (firmware, `bongs.bin`, the page) and the page's single play
 view (2011bf5); Listen in the engine (53a9fc9); the six-page panel (below).
-To build: the "set pot" command and the page's rows of sliders.
+The page's rows of sliders over the "set pot" command (0x70) are built too.
 
 ## What Bongs has today
 
@@ -105,8 +105,10 @@ As the table above, with the Resonator page's name. Details:
 ## Backport to Kyklophoria (the wavetable firmware)
 
 Kept as the Bongs work goes:
-- **The "set pot" command** (to build) and the page's rows of sliders from
-  the descriptor: the same code serves the wavetable's seven pages.
+- **The "set pot" command is built** (0x70 POTS, both firmwares answer it;
+  KykExt claims 0x60-0x70). The page's rows are shown on Bongs only
+  (`renderPanelRows`, `fwMode === 'modal'`); for the wavetable, lift that
+  condition and find the rows a place on its play view.
 - **The descriptor's page list** carried every page Bongs has; check the
   wavetable one keeps listing all of its own if a page is ever added (the
   Exciter was missing from it on Bongs).

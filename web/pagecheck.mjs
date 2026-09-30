@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'fwName fwMode pageLinks pageSwitch morphCap tourRow axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
+const IDS = 'fwName fwMode panelRows pageLinks pageSwitch morphCap tourRow axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -1522,6 +1522,44 @@ for (const [name, t, r] of CASES) {
   P.setPageMode(null); P.renderPageLinks();
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} two firmwares: each name shows its own tabs and rows${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* Bongs' panel on the page: a row a page from the descriptor, a selector a
+   menu with its labels, a range a slider in its own units; the module's
+   values shown; a move sent as 0x70 set (page, pot, value); a control just
+   moved not overwritten by the next read; and no rows on the page for both */
+{
+  const fails = [];
+  const sent = [];
+  P.setLink({ request: async (cmd, body) => { sent.push([cmd, Array.from(body)]); return new Uint8Array([0]); }, kind: 'serial' });
+  P.setPanel({ pages: 2, pots: 3, names: ['Play', 'Exciter'], colors: ['#67e8f9', '#ff8a5b'],
+               grid: [[{ name: 'Coarse', id: 'pitch.coarse', disp: { kind: 'linear', lo: -3, hi: 3, unit: 'oct' } }, null, { name: 'Body', id: 'pos.0', disp: { kind: 'norm' } }],
+                      [{ name: 'Exciter', id: 'exc.type', disp: { kind: 'snap', labels: ['Recorded', 'Hammer', 'Pluck', 'Bow', 'Reed', 'Lips', 'Trained'] } }, { name: 'Timbre', id: 'exc.timbre', disp: { kind: 'norm' } }, null]] });
+  P.setFwMode('modal'); P.renderPanelRows();
+  const ctl = P.getPotCtl();
+  if (!ctl || ctl.length !== 2) fails.push('no rows for two pages');
+  else {
+    if (!ctl[1][0] || ctl[1][0].el.tagName !== 'select' || ctl[1][0].el.children.length !== 7) fails.push('the exciter type is not a menu of seven');
+    if (!ctl[0][0] || ctl[0][0].el.tagName !== 'input') fails.push('coarse is not a slider');
+    if (ctl[0][1] !== null) fails.push('an empty pot drew a control');
+    P.applyPots({ pages: 2, pots: 3, live: 0, vals: [[0.5, 0, 0.25], [0.99, 0.5, 0]] });
+    if (ctl[0][0].val.textContent !== '0.00 oct') fails.push(`coarse at its centre reads "${ctl[0][0].val.textContent}"`);
+    if (ctl[1][0].val.textContent !== 'Trained' || ctl[1][0].el.value !== '6') fails.push(`the type at the top reads "${ctl[1][0].val.textContent}" (${ctl[1][0].el.value})`);
+    if (ctl[0][2].val.textContent !== '25%') fails.push(`body reads "${ctl[0][2].val.textContent}"`);
+    ctl[1][0].el.value = '4'; ctl[1][0].el.onchange();
+    await new Promise(r => setImmediate(r));
+    const last = sent[sent.length - 1];
+    const q = Math.round((4.5 / 7) * 65535);
+    if (!last || last[0] !== 0x70 || last[1][0] !== 1 || last[1][1] !== 1 || last[1][2] !== 0 || last[1][3] !== (q & 0xff) || last[1][4] !== (q >> 8))
+      fails.push(`choosing Reed sent ${JSON.stringify(last)}`);
+    P.applyPots({ pages: 2, pots: 3, live: 0, vals: [[0.5, 0, 0.25], [0.99, 0.5, 0]] });
+    if (ctl[1][0].el.value !== '4') fails.push('a read overwrote the menu the hand had just moved');
+  }
+  P.setFwMode('both'); P.renderPanelRows();
+  if (!els.panelRows.hidden || P.getPotCtl()) fails.push('rows on the page for both');
+  P.setPanel(null); P.setLink(null);
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} Bongs' panel on the page: a row a page, menus and sliders, sent and held${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* The same plane, drawn. A missing guard here throws nothing and paints
