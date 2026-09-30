@@ -1581,6 +1581,30 @@ int main()
             CHECK(coil <= 2 && body <= 10 && still == 0, "a pot turned under a ringing note: the tine's coil %d clicks, the bodies' row %d, untouched %d", coil, body, still);
             printf("  a pot turned under a ringing note: the tine's coil %d clicks, the row of bodies %d (22 with the crossfade restarted, 128 with the carry stepped), untouched %d\n", coil, body, still);
         }
+        /* the bow on a lossy string, and the string's deflection under it
+           (30 September): the bow's mean friction pushes the string aside,
+           and the output — the modes' displacement — carried it, +0.07 to
+           +0.10 of full scale on the piano bowed at C3-C4; and a string
+           lossier than about Q 120 slid steadily under the bow and made no
+           sound at all — the piano with its decay down to 0.06, as every
+           pizzicato world is, 0.0000 but the deflection. The bow's force is
+           now at least 1.5 times the least that makes the sliding unstable,
+           and the deflection is blocked from the output */
+        {
+            double worst_dc = 0.0, least_ac = 1e9;
+            for(float dec : {0.5f, 0.25f})
+                for(float hz : {130.81f, 196.f, 261.63f})
+                {
+                    Engine e; e.Init(&piano, sr); e.gain = 1.f; e.TuneFromControl(true); e.SetExciterType(ResExciter::Bow);
+                    float c[4] = {0.5f, 0.7f, dec, 0.5f}; e.SetPosition(c, 4); e.SetF0(hz); e.Strike(0.7f);
+                    std::vector<float> y(48); double s1 = 0, s2 = 0; long nn = 0;
+                    for(int k = 0; k < 2000; k++) { e.Process(y.data(), 48); if(k >= 1000) for(float x : y) { s1 += x; s2 += (double)x * x; nn++; } }
+                    const double mean = s1 / nn, ac = std::sqrt(std::fmax(0.0, s2 / nn - mean * mean));
+                    worst_dc = std::fmax(worst_dc, std::fabs(mean)); least_ac = std::fmin(least_ac, ac);
+                }
+            CHECK(worst_dc < 0.005 && least_ac > 0.1, "the bow: the offset on the output %.4f, the quietest bowed note %.4f (a lossy string must sound)", worst_dc, least_ac);
+            printf("  the bow on the piano at its decay and at a sixteenth of it: no offset over %.4f, the quietest note %.3f (0.0000 on the lossy string, under a 0.07-0.10 offset, before)\n", worst_dc, least_ac);
+        }
         /* the lips on a world with few harmonics (the tine fixture: three modes,
            the fundamental the only harmonic): every register falls back to the
            1st, and the lip is tuned for the 1st, so it speaks — tuned as the

@@ -150,6 +150,7 @@ public:
         for(int v = 0; v < rcap_; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rgen_++; if(rplan_) rplan_->state = 0u;
         rcv_ = -1; rsv_ = -1; rsdrv_ = -1;   /* a contact or a bow under way belonged to the voices just rebuilt */
+        for(int v = 0; v < ResonatorVoices::kN; v++) rdcon_[v] = false;
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rpoly_ = 1; rmember_ = 0; rdriven_ = 0; rhold_ = false;
         for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
@@ -955,6 +956,7 @@ public:
                     }
                     else if(lr) rvoices_[v].ProcessLR(tmp, tmpR, m, wl, wr, drive ? exciter_ + i : nullptr, exgain_);
                     else rvoices_[v].Process(tmp, m, drive ? exciter_ + i : nullptr, exgain_);
+                    if(v < ResonatorVoices::kN && rdcon_[v] && !(Sustained(rexc_) && v == rsv_ && rsdrv_ == v)) DCAfter(v, tmp, lr ? tmpR : nullptr, m);
                     rvoices_[v].bank.GlideTick(m);
                     /* a voice that has gone to infinity or NaN stays there —
                        a linear bank's state is fed back forever — so it is
@@ -971,6 +973,7 @@ public:
                     if(!(sum - sum == 0.f) || (pk > kVoiceBrake && !drive))   /* a bank J1 drives is a filter on a live input, and may ring loud: the limiter is its guard */
                     {
                         rvoices_[v].Init();
+                        if(v < ResonatorVoices::kN) rdcon_[v] = false;
                         if(v == rcv_) rcv_ = -1;
                         if(v == rsv_) rsv_ = -1;
                         if(v == rsdrv_) rsdrv_ = -1;
@@ -1125,6 +1128,7 @@ public:
         for(int v = 0; v < rcap_; v++) { rvoices_[v].Init(); rvoices_[v].release_ms = rrelease_ms_; }
         rgen_++; if(rplan_) rplan_->state = 0u;
         rcv_ = -1; rsv_ = -1; rsdrv_ = -1;   /* a contact or a bow under way belonged to the voices just rebuilt */
+        for(int v = 0; v < ResonatorVoices::kN; v++) rdcon_[v] = false;
         rtuned_.Init(); rtuned_for_ = nullptr; rtuned_member_ = -1; rmw_for_[0] = rmw_for_[1] = nullptr; rmw_m_[0] = rmw_m_[1] = -1; rmorph_m_ = -1;   /* the member is state derived from the world: rebuilt here and only here */
         ractive_ = 0; rmember_ = 0;
         for(int v = 0; v < rcap_; v++) { rvnote_[v] = 1e9f; rvdirty_[v] = false; rvstruck_[v] = 0u; }
@@ -1489,6 +1493,37 @@ public:
             b.y1[k] += a * b.swq[k];                                  /* a sin(w n) at n = 1 and 0 */
         }
     }
+    /* a bowed string pushed aside and held there: the bow's mean friction
+       is a steady force, and the modes' displacement — which is what a
+       voice puts out — carries the string's deflection under it, +0.05 to
+       +0.18 of full scale on every world bowed (a G3, 1-2 s in), and all
+       there was on a string too lossy to take the bow. An instrument's
+       bridge and air pass none of it; the module's output passed all of it.
+       A one-pole DC blocker at 7 Hz a voice: inside the drive, before the
+       voice's limiter, so its 0.8 still bounds what comes out (after it,
+       taking the offset away moved the far peaks out by it: 0.91 under
+       full-scale J1); and on the same voice after the drive has let go,
+       until what it holds back has settled, since the deflection it was
+       taking away rings off as the string's own swing and a blocker let go
+       while it did would step by it. Taken on from zero state, which is the
+       input passed as it is, so it starts without a step too. A voice never
+       driven is never touched: struck worlds are as they were */
+    float DCStep(int v, int c, float x)
+    {
+        const float R = 1.f - 6.2831853f * 7.f / sr_;
+        const float y = x - rdcx_[v][c] + R * rdcy_[v][c];
+        rdcx_[v][c] = x; rdcy_[v][c] = y;
+        return y;
+    }
+    /* a voice no longer driven, still under its blocker: both ears, and the
+       blocker let go once it passes what it is given to a hundred-thousandth */
+    void DCAfter(int v, float* a, float* b, int m)
+    {
+        for(int k = 0; k < m; k++) a[k] = DCStep(v, 0, a[k]);
+        if(b) for(int k = 0; k < m; k++) b[k] = DCStep(v, 1, b[k]);
+        else { rdcx_[v][1] = rdcx_[v][0]; rdcy_[v][1] = rdcy_[v][0]; }
+        if(std::fabs(rdcy_[v][0] - rdcx_[v][0]) < 1e-5f && std::fabs(rdcy_[v][1] - rdcx_[v][1]) < 1e-5f) rdcon_[v] = false;
+    }
     /* the driven voice back in the output's units: its state times the
        gain it was last heard at, so the ring carries on at the level it had */
     void SustainedHandBack()
@@ -1528,7 +1563,26 @@ public:
                a slow start's other regime); only its changes are spread */
             const float v_end = 0.5f * energy;                                     /* 0 to 0.5 m/s */
             const float fmax = 2.f * (4.f * kModalMass * rsf1_) * v_end / ((rbow_.mu_s - rbow_.mu_d) * rsbeta_);
-            const float f_end = fmax * 0.025f * fastmath::Exp2(3.f * (rexc_timbre_ - 0.5f));
+            float f_end = fmax * 0.025f * fastmath::Exp2(3.f * (rexc_timbre_ - 0.5f));
+            /* and at least one and a half times the least force that makes the
+               string's steady sliding unstable — the friction falling with
+               the slip is a negative damping f_n |mu'(v)| w^2 against the
+               fundamental's own, 2 m zeta w — or the bow slides on a lossy
+               string and pulls it aside without a sound: a guitar's,
+               a pizzicato bass's and cello's G3 bowed, nothing but the
+               deflection (Combust: the bow "very hard to hear"). At the
+               surface this asks for a string's Q over about 120, which a
+               piano's has and a plucked one's has not. At most half of
+               Schelleng's most */
+            if(rsq1_ > 0.f && v_end > 0.f)
+            {
+                const float s = std::sin(3.1415927f * rsbeta_);
+                const float q = 1.f + v_end / rbow_.v0;
+                const float dmu = (rbow_.mu_s - rbow_.mu_d) / (rbow_.v0 * q * q);
+                const float fmin = 2.f * kModalMass * (0.5f / rsq1_) * 6.2831853f * rsf1_ / (s * s * dmu + 1e-12f);
+                const float floor_f = 1.5f * fmin < 0.5f * fmax ? 1.5f * fmin : 0.5f * fmax;
+                if(f_end < floor_f) f_end = floor_f;
+            }
             rbow_.v_bow = rsp_[0]; rbow_.dv = (v_end - rsp_[0]) * inv_m;
             if(rsp_[1] < 0.f) rsp_[1] = f_end;
             rbow_.f_n   = rsp_[1]; rbow_.df = (f_end - rsp_[1]) * inv_m;
@@ -1624,14 +1678,18 @@ public:
                 rlips_.gamma = g_end; rlips_.zeta = z_end;
             }
         }
+        const int dv = rsv_ >= 0 && rsv_ < ResonatorVoices::kN ? rsv_ : -1;
+        if(dv >= 0 && !rdcon_[dv]) { rdcon_[dv] = true; rdcx_[dv][0] = rdcy_[dv][0] = rdcx_[dv][1] = rdcy_[dv][1] = 0.f; }
         for(int k = 0; k < m; k++)
         {
             float y = out[k] * rsg_;
+            if(dv >= 0) y = DCStep(dv, 0, y);
             const float a = std::fabs(y) * rslim_;
             if(a > 0.8f) rslim_ = 0.8f / std::fabs(y);                             /* down at once */
             else rslim_ += (1.f - rslim_) * (1.f / sr_);                            /* back over about a second */
             out[k] = y * rslim_;
         }
+        if(dv >= 0) { rdcx_[dv][1] = rdcx_[dv][0]; rdcy_[dv][1] = rdcy_[dv][0]; }   /* mono while driven: the right ear's blocker goes on from the left's */
         vv.bank.ProcessTail(out, m);        /* the tail rings beside, undriven, in the output's units */
         vv.pickup.Process(out, m);
         vv.burst.Process(out, m);
@@ -1864,6 +1922,8 @@ private:
     int            rsdrv_ = -1;          /* the voice whose state is in the exciter's units, -1 none */
     bool           rgate_ = true;        /* the sustained exciter's gate (SetGate) */
     bool           rlifted_ = false;     /* the gate shut since the last strike: the note rings free until struck again */
+    bool           rdcon_[ResonatorVoices::kN] = {false, false, false, false};   /* a voice's DC blocker (DCStep) */
+    float          rdcx_[ResonatorVoices::kN][2] = {}, rdcy_[ResonatorVoices::kN][2] = {};
     float          rsgl_ = 1.f;          /* the gain it was last heard at (rsg_ rslim_) */
     float          rsw_[ResonatorBank::kMax];   /* its weights on that voice's modes */
     float          rsg_ = 1.f, rslim_ = 1.f, rsf1_ = 110.f, rsbeta_ = 0.2f, rsreg_[4] = {1.f, 2.f, 3.f, 4.f}, rsq1_ = 0.f, rsatk_ = 1.f, rsp_[2] = {0.f, 0.f};   /* its output's scale, its limiter, the note's fundamental, the bow's place (a fraction of the string), the lips' four registers (harmonic numbers, as this voice has them), the fundamental's Q (the bow's losses) */
