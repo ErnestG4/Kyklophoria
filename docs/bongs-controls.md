@@ -142,3 +142,10 @@ rings free.
   the gate stays open, and energy alone articulates as before.
 
 A struck exciter takes no notice of the gate.
+
+Fixed later that night: B2 and the pad owned the gate only while held, so
+letting go gave it straight back to open and the bow played on. Now all
+three own it for the ten seconds, and a note whose gate has shut stays
+lifted until the next strike, so the fallback to open ten seconds later
+does not put the bow back on it. The page's strike pads are gates while
+held, as the axis is (pressed: gate open and strike; let go: shut).

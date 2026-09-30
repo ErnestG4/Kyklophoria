@@ -1219,6 +1219,18 @@ const parsed = P.parsePanel(DESC);
   els.strikeChips.children.filter(c => c.tagName === 'button')[2].onclick();
   await tick();
   T(sent.length === 1 && sent[0][1][0] === 17 && sent[0][1][1] === 230, `hard strikes at 230 (${JSON.stringify(sent[0])})`);
+  /* and a press is a gate while held: opened and struck on the press, shut
+     on the release, and the click that follows the press not struck again */
+  {
+    const hard = els.strikeChips.children.filter(c => c.tagName === 'button')[2];
+    const fire = ev => (hard._on[ev] || []).forEach(f => f({}));
+    sent.length = 0;
+    fire('pointerdown'); await tick();
+    const down = sent.map(x => x[1].slice(0, 2).join(':'));
+    fire('pointerup'); hard.onclick(); await tick();
+    const all = sent.map(x => x[1].slice(0, 2).join(':'));
+    T(down.join() === '24:1,17:230' && all.join() === '24:1,17:230,24:0', `a pad held is a gate: pressed ${down.join()}, let go and clicked ${all.slice(down.length).join()}`);
+  }
   sent.length = 0;
   els.lockChips.children[0].onclick();
   await tick();

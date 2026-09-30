@@ -1468,11 +1468,13 @@ int main()
         /* the gate (Combust: "How about gated exciters?"): a sustained exciter
            drives only while its gate is open — J4 held, B2 held, the page's
            pad held. Struck with the gate shut, nothing sounds; opened, it
-           plays; shut, the note rings down free; opened again, it plays —
-           and no sample's jump at a gate's edge stands out from the 20 ms
-           before it */
+           plays; shut, the note rings down free; opened again with no strike
+           it rings on down (the module's gate falls back to open when no gate
+           has been played for ten seconds, and that put the bow back on a
+           note let go of); struck, it plays — and no sample's jump at a
+           gate's edge stands out from the 20 ms before it */
         {
-            bool silent = true, falls = true; float jump = 0.f;
+            bool silent = true, falls = true, stays = true, again = true; float jump = 0.f;
             for(ResExciter t : {ResExciter::Bow, ResExciter::Reed, ResExciter::Lips})
             {
                 Engine e; e.Init(&piano, sr); e.gain = 1.f; e.SetExciterType(t);
@@ -1482,20 +1484,25 @@ int main()
                 for(float q : z) silent = silent && std::fabs(q) < 1e-3f;
                 e.SetGate(true); RunOn(e, z, 400);          /* open: 4800 .. 24000 */
                 e.SetGate(false); RunOn(e, z, 200);         /* shut: 24000 .. 33600 */
-                e.SetGate(true); RunOn(e, z, 200);          /* open again */
+                e.SetGate(true); RunOn(e, z, 200);          /* open again, no strike: 33600 .. 43200 */
+                e.Strike(0.7f); RunOn(e, z, 200);           /* struck: 43200 .. 52800 */
                 const double shut0 = rms(z, 24000 + 480, 24000 + 1440), shut1 = rms(z, 33600 - 960, 33600);
-                falls = falls && shut1 < 0.9 * shut0 && rms(z, 33600 + 4800, 33600 + 9600) > 1e-3;
+                const double open1 = rms(z, 43200 - 960, 43200), struck = rms(z, 43200 + 4800, 43200 + 9600);
+                falls = falls && shut1 < 0.9 * shut0;
+                stays = stays && open1 < 0.9 * shut1;
+                again = again && struck > 1e-3 && struck > 2.0 * open1;
                 /* shutting against the 20 ms before; opening — a note's start
                    again, from its ring or from silence — against the note's
                    own playing (its jumps over the open stretch) */
                 auto jumps = [&](size_t a, size_t b) { float m = 0.f; for(size_t i = a; i < b; i++) m = std::fmax(m, std::fabs(z[i] - z[i - 1])); return m; };
                 const float playing = jumps(4800 + 4800, 24000);
                 jump = std::fmax(jump, jumps(24000, 24048) / (jumps(24000 - 960, 24000) + 1e-12f));
-                jump = std::fmax(jump, jumps(33600, 33648) / (playing + 1e-12f));
+                jump = std::fmax(jump, jumps(33600, 33648) / (jumps(33600 - 960, 33600) + 1e-12f));
+                jump = std::fmax(jump, jumps(43200, 43248) / (playing + 1e-12f));
                 jump = std::fmax(jump, jumps(4800, 4848) / (playing + 1e-12f));
             }
-            CHECK(silent && falls && jump < 1.5f, "the gate: shut at the strike silent %d, shut it rings down and opened plays again %d, a jump at its edge x%.2f", silent, falls, jump);
-            printf("  the gate: shut at the strike, silent; shut after, the note rings down free and plays again when opened; at its edges no jump over x%.2f (shutting: the 20 ms before; opening: the note's own playing)\n", jump);
+            CHECK(silent && falls && stays && again && jump < 1.5f, "the gate: shut at the strike silent %d, shut it rings down %d, opened with no strike rings on down %d, struck plays %d, a jump at its edge x%.2f", silent, falls, stays, again, jump);
+            printf("  the gate: shut at the strike, silent; shut after, the note rings down free, and opened again rings on down until struck; at its edges no jump over x%.2f (shutting: the 20 ms before; opening: the note's own playing)\n", jump);
         }
         /* the lips on a world with few harmonics (the tine fixture: three modes,
            the fundamental the only harmonic): every register falls back to the

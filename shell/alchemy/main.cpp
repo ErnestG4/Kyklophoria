@@ -887,11 +887,15 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
                when it falls. A gate owns the articulation for ten seconds
                after it was last high, so a patch with nothing in J4 plays on
                energy alone as it always did; B2 held and the page's pad held
-               are gates too */
+               are gates too, and own it the same ten seconds — they owned it
+               only while held, so letting go gave the gate straight back to
+               open and the bow played on. Once open again a note let go of
+               stays lifted until the next strike (EngineCore::SetGate) */
             static uint32_t quiet = 0xFFFFFFFFu;
-            if(armed) quiet = 0u; else if(quiet < 0xFFFFFFFFu) quiet++;
-            const bool owned = quiet < (uint32_t)(10.f * 48000.f / (float)size) || gB2Held || gWebGate;   /* ten seconds of blocks */
-            gEng.SetGate(!owned || armed || gB2Held || gWebGate);
+            const bool held = armed || gB2Held || gWebGate;
+            if(held) quiet = 0u; else if(quiet < 0xFFFFFFFFu) quiet++;
+            const bool owned = quiet < (uint32_t)(10.f * 48000.f / (float)size);   /* ten seconds of blocks */
+            gEng.SetGate(!owned || held);
         }
         else gEng.SetGate(true);
     }
