@@ -468,8 +468,35 @@ static void TestMorphDeadband()
           "but not more often than the divider allows (%u)", runs[3].renders);
 }
 
+/* The aim offset belongs to a pair of worlds, so a new target clears it —
+   and a new target can be the same pointer: both shells rebuild the morph
+   target in one World, so the engine is told which world it holds (the id).
+   Keyed on the pointer alone, the new target was read at coordinates
+   searched against the old one and telemetry said "aimed" (the 2026-09-13
+   review). */
+static void TestAimFollowsTarget()
+{
+    static World w, target;
+    static solids::VertexTable vt, vt2;
+    worlds::Point(worlds::kLock, w, 8, nullptr, &vt);
+    worlds::Point(worlds::kFm, target, 8, nullptr, &vt2);
+    Engine eng; eng.Init(&w, 48000.f);
+    const float off[4] = {0.1f, -0.2f, 0.05f, 0.f};
+    eng.SetMorph(&target, 0.5f, 7u);
+    eng.SetMorphOffset(off, 4);
+    eng.SetMorph(&target, 0.6f, 7u);                       /* the knob moving: the aim stays */
+    const bool kept = eng.MorphOffset()[1] == -0.2f;
+    worlds::Point(worlds::kVowel, target, 8, nullptr, &vt2); /* another world, rebuilt in place */
+    eng.SetMorph(&target, 0.6f, 9u);
+    const bool cleared = eng.MorphOffset()[0] == 0.f && eng.MorphOffset()[1] == 0.f;
+    CHECK(kept, "the aim offset did not survive the knob moving");
+    CHECK(cleared, "a new morph target at the same pointer kept the old aim offset (%g, %g)", eng.MorphOffset()[0], eng.MorphOffset()[1]);
+    printf("  the aim offset: kept while the knob moves, cleared by a new target rebuilt at the same pointer\n");
+}
+
 int main()
 {
+    TestAimFollowsTarget();
     TestMorphDeadband();
     TestLinearity();
     TestLevel();

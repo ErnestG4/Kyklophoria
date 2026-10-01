@@ -37,4 +37,9 @@ inline bool RebuildSlot(volatile uint8_t& idx, uint8_t want, Build build)
     return ok;
 }
 
+/* the morph target's identity for Engine::SetMorph: a built-in world by its
+   index, a slot's world by its slot (both shells hold every target in one
+   World, so the pointer cannot say which) */
+inline uint32_t MorphId(uint8_t idx, uint8_t slot) { return idx == 0xFFu ? 0u : idx == 0xFEu ? 0x100u + slot : 1u + idx; }
+
 } // namespace kyk

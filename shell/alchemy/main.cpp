@@ -974,7 +974,8 @@ static void AudioCb(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::Outp
      * taken over. */
     if(!gTourOn)
         gEng.SetMorph(gMorphIdx == 0xFFu ? nullptr : &gMorphWorld,
-                      gMorphIdx == 0xFFu ? 0.f : k_morph.Norm());
+                      gMorphIdx == 0xFFu ? 0.f : k_morph.Norm(),
+                      MorphId(gMorphIdx, gSlotTarget));      /* which world: the aim offset is a pair's */
     /* 0.23 is the headroom the measured crest factor needs; the knob scales
      * from silence to that, so a cell can no longer peak past full scale. */
     gEng.SetGain(0.23f * k_level.Norm());
@@ -1985,12 +1986,14 @@ static void ServeWorldRequest()
             gEng.SetMorph(nullptr, 0.f);
             gMorphIdx = 0xFFu; gSlotTarget = 0xFFu;
         }
-        else if(gSlotLen[sl]
-                && gMorphWorld.UseUserWorld(gSlotBlob[sl], gSlotLen[sl], kBootP, nullptr) == UserError::Ok)
+        else if(gSlotLen[sl])
         {
-            __asm__ volatile("dmb" ::: "memory");
-            gMorphIdx   = kMorphUser;
+            /* rewritten in place too: withdrawn first (kyk_slot.h) */
             gSlotTarget = sl;
+            RebuildSlot(gMorphIdx, kMorphUser, [&]() {
+                return gMorphWorld.UseUserWorld(gSlotBlob[sl], gSlotLen[sl], kBootP, nullptr) == UserError::Ok;
+            });
+            if(gMorphIdx == 0xFFu) gSlotTarget = 0xFFu;
         }
         return;
     }

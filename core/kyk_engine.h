@@ -1017,7 +1017,12 @@ public:
      * provided the caller finished building the new World before calling. */
     /* The world to blend towards, and how far. morph 0 or a null world is
      * exactly the single-world path, bit for bit. */
-    void SetMorph(const World* w, float amount)
+    /* id: which world the pointer holds. Both shells keep the morph target
+       in one World rebuilt in place, so the pointer never changed with the
+       target and the aim offset outlived it: the new target read at
+       coordinates searched against the old one, and telemetry said "aimed"
+       (the 2026-09-13 review). The shells pass the target's index */
+    void SetMorph(const World* w, float amount, uint32_t id = 0u)
     {
         /* The aim offset belongs to a *pair* of worlds, so changing either end
          * makes it meaningless — and a meaningless offset is worse than none,
@@ -1025,7 +1030,8 @@ public:
          * on the world changing and not on the amount, since this is called
          * every block from the Morph knob and clearing on every call would
          * undo an aim the instant it was made. */
-        if(w != morph_world_) for(int a = 0; a < kMaxN; a++) moff_[a] = 0.f;
+        const bool world_moved = w != morph_world_ || id != morph_id_;
+        if(world_moved) for(int a = 0; a < kMaxN; a++) moff_[a] = 0.f;
         /* Dirty only when something actually moved, which is the same deadband
          * SetPosition has and for the same reason — except that here the cost
          * was not a jittering ADC, it was a caller.
@@ -1045,10 +1051,10 @@ public:
          * re-render at all. And crossing zero always counts, because that is
          * the difference between blending and not blending rather than a
          * difference of degree. */
-        const bool world_moved = w != morph_world_;
         const bool on_changed  = (amount > 0.f) != (morph_r_ > 0.f);
         const float d          = amount - morph_r_;
         morph_world_ = w;
+        morph_id_ = id;
         morph_ = amount;
         if(world_moved || on_changed || d > morph_eps || d < -morph_eps) dirty_ = true;
     }
@@ -2032,6 +2038,7 @@ private:
     float          pm_[kMaxN] = {0.f};
     float          pmo_[kMaxN] = {0.f};
     float          moff_[kMaxN] = {0.f};
+    uint32_t       morph_id_ = 0u;   /* which world morph_world_ holds (SetMorph) */
     float        sr_    = 48000.f;
     Osc          osc_;
     FftScratch   sc_;

@@ -33,6 +33,16 @@ int main()
     isr();
     CHECK(!bad && idx == 0xFFu, "a failed rebuild published something (%d)", idx);
     CHECK(torn == 0, "the callback read a half-written slot %d times", torn);
+    /* and every target its own identity (Engine::SetMorph's id): the 22
+       built-ins and the 32 slots, none of them the "none" 0 */
+    {
+        bool distinct = MorphId(0xFFu, 0) == 0u;
+        uint32_t seen[64]; int n = 0;
+        for(int i = 0; i < 22; i++) seen[n++] = MorphId((uint8_t)i, 0xFFu);
+        for(int sl = 0; sl < 32; sl++) seen[n++] = MorphId(0xFEu, (uint8_t)sl);
+        for(int i = 0; i < n; i++) { distinct = distinct && seen[i] != 0u; for(int j = 0; j < i; j++) distinct = distinct && seen[i] != seen[j]; }
+        CHECK(distinct, "two morph targets share an identity");
+    }
     printf("  the morph target's slot: withdrawn while it is rewritten, published whole (%d reads, %d torn)\n", reads, torn);
     if(fails) { printf("slot_check: %d FAILED\n", fails); return 1; }
     printf("slot_check: ok\n");

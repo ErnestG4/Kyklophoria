@@ -26,6 +26,7 @@
 #include "kyk_ext.h"
 #include "kyk_worldrx.h"
 #include "kyk_aim.h"
+#include "kyk_slot.h"
 #include "kyk_telemetry.h"
 #include "script.h"
 #include "kyk_worlds.h"
@@ -633,8 +634,8 @@ public:
                 if(args[0] >= kyk::worlds::kCount) return 2u;
                 if(!kyk::worlds::IsAnalytic(args[0])) return 2u;   /* formula worlds only here */
                 if(!kyk::worlds::Point(args[0], morphWorld, 8, nullptr, &morphTable)) return 3u;
-                eng->SetMorph(&morphWorld, morphAmt);
                 morphIdx = args[0];
+                eng->SetMorph(&morphWorld, morphAmt, kyk::MorphId(morphIdx, slotTarget));   /* which world: the aim offset is a pair's */
                 return 0u;
             }
             case kyk::kActSlotLive:
@@ -674,9 +675,9 @@ public:
                 if(IsResonateBlob(slotBlob[args[0]])) return 3u;
                 if(morphWorld.UseUserWorld(slotBlob[args[0]].data(), slotBlob[args[0]].size(),
                                            8, nullptr) != kyk::UserError::Ok) return 1u;
-                eng->SetMorph(&morphWorld, morphAmt);
                 morphIdx   = kyk::kMorphUser;
                 slotTarget = args[0];
+                eng->SetMorph(&morphWorld, morphAmt, kyk::MorphId(morphIdx, slotTarget));
                 return 0u;
             }
             case kyk::kActSnapshot:

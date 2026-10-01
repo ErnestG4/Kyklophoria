@@ -165,7 +165,7 @@ public:
     /* Both voices morph together: the stereo pair is one timbre read at two
      * points, and letting the ears disagree about which world they are in
      * would be a different instrument. */
-    void SetMorph(const World* w, float amount) { L.SetMorph(w, amount); R.SetMorph(w, amount); }
+    void SetMorph(const World* w, float amount, uint32_t id = 0u) { L.SetMorph(w, amount, id); R.SetMorph(w, amount, id); }
     float Morph() const { return L.Morph(); }
     const World* MorphWorld() const { return L.MorphWorld(); }
 
