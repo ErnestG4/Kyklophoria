@@ -1556,6 +1556,37 @@ for (const [name, t, r] of CASES) {
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} two firmwares: each name shows its own tabs and rows${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
+/* One world on the wire at a time (the 2026-09-13 review): the build tab's
+   send and a drag's re-send each put a world in chunks, and only the drag
+   coalesced its own, so a send during a drag interleaved two worlds' chunks
+   and the module refused one mid-stream */
+{
+  const fails = [];
+  const log = [];
+  P.setLink({ kind: 'serial', maxBody: 300, close: async () => {},
+              request: async (cmd, body) => {
+                if (body.length >= 8) { const dv = new DataView(body.buffer, body.byteOffset); log.push([dv.getUint32(0, true), dv.getUint32(4, true), body.length - 8]); }
+                await new Promise(r => setImmediate(r));
+                return new Uint8Array([0]);
+              } });
+  P.imported.length = 0;
+  for (let i = 0; i < 3; i++)
+    P.imported.push({ name: 'x' + i, mags: new Float32Array(64), fit: 1, mode: 'shape', pos: [0.5, 0.5, 0.5, 0.5], render: new Float32Array(64) });
+  P.placeOnCell(); P.place.sent = true;
+  await Promise.all([P.syncPlacement(), P.sendImported()]);
+  /* every transfer runs from offset 0 to its end before the next starts */
+  let at = -1, total = 0, transfers = 0;
+  for (const [tot, off, len] of log) {
+    if (off === 0) { if (at >= 0 && at < total) { fails.push(`a world started while the last stood at ${at} of ${total}`); break; } transfers++; total = tot; at = 0; }
+    if (off !== at) { fails.push(`a chunk at ${off} where ${at} was next: two worlds interleaved`); break; }
+    at = off + len;
+  }
+  if (!fails.length && transfers !== 2) fails.push(`${transfers} transfers, not 2`);
+  P.imported.length = 0; P.heldLost(); P.setLink(null);
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} one world on the wire at a time: a send during a drag's re-send waits for it${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
 /* Gone is gone (the 2026-09-13 review): a disconnect clears the status line
    and the morph line, which kept the dead module's values and read as live;
    and a quick reconnect runs one set of poll loops, not two — a loop tested
