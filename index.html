@@ -982,6 +982,7 @@ function removeNode(i) {
 function placeOnCell() {
   const cell = cellPositions(24);
   imported.forEach((w, i) => { w.pos = cell[i].slice(); });
+  if (audition.node >= 0) auditionStop();   /* the selection goes, and what it was playing with it */
   place.sel = -1;
 }
 
@@ -3019,7 +3020,10 @@ function bandLimit(y, K) {
 const rmsOf = (y) => { let s = 0; for (const v of y) s += v * v; return Math.sqrt(s / y.length); };
 
 function auditionStop() {
-  for (const s of audition.srcs) { try { s.stop(); } catch {} }
+  /* stopped and let go: the gains stayed connected to the output (the
+     2026-09-13 review) */
+  for (const s of audition.srcs) { try { s.stop(); } catch {} try { s.disconnect(); } catch {} }
+  for (const g of audition.gains) { try { g.disconnect(); } catch {} }
   audition.srcs = []; audition.gains = []; audition.node = -1;
   renderAudition();
 }
@@ -3611,6 +3615,9 @@ function applyFwMode() {
 let viewMode = 'play';
 function setView(m) {
   viewMode = m;
+  /* the audition's stop button is on the build tab: leaving it left the sound
+     running with no way to stop it from where you were */
+  if (m !== 'build' && audition.node >= 0) auditionStop();
   $('tabPlay').classList.toggle('on', m === 'play');
   $('tabModel').classList.toggle('on', m === 'model');
   $('tabBuild').classList.toggle('on', m === 'build');
