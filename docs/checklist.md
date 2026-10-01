@@ -1,5 +1,7 @@
 # Checklist — 2026-09-08
 
+(The live list for the wavetable firmware is now `docs/wavetable-roadmap.md`, 30 September; this file keeps the history and the reasons.)
+
 Working state after the first rack session. Supersedes the scattered "Open"
 sections in the milestone notes. Order within each block is my recommendation,
 not a dependency chain.
@@ -584,33 +586,33 @@ Still open, ranked, from the same reviews:
       divider allows, permanently — and the 33% average / 97% max reading the
       whole CPU question is blocked on was measured with this in place. Fix and
       re-measure before trusting any CPU number.
-- [ ] **The morph target is rebuilt in place under the audio ISR**
+- [x] (fd56b62, 8bcf997: withdrawn while rewritten, kyk_slot.h) **The morph target is rebuilt in place under the audio ISR**
       (`main.cpp:759-778`). `gMorphIdx` stays valid throughout, so the ISR
       keeps reading a lattice being rewritten: ~10 ms of wrong sound at full
       level on a tabulated target change. Clear the index and `dmb` first.
-- [ ] **The aim offset survives a change of morph target** in both shells:
+- [x] (8bcf997: SetMorph takes the target's identity) **The aim offset survives a change of morph target** in both shells:
       `SetMorph` clears it on the pointer changing, and both shells pass the
       address of one static World, so the guard can never fire. The morph then
       reads the new world at coordinates searched against a different one, and
       telemetry reports `aimed`.
-- [ ] **Two `putWorld` transfers can interleave.** `sendImported` and
+- [x] (e4604a1: putQueued) **Two `putWorld` transfers can interleave.** `sendImported` and
       `syncPlacement` both send urgent chunks and only the latter coalesces, so
       a drag-drop plus a send button within the same second refuses one
       transfer mid-stream and can leave the success message on screen.
 - [ ] **In the build view the footer may be auto-placed into row 2**, above the
       pane, because the nav that held that row is hidden. Derived from the grid
       spec, not seen in a browser — open the build tab and look.
-- [ ] **Stale readouts after disconnect**: block, f0, kcut, link stats, space,
+- [x] (0b15142: clearReadouts) **Stale readouts after disconnect**: block, f0, kcut, link stats, space,
       morph state and the card and morph selects all keep the dead module's
       values and read as live.
-- [ ] **The poll loops duplicate across a quick reconnect**, since they test
+- [x] (0b15142: each loop owns its link) **The poll loops duplicate across a quick reconnect**, since they test
       `polling` only after sleeping and nothing ties a loop to the link that
       started it.
-- [ ] **`Space::Attach` validates the header and never the coefficients**, so
+- [x] (003c948: BadValue) **`Space::Attach` validates the header and never the coefficients**, so
       one non-finite or merely huge float in a `.kyk` NaNs the whole output.
       Desktop-only today; live the moment the card path reads `.kyk`.
       `ParseUserWorld` has the finite check that this one lacks.
-- [ ] **32-bit overflow in `Space::Attach`'s size check**, demonstrated on the
+- [x] (003c948: SpaceDataBytes) **32-bit overflow in `Space::Attach`'s size check**, demonstrated on the
       target compiler: `point_count · stride · 4` wraps, so a 64-byte file can
       claim 4 GB and pass. Not reachable until the card reads `.kyk`.
 - [x] **`alias_check` proves −88 dBFS for one world at one position.** Over all
@@ -626,9 +628,9 @@ Still open, ranked, from the same reviews:
       −80 guard on the bright cell and adds a −60 guard on the cell the scan
       found worst; `KYK_SLOW=1` runs the whole scan. The number in the README
       was corrected rather than defended.
-- [ ] **`putWorld` reads `link.maxBody`, which is never assigned**, so it
+- [x] (fixed before 30 Sept: hello reads maxBody) **`putWorld` reads `link.maxBody`, which is never assigned**, so it
       always chunks at 1024 regardless of what the module negotiated.
-- [ ] Audition loose ends: re-place clears the selection while the sound keeps
+- [x] (fb7eb94) Audition loose ends: re-place clears the selection while the sound keeps
       playing, gain nodes are never disconnected, and switching to the play tab
       leaves it running with its stop button on the other tab.
 - [ ] **Does `cycleToNode` have the sign right?** The engine plays

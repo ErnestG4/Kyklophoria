@@ -556,8 +556,13 @@ python3 tools/bridge/bridge.py -- --gen --family field --side 8 --seed 1 \
     --script tests/scripts/m2_field.txt --loop     # no module needed
 ```
 
-Published at https://combust.codeberg.page/Kyklophoria/, which is https and
-therefore a secure context, so Serial works there from any machine. The page
+Published on GitHub Pages: https://ernestg4.github.io/Kyklophoria/?page=wavetable
+for Kyklophoria and https://ernestg4.github.io/Kyklophoria/?page=modal for Bongs.
+It is https and therefore a secure context, so Serial works there from any
+machine with desktop Chrome or Edge. To publish a new page, `bash
+web/publish-pages.sh` rebuilds the `pages` branch from `web/` and stamps it
+with the commit, then `git push --force-with-lease github pages` (the branch is
+rebuilt each time, so it never fast-forwards). The page
 and the firmware share a descriptor version (`ext`, currently 5); publish and
 flash together, or the page will parse an older shape than the module sends.
 The telemetry frame is the exception and grows without a bump — everything
@@ -568,8 +573,7 @@ would conclude every older module was playing a user world.
 
 ## Not built yet
 
-Writing to the card from the module, so keeping a world does not mean moving a
-file by hand. FM and sync
+FM and sync
 inputs. The filter, drive and FM-index payload lanes — only CV out A is routed.
 Wrap and sphere topologies on the panel. Per-axis LFO shapes. Scattered
 (non-lattice) spaces.
