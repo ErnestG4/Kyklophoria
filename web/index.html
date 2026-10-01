@@ -622,8 +622,19 @@ async function disconnect() {
   renderWorldBar();
   if (l) { try { await l.close(); } catch {} }
   $('modinfo').textContent = 'not connected';
+  clearReadouts();
   $('btnClose').hidden = true; $('btnSerial').hidden = false; $('btnBridge').hidden = false; $('btnDrawer').hidden = true;
   $('drawer').classList.remove('show');
+}
+/* the status line and the morph line are readouts of the module, and they
+   kept its last values after it went — block, f0, kcut, link, cpu, space and
+   the morph target all read as live with nothing connected (the 2026-09-13
+   review); drawStatus draws nothing without telemetry, so nothing replaced
+   them */
+function clearReadouts() {
+  for (const id of ['sMod', 'sBlock', 'sF0', 'sKcut', 'sSpread', 'sLink', 'sCpu', 'sSpace']) setText(id, '—');
+  setText('morphState', '');
+  for (const id of ['morphSel', 'cardSel', 'cardLoad', 'morphAim', 'morphDirect']) $(id).disabled = true;
 }
 $('btnClose').onclick = () => disconnect();
 $('btnSerial').onclick = async () => {
@@ -1813,7 +1824,8 @@ $('cardLoad').onclick = async () => {
 
 /* ── polling ────────────────────────────────────────────────────────── */
 async function pollTelemetry() {
-  while (polling && link) {
+  const own = link;
+  while (polling && link === own) {
     const t0 = performance.now();
     try {
       const b = await link.request(MVL.CMD.telemetry, MVL.telemetryReq(7), { key: 'tel', timeoutMs: 800 });
@@ -1830,7 +1842,8 @@ async function pollTelemetry() {
    world that is struck rather than scanned. */
 let reso = null;
 async function pollResonate() {
-  while (polling && link) {
+  const own = link;
+  while (polling && link === own) {
     if (tel && tel.resonate) {
       try { reso = await MVL.fetchResonate(link); } catch { reso = null; }
     } else reso = null;
@@ -1920,7 +1933,8 @@ function applyPots(r) {
     }
 }
 async function pollPots() {
-  while (polling && link) {
+  const own = link;
+  while (polling && link === own) {
     if (potCtl && fwMode === 'modal' && viewMode === 'model') {
       try { applyPots(await MVL.getPots(link)); } catch {}
     }
@@ -1928,7 +1942,8 @@ async function pollPots() {
   }
 }
 async function pollStats() {
-  while (polling && link) {
+  const own = link;
+  while (polling && link === own) {
     try { stats = MVL.parseStats(await link.request(MVL.CMD.stats, new Uint8Array(0), { key: 'stats' })); } catch {}
     await new Promise(r => setTimeout(r, 1000));
   }

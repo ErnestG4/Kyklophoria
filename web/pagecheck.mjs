@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, drawStatus, getStats: v => { stats = v; } };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -1554,6 +1554,41 @@ for (const [name, t, r] of CASES) {
   P.setPageMode(null); P.renderPageLinks();
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} two firmwares: each name shows its own tabs and rows${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* Gone is gone (the 2026-09-13 review): a disconnect clears the status line
+   and the morph line, which kept the dead module's values and read as live;
+   and a quick reconnect runs one set of poll loops, not two — a loop tested
+   only that *a* link was up, so the old connection's loops woke into the new
+   one and polled beside its own */
+{
+  const fails = [];
+  P.setTel(tel({ n: 4, world: 0 })); P.drawStatus();
+  if (els.sBlock.textContent === '—') fails.push('the status line was never drawn');
+  await P.disconnect();
+  for (const id of ['sBlock', 'sF0', 'sKcut', 'sLink', 'sCpu', 'sSpace']) if (els[id].textContent !== '—') fails.push(`${id} still reads ${els[id].textContent}`);
+  if (!els.morphSel.disabled || !els.cardSel.disabled) fails.push('the morph and card selects stayed live');
+  /* two links in quick succession, each starting its loops: count the second's requests */
+  const reqs = [0, 0];
+  const mk = i => ({ kind: 'serial', request: async () => { reqs[i]++; return new Uint8Array([0]); }, close: async () => {} });
+  P.setPanel({ pages: 1, pots: 1, names: ['Play'], colors: [''], grid: [[{ name: 'Coarse', id: 'c', disp: { kind: 'norm' } }]] });
+  P.setFwMode('modal'); P.renderPanelRows(); P.setView('model');
+  /* the loops' sleeps queued here and woken a round at a time (the stub's
+     setTimeout never fires) */
+  const q = [], stub = globalThis.setTimeout;
+  globalThis.setTimeout = f => { q.push(f); return 0; };
+  const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
+  const round = async () => { const now = q.splice(0); for (const f of now) f(); await settle(); };
+  const a = mk(0), b = mk(1);
+  P.setLink(a); P.setPolling(true); P.pollPots(); await settle();
+  P.setLink(b); P.pollPots(); await settle();        /* reconnected: the new link's loop */
+  for (let i = 0; i < 3; i++) await round();
+  P.setPolling(false); await round(); await round();
+  globalThis.setTimeout = stub;
+  if (reqs[1] !== 4) fails.push(`the new link was polled ${reqs[1]} times over its first poll and three rounds (4 for one loop): the old loop polled it too`);
+  P.setView('play'); P.setFwMode('both'); P.renderPanelRows(); P.setPanel(null); P.setLink(null);
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} a disconnect clears the readouts, and a quick reconnect polls once${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* Bongs' panel on the page: a row a page from the descriptor, a selector a
