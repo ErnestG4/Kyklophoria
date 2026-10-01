@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, drawStatus, getStats: v => { stats = v; } };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; } };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -1554,6 +1554,33 @@ for (const [name, t, r] of CASES) {
   P.setPageMode(null); P.renderPageLinks();
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} two firmwares: each name shows its own tabs and rows${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The audition stops when what it plays goes (the 2026-09-13 review): a
+   re-place clears the selection, and leaving the build tab leaves its stop
+   button behind; both kept it playing. And stopped, every node is let go */
+{
+  const fails = [];
+  let playing = 0, connected = 0;
+  class FakeAC {
+    constructor() { this.state = 'running'; this.currentTime = 0; this.sampleRate = 48000; this.destination = {}; }
+    createBuffer(c, n) { return { copyToChannel() {} }; }
+    createBufferSource() { return { connect() { connected++; }, disconnect() { connected--; }, start() { playing++; }, stop() { playing--; } }; }
+    createGain() { return { gain: { value: 0, setTargetAtTime() {} }, connect() { connected++; }, disconnect() { connected--; } }; }
+    resume() {}
+  }
+  const was = globalThis.AudioContext; globalThis.AudioContext = FakeAC;
+  const one = () => { P.imported.length = 0; P.imported.push({ name: 'a', mags: new Float32Array(64), fit: 1, mode: 'shape', pos: [0.5, 0.5, 0.5, 0.5], render: new Float32Array(256), thumb: new Float32Array(256) }); };
+  one(); P.setView('build'); P.selectNode(0); P.auditionStart();
+  if (playing !== 3) fails.push(`the audition started ${playing} sources, not 3`);
+  P.placeOnCell();
+  if (playing !== 0) fails.push(`a re-place left ${playing} sources playing`);
+  P.selectNode(0); P.auditionStart(); P.setView('play');
+  if (playing !== 0) fails.push(`leaving the build tab left ${playing} sources playing`);
+  if (connected !== 0) fails.push(`${connected} audio connections left after stopping`);
+  globalThis.AudioContext = was; P.getAudition().ctx = null; P.imported.length = 0;
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the audition stops when what it plays goes, and lets its nodes go${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* One world on the wire at a time (the 2026-09-13 review): the build tab's
