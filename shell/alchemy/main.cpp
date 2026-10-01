@@ -40,6 +40,7 @@
 #include "kyk_telemetry.h"
 #include "kyk_ext.h"
 #include "kyk_regions.h"
+#include "kyk_slot.h"
 #include "kyk_worldrx.h"
 #include "kyk_aim.h"
 #include "alchemy/storage/sd_card.h"
@@ -2001,20 +2002,17 @@ static void ServeWorldRequest()
         gMorphReq = 0xFFu;
         if(mreq >= kBuiltinWorlds) { gEng.SetMorph(nullptr, 0.f); gMorphIdx = 0xFFu; }
         else
-        {
-            bool ok = true;
-            if(worlds::IsAnalytic(mreq))
-                ok = worlds::Point(mreq, gMorphWorld, kBootP, nullptr, &gVertTable[kMorphSlot]);
-            else
-            {
+            /* withdrawn while it is rewritten (kyk_slot.h): it stayed valid,
+               and the callback blended towards a half-expanded world */
+            RebuildSlot(gMorphIdx, mreq, [&]() {
+                if(worlds::IsAnalytic(mreq))
+                    return worlds::Point(mreq, gMorphWorld, kBootP, nullptr, &gVertTable[kMorphSlot]);
                 const size_t n = worlds::Expand(mreq, kBootN, kBootSide, kBootK, kBootP,
                                                 gBlob[kMorphSlot], sizeof(gBlob[kMorphSlot]));
-                ok = n != 0 && gSpace[kMorphSlot].Attach(gBlob[kMorphSlot], n) == SpaceError::Ok;
+                const bool ok = n != 0 && gSpace[kMorphSlot].Attach(gBlob[kMorphSlot], n) == SpaceError::Ok;
                 if(ok) gMorphWorld.UseLattice(&gSpace[kMorphSlot]);
-            }
-            __asm__ volatile("dmb" ::: "memory");
-            gMorphIdx = ok ? mreq : 0xFFu;
-        }
+                return ok;
+            });
         return;
     }
     const uint8_t req = gWorldReq;

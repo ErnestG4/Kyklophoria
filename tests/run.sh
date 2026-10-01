@@ -60,6 +60,9 @@ echo "== exciter_check =="
 $CXX $CORE_FLAGS $SAN tests/exciter_check.cpp -o "$OUT/exciter_check" || fail=1
 "$OUT/exciter_check" || fail=1
 
+echo "== slot_check =="
+$CXX $CORE_FLAGS $SAN -Ishell/common tests/slot_check.cpp -o "$OUT/slot_check" || fail=1
+"$OUT/slot_check" || fail=1
 echo "== regions_check =="
 $CXX $CORE_FLAGS $SAN -Ishell/common tests/regions_check.cpp -o "$OUT/regions_check" || fail=1
 "$OUT/regions_check" || fail=1
