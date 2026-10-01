@@ -13,8 +13,14 @@ namespace kyk {
 enum class SpaceError : uint8_t
 {
     Ok = 0, TooShort, BadMagic, BadVersion, BadN, BadK, BadP, BadSide, BadMode,
-    BadTopo, BadCount, BadSize
+    BadTopo, BadCount, BadSize, BadValue
 };
+
+/* the bytes a lattice of point_count points of stride floats needs after its
+   header, in 64 bits: size_t is 32 on the M7, where point_count x stride x 4
+   wrapped and a 64-byte file could claim 4 GB and pass (the 2026-09-13
+   review, shown on the target compiler) */
+inline uint64_t SpaceDataBytes(uint32_t point_count, uint32_t stride) { return (uint64_t)point_count * stride * sizeof(float); }
 
 class Space
 {
@@ -22,8 +28,12 @@ public:
     Space() { std::memset(&hdr_, 0, sizeof(hdr_)); }
 
     /* Validate and adopt. Header bytes are copied (alignment-safe); point
-     * data is referenced in place and must outlive this object. */
-    SpaceError Attach(const uint8_t* blob, size_t len)
+     * data is referenced in place and must outlive this object.
+     * check_values: every coefficient finite and under 1e6 — one NaN in a file
+     * NaNs the whole output, as ParseUserWorld already guards. A world the
+     * firmware just expanded itself is passed false: a few ms on the M7 at a
+     * world switch, for a blob it wrote. */
+    SpaceError Attach(const uint8_t* blob, size_t len, bool check_values = true)
     {
         data_ = nullptr;
         if(len < sizeof(SpaceHeader)) return SpaceError::TooShort;
@@ -45,8 +55,18 @@ public:
             want *= h.side;
         }
         if(h.point_count != want) return SpaceError::BadCount;
-        const size_t need = sizeof(SpaceHeader) + (size_t)h.point_count * Stride() * sizeof(float);
-        if(len < need) return SpaceError::BadSize;
+        const uint64_t need = sizeof(SpaceHeader) + SpaceDataBytes(h.point_count, (uint32_t)Stride());
+        if((uint64_t)len < need) return SpaceError::BadSize;
+        if(check_values)
+        {
+            const uint8_t* q = blob + sizeof(SpaceHeader);
+            const uint64_t nf = (need - sizeof(SpaceHeader)) / sizeof(float);
+            for(uint64_t i = 0; i < nf; i++)
+            {
+                float v; std::memcpy(&v, q + i * sizeof(float), sizeof(float));
+                if(!(v > -1e6f && v < 1e6f)) return SpaceError::BadValue;   /* NaN fails both */
+            }
+        }
         data_ = reinterpret_cast<const float*>(blob + sizeof(SpaceHeader));
         return SpaceError::Ok;
     }
@@ -95,7 +115,7 @@ public:
     {
         static const char* names[] = {"ok", "too short", "bad magic", "bad version", "bad N", "bad K",
                                       "bad P", "bad side", "bad mode", "bad topology", "bad point count",
-                                      "blob smaller than header claims"};
+                                      "blob smaller than header claims", "a coefficient not finite or past 1e6"};
         return names[(int)e];
     }
 

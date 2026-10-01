@@ -1635,7 +1635,7 @@ static bool TourLoad(int slot, uint8_t w)
     if(w >= kBuiltinWorlds) return false;
     if(worlds::IsAnalytic(w)) return worlds::Point(w, dst, kBootP, nullptr, &gVertTable[slot]);
     const size_t n = worlds::Expand(w, kBootN, kBootSide, kBootK, kBootP, gBlob[slot], sizeof(gBlob[slot]));
-    if(!n || gSpace[slot].Attach(gBlob[slot], n) != SpaceError::Ok) return false;
+    if(!n || gSpace[slot].Attach(gBlob[slot], n, false) != SpaceError::Ok) return false;
     dst.UseLattice(&gSpace[slot]);
     return true;
 }
@@ -1812,7 +1812,7 @@ static void ServeWorldRequest()
             {
                 const size_t sn = worlds::Expand(which, kBootN, kBootSide, kBootK, kBootP,
                                                  gBlob[kScratchSlot], sizeof(gBlob[kScratchSlot]));
-                ok = sn != 0 && gSpace[kScratchSlot].Attach(gBlob[kScratchSlot], sn) == SpaceError::Ok;
+                ok = sn != 0 && gSpace[kScratchSlot].Attach(gBlob[kScratchSlot], sn, false) == SpaceError::Ok;
                 if(ok) gScratch.UseLattice(&gSpace[kScratchSlot]);
             }
             srcp = ok ? &gScratch : nullptr;
@@ -2012,7 +2012,7 @@ static void ServeWorldRequest()
                     return worlds::Point(mreq, gMorphWorld, kBootP, nullptr, &gVertTable[kMorphSlot]);
                 const size_t n = worlds::Expand(mreq, kBootN, kBootSide, kBootK, kBootP,
                                                 gBlob[kMorphSlot], sizeof(gBlob[kMorphSlot]));
-                const bool ok = n != 0 && gSpace[kMorphSlot].Attach(gBlob[kMorphSlot], n) == SpaceError::Ok;
+                const bool ok = n != 0 && gSpace[kMorphSlot].Attach(gBlob[kMorphSlot], n, false) == SpaceError::Ok;
                 if(ok) gMorphWorld.UseLattice(&gSpace[kMorphSlot]);
                 return ok;
             });
@@ -2031,7 +2031,7 @@ static void ServeWorldRequest()
     {
         const size_t n = worlds::Expand(req, kBootN, kBootSide, kBootK, kBootP,
                                         gBlob[wi], sizeof(gBlob[wi]));
-        if(n == 0 || gSpace[wi].Attach(gBlob[wi], n) != SpaceError::Ok) { gWorldBusy = 0; return; }
+        if(n == 0 || gSpace[wi].Attach(gBlob[wi], n, false) != SpaceError::Ok) { gWorldBusy = 0; return; }
         gWorlds[wi].UseLattice(&gSpace[wi]);
     }
     __asm__ volatile("dmb" ::: "memory");

@@ -48,6 +48,18 @@ static void TestSpace()
     bad = b;
     bad[6] = 9; /* n */
     CHECK(s.Attach(bad.data(), bad.size()) == SpaceError::BadN, "bad N");
+    /* one coefficient not a number refuses the file, which NaNed the whole
+       output (the 2026-09-13 review); the firmware's own expansions skip the
+       scan. And the size in 64 bits: on the M7 point_count x stride x 4
+       wrapped in a 32-bit size_t, and a 64-byte file could claim 4 GB */
+    {
+        auto nanb = b;
+        const float qnan = std::nanf("");
+        std::memcpy(nanb.data() + sizeof(SpaceHeader) + 4 * 100, &qnan, 4);
+        CHECK(s.Attach(nanb.data(), nanb.size()) == SpaceError::BadValue, "a NaN coefficient was attached");
+        CHECK(s.Attach(nanb.data(), nanb.size(), false) == SpaceError::Ok, "the unchecked attach refused a well-formed header");
+        CHECK(SpaceDataBytes(0x40000000u, 72u) == 0x40000000ull * 72u * 4u, "the size wrapped: %llu", (unsigned long long)SpaceDataBytes(0x40000000u, 72u));
+    }
     /* every generated value finite and non-negative */
     CHECK(s.Attach(b.data(), b.size()) == SpaceError::Ok, "re-attach");
     size_t badv = 0;
