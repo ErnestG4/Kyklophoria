@@ -1527,7 +1527,7 @@ for (const [name, t, r] of CASES) {
 {
   const fails = [];
   const want = (name, mode) => { const m = P.fwModeOf(name); if (m !== mode) fails.push(`"${name}" read as ${m}, not ${mode}`); };
-  want('Bongs', 'modal'); want('Kyklophoria Modal', 'modal'); want('Kyklophoria Wavetable', 'wavetable'); want('Kyklophoria', 'both'); want(undefined, 'both');
+  want('Bongs', 'modal'); want('Kyklophoria Modal', 'modal'); want('Buzzes', 'wavetable'); want('Kyklophoria Wavetable', 'wavetable'); want('Kyklophoria', 'both'); want(undefined, 'both');
   const shows = (mode, view, tabs, rows) => {
     P.setView(view); P.setFwMode(mode); P.applyFwMode();
     const t = { play: !els.tabPlay.hidden, model: !els.tabModel.hidden, build: !els.tabBuild.hidden }, r = { tour: !els.tourRow.hidden, morph: !els.morphSel.hidden };
@@ -1536,6 +1536,8 @@ for (const [name, t, r] of CASES) {
     return P.getView();
   };
   if (shows('wavetable', 'model', { play: true, model: false, build: true }, { tour: true, morph: true }) !== 'play') fails.push('wavetable: left on the model tab');
+  /* Buzzes (the wavetable firmware, named 30 September): its own name */
+  if (els.fwName.textContent !== 'Buzzes') fails.push(`wavetable: the page is named "${els.fwName.textContent}", not Buzzes`);
   if (shows('modal', 'build', { play: false, model: true, build: false }, { tour: false, morph: false }) !== 'model') fails.push('modal: left on the build tab');
   /* Bongs (the modal firmware): no wavetable play view — a view left on it
      moves to the model tab, which is called play there — and its own name */
@@ -1548,6 +1550,7 @@ for (const [name, t, r] of CASES) {
      other firmware named, with a link; the same firmware, nothing said */
   P.setPageMode('modal'); P.renderPageLinks();
   if (!P.pageMismatch('wavetable') || els.pageSwitch.hidden) fails.push('the modal page reaching a wavetable module said nothing');
+  if (!/Buzzes/.test(els.pageSwitch.textContent)) fails.push(`the banner names the other firmware "${els.pageSwitch.textContent}", not Buzzes`);
   if (P.pageMismatch('modal') || !els.pageSwitch.hidden) fails.push('the modal page reaching a modal module complained');
   if (P.pageMismatch('both')) fails.push('the modal page complained of a module that names no firmware');
   if (els.pageLinks.children.length !== 2) fails.push(`the modal page links ${els.pageLinks.children.length} pages, not the wavetable one and both`);

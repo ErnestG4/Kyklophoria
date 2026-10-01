@@ -3564,10 +3564,12 @@ renderTour();
    and the page offers everything as it did. Each firmware's page shows only
    what that firmware does. */
 let fwMode = 'both';
-/* the modal firmware is Bongs (Combust, 29 September); "Kyklophoria Modal"
-   is what it said before, and still reads as it */
-function fwModeOf(name) { return /bongs|modal/i.test(name || '') ? 'modal' : /wavetable/i.test(name || '') ? 'wavetable' : 'both'; }
-const FW_TITLE = { modal: 'Bongs', wavetable: 'Kyklophoria' };
+/* the modal firmware is Bongs (Combust, 29 September) and the wavetable
+   firmware Buzzes (30 September); "Kyklophoria Modal" and "Kyklophoria
+   Wavetable" are what they said before, and still read as them. Kyklophoria is
+   the project, and the page for both */
+function fwModeOf(name) { return /bongs|modal/i.test(name || '') ? 'modal' : /buzzes|wavetable/i.test(name || '') ? 'wavetable' : 'both'; }
+const FW_TITLE = { modal: 'Bongs', wavetable: 'Buzzes' };
 /* Each firmware has its own page (Combust, 29 September: "work on getting
    each webserial page separated"): ?page=wavetable and ?page=modal, one
    source, each fixed to its firmware from the moment it loads — before
@@ -3582,10 +3584,10 @@ let pageMode = (() => {
 function renderPageLinks() {
   const links = $('pageLinks'); links.innerHTML = '';
   const add = (label, q) => { const a = document.createElement('a'); a.textContent = label; a.href = q; a.style.color = 'var(--dim)'; a.style.marginLeft = '8px'; links.appendChild(a); };
-  if (pageMode !== 'wavetable') add('wavetable page', '?page=wavetable');
+  if (pageMode !== 'wavetable') add('Buzzes page', '?page=wavetable');
   if (pageMode !== 'modal') add('Bongs page', '?page=modal');
   if (pageMode) add('both', '?');
-  document.title = pageMode === 'modal' ? 'Bongs' : pageMode ? `Kyklophoria — ${pageMode}` : 'Kyklophoria';
+  document.title = pageMode ? FW_TITLE[pageMode] : 'Kyklophoria';
 }
 /* the module the page reached runs the other firmware: say so, and link the
    page that is its */
@@ -3593,7 +3595,7 @@ function pageMismatch(mod) {
   const sw = $('pageSwitch');
   const wrong = !!(pageMode && (mod === 'modal' || mod === 'wavetable') && mod !== pageMode);
   sw.hidden = !wrong;
-  if (wrong) { sw.textContent = mod === 'modal' ? 'this module runs Bongs — open its page' : `this module runs the ${mod} firmware — open the ${mod} page`; sw.href = `?page=${mod}`; }
+  if (wrong) { sw.textContent = `this module runs ${FW_TITLE[mod]} — open its page`; sw.href = `?page=${mod}`; }
   return wrong;
 }
 /* Bongs, the modal firmware, has one playing view: the model tab, called
@@ -3602,8 +3604,8 @@ function pageMismatch(mod) {
    motion, the world bar — is the wavetable firmware's */
 function applyFwMode() {
   const modal = fwMode === 'modal', wave = fwMode === 'wavetable';
-  $('fwName').textContent = modal ? 'Bongs' : 'Kyklophoria';
-  $('fwMode').textContent = modal ? '' : wave ? ' wavetable' : '';
+  $('fwName').textContent = modal ? 'Bongs' : wave ? 'Buzzes' : 'Kyklophoria';
+  $('fwMode').textContent = '';
   $('tabPlay').hidden = modal;
   $('tabModel').hidden = wave;
   $('tabModel').textContent = modal ? 'play' : 'model';
