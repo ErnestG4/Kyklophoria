@@ -111,7 +111,7 @@ pot was next turned. Left: the axis pad, the strike pads and their velocity,
 the family's members (a readout of which one sounds), the instruments and
 the card. The page for both firmwares and the bridge keep every plane.
 
-## Backport to Kyklophoria (the wavetable firmware)
+## Backport to Buzzes (the wavetable firmware)
 
 Kept as the Bongs work goes:
 - **The "set pot" command is built** (0x70 POTS, both firmwares answer it;

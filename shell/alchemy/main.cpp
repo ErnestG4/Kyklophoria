@@ -1610,7 +1610,7 @@ static KykExt         gExt(gSource);
 #if KYK_MODE_MODAL
 static hostlink::Host host(presets, "kyk", "Bongs", KYK_FW_VERSION, KYK_GIT_HASH);   /* the modal firmware's name (Combust, 29 September); the page reads "bongs" or "modal" as it */
 #else
-static hostlink::Host host(presets, "kyk", "Kyklophoria Wavetable", KYK_FW_VERSION, KYK_GIT_HASH);
+static hostlink::Host host(presets, "kyk", "Buzzes", KYK_FW_VERSION, KYK_GIT_HASH);   /* the wavetable firmware's name (Combust, 30 September); the page reads "buzzes" or "wavetable" as it */
 #endif
 
 /* Switch worlds on the control thread. Analytic is a pointer write; a

@@ -11,7 +11,7 @@
 # Two firmwares from one tree (Combust, 28 September: "let's swap to be two
 # firmwares ... users swap from the SD"): each with the whole RAM, the pots and
 # the jacks to itself.
-#   make MODE=wavetable   -> build-wavetable/kyklophoria-wavetable.bin
+#   make MODE=wavetable   -> build-wavetable/buzzes.bin (the wavetable firmware is Buzzes)
 #   make MODE=modal       -> build-modal/bongs.bin (the modal firmware is Bongs)
 #   make both             -> the two
 MODE ?= modal
@@ -21,7 +21,7 @@ endif
 ifeq ($(MODE),modal)
 TARGET = bongs
 else
-TARGET = kyklophoria-$(MODE)
+TARGET = buzzes
 endif
 # the SDK's Makefile sets BUILD_DIR plainly; a mode's objects are its own
 override BUILD_DIR := build-$(MODE)

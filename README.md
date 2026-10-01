@@ -12,11 +12,12 @@ and presets persist. There is design work left: FM in is not read, most
 payload lanes are not routed, and the panel layout is still a first draft.
 J2 now clocks a loop of worlds.
 
-## Two firmwares: Kyklophoria and Bongs
+## Two firmwares: Buzzes and Bongs
 
-The module runs one of two firmwares, swapped from the SD card:
+Kyklophoria is the project; the module runs one of its two firmwares,
+swapped from the SD card:
 
-- **Kyklophoria**, the wavetable firmware, is everything below this section.
+- **Buzzes**, the wavetable firmware, is everything below this section.
 - **Bongs**, the modal firmware, plays physically modelled instruments. Each
   is a bank of resonances fitted to recordings (ModalBake), struck, plucked,
   bowed or blown by a modelled exciter.
@@ -62,7 +63,7 @@ its modes, and a row of controls for each panel page, which move the
 module's pots (the pot under your hand catches the new value). The design is
 in `docs/bongs-controls.md`, and the exciters in `docs/exciters.md`.
 
-## Controls (Kyklophoria)
+## Controls (Buzzes)
 
 **B1** taps through seven pages. **B2 + B3** held opens Settings. The page has
 three tabs: **play** is a readout of the instrument, **build** makes a world out
@@ -500,7 +501,7 @@ make test                 # unit, continuity, aliasing, morph, golden WAVs, link
 KYK_NODE=1 make test      # the same plus the node web selftest
 make armcost              # M7 instruction counts for the audio-path inner loops
 cd shell/alchemy && make MODE=modal      # Bongs: build-modal/bongs.bin (the default MODE)
-cd shell/alchemy && make MODE=wavetable  # Kyklophoria: build-wavetable/kyklophoria-wavetable.bin
+cd shell/alchemy && make MODE=wavetable  # Buzzes: build-wavetable/buzzes.bin
 make program-dfu          # with the module parked in the bootloader
 ```
 
@@ -557,7 +558,7 @@ python3 tools/bridge/bridge.py -- --gen --family field --side 8 --seed 1 \
 ```
 
 Published on GitHub Pages: https://ernestg4.github.io/Kyklophoria/?page=wavetable
-for Kyklophoria and https://ernestg4.github.io/Kyklophoria/?page=modal for Bongs.
+for Buzzes and https://ernestg4.github.io/Kyklophoria/?page=modal for Bongs.
 It is https and therefore a secure context, so Serial works there from any
 machine with desktop Chrome or Edge. To publish a new page, `bash
 web/publish-pages.sh` rebuilds the `pages` branch from `web/` and stamps it

@@ -1,6 +1,8 @@
-# Kyklophoria (the wavetable firmware): the roadmap
+# Buzzes (the wavetable firmware): the roadmap
 
-The live list for the wavetable firmware, as of 30 September 2026. It
+The live list for Buzzes, Kyklophoria's wavetable firmware (named 30 September
+2026; it reported itself as "Kyklophoria Wavetable" before, which the page still
+reads as it), as of 30 September 2026. It
 replaces `docs/checklist.md` as the place to start; that file keeps the
 history, the measurements and the reasons, and its open items are drawn
 from here. The Bongs list is `docs/bongs-roadmap.md`.
@@ -11,7 +13,7 @@ from here. The Bongs list is `docs/bongs-roadmap.md`.
   Grit is measured and not played. Morphing, user worlds, import, the card
   and the tour are tested by the suite and barely played (README, "Not built
   yet").
-- **Ready to share** as `build-wavetable/kyklophoria-wavetable.bin` with the
+- **Ready to share** as `build-wavetable/buzzes.bin` with the
   page at https://ernestg4.github.io/Kyklophoria/?page=wavetable (one repo,
   one page, both firmwares; publishing steps in the README's "The web page").
 - **Tidied on 30 September** before sharing, every one with a test that fails
