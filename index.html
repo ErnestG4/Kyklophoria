@@ -1096,13 +1096,24 @@ function boxAt(x, y) {
  * the intermediate ones are already stale. A failure turns the syncing off
  * rather than retrying, because the alternative is a failure storm behind a
  * link that has gone away. */
+/* and one world on the wire at a time, whoever sends it: the drag's re-send
+   and the send button each put a world in chunks, and only the drag
+   coalesced its own, so a send during a drag interleaved the two and the
+   module refused one mid-stream (the 2026-09-13 review). Every put waits
+   for the one before */
+let putChain = Promise.resolve();
+function putQueued(blob, onProgress) {
+  const p = putChain.then(() => { if (!link) throw new Error('not connected'); return MVL.putWorld(link, blob, onProgress); });
+  putChain = p.catch(() => {});
+  return p;
+}
 let placeSending = false, placeAgain = false;
 async function syncPlacement() {
   if (!link || !place.sent || !imported.length) return;
   if (placeSending) { placeAgain = true; return; }
   placeSending = true;
   try {
-    do { placeAgain = false; await MVL.putWorld(link, importedBlob()); heldSent(); } while (placeAgain);
+    do { placeAgain = false; await putQueued(importedBlob()); heldSent(); } while (placeAgain);
   } catch (e) {
     heldLost();
     say('the module stopped taking the moved world: ' + e.message, true);
@@ -1361,7 +1372,7 @@ async function sendImported() {
   if (!link || !imported.length) return;
   const blob = importedBlob();
   try {
-    await MVL.putWorld(link, blob, (done, all) =>
+    await putQueued(blob, (done, all) =>
       say(`sending ${(100 * done / all).toFixed(0)}%`));
     place.sent = true;
     heldSent();
