@@ -383,7 +383,8 @@ function cycleToNode(x, k = 64, mode = 'shape') {
   }
   /* One DFT, then the rotation search is k operations per offset rather than a
      fresh transform — 64 x N in total, not 64 x N x N. */
-  let bestKeep = -1, bestAt = 0;
+  const keepAt = new Float64Array(N);
+  let bestKeep = -1;
   for (let s = 0; s < N; s++) {
     let keep = 0;
     for (let h = 1; h <= k; h++) {
@@ -391,13 +392,75 @@ function cycleToNode(x, k = 64, mode = 'shape') {
       const v = bb[h] * Math.cos(th) - a[h] * Math.sin(th);
       keep += v * v;
     }
-    if (keep > bestKeep) { bestKeep = keep; bestAt = s; }
+    keepAt[s] = keep;
+    if (keep > bestKeep) bestKeep = keep;
   }
-  for (let h = 1; h <= k; h++) {
-    const th = 2 * Math.PI * h * bestAt / N;
-    mags[h - 1] = bb[h] * Math.cos(th) - a[h] * Math.sin(th);
+  /* One polarity: the built-ins'.
+   *
+   * The projection keeps exactly as much of a wave as of its negative, and of
+   * the wave turned half a cycle as of the wave itself, so neither the sign nor
+   * the choice between two tied rotations was ever the file's to make. It was
+   * left to whichever polarity the file happened to have and to floating-point
+   * noise in the tie, and the engine plays -sum m.sin(h.theta), so a rising
+   * ramp came in as exactly -1 x Lock's saw (the 2026-10-01 review, B4): a
+   * 50/50 morph between the two sat at -59.5 dB, and a world of such imports
+   * morphed against Lock went silent at t = 0.5.
+   *
+   * So the choice is made here, the way every built-in node already is
+   * (core/kyk_lock.h): the lowest harmonic that matters is positive, and among
+   * the rotations that keep the most, the one whose coefficients are largest
+   * at the first harmonic where they differ. A rising and a falling ramp land
+   * on the same node, and it is Lock's saw — measured against a snapshot of
+   * Lock in web/selftest.mjs, where re-importing every one of its twenty-four
+   * rendered nodes lands on the node it came from.
+   *
+   * Nothing stored moves. A `.kykw` holds coefficients in the engine's own
+   * convention, which this does not change — it only picks which of four
+   * equally good nodes an import becomes — so every file already written plays
+   * exactly as it did, and the format needs no flag to say so. A node that
+   * should be the other way up is the inspector's Flip. */
+  let best = null;
+  for (let s = 0; s < N; s++) {
+    if (keepAt[s] < bestKeep * (1 - 1e-12)) continue;
+    const c = new Float64Array(k);
+    for (let h = 1; h <= k; h++) {
+      const th = 2 * Math.PI * h * s / N;
+      c[h - 1] = bb[h] * Math.cos(th) - a[h] * Math.sin(th);
+    }
+    const sign = nodePolarity(c) < 0 ? -1 : 1;
+    if (sign < 0) for (let i = 0; i < k; i++) c[i] = -c[i];
+    if (!best || firstDiffers(c, best.c) > 0) best = { c, s, sign };
   }
-  return { mags, fit: tot > 0 ? bestKeep / tot : 1, rotation: bestAt, mode };
+  for (let i = 0; i < k; i++) mags[i] = best.c[i];
+  return { mags, fit: tot > 0 ? bestKeep / tot : 1, rotation: best.s, sign: best.sign, mode };
+}
+
+/* A harmonic counts towards a node's polarity at -60 dB under its strongest:
+   below that it is rounding, or a 16-bit file's dither, and either would let
+   noise pick the sign of a wave whose fundamental is genuinely absent. */
+const POLARITY_FLOOR = 1e-3;
+const peakAbs = (c) => { let m = 0; for (const v of c) { const x = Math.abs(v); if (x > m) m = x; } return m; };
+
+/* +1 when a node is the built-ins' way up — its lowest harmonic that matters is
+   positive, as every node of Lock, Shapes and Saw is — -1 when it is inverted
+   against them, and 0 for silence. Inaudible alone; against a built-in in a
+   blend or a morph it is the difference between adding and cancelling. */
+function nodePolarity(c) {
+  const floor = POLARITY_FLOOR * peakAbs(c);
+  if (!(floor > 0)) return 0;
+  for (const v of c) if (Math.abs(v) > floor) return v > 0 ? 1 : -1;
+  return 0;
+}
+
+/* The sign of a - b at the first harmonic where they differ by more than the
+   floor, so a rotation tie is broken by the wave and not by rounding. */
+function firstDiffers(a, b) {
+  const floor = POLARITY_FLOOR * Math.max(peakAbs(a), peakAbs(b));
+  for (let i = 0; i < a.length; i++) {
+    const d = a[i] - b[i];
+    if (Math.abs(d) > floor) return d > 0 ? 1 : -1;
+  }
+  return 0;
 }
 
 /* Build a user-world blob (core/kyk_userworld.h). `nodes` is an array of
@@ -1299,7 +1362,7 @@ const api = {
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
   parseWorlds, fetchWorlds, basisReq, parseBasis, fetchBasis, evalBasis, putWorld, putSlot, fetchSlots,
   MORPH_USER, SLOT_COUNT, STAT_CARD_EXISTS, SHAPER, SHAPER_NAME, buildUserWorld, parseUserWorld,
-  saveCardWorld, fetchSlot, fetchCardWorlds, wavToCycle, cycleToNode,
+  saveCardWorld, fetchSlot, fetchCardWorlds, wavToCycle, cycleToNode, nodePolarity,
   planeAxes, planeCount, noteName, statusName, u16, u32, f32,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.KYK = api;

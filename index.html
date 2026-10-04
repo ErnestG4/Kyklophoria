@@ -248,10 +248,14 @@
               color: var(--ink-3); font-size: 10px; cursor: pointer; opacity: 0; transition: opacity .1s; }
   .card:hover .cx, .card.on .cx { opacity: 1; }
   .card .cx:hover { color: var(--danger); border-color: var(--danger); }
-  .inspect { display: grid; grid-template-rows: minmax(200px, 1fr) auto auto; min-height: 0; background: var(--surface); border-left: 2px solid #000; }
+  .inspect { display: grid; grid-template-rows: minmax(200px, 1fr) auto auto auto; min-height: 0; background: var(--surface); border-left: 2px solid #000; }
   .inspect .display { margin: 12px 12px 0; }
   .sect { padding: 10px 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--ink-2); }
   .sect .hd { align-self: flex-start; }
+  /* a node's polarity: the built-ins' way up, or the other (link.js nodePolarity) */
+  #polState { border: 1.5px solid var(--edge); padding: 1px 7px; font: 11px var(--mono); color: var(--ink-3); }
+  #polState.up { border-color: var(--voice); color: var(--voice); }
+  #polState.down { border-color: var(--warn); color: var(--warn); }
 
   /* ── worlds ─────────────────────────────────────────────────────────── */
   #libMain { display: grid; grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
@@ -435,6 +439,10 @@
     </section>
     <aside class="inspect">
       <div class="display"><canvas id="inspect"></canvas></div>
+      <div class="sect"><span class="hd sm">POLARITY</span>
+        <div class="row"><span id="polState"></span><button class="chip" id="polFlip" title="negate this node's coefficients: the same wave upside down">flip</button></div>
+        <span id="polNote" class="prose"></span>
+      </div>
       <div class="sect"><span class="hd sm">HEAR</span>
         <div class="row"><button class="chip" id="audPlay">audition</button><button class="chip" id="audA">as imported</button><button class="chip" id="audB">band-limited</button><button class="chip" id="audC">as rendered</button></div>
         <span id="audState" class="prose"></span>
@@ -1236,6 +1244,7 @@ function selectNode(i) {
 }
 
 function renderImport() {
+  renderPolarity();
   const n = imported.length;
   $('wavMode').textContent = importMode;
   $('wavSend').disabled = !link || !n;
@@ -1282,7 +1291,7 @@ async function addWavs(files) {
       imported.push({ name: f.name.replace(/\.wav$/i, ''), mags: nd.mags, fit: nd.fit,
                       mode: importMode, pos: cell[imported.length].slice(),
                       render: renderFromMags(nd.mags),
-                      thumb: rotatedCycle(cyc, nd.rotation || 0) });
+                      thumb: rotatedCycle(cyc, nd.rotation || 0, CYC, nd.sign || 1) });
     } catch (e) { say(f.name + ': ' + e.message, true); }
   }
   renderStrip();
@@ -3066,7 +3075,7 @@ function renderFromMags(mags, out = CYC) {
  * the unshifted original against it would show two waveforms out of step and
  * blame the projection for it — the comparison is only honest once they start
  * at the same place. */
-function rotatedCycle(cyc, rot, out = CYC) {
+function rotatedCycle(cyc, rot, out = CYC, sign = 1) {
   const N = cyc.length, y = new Float32Array(out);
   /* Negated, for the same reason renderFromMags is: the engine plays
      -sum m.sin(h.theta), so a trace drawn in the file's own polarity would sit
@@ -3075,8 +3084,11 @@ function rotatedCycle(cyc, rot, out = CYC) {
      plays. A global sign flip is inaudible; comparing across one is not.
      This is what the first version of the polarity fix got wrong — it flipped
      one side of the comparison and left the other, which moved the mirror
-     rather than removing it. */
-  for (let i = 0; i < out; i++) y[i] = -cyc[(Math.round(i * N / out) + rot) % N];
+     rather than removing it.
+     And times the sign import chose (link.js cycleToNode puts every import the
+     built-ins' way up), for the same reason again: the node was negated, so
+     the cycle it is compared against has to be. */
+  for (let i = 0; i < out; i++) y[i] = -sign * cyc[(Math.round(i * N / out) + rot) % N];
   return y;
 }
 
@@ -3271,6 +3283,50 @@ function drawInspect() {
   if (w.fit < 0.8 && w.mode !== 'spectrum')
     line('a node is a projection onto the sine basis;', '#869cb1'), line('what sat in the cosine half is gone', '#869cb1');
 }
+
+/* ── a node's polarity, and turning one over ──────────────────────────────
+ *
+ * The engine plays -sum m.sin(h.theta), and a blend of two nodes is the sum of
+ * their coefficients, so two nodes that are the same wave the other way up do
+ * not blend, they cancel: an imported rising ramp was exactly -1 x Lock's saw,
+ * and a 50/50 morph between them sat at -59.5 dB (the 2026-10-01 review, B4).
+ * Import now puts every wave the built-ins' way up (link.js cycleToNode), so
+ * this says which way a node is — one opened from a file written before that,
+ * or sampled from a world, may be either — and Flip turns one over. Alone the
+ * two are the same sound; it is in a world, a morph or a tour beside the
+ * built-ins that the difference is the difference between adding and
+ * cancelling. */
+function renderPolarity() {
+  const w = imported[place.sel], el = $('polState');
+  $('polFlip').disabled = !w;
+  if (!w) {
+    el.className = ''; el.textContent = '—';
+    $('polNote').textContent = 'pick a waveform: its polarity decides whether it adds to the built-ins or cancels against them';
+    return;
+  }
+  const pol = MVL.nodePolarity(w.mags);
+  el.className = pol > 0 ? 'up' : pol < 0 ? 'down' : '';
+  el.textContent = pol > 0 ? '+ as the built-ins' : pol < 0 ? '− inverted' : 'silent';
+  $('polNote').textContent = pol > 0
+    ? 'the way up Lock, Shapes and every import are: it adds to them in a blend or a morph'
+    : pol < 0 ? 'the other way up from Lock, Shapes and every import: beside them it cancels rather than adds'
+    : 'a node with nothing in it has no way up';
+}
+
+/* Every coefficient negated, and both traces with it, so the inspector still
+   compares like with like and the audition plays what the node now is. A set
+   the module is holding is re-sent, as a move would be. */
+function flipNode(i) {
+  const w = imported[i];
+  if (!w) return;
+  if (audition.node === i) auditionStop();
+  w.mags = Float32Array.from(w.mags, v => -v);
+  w.render = renderFromMags(w.mags);
+  if (w.thumb) w.thumb = Float32Array.from(w.thumb, v => -v);
+  renderStrip(); renderImport(); renderAudition();
+  if (place.sent) syncPlacement();
+}
+$('polFlip').onclick = () => flipNode(place.sel);
 
 /* ── hearing what import costs ────────────────────────────────────────────
  *
