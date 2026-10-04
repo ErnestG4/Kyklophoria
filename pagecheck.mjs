@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, setDesc: v => { desc = v; }, scopeOn };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -1947,6 +1947,102 @@ for (const [name, t, r] of CASES) {
   P.setFwMode('both'); if (P.telFlags() !== 7) fails.push(`the page for both asks for ${P.telFlags()}, not 7`);
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} each page asks the module for what it draws${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The live output scope (telemetry flag 8, core/kyk_scope.h).
+ *
+ * Asked for only where the module says it serves it: firmware before the scope
+ * echoes an unknown flag back without serving it, so a page that asked would
+ * read the motion block from the wrong offset. Parsed only when the echoed
+ * flags still carry the bit — the module clears it when it has no window — so
+ * absent is null, never a window of zeros. And drawn, on both panes: a check
+ * that only asked whether drawing threw would pass with nothing on screen. */
+{
+  const fails = [], K = globalThis.KYK;
+  /* a telemetry reply as the module builds it: status, the fixed part for a
+     2-axis world with no payload, then the scope if given, then the motion
+     block ending in the live world (7) and its kind (1) */
+  const body = (flags, scope) => {
+    const out = [0];
+    const u32 = v => out.push(v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255);
+    const f32 = v => { const d = new DataView(new ArrayBuffer(4)); d.setFloat32(0, v, true); out.push(...new Uint8Array(d.buffer)); };
+    u32(1234); f32(110); out.push(2, 64, 64, 0, 1, flags, 0, 0); f32(0);
+    for (let i = 0; i < 4 * 2 + 1; i++) f32(0.5);
+    if (scope) {
+      out.push((scope.trig ? 1 : 0) | (scope.r ? 0 : 2), scope.shift, scope.l.length, 5, 9, 0);
+      for (const v of scope.l) out.push(v & 255);
+      if (scope.r) for (const v of scope.r) out.push(v & 255);
+    }
+    if (flags & 4) {
+      out.push(0, 0); for (let i = 0; i < 5; i++) f32(0); out.push(0);   /* kepler, couple, lock, sharp */
+      /* bodies, page, morph, morph_world, mute, aimed, pots[6], vals_valid +
+         vals[6], world, tour[3], kind — exactly as EncodeTelemetry writes it */
+      out.push(1, 0, 0, 0xFF, 0, 0, 0, 1, 2, 3, 4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 1);
+    }
+    return Uint8Array.from(out);
+  };
+  const L = [0, 64, 127, -127], R = [-64, -32, 0, 32];
+  /* every motion field, not only the last ones: the tail is read to the
+     length it has, so a parse from the wrong offset can land on the right
+     world byte by luck — it did, the first time this was written */
+  const motionOk = t => t.bodies === 1 && t.page === 0 && t.morphWorld === 0xFF && !t.aimed && t.knobs === null &&
+    t.pots && t.pots.map(v => Math.round(v * 255)).join() === '1,2,3,4,5,6' && t.world === 7 && t.kind === 1 && t.tour && t.tour.len === 0;
+  const t1 = K.parseTelemetry(body(4 | 8, { trig: true, shift: 3, l: L }));
+  if (!t1.scope) fails.push('a served scope did not parse');
+  else {
+    if (Math.abs(t1.scope.l[1] - 64 / 1024) > 1e-9 || Math.abs(t1.scope.l[2] - 127 / 1024) > 1e-9 || t1.scope.l[3] >= 0) fails.push(`decoded ${Array.from(t1.scope.l).join(',')}`);
+    if (!t1.scope.triggered || !t1.scope.mono || t1.scope.gain !== 8 || t1.scope.seq !== 9) fails.push('the header fields');
+    if (t1.scope.r !== t1.scope.l) fails.push('mono R is not L');
+    if (Math.abs(t1.scope.ms - 1000 * 4 * 5 / 48000) > 1e-9) fails.push(`window ${t1.scope.ms} ms`);
+  }
+  if (!motionOk(t1)) fails.push(`the motion block after the scope read wrong: world ${t1.world}, kind ${t1.kind}, pots ${t1.pots}`);
+  const t2 = K.parseTelemetry(body(4 | 8, { trig: false, shift: 0, l: L, r: R }));
+  if (!t2.scope || t2.scope.mono || Math.abs(t2.scope.r[0] + 0.5) > 1e-9 || t2.scope.triggered) fails.push('a stereo, free-running window');
+  if (!motionOk(t2)) fails.push('the motion block after a stereo scope');
+  /* the module had no window: bit 3 cleared, no block. Null, and the motion
+     block read from where it really starts */
+  const t3 = K.parseTelemetry(body(4));
+  if (t3.scope !== null) fails.push(`no window parsed as ${t3.scope}`);
+  if (!motionOk(t3)) fails.push(`the motion block without a scope: pots ${t3.pots}, page ${t3.page}`);
+  /* who asks */
+  P.setDesc(null);
+  P.setFwMode('modal'); if (P.telFlags() !== 4) fails.push(`Bongs on an older module asks for ${P.telFlags()}`);
+  P.setFwMode('wavetable'); if (P.telFlags() !== 7) fails.push(`Buzzes on an older module asks for ${P.telFlags()}`);
+  P.setDesc({ kyk: { ext: 6 } });
+  if (P.telFlags() !== 7) fails.push(`a descriptor without telflags gets ${P.telFlags()}`);
+  P.setDesc({ kyk: { ext: 6, telflags: 15 } });
+  P.setFwMode('modal'); if (P.telFlags() !== 12) fails.push(`Bongs on a module with the scope asks for ${P.telFlags()}, not 12`);
+  P.setFwMode('wavetable'); if (P.telFlags() !== 15) fails.push(`Buzzes on a module with the scope asks for ${P.telFlags()}, not 15`);
+
+  /* drawn: the trace is 2 × npts segments (the glow and the line), R another
+     npts when the ears differ, on Buzzes' sound pane and Bongs' */
+  const sine = (n, a) => Float32Array.from({ length: n }, (_, i) => a * Math.sin(2 * Math.PI * 4.4 * i / n));
+  const sc = (over = {}) => { const l = sine(192, 0.1); return Object.assign({ triggered: true, mono: true, shift: 3, gain: 8, npts: 192, spp: 5, seq: 1, ms: 20, l, r: l }, over); };
+  const segs = (draw, t) => { P.setTel(t); segLog.length = 0; draw(); return segLog.length; };
+  P.setPanel(null); P.setView('play');
+  for (const [name, s] of [['mono, triggered', sc()],
+                           ['stereo, free-running', sc({ mono: false, triggered: false, r: sine(192, -0.05) })],
+                           ['quiet, ×128', sc({ shift: 7, gain: 128, l: sine(192, 0.004), r: null })],
+                           ['coarse: 48 points', sc({ npts: 48, spp: 20, l: sine(48, 0.3), r: sine(48, 0.3) })],
+                           ['one point', sc({ npts: 1, l: Float32Array.of(0.2), r: Float32Array.of(0.2) })],
+                           ['silence', sc({ shift: 0, gain: 1, l: new Float32Array(192), r: new Float32Array(192) })]]) {
+    if (!s.r) s.r = s.l;
+    const want = s.npts * (s.mono ? 2 : 3);
+    const without = segs(P.drawSound, tel({ scope: null })), withs = segs(P.drawSound, tel({ scope: s }));
+    if (withs - without < want) fails.push(`Buzzes, ${name}: ${withs - without} segments for the trace, want ${want}`);
+    const r0 = segs(P.drawSound, tel({ ...RES, scope: null })), r1 = segs(P.drawSound, tel({ ...RES, scope: s }));
+    if (r1 - r0 < want) fails.push(`a resonator on the sound pane, ${name}: ${r1 - r0} segments`);
+    P.setView('model');
+    const m0 = segs(P.drawModel, tel({ ...RES, scope: null })), m1 = segs(P.drawModel, tel({ ...RES, scope: s }));
+    if (m1 - m0 < want) fails.push(`Bongs' pane, ${name}: ${m1 - m0} segments`);
+    P.setView('play');
+  }
+  /* and a module that does not serve it gets the pane it always had */
+  P.setDesc(null);
+  if (segs(P.drawSound, tel({ scope: sc() })) !== segs(P.drawSound, tel({ scope: null }))) fails.push('a module without the scope drew one');
+  P.setFwMode('both'); P.setTel(null);
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the live output scope: asked for where it is served, parsed where it is sent, drawn on both panes${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* The ring: a voice's modes struck by an impulse, sampled at the module's

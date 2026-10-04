@@ -74,10 +74,12 @@ paper; the displays stay dark.
   the current world; under it the morph target and the card. Above the
   space, what the terrain is shaded by.
 - **Bongs' play view**: the instruments in the slots and the card's down
-  the rail; the strike axis and the pads; the voice's **ring** — its modes
+  the rail; the strike axis and the pads; the **live output** — the same
+  20 ms scope as Buzzes' Sound view, the actual samples on the jacks, exciter
+  and pickup and limiter included — over the voice's **ring** — its modes
   struck once by an impulse, worked out at 48 kHz from the 0x6F readout,
   so it is the shape of the body without the exciter or the pickup — over
-  the modes themselves.
+  the modes themselves. The pane is called OUT · RING · MODES for that.
 - **Space** (left, the hero): a 2-D projection of the N-D space on a
   selectable pair of axes (buttons top-left, or `[` / `]`).
 
@@ -140,8 +142,16 @@ paper; the displays stay dark.
   not on the wire and guessing one would state a confidence nothing
   supports. When Kepler is running, an inset draws the orbit in its own
   plane, brightening with `rush` so periapsis is the bright part.
-- **Sound** (right): the current single-cycle frame (256 points of the
-  left voice) and its K-bin spectrum on a +6…−96 dB scale, with the
+- **Sound** (right): the live output on top — the last 20 ms the module
+  put on its jacks, after the level and the limiter, L in the cyan glow and
+  R under it in pink when the ears differ, triggered on a rising zero
+  crossing so a held note stands still (the caption says `free-run` in
+  orange when nothing crossed), drawn at the module's power-of-two gain with
+  the true peak in dBFS beside it. Only where the module's descriptor says it
+  serves the scope (`telflags`); an older module gets the pane it always had.
+  Under it the current single-cycle frame (256 points of the left voice) —
+  what the engine rendered, as against what left the module — and its
+  K-bin spectrum on a +6…−96 dB scale, with the
   bandlimit cutoff (`nyq k`) marked and moving with pitch; bins above it
   are drawn grey. Payload lanes as small meters. Deliberately untinted:
   colour on this page means position-in-timbre and lives only in the
@@ -174,7 +184,7 @@ and `shell/common/kyk_ext.h`:
 
 | cmd | | page use |
 |---|---|---|
-| 0x60 | `GET_TELEMETRY u8 flags` → block, f0, n/k/kcut/p/planes, stereo, spread, ctl/centre/posL/posR, angles, payload, `u8 mags[k]`, `i8 frame[256]`, motion block (Kepler, couple, lock, **sharp**) | 60 Hz poll, flags 7 |
+| 0x60 | `GET_TELEMETRY u8 flags` → block, f0, n/k/kcut/p/planes, stereo, spread, ctl/centre/posL/posR, angles, payload, `u8 mags[k]`, `i8 frame[256]`, the live output scope (flag 8: 20 ms of L and R, 198 B mono, 390 stereo), motion block (Kepler, couple, lock, **sharp**) | 60 Hz poll: Buzzes 7, Bongs 4, each with 8 added where `telflags` has it |
 | 0x61 | `GET_SPACE_INFO` → 64-byte header, blob CRC, stride | once at connect |
 | 0x62 | `GET_CELL u32 idx` → k, p, mags, payload | (ghost spectra, M2) |
 | 0x63 | `GET_STATS` → cycles last/max/avg, overruns, dropped, render_div, budget | 1 Hz |

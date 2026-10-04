@@ -39,7 +39,12 @@ const STAT_CARD_EXISTS = 20;
 const MORPH_USER = 0xFE;
 const SLOT_COUNT = 32;
 const WORLD_KIND = { lattice: 1, analytic: 2, vertices: 3, fm: 4, formant: 5, table: 6, lock: 7, unison: 8, modal: 9, bend: 10 };
-const TEL = { spectrum: 1, frame: 2, motion: 4 };
+const TEL = { spectrum: 1, frame: 2, motion: 4, scope: 8 };
+/* Which telemetry blocks the module serves, from its descriptor's `telflags`.
+ * Firmware before the scope does not say, and serves 7; it also echoes an
+ * unknown flag back without serving it, so asking it for the scope would make
+ * the motion block parse from the wrong offset. Ask only for what is here. */
+const telServed = desc => (desc && desc.kyk && Number.isInteger(desc.kyk.telflags)) ? desc.kyk.telflags : 7;
 const STATUS = ['OK', 'UNSUPPORTED', 'BAD_ARGS', 'BAD_STATE', 'BAD_CRC', 'BAD_SLOT', 'TOO_LARGE',
   'SCHEMA_MISMATCH', 'FLASH_FAIL', 'BUSY', 'FRAME_ERROR'];
 const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
@@ -710,6 +715,13 @@ async function putWorld(link, blob, onProgress) {
  *   u32 block · f32 f0 · u8 n k kcut p planes flags stereo spreadPlane · f32 spread
  *   f32 ctl[n] centre[n] posL[n] posR[n] angle[planes] payload[p]
  *   [flags&1] u8 mags[k] (0 = ≤ −96 dB, 255 = +6 dB) · [flags&2] i8 frame[256] (×40)
+ *   [flags&8] the live output scope, *when the echoed flags still say so* — the
+ *   module clears the bit when it has no window to send: u8 sflags (bit0
+ *   triggered, bit1 mono) · u8 shift · u8 npts · u8 spp · u16 seq · i8 L[npts] ·
+ *   i8 R[npts] unless mono. A sample is i8 / (128 · 2^shift) of full scale.
+ *   t.scope is null when it is not there, which is not a window of silence.
+ *   Between the frame and the motion block, because the motion block is the
+ *   part that grows.
  *   [flags&4] u8 kep_running · u8 kep_plane · f32 kep_x · f32 kep_y · f32
  *   kep_rush · f32 couple · f32 lock · u8 sharp — how the position is moving
  *   on its own, plus the Morph knob, which the page needs because it evaluates
@@ -723,6 +735,18 @@ function parseTelemetry(b) {
   t.ctl = arr(t.n); t.centre = arr(t.n); t.posL = arr(t.n); t.posR = arr(t.n); t.angle = arr(t.planes); t.payload = arr(t.p);
   if (t.flags & TEL.spectrum) { t.mags = b.slice(at, at + t.k); at += t.k; }
   if (t.flags & TEL.frame) { t.frame = new Int8Array(256); for (let i = 0; i < 256; i++) t.frame[i] = i8(b[at + i]); at += 256; }
+  t.scope = null;
+  if (t.flags & TEL.scope) {
+    const sf = b[at], shift = b[at + 1], npts = b[at + 2], spp = b[at + 3], mono = (sf & 2) !== 0;
+    const end = at + 6 + npts * (mono ? 1 : 2);
+    if (b.length >= end && npts > 0 && spp > 0 && shift <= 7) {
+      const sc = 1 / (128 * (1 << shift)), ch = off => { const a = new Float32Array(npts); for (let i = 0; i < npts; i++) a[i] = i8(b[off + i]) * sc; return a; };
+      const l = ch(at + 6);
+      t.scope = { triggered: (sf & 1) !== 0, mono, shift, gain: 1 << shift, npts, spp, seq: u16(b, at + 4),
+                  ms: 1000 * npts * spp / 48000, l, r: mono ? l : ch(at + 6 + npts) };
+    }
+    at = end;
+  }
   if (t.flags & TEL.motion) {
     t.kepler = { running: b[at] !== 0, plane: b[at + 1], x: f32(b, at + 2), y: f32(b, at + 6), rush: f32(b, at + 10) };
     t.couple = f32(b, at + 14); t.lock = f32(b, at + 18);
@@ -1356,7 +1380,7 @@ function planeAxes(n, plane) { let p = 0; for (let a = 0; a < n; a++) for (let b
 const planeCount = n => n * (n - 1) / 2;
 
 const api = {
-  CMD, ACT, TEL, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
+  CMD, ACT, TEL, telServed, STATUS, PROTO, WORLD_KIND, crc32, cobsEncode, cobsDecode, buildFrame, FrameParser, Link,
   SerialTransport, WsTransport, StdioTransport, hello, getDescriptor,
   TOUR, tourReq, parseTour, fetchResonate, parsePots, getPots, setPot,
   parseTelemetry, telemetryReq, magDb, evalFm, evalFormant, evalShapes, evalLock, evalUnison, evalModal, evalBend, parseSpaceInfo, cellReq, parseCell, parseStats, actionReq, setControlReq,
