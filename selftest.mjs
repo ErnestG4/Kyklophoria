@@ -125,6 +125,33 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
           + (ws ? ws.list.length + ' of ' + ws.count : '?') + ')');
     const fm = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.fm);
     const vw = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.formant);
+    /* The axis names, from the shell that the whole suite drives: a world
+       that names its axes sends them across every page of the list, and one
+       whose axes mean nothing alone sends an empty set rather than nothing. */
+    {
+      const named = ws ? ws.list.filter(w => w.axes && w.axes.some(Boolean)).length : 0;
+      check(fm && fm.axes && fm.axes.join(',') === 'index,ratio,carrier,carrier2',
+            `the desktop shell sends FM's axis names (${fm && fm.axes})`);
+      const sh = ws && ws.list.find(w => w.name === 'Shapes');
+      check(sh && sh.axes && sh.axes[0] === 'wave' && sh.axes[1] === null && sh.axes[2] === 'fold',
+            `an axis left numbered comes as a gap, not a shift (${sh && sh.axes})`);
+      const cell = ws && ws.list.find(w => w.name === '24-cell');
+      check(cell && Array.isArray(cell.axes) && cell.axes.length === 0, 'a world with no names sends an empty set');
+      check(named >= 14, `names arrive on worlds past the first page (${named} worlds name an axis)`);
+      /* And a reply without them — what firmware from before the names
+         sends — still parses, to the same worlds and no names at all. That
+         reply is this one cut at the end of its entries. */
+      const raw = await link.request(KYK.CMD.worlds, Uint8Array.of(0));
+      const full = KYK.parseWorlds(raw);
+      let at = 5;
+      for (let i = 0; i < raw[4]; i++) { at += 1; at += 1 + raw[at]; at += 1 + raw[at]; }
+      check(at < raw.length, 'the names follow the last entry');
+      const old = KYK.parseWorlds(raw.subarray(0, at));
+      check(old && full && old.sent === full.sent && old.list.length === full.list.length
+            && old.list.every((w, i) => w.name === full.list[i].name && w.note === full.list[i].note && w.kind === full.list[i].kind),
+            'a reply without names parses to the same worlds');
+      check(old && old.list.every(w => w.axes === undefined), 'and to no names, rather than to empty ones');
+    }
     check(!!fm, 'an FM world is registered');
     check(!!vw, 'a formant world is registered');
     const tb = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.table);

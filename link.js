@@ -847,7 +847,8 @@ function actionReq(op, args = []) { return Uint8Array.of(op & 0xff, ...args); }
  * and kind 1 is tabulated, a lattice with no closed form (core/kyk_world.h). */
 /* Paged since ext 4: the list outgrew a 1024-byte body at eighteen worlds and
  * the reply was silently never sent. Reply is total, current, start, sent,
- * then `sent` entries — use fetchWorlds, which walks the pages. */
+ * then `sent` entries, then their axis names — use fetchWorlds, which walks
+ * the pages. */
 function parseWorlds(b) {
   if (b.length < 5) return null;
   const count = b[1], current = b[2], start = b[3], sent = b[4];
@@ -860,6 +861,16 @@ function parseWorlds(b) {
     list.push({ index: start + i, kind, analytic: kind === WORLD_KIND.analytic || kind === WORLD_KIND.fm || kind === WORLD_KIND.formant
                  || kind === WORLD_KIND.table || kind === WORLD_KIND.lock
                  || kind === WORLD_KIND.unison || kind === WORLD_KIND.modal || kind === WORLD_KIND.bend, name, note });
+  }
+  /* Then each of those worlds' axis names, after the last entry so that a
+     parser written before them — this loop, as it was — stops short of them
+     and reads the reply unchanged. Per world: u8 n, n strings, '' for an
+     axis left numbered. Older firmware sends nothing here, and `axes` stays
+     absent: no names, which is not the same as names that are all empty. */
+  for (let i = 0; i < list.length && at < b.length; i++) {
+    const n = b[at++], axes = [];
+    for (let a = 0; a < n && at < b.length; a++) { let s; [s, at] = readStr(b, at); axes.push(s || null); }
+    list[i].axes = axes;
   }
   return { current, count, start, sent, list };
 }
