@@ -39,6 +39,9 @@ const calls = [];
  * whose only symptom is something quietly missing from the picture. */
 const nanDraws = [];
 const arcLog = [], segLog = [];
+/* and the words, so a check can ask what a label says rather than only that
+   something was drawn */
+const textLog = [];
 const GEOM = new Set(['arc', 'moveTo', 'lineTo', 'fillRect', 'strokeRect', 'rect', 'drawImage',
                       'fillText', 'strokeText', 'arcTo', 'quadraticCurveTo', 'bezierCurveTo']);
 const ctx2d = new Proxy({}, {
@@ -51,6 +54,7 @@ const ctx2d = new Proxy({}, {
          knobs are arcs from a fixed start angle, so what they are showing is
          recoverable from the end angle. */
       if (k === 'arc') arcLog.push(a);
+      if (k === 'fillText') textLog.push(String(a[0]));
       /* and the straight segments, which is how a pointer or a tick is drawn */
       if (k === 'moveTo' || k === 'lineTo') segLog.push([a[0], a[1]]);
       if (a.some(v => typeof v === 'number' && !Number.isFinite(v))) {
@@ -131,7 +135,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, buildAxisButtons, renderMuteChips, setHeld: v => { held = v; }, axisNames };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -1964,6 +1968,89 @@ for (const [name, t, r] of CASES) {
   if (none.y) fails.push('a voice with no modes drew a ring');
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the ring is the modes struck once${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The axes by name. A built-in's names come in the world list; where they
+   came, every label built from the axes uses them — plane buttons, mute
+   chips, the space's axis labels, the gauges, Play P3–P6, the Angle pots and
+   the plane menus — and where they did not (firmware from before them, a
+   world that names none), every one of those keeps its number exactly as
+   before. A world of yours names only the effect axes the page sent it with.
+   Each half fails without its part: with the parse or the lookup removed the
+   names never appear, and with a lookup that ignores absence the numbers go. */
+{
+  const fails = [];
+  const FM_AX = ['index', 'ratio', 'carrier', 'carrier2'];
+  const list = (axes) => ({ current: 9, count: 10, list: Array.from({ length: 10 }, (_, i) =>
+    ({ index: i, kind: i === 9 ? 4 : 1, analytic: i === 9, name: i === 9 ? 'FM' : 'w' + i, note: '', ...(i === 9 && axes ? { axes } : {}) })) });
+  const kids = el => el.children.map(c => c.children.length ? c.children.map(x => x.textContent).join('|') : c.textContent);
+  /* a panel with the pots that carry axes and planes, the menus as snaps */
+  const PL = ['0,1', '0,2', '0,3', '1,2', '1,3', '2,3'];
+  const panelFor = () => ({ pages: 3, pots: 6, names: ['Play', 'Rotate', 'Stereo'], colors: ['#67e8f9', '#fca5a5', '#a5b4fc'], grid: [
+    [{ name: 'Coarse', id: 'pitch.coarse', disp: { kind: 'norm' } }, { name: 'Fine', id: 'pitch.fine', disp: { kind: 'norm' } },
+     ...[0, 1, 2, 3].map(a => ({ name: 'Position ' + a, id: 'pos.' + a, disp: { kind: 'norm' } }))],
+    PL.map(p => ({ name: 'Angle ' + p, id: 'rot.' + p.replace(',', ''), disp: { kind: 'norm' } })),
+    [{ name: 'Spread', id: 'st.spread', disp: { kind: 'norm' } }, { name: 'Stereo plane', id: 'st.plane', disp: { kind: 'snap', labels: PL } },
+     { name: 'Position 4', id: 'pos.4', disp: { kind: 'norm' } }, { name: 'Position 5', id: 'pos.5', disp: { kind: 'norm' } }, null, null]] });
+  const look = (axes, t) => {
+    P.setWorlds(list(axes));
+    P.setTel(t);
+    P.setPanel(panelFor()); P.setFwMode('wavetable'); P.renderPanelRows();
+    P.setView('play'); P.setAxes([2, 3]);
+    textLog.length = 0;
+    P.drawStatus();           /* notices the names changed and rebuilds the chips and buttons */
+    P.drawSpace();
+    /* a page's labels are kept up while it is the one showing */
+    for (const page of [0, 1, 2]) { P.setTel({ ...t, page }); P.drawPanelLive(true); }
+    const c = P.getPotCtl();
+    return {
+      buttons: kids(els.axes), chips: kids(els.muteChips), text: textLog.slice(),
+      play: c[0].slice(2).map(x => x.lab.textContent), sub: c[0][2].sub.textContent,
+      angle: c[1][0].lab.textContent, menu: c[2][1].el.children.map(o => o.textContent), menuVal: c[2][1].val.textContent,
+      world: [c[2][2].lab.textContent, c[2][3].lab.textContent],
+    };
+  };
+  /* named */
+  const on = look(FM_AX, tel({ n: 4, world: 9, page: 2, knobs: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+  if (on.buttons[0] !== 'index · ratio|0,1') fails.push(`plane button 0,1 reads "${on.buttons[0]}"`);
+  if (on.buttons[5] !== 'carrier · carrier2|2,3') fails.push(`plane button 2,3 reads "${on.buttons[5]}"`);
+  if (on.chips[0] !== 'index · ratio|0,1') fails.push(`mute chip 01 reads "${on.chips[0]}"`);
+  if (!on.text.includes('carrier') || !on.text.includes('carrier2')) fails.push(`the space's axis labels on 2,3 are not carrier and carrier2 (${on.text.slice(0, 8).join(', ')})`);
+  if (!on.text.includes('index') || !on.text.includes('ratio')) fails.push('the gauges are not labelled by name');
+  if (on.text.includes('23') || on.text.includes('axis 2')) fails.push('a number label drawn where a name was sent');
+  if (on.play.join(',') !== 'Index,Ratio,Carrier,Carrier2') fails.push(`Play P3–P6 read ${on.play.join(',')}`);
+  if (on.sub !== 'Position 0') fails.push(`the descriptor's own words are not under P3 ("${on.sub}")`);
+  if (on.angle !== 'Angle index · ratio') fails.push(`Rotate P1 reads "${on.angle}"`);
+  if (on.menu[0] !== 'index · ratio (0,1)' || on.menu[5] !== 'carrier · carrier2 (2,3)') fails.push(`the stereo plane menu reads ${on.menu.join(' / ')}`);
+  /* the knob is at the middle, which is the fourth of six planes */
+  if (on.menuVal !== 'ratio · carrier (1,2)') fails.push(`the stereo plane's value reads "${on.menuVal}"`);
+  /* not sent: firmware from before the names */
+  const off = look(null, tel({ n: 4, world: 9, page: 2, knobs: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+  if (off.buttons[0] !== '0×1') fails.push(`with no names, plane button 0,1 reads "${off.buttons[0]}"`);
+  if (off.chips[0] !== '01') fails.push(`with no names, mute chip 01 reads "${off.chips[0]}"`);
+  if (!off.text.includes('axis 2') || !off.text.includes('23')) fails.push('with no names, the axis labels and gauges lost their numbers');
+  if (off.play.join(',') !== 'Position 0,Position 1,Position 2,Position 3') fails.push(`with no names, Play P3–P6 read ${off.play.join(',')}`);
+  if (off.angle !== 'Angle 0,1' || off.menu[0] !== '0,1' || off.menuVal !== '1,2') fails.push(`with no names, the plane pots read "${off.angle}", "${off.menu[0]}", "${off.menuVal}"`);
+  /* a gap among names is the number, not a shift */
+  const gap = look(['wave', null, 'fold', 'warp'], tel({ n: 4, world: 9, page: 2, knobs: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+  if (gap.buttons[0] !== 'wave · 1|0,1' || gap.play[1] !== 'Position 1') fails.push(`an unnamed axis among named ones reads "${gap.buttons[0]}", "${gap.play[1]}"`);
+  /* a world of yours: only the effects the page sent it with, and only while it holds */
+  P.setHeld({ name: 'mine', nodes: [], fx: [{ axis: 4, kind: 1 }] });
+  const mine = look(FM_AX, tel({ n: 6, world: 0xFF, page: 2, knobs: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+  if (mine.world.join(',') !== 'Fold,Position 5') fails.push(`World P1/P2 on a world sent with a fold on axis 4 read ${mine.world.join(',')}`);
+  if (mine.play.join(',') !== 'Position 0,Position 1,Position 2,Position 3') fails.push(`a world of yours borrowed a built-in's names: ${mine.play.join(',')}`);
+  P.setHeld(null);
+  /* and a draft with a fold on axis 4 is the build tab's to name, not the
+     play view's: the module is not holding it */
+  els.fxA.value = '1';
+  const lost = look(FM_AX, tel({ n: 6, world: 0xFF, page: 2, knobs: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+  if (lost.world.join(',') !== 'Position 4,Position 5') fails.push(`with nothing held, World P1/P2 read ${lost.world.join(',')}`);
+  const draftBtns = kids(els.planeAxes);
+  if (lost.buttons[14] !== '4×5' || draftBtns[14] !== 'fold · 5|4,5') fails.push(`plane 4,5 reads "${lost.buttons[14]}" on play and "${draftBtns[14]}" on build`);
+  els.fxA.value = '0';
+  P.setTel(null); P.setPanel(null); P.setWorlds(null); P.setAxes([0, 1]); P.buildAxisButtons(); P.renderMuteChips();
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} axes by name where the module sends them, by number where it does not${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* The same plane, drawn. A missing guard here throws nothing and paints
