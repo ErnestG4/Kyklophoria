@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say, voiceTuning };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say, voiceTuning, selectWorld, renderWorldBar, chooseInstrument, selEntries, selLayout, getSwitching: () => switching };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -2033,6 +2033,108 @@ for (const [name, t, r] of CASES) {
   if (none.y) fails.push('a voice with no modes drew a ring');
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the ring is the modes struck once${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The panel's selector: the rails are mirrors of the pot.
+ *
+ * World P6 (Buzzes) and Space P4 (Bongs) choose what plays, and the pot's
+ * stored value is the one store (the 2026-10-01 review, design D4). So a
+ * click on the world rail or the instrument rail writes that pot through
+ * 0x70, where the module commits it at once, and never sends the select or
+ * slot-live action the pot would not hear of. A module whose descriptor has
+ * no such pot keeps the actions. The panel's own row for it names the
+ * entries — the built-ins then the filled slots, the card's instruments — and
+ * reads the stored value back as a name.
+ */
+{
+  const fails = [];
+  const sent = [];
+  const q = [], stub = globalThis.setTimeout;
+  globalThis.setTimeout = f => { q.push(f); return 0; };
+  const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setImmediate(r)); };
+  P.setLink({ kind: 'serial', request: async (cmd, body) => { sent.push([cmd, Array.from(body || [])]); return new Uint8Array([0]); }, close: async () => {} });
+  const names = ['Crop', '24-cell', '16-cell', 'Tesseract', 'Stack', 'Field', 'Field II', 'Torus', 'Harmonic', 'FM', 'Vowel',
+                 'Shapes', 'Shapes R', 'Lock', 'Unison', 'Plate', 'Bar', 'Drum', 'Saw', 'Pulse', 'Edge', 'Grit'];
+  const W = { count: 22, current: 0, list: names.map((name, index) => ({ index, name, note: '', analytic: index !== 5 })) };
+  const withSel = { ...parsed, grid: parsed.grid.map((row, p) => row.map((f, k) => p === 6 && k === 5 ? { name: 'World', id: 'world.sel', disp: { kind: 'norm' } } : f)) };
+  const q16 = v => Math.round(v * 65535);
+  const potSent = () => sent.find(x => x[0] === KYK.CMD.pots && x[1][0] === 1);
+  const potVal = x => x[1][3] | (x[1][4] << 8);
+
+  /* Buzzes, with the pot: the rail writes it */
+  P.setPanel(withSel); P.setFwMode('wavetable'); P.renderPanelRows();
+  P.setWorlds(W); P.setSlots({ count: 32, live: 0xFF, target: 0xFF, names: Array.from({ length: 32 }, (_, i) => i === 2 ? 'mine' : i === 5 ? 'yours' : null) });
+  /* the panel's row names the entries and reads the value as one */
+  const row = P.getPotCtl()[6][5];
+  if (!row || row.el.tagName !== 'select') fails.push('World P6 on the panel is not a menu');
+  else {
+    const L = P.selLayout(row);
+    if (L.fixed !== 22 || L.den !== 26 || L.extra !== 2) fails.push(`World P6's layout is ${JSON.stringify(L)}`);
+    const vals = Array.from({ length: 7 }, () => new Array(6).fill(0.5));
+    vals[6][5] = 22 / 26 + (4 / 26) * 0.75;           /* the second filled slot */
+    P.applyPots({ pages: 7, pots: 6, live: 0, vals });
+    if (row.val.textContent !== 'yours' || row.el.children.length !== 24) fails.push(`World P6 near the top reads "${row.val.textContent}" of ${row.el.children.length}`);
+  }
+  P.setTel(tel({ world: 0 }));
+  P.renderWorldBar();
+  const fm = els.worldChips.children.find(b => b.textContent === 'FM');
+  if (!fm) fails.push('the world rail has no FM');
+  else {
+    fm.onclick(); await settle();
+    const x = potSent();
+    /* FM is entry 9, a built-in at its fixed place: 9.5/26, whatever the slots */
+    if (!x || x[1][1] !== 6 || x[1][2] !== 5 || Math.abs(potVal(x) - q16(9.5 / 26)) > 1)
+      fails.push(`FM on the rail sent ${JSON.stringify(x)}, not World P6 at 9.5/26`);
+    if (sent.some(y => y[0] === KYK.CMD.action && y[1][0] === KYK.ACT.selectWorld)) fails.push('and sent the select action as well');
+    P.setTel(tel({ world: 9 })); q.splice(0).forEach(f => f()); await settle(); q.splice(0).forEach(f => f()); await settle();
+    if (P.getSwitching() !== -1) fails.push('the rail is still switching once the module says FM');
+  }
+  P.setWorlds(W);                 /* the stub link's world list read back empty */
+  {
+    const row = P.getPotCtl()[6][5];
+    sent.length = 0;
+    if (row && row.el.onchange) { row.el.value = '13'; row.el.onchange(); await settle(); }
+    const x = potSent();
+    if (!x || Math.abs(potVal(x) - q16(13.5 / 26)) > 1) fails.push(`Lock from the panel's menu sent ${JSON.stringify(x)}`);
+  }
+  /* without the pot: the select action, as before */
+  P.setPanel(parsed); P.renderPanelRows();
+  sent.length = 0;
+  P.setTel(tel({ world: 9 })); P.setWorlds({ ...W, current: 9 }); P.renderWorldBar();
+  const lock = els.worldChips.children.find(b => b.textContent === 'Lock');
+  lock.onclick(); await settle();
+  if (!sent.some(y => y[0] === KYK.CMD.action && y[1][0] === KYK.ACT.selectWorld && y[1][1] === 13)) fails.push('with no World P6 the rail did not send the select action');
+  if (potSent()) fails.push('with no World P6 the rail wrote a pot');
+  P.setTel(tel({ world: 13 })); q.splice(0).forEach(f => f()); await settle(); q.splice(0).forEach(f => f()); await settle();
+
+  /* Bongs: the instrument rail is the card, through Space P4 */
+  const bongs = { pages: 4, pots: 6, names: ['Play', 'Exciter', 'Resonator', 'Space'], colors: ['', '', '', ''],
+                  grid: Array.from({ length: 4 }, (_, p) => Array.from({ length: 6 }, (_, k) =>
+                    p === 3 && k === 3 ? { name: 'Instrument', id: 'res.inst', disp: { kind: 'norm' } } : p === 3 && k > 3 ? null : { name: `p${p}k${k}`, id: `x.${p}.${k}`, disp: { kind: 'norm' } })) };
+  P.setPanel(bongs); P.setFwMode('modal'); P.renderPanelRows(); P.setView('model');
+  P.setCardList({ count: 3, names: ['apple.kykm', 'notes.kykw', 'Zed.kykm'] });
+  P.setSlots({ count: 32, live: 4, target: 0xFF, names: Array.from({ length: 32 }, (_, i) => i === 4 ? 'Zed' : null) });
+  P.setTel(tel({ ...RES })); P.renderModelChips();
+  const chips = els.instChips.children.filter(c => c.tagName === 'button');
+  if (chips.map(c => c.textContent).join(',') !== 'apple,Zed') fails.push(`the instrument rail reads ${chips.map(c => c.textContent)}`);
+  else {
+    if (!/\bon\b/.test(chips[1].className) || /\bon\b/.test(chips[0].className)) fails.push('the rail does not light Zed, which is playing');
+    sent.length = 0;
+    chips[0].onclick(); await settle();
+    const x = potSent();
+    if (!x || x[1][1] !== 3 || x[1][2] !== 3 || Math.abs(potVal(x) - q16(0.25)) > 1) fails.push(`apple on the rail sent ${JSON.stringify(x)}, not Space P4 at 1/4`);
+    if (sent.some(y => y[0] === KYK.CMD.action && (y[1][0] === KYK.ACT.slotLive || y[1][0] === KYK.ACT.cardToSlot))) fails.push('and sent a slot action as well');
+  }
+  P.setCardList({ count: 0, names: [] }); P.renderPanelRows();
+  P.setTel(tel({ ...RES, page: 3 })); P.drawPanelLive(true);
+  const ins = P.getPotCtl()[3][3];
+  if (!ins || !/no instruments/.test(ins.sub.textContent)) fails.push(`with nothing on the card Space P4 says "${ins && ins.sub.textContent}"`);
+
+  globalThis.setTimeout = stub;
+  q.length = 0;
+  P.setView('play'); P.setFwMode('both'); P.setPanel(null); P.renderPanelRows(); P.setLink(null); P.setSlots(null); P.setTel(null);
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the world and instrument rails write the selector pot through 0x70${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* The same plane, drawn. A missing guard here throws nothing and paints

@@ -853,9 +853,15 @@ async function selectWorld(i) {
   switching = i;
   renderWorldBar();
   try {
+    /* Through World P6 where the module has it: the pot's stored value is
+     * what plays, and the module commits a write at once. An action here
+     * would be a second hand on the same setting, which the pot never hears
+     * of (the 2026-10-01 review, design D4). */
+    const sp = selPot('world.sel');
+    if (sp) await selChoose(sp, i);
     /* A tabulated world has to be expanded before it can play; the module
      * answers BUSY until it is done, so give it a few tries. */
-    for (let attempt = 0; ; attempt++) {
+    else for (let attempt = 0; ; attempt++) {
       try { await link.request(MVL.CMD.action, MVL.actionReq(MVL.ACT.selectWorld, [i]), { urgent: true, timeoutMs: 4000 }); break; }
       catch (e) { if (!/BUSY/.test(e.message) || attempt > 20) throw e; await new Promise(r => setTimeout(r, 120)); }
     }
@@ -1646,7 +1652,18 @@ function renderModelChips() {
      the live one lit. The page cannot tell a resonator's slot from a
      wavetable's by name alone — a card file's name is what is left of its
      file name — so all of them are offered and the tab says which it got */
-  {
+  const ip = selPot('res.inst');
+  if (ip) {
+    /* Space P4 on the module: the rail is that pot, the card's instruments in
+       its order, the one playing lit, and a click stores the pot (the module
+       loads it into a slot and plays it) */
+    const box = $('instChips'); box.innerHTML = '';
+    const E = selEntries(ip), at = selLive(ip);
+    E.forEach((e, i) => box.appendChild(chip(e.name, i === at, `Space P4 to ${e.name}: the module loads it into a slot and plays it`, () => chooseInstrument(i))));
+    if (!E.length) box.appendChild(dimText(link ? 'no instruments on the card' : 'not connected'));
+    /* playing something that is not on the card (any more) */
+    if (r && r.name && live && at < 0) box.appendChild(dimText('· ' + r.name));
+  } else {
     const box = $('instChips'); box.innerHTML = '';
     let any = false;
     if (slots) for (let i = 0; i < slots.count; i++) {
@@ -1793,12 +1810,30 @@ function pressAxis(e) {
   gateTo(true);
   strikeAt(v);
 }
+/* An instrument chosen on the page, through Space P4: the module loads it into
+   a slot (or plays the slot that already holds it) and plays it. Waits for the
+   module to say so, as a world switch waits for telemetry. */
+async function chooseInstrument(e) {
+  const ip = selPot('res.inst');
+  if (!link || !ip) return;
+  const E = selEntries(ip);
+  if (!E[e]) return;
+  heldLost();
+  $('modelCardState').textContent = `loading ${E[e].name}…`;
+  await selChoose(ip, e);
+  if (await waitForSlots(s => s.live < s.count && cardIsSlot(E[e].file, s.names[s.live]), 8000, `load: ${E[e].name} did not start playing`))
+    $('modelCardState').textContent = `playing from slot ${slots.live}`;
+  renderModelChips();
+  setTimeout(() => { refreshWorlds(); }, 250);
+}
 $('modelCardLoad').onclick = async () => {
   if (!link) return;
   const v = $('modelCardSel').value;
   if (v === '') return;
   const i = parseInt(v, 10);
   if (!(i >= 0) || !cardList.names[i] || !isResonator(cardList.names[i])) return;
+  const ip = selPot('res.inst');
+  if (ip) { await chooseInstrument(selEntries(ip).findIndex(x => x.i === i)); return; }
   try {
     const slot = freeSlot();
     if (slot < 0) { say('every slot is full — forget one on the worlds tab', true); return; }
@@ -1982,13 +2017,18 @@ async function pollTelemetry() {
    the space and sound panes draw from it, since the wavetable's readouts
    — a position in a space, a frame, a spectrum — mean nothing for a
    world that is struck rather than scanned. */
-let reso = null;
+let reso = null, resoSeen = '';
 async function pollResonate() {
   const own = link;
   while (polling && link === own) {
     if (tel && tel.resonate) {
       try { reso = await MVL.fetchResonate(link); } catch { reso = null; }
     } else reso = null;
+    /* a new instrument with nobody here asking for it — Space P4 or B3 on the
+       module — has filled a slot and changed which plays: the rails read the
+       slots, so read them again */
+    const nm = reso ? reso.name || '' : '';
+    if (nm !== resoSeen) { resoSeen = nm; if (nm && link === own) refreshSlots().then(() => { if (viewMode === 'model') renderModelChips(); }); }
     await new Promise(r => setTimeout(r, 125));
   }
 }
@@ -2107,7 +2147,13 @@ function renderPanelRows() {
       const tr = document.createElement('div'); tr.className = 'tr';
       let el;
       const snap = f.disp && f.disp.kind === 'snap' && Array.isArray(f.disp.labels) && f.disp.labels.length;
-      if (snap) {
+      const isSel = f.id === 'world.sel' || f.id === 'res.inst';
+      if (isSel) {
+        /* the names come from the page's own lists, not the descriptor: the
+           list grows with the slots and the card */
+        el = document.createElement('select');
+        el.onchange = () => { const c = potCtl[p][k]; if (c) selChoose(c, Number(el.value)); };
+      } else if (snap) {
         el = document.createElement('select');
         f.disp.labels.forEach((t, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = t; el.appendChild(o); });
         el.onchange = () => { const n = f.disp.labels.length; potMove(p, k, (Number(el.value) + 0.5) / n); };
@@ -2119,7 +2165,7 @@ function renderPanelRows() {
       const sdot = document.createElement('span'); sdot.className = 'sdot'; sdot.hidden = true; sdot.title = 'where the sound is on this axis, after the CVs, the rotation and the motions';
       tr.appendChild(el); tr.appendChild(hand); tr.appendChild(sdot); cell.appendChild(tr);
       const sub = document.createElement('div'); sub.className = 'ps'; cell.appendChild(sub);
-      potCtl[p].push({ el, val, disp: f.disp, snap: !!snap, cell, lab, hand, sdot, sub, id: f.id || '', name: f.name, p, k, lastV: null, markKey: '', labKey: '' });
+      potCtl[p].push({ el, val, disp: f.disp, snap: !!snap || isSel, sel: isSel, selKey: null, cell, lab, hand, sdot, sub, id: f.id || '', name: f.name, p, k, lastV: null, markKey: '', labKey: '' });
       cells.push(cell);
     }
     const bmark = i => { const b = document.createElement('div'); b.className = 'bmark'; b.textContent = 'B' + i; return b; };
@@ -2150,6 +2196,7 @@ $('panelAll').onclick = () => { panelAll = !panelAll; panelView = -1; placePanel
 function showPot(c, v) {
   if (!c || c.lastV === v) return;
   c.lastV = v;
+  if (c.sel) { syncSel(c, v); return; }
   if (c.snap) { const n = c.disp.labels.length; c.el.value = String(Math.min(n - 1, Math.floor(v * n))); }
   else c.el.value = String(v);
   c.val.textContent = potText(c.disp, v);
@@ -2161,7 +2208,7 @@ async function potMove(p, k, v) {
   const key = p + ':' + k;
   potTouched[key] = performance.now();
   if (potVals && potVals[p]) potVals[p][k] = v;
-  if (potCtl && potCtl[p]) { const c = potCtl[p][k]; if (c) { c.lastV = v; c.val.textContent = potText(c.disp, v); } }
+  if (potCtl && potCtl[p]) { const c = potCtl[p][k]; if (c) { c.lastV = v; if (c.sel) syncSel(c, v); else c.val.textContent = potText(c.disp, v); } }
   syncTourDiv();
   if (!link) return;
   if (potSending[key]) { potQueued[key] = v; return; }
@@ -2188,6 +2235,107 @@ const potValById = id => {
   for (let p = 0; p < potCtl.length; p++) for (const c of potCtl[p]) if (c && c.id === id) return potVals[p][c.k];
   return null;
 };
+/* The panel's selector: Buzzes' World P6 (world.sel), the twenty-two built-ins
+   and then the filled slots; Bongs' Space P4 (res.inst), the card's
+   instruments as the module sorts them. The pot's stored value is the only
+   store of what plays, so the world rail, the instrument rail and the panel's
+   row all write it through 0x70 and the module commits it at once; a world
+   changed any other way moves the pot to it on the module. The layout is
+   shell/common/kyk_selector.h's, and has to agree with it: the built-ins at
+   fixed places, 1/26 of the travel each, the slots sharing the rest, so a
+   preset's world does not move when a slot is filled. Found by ident, so a
+   module without the pot keeps the old actions. */
+const WORLD_SEL_DEN = 26, SEL_NAME_LEN = 16;
+function selPot(id) {
+  if (!potCtl) return null;
+  for (const row of potCtl) for (const c of row) if (c && (c.id === id || (!id && (c.id === 'world.sel' || c.id === 'res.inst')))) return c;
+  return null;
+}
+/* what the pot ranges over, in its order: { name, kind, i } — a built-in by
+   index, a slot by number, a card file by its place in the card's list */
+function selEntries(c) {
+  const out = [];
+  if (!c) return out;
+  if (c.id === 'world.sel') {
+    if (worlds) for (const w of worlds.list) out[w.index] = { name: w.name, kind: 'builtin', i: w.index };
+    const n = worlds ? worlds.count : out.length;
+    for (let i = 0; i < n; i++) if (!out[i]) out[i] = { name: 'world ' + i, kind: 'builtin', i };
+    if (slots) for (let s = 0; s < slots.count; s++) if (slots.names[s]) out.push({ name: slots.names[s], kind: 'slot', i: s });
+  } else if (c.id === 'res.inst') {
+    cardList.names.forEach((nm, i) => { if (isResonator(nm)) out.push({ name: cardLabel(nm).replace(/ · resonator$/, ''), kind: 'card', i, file: nm }); });
+  }
+  return out;
+}
+function selLayout(c) {
+  if (c && c.id === 'world.sel') {
+    const fixed = worlds ? worlds.count : 22;
+    return { fixed, den: WORLD_SEL_DEN, extra: selEntries(c).length - fixed };
+  }
+  return { fixed: 0, den: 0, extra: selEntries(c).length };
+}
+const selCount = L => L.fixed + L.extra;
+function selLo(L, i) {
+  if (L.den <= 0) return i / selCount(L);
+  if (i < L.fixed) return i / L.den;
+  const b = L.fixed / L.den;
+  return b + (i - L.fixed) * (1 - b) / L.extra;
+}
+function selHi(L, i) {
+  if (L.den <= 0) return (i + 1) / selCount(L);
+  if (i < L.fixed) return L.extra === 0 && i === L.fixed - 1 ? 1 : (i + 1) / L.den;
+  const b = L.fixed / L.den;
+  return b + (i - L.fixed + 1) * (1 - b) / L.extra;
+}
+const selCentre = (L, i) => 0.5 * (selLo(L, i) + selHi(L, i));
+function selEntry(L, v) {
+  const n = selCount(L);
+  if (n <= 0) return -1;
+  v = Math.min(1, Math.max(0, v));
+  let i;
+  if (L.den <= 0) i = Math.floor(v * n);
+  else if (v < L.fixed / L.den) i = Math.floor(v * L.den);
+  else if (L.extra === 0) i = L.fixed - 1;
+  else i = L.fixed + Math.floor((v - L.fixed / L.den) / (1 - L.fixed / L.den) * L.extra);
+  return Math.max(0, Math.min(n - 1, i));
+}
+/* a resonate slot is named for its file, cut to sixteen characters */
+const cardIsSlot = (file, slot) => !!slot && file.replace(/\.kyk[wm]$/i, '').slice(0, SEL_NAME_LEN) === slot;
+/* the entry playing, or -1 */
+function selLive(c) {
+  const E = selEntries(c);
+  if (c.id === 'world.sel') {
+    const w = tel && tel.world != null ? tel.world : worlds ? worlds.current : 0xFF;
+    if (w !== 0xFF && w < (worlds ? worlds.count : 22)) return w;
+    if (slots && slots.live < slots.count) return E.findIndex(e => e.kind === 'slot' && e.i === slots.live);
+    return -1;
+  }
+  const nm = (slots && slots.live < slots.count && slots.names[slots.live]) || (tel && tel.resonate && reso && reso.name) || '';
+  return E.findIndex(e => cardIsSlot(e.file, nm));
+}
+/* choose an entry: the pot's stored value at the middle of its zone */
+async function selChoose(c, i) {
+  const L = selLayout(c);
+  if (i < 0 || i >= selCount(L)) return;
+  const v = selCentre(L, i);
+  showPot(c, v);
+  await potMove(c.p, c.k, v);
+}
+/* the panel row's menu: rebuilt when the list changes, set from the value */
+function syncSel(c, v) {
+  const E = selEntries(c);
+  const key = E.map(e => e.name).join('|');
+  if (key !== c.selKey) {
+    c.selKey = key;
+    c.el.innerHTML = '';
+    E.forEach((e, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = e.name; c.el.appendChild(o); });
+    c.el.disabled = !E.length;
+  }
+  if (v == null) v = c.lastV;
+  if (v == null) return;
+  const i = selEntry(selLayout(c), v);
+  c.el.value = String(i);
+  c.val.textContent = i >= 0 && E[i] ? E[i].name : '—';
+}
 /* A pot that does nothing right now, and why — only where the instrument is
    designed that way. Gravity at the bottom of its travel is off and takes the
    orbit's other knobs with it (shell/alchemy/main.cpp, the 0.02 threshold);
@@ -2201,6 +2349,7 @@ function inertWhy(c) {
   const pa = /^pos\.([45])$/.exec(id);
   if (pa && !tel.resonate && +pa[1] >= tel.n) return `nothing on a ${tel.n}-axis world`;
   if (id === 'world.morph' && tel.morphWorld === 0xFF) return 'no morph target: pick one on the worlds tab';
+  if (id === 'res.inst' && !selEntries(c).length) return 'no instruments on the card';
   if (/^kep\.(ecc|plane|soft|damp|r|bodies|mass)$/.test(id)) {
     const g = potValById('kep.g');
     if (g != null && g <= 0.02 && !(tel.kepler && tel.kepler.running)) return 'Gravity is off';
@@ -2276,6 +2425,7 @@ function drawPanelLive(force) {
   for (let p = 0; p < potCtl.length; p++) {
     if (!panelAll && p !== show) continue;
     for (const c of potCtl[p]) if (c) {
+      if (c.sel) syncSel(c, null);
       const lab = potLabel(c);
       if (lab !== c.labKey) { c.labKey = lab; c.lab.textContent = lab; c.lab.title = lab === c.name ? c.name : `${lab} · ${c.name} on the module`; }
       potMarks(c, live);
