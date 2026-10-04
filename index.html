@@ -277,10 +277,10 @@
      says. */
   .slot.empty { border-style: dashed; color: var(--ink-3); background: transparent; }
   .slot.drop { border-color: var(--voice); border-style: solid; }
-  .slot .sn { font-size: 9px; color: var(--ink-3); letter-spacing: .08em; }
+  .slot .sn { font-size: 11px; color: var(--ink-3); letter-spacing: .08em; }
   .slot .snm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .slot.on .snm { color: var(--yellow); }
-  .slot .sb { font-size: 9px; letter-spacing: .06em; min-height: 11px; }
+  .slot .sb { font-size: 11px; letter-spacing: .06em; min-height: 14px; }
   .slot .sb .live { color: var(--live); }
   .slot .sb .tgt { color: var(--target); }
   /* The ones that ship read as a different class of thing from the ones you
@@ -502,6 +502,7 @@ const MVL = window.KYK;
 
 /* ── state ─────────────────────────────────────────────────────────── */
 let link = null, info = null, desc = null, space = null;
+let fwMode = 'both';            /* which firmware is answering: 'modal', 'wavetable' or 'both' (fwModeOf) */
 /* The panel, as the module describes it.
  *
  * The descriptor has carried the jacks since M2 and nothing about the knobs,
@@ -649,7 +650,16 @@ let lastBlock = -1, framesSeen = 0, fpsWin = { t0: performance.now(), n: 0, fps:
 let blockHz = 2000, blockWin = { t0: performance.now(), b0: -1 };
 let polling = false;
 
-const say = (s, bad) => { $('msg').textContent = s || ''; $('msg').style.color = bad ? 'var(--bad)' : 'var(--dim)'; };
+/* One line for what the page has to say. Nothing used to expire, so "saved
+   x.kykw" read as current an hour later (the 2026-10-01 review, A5): a
+   message that is not a fault clears itself after eight seconds, unless
+   another has replaced it; a fault stays until something replaces it. */
+let sayTimer = 0;
+const say = (s, bad) => {
+  $('msg').textContent = s || ''; $('msg').style.color = bad ? 'var(--bad)' : 'var(--ink-2)';
+  clearTimeout(sayTimer);
+  if (s && !bad) sayTimer = setTimeout(() => { if ($('msg').textContent === s) $('msg').textContent = ''; }, 8000);
+};
 
 /* ── connection ─────────────────────────────────────────────────────── */
 let connectGen = 0;
@@ -667,6 +677,9 @@ async function connect(transport) {
    * means. */
   const gen = ++connectGen;
   if (link) await disconnect();
+  /* the handshake is five round trips, up to a couple of seconds over
+     serial: say so, and do not offer the button that starts another (A1) */
+  $('btnSerial').disabled = true; $('btnSerial').textContent = 'Connecting…';
   if (gen !== connectGen) return;
   link = new MVL.Link(transport);
   link.onClose = () => { say('link closed'); disconnect(); };
@@ -726,6 +739,7 @@ async function disconnect() {
   $('modinfo').textContent = 'not connected';
   clearReadouts();
   $('btnClose').hidden = true; $('btnSerial').hidden = false; $('btnBridge').hidden = !BRIDGE_OK; $('btnDrawer').hidden = true;
+  $('btnSerial').disabled = false; $('btnSerial').textContent = 'Connect';
   $('drawer').classList.remove('show');
 }
 /* the status line and the morph line are readouts of the module, and they
@@ -2451,7 +2465,11 @@ function buildAxisButtons() {
 }
 buildAxisButtons();
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT') return;
+  /* the arrows belong to whatever control has them: a focused menu (the
+     morph target, the card, the effects, the tour's division) or a slider
+     moved itself and the projection too (A37) */
+  const tg = e.target && e.target.tagName;
+  if (tg === 'INPUT' || tg === 'SELECT' || tg === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
   const n = tel ? tel.n : 4, pairs = []; for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) pairs.push([a, b]);
   const i = pairs.findIndex(p => p[0] === axes[0] && p[1] === axes[1]);
   if (e.key === 'ArrowRight' || e.key === ']') { axes = pairs[(i + 1) % pairs.length]; trail.n = 0; trail.at = -1; buildAxisButtons(); }
@@ -2774,7 +2792,7 @@ function drawResonateSpace(W, H, cx) {   /* cx: the pane it draws on, the play t
   cx.strokeStyle = '#141b23'; cx.lineWidth = 1;
   cx.beginPath(); cx.moveTo(x0, y); cx.lineTo(x1, y); cx.stroke();
   cx.fillStyle = '#6b819d';
-  if (!r) { cx.fillText('resonator — waiting for the module to say what it is playing', x0, y - 14); return; }
+  if (!r) { cx.fillText(link ? 'resonator — waiting for the module to say what it is playing' : 'not connected — press Connect', x0, y - 14); return; }
   const span = r.hi > r.lo ? r.hi - r.lo : 1;
   const px = v => x0 + (x1 - x0) * (v - r.lo) / span;
   const isNote = r.kind === 0;
@@ -2881,7 +2899,7 @@ function drawSpace() {
      and movable nowhere: this is a readout, and a readout you can edit by
      brushing against it is neither. */
   drawNodes(cx, { ax, ay, ox, oy, S }, playNodes(), { dim: 0.8 });
-  if (!tel) { cx.fillStyle = '#6b819d'; cx.fillText('waiting for the module', ox + S / 2 - 70, oy + S / 2); drawArcs(n, planes, null, ox, oy + S + 18, S); return; }
+  if (!tel) { cx.fillStyle = '#8f826c'; const t = link ? 'waiting for the module' : 'not connected — press Connect'; cx.fillText(t, ox + S / 2 - cx.measureText(t).width / 2, oy + S / 2); drawArcs(n, planes, null, ox, oy + S + 18, S); return; }
   /* active cell around L — only a tabulated world has cells */
   if (space && side > 1) {
     const cw = 1 / (side - 1), ci = Math.min(side - 2, Math.max(0, Math.floor(on(tel.posL, ax) * (side - 1)))), cj = Math.min(side - 2, Math.max(0, Math.floor(on(tel.posL, ay) * (side - 1))));
@@ -3567,7 +3585,10 @@ function renderLibrary() {
     h.className = 'libhead'; h.textContent = text;
     box.appendChild(h);
   };
-  head(worlds ? `the ${worlds.count} that ship` : 'the worlds that ship');
+  /* Bongs ships no worlds of its own — every instrument is a card file in a
+     slot — so its tab has no "that ship" heading reading "the 0 that ship"
+     (A17) */
+  if (fwMode !== 'modal') head(worlds ? `the ${worlds.count} that ship` : 'the worlds that ship');
   if (worlds) for (const w of worlds.list) box.appendChild(libTile('builtin', w.index, w.name, w.note));
   head(slots ? `yours — ${slots.names.filter(Boolean).length} of ${slots.count}` : 'yours');
   const n = slots ? slots.count : MVL.SLOT_COUNT;
@@ -3975,7 +3996,8 @@ renderTour();
    name; the desktop bridge and firmware from before the split say neither,
    and the page offers everything as it did. Each firmware's page shows only
    what that firmware does. */
-let fwMode = 'both';
+/* (fwMode is declared with the rest of the state, at the top: renderLibrary
+   reads it at load) */
 /* the modal firmware is Bongs (Combust, 29 September) and the wavetable
    firmware Buzzes (30 September); "Kyklophoria Modal" and "Kyklophoria
    Wavetable" are what they said before, and still read as them. Kyklophoria is
@@ -4024,6 +4046,10 @@ function applyFwMode() {
   $('tabBuild').hidden = modal;
   renderPanelRows();
   for (const id of ['morphCap', 'morphSel', 'morphDirect', 'morphAim', 'morphState', 'tourRow']) $(id).hidden = modal;
+  /* and the worlds tab's Buzzes verbs: a resonator is not a morph target and
+     cannot be opened to edit, so Bongs does not offer them (A17) */
+  for (const id of ['libTarget', 'libNoTarget', 'libEdit']) $(id).hidden = modal;
+  renderLibrary();
   if ((wave && viewMode === 'model') || (modal && (viewMode === 'build' || viewMode === 'play'))) setView(modal ? 'model' : 'play');
 }
 let viewMode = 'play';
@@ -4368,7 +4394,7 @@ function drawModes(g, x, top, w, bot) {
   const r = reso, hh = Math.max(20, bot - top);
   g.font = '11px ui-monospace, monospace';
   g.fillStyle = '#6b819d'; g.fillText('modes', x, top - 8);
-  if (!r) { g.fillText('waiting for the module', x, top + 14); return; }
+  if (!r) { g.fillText(link ? 'waiting for the module' : 'not connected', x, top + 14); return; }
   const fx = hz => x + w * Math.min(1, Math.max(0, Math.log2(Math.max(20, hz) / 20) / 10));
   g.strokeStyle = '#141b23'; g.lineWidth = 1;
   for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) { g.beginPath(); g.moveTo(fx(f), top); g.lineTo(fx(f), bot); g.stroke(); }
@@ -4421,7 +4447,7 @@ function ringOf(r) {
 function drawRing(g, x, top, w, h) {
   g.font = '11px ui-monospace, monospace'; g.fillStyle = '#8f826c';
   const r = reso;
-  if (!r || !r.modes) { g.fillText('ring — waiting for the module to say what it is playing', x, top + 10); return; }
+  if (!r || !r.modes) { g.fillText(link ? 'ring — waiting for the module to say what it is playing' : 'ring — not connected', x, top + 10); return; }
   const R = ringOf(r);
   g.fillText(R.y ? `ring · its modes struck once, no exciter · ${R.ms.toFixed(0)} ms` : 'ring · no modes', x, top + 10);
   const mid = top + 18 + (h - 18) / 2, amp = Math.max(4, (h - 18) / 2 - 2);
@@ -4833,7 +4859,9 @@ function buildDrawer() {
 if (!/[?&]serial\b/.test(location.search)
     && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
     && location.protocol.startsWith('http')) connectBridge(false);
-if (!navigator.serial) $('btnSerial').title = 'Web Serial: Chrome/Edge desktop only';
+/* and say it before anybody presses anything (A4): a browser without Web
+   Serial cannot reach the module at all */
+if (!navigator.serial) { $('btnSerial').title = 'Web Serial: Chrome/Edge desktop only'; if (!BRIDGE_OK) say('this browser has no Web Serial — open the page in desktop Chrome or Edge to connect', true); }
 })();
 </script>
 </body>

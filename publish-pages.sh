@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Publish web/ to Codeberg Pages: rebuilds the `pages` branch from the web/
-# subtree of HEAD and prints the push. Codeberg serves a repo's `pages`
-# branch at https://<user>.codeberg.page/<repo>/ over https — a secure
-# context, which Web Serial (desktop Chrome/Edge) requires.
+# Publish web/ to GitHub Pages: rebuilds the `pages` branch from the web/
+# subtree of HEAD and prints the push. GitHub serves this repo's `pages`
+# branch at https://ernestg4.github.io/Kyklophoria/ over https — a secure
+# context, which Web Serial (desktop Chrome/Edge) requires. (It was Codeberg
+# Pages until 30 September; the branch is the same and Codeberg still has one.)
 #
 # What works on Pages and what does not:
 #   Serial   — yes. https is a secure context, so the page talks to the
@@ -28,4 +29,4 @@ grep -q "<b>$stamp</b>" "$wt/index.html" && grep -q "link.js?v=$stamp" "$wt/inde
 git -C "$wt" commit -q -am "Page build $stamp"
 git worktree remove "$wt"
 echo "pages branch rebuilt at $(git rev-parse --short pages) from $stamp (stamped)"
-echo "now: git push -f origin pages    → https://combust.codeberg.page/Kyklophoria/"
+echo "now: git push --force-with-lease github pages    → https://ernestg4.github.io/Kyklophoria/"

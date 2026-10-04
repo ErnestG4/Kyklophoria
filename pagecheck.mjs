@@ -111,7 +111,7 @@ const fire = (el, type, props = {}) => {
 const unknownIds = new Set();
 globalThis.document = {
   getElementById: id => { if (!els[id]) unknownIds.add(id); return els[id] || mkEl('div'); },
-  createElement: mkEl, addEventListener() {},
+  createElement: mkEl, addEventListener(type, fn) { if (type === 'keydown') globalThis.__keydown = fn; },
   body: mkEl('body'), documentElement: mkEl('html'),
 };
 globalThis.window = globalThis;
@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -1947,6 +1947,57 @@ for (const [name, t, r] of CASES) {
   P.setFwMode('both'); if (P.telFlags() !== 7) fails.push(`the page for both asks for ${P.telFlags()}, not 7`);
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} each page asks the module for what it draws${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The small things from the review's audit: a connect in flight says so and
+   cannot be pressed twice (A1); a focused menu keeps the arrow keys (A37);
+   Bongs' worlds tab has no Buzzes verbs and no "the 0 that ship" (A17); a
+   message that is not a fault expires and one that is does not (A5) */
+{
+  const fails = [];
+  /* A1: the connect button while the handshake runs */
+  {
+    let release;
+    const gate = new Promise(r => { release = r; });
+    globalThis.KYK.Link = class { constructor() { this.stats = {}; } async start() { await gate; throw new Error('no module'); } async close() {} };
+    const pend = P.connectTo({ kind: 'serial', close: async () => {} });
+    await new Promise(r => setImmediate(r));
+    if (!els.btnSerial.disabled || !/Connecting/.test(els.btnSerial.textContent)) fails.push(`while connecting the button reads "${els.btnSerial.textContent}", ${els.btnSerial.disabled ? 'disabled' : 'live'}`);
+    release(); await pend;
+    if (els.btnSerial.disabled || els.btnSerial.textContent !== 'Connect') fails.push(`after a failed connect it reads "${els.btnSerial.textContent}", ${els.btnSerial.disabled ? 'disabled' : 'live'}`);
+  }
+  /* A37: arrows in a menu are the menu's */
+  {
+    P.setTel(tel()); P.setAxes([0, 1]);
+    const keys = globalThis.__keydown;
+    keys({ key: 'ArrowRight', target: { tagName: 'SELECT' } });
+    if (P.getAxes().join() !== '0,1') fails.push(`an arrow in a menu moved the projection to ${P.getAxes().join()}`);
+    keys({ key: 'ArrowRight', target: { tagName: 'BODY' } });
+    if (P.getAxes().join() === '0,1') fails.push('an arrow outside any control did not move the projection');
+    P.setAxes([0, 1]); P.setTel(null);
+  }
+  /* A17: Bongs' worlds tab */
+  P.setFwMode('modal'); P.applyFwMode();
+  if (!els.libTarget.hidden || !els.libEdit.hidden || !els.libNoTarget.hidden) fails.push('Bongs offers morph and edit on its worlds tab');
+  P.setWorlds({ count: 0, current: 0xFF, list: [] }); P.renderLibrary();
+  if (els.slots.children.some(c => c.className === 'libhead' && /that ship/.test(c.textContent))) fails.push('Bongs\' worlds tab says "the 0 that ship"');
+  P.setFwMode('wavetable'); P.applyFwMode();
+  if (els.libTarget.hidden) fails.push('Buzzes lost "morph towards"');
+  P.setFwMode('both'); P.applyFwMode(); P.setWorlds(null);
+  /* A5: what expires */
+  {
+    const q = [], stub = globalThis.setTimeout;
+    globalThis.setTimeout = f => { q.push(f); return 0; };
+    P.say('saved x.kykw'); q.splice(0).forEach(f => f());
+    if (els.msg.textContent !== '') fails.push(`an ordinary message stayed: "${els.msg.textContent}"`);
+    P.say('link error: gone', true); q.splice(0).forEach(f => f());
+    if (!/link error/.test(els.msg.textContent)) fails.push('a fault expired');
+    P.say('a'); P.say('b'); q.splice(0, 1).forEach(f => f());
+    if (els.msg.textContent !== 'b') fails.push('an old message\'s timer cleared a newer message');
+    globalThis.setTimeout = stub; els.msg.textContent = '';
+  }
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the audit's small things: connecting, the arrow keys, Bongs' worlds tab, messages that expire${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* The ring: a voice's modes struck by an impulse, sampled at the module's
