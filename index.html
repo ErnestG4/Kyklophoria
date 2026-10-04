@@ -1936,12 +1936,18 @@ $('cardLoad').onclick = async () => {
 };
 
 /* ── polling ────────────────────────────────────────────────────────── */
+/* What to ask the module for. Bongs draws no wavetable frame and no
+   spectrum — its sound pane is the modes and the ring, read from 0x6F — so
+   its page asks for the motion block alone: K + 256 bytes a frame fewer,
+   about 19 KB/s at 60 frames a second (the 2026-10-01 review, design W6),
+   and the modal encoder never builds a frame it has no reader for */
+const telFlags = () => fwMode === 'modal' ? MVL.TEL.motion : MVL.TEL.spectrum | MVL.TEL.frame | MVL.TEL.motion;
 async function pollTelemetry() {
   const own = link;
   while (polling && link === own) {
     const t0 = performance.now();
     try {
-      const b = await link.request(MVL.CMD.telemetry, MVL.telemetryReq(7), { key: 'tel', timeoutMs: 800 });
+      const b = await link.request(MVL.CMD.telemetry, MVL.telemetryReq(telFlags()), { key: 'tel', timeoutMs: 800 });
       const t = MVL.parseTelemetry(b);
       if (t) { tel = t; onTelemetry(t); }
     } catch (e) { if (!link) break; if (!/timeout/.test(e.message)) say('telemetry: ' + e.message, true); }
