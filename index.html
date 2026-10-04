@@ -4722,6 +4722,33 @@ function targetName(mw) {
   if (mw === MVL.MORPH_USER) return (slots && slots.target < slots.count && slots.names[slots.target]) || 'a world of yours';
   return worlds && worlds.list[mw] ? worlds.list[mw].name : 'world ' + mw;
 }
+/* The voice's own pitch, from the modes the module says it built, against
+   the note it built them for (reso.param on a note world). A fitted point
+   can be out of tune as struck — the Guitar's G4 sits 37 to 40 cents sharp
+   (the 2026-10-01 review, physics, measured) — and nothing on the page
+   showed it. The first three partials near the note's harmonics, each
+   weighted by its level over its number, and their mean ratio to the note,
+   in cents. A piano's stretch lifts the upper partials, so the fundamental
+   weighs most. Nothing at all where no partial sits near a harmonic: a bell
+   or a bar is not a harmonic voice and this does not pretend it is. */
+function voiceTuning(r) {
+  if (!r || r.kind !== 0 || !(r.param < 1e8) || !r.modes || !r.modes.length) return null;
+  const f0 = 440 * Math.pow(2, (r.param - 69) / 12);
+  let wsum = 0, csum = 0, found = 0;
+  for (let n = 1; n <= 3; n++) {
+    let best = null;
+    for (const q of r.modes) {
+      if (!(q.hz > 0) || !(Math.abs(q.gain) > 0)) continue;
+      const c = 1200 * Math.log2(q.hz / (n * f0));
+      if (Math.abs(c) > 60) continue;
+      if (!best || Math.abs(q.gain) > Math.abs(best.q.gain)) best = { q, c };
+    }
+    if (!best) continue;
+    const w = Math.abs(best.q.gain) / n;
+    wsum += w; csum += w * best.c; found++;
+  }
+  return found ? { cents: csum / wsum, partials: found } : null;
+}
 function drawTop() {
   const nm = liveName();
   const mw = tel.morphWorld, tn = !tel.resonate ? targetName(mw) : null;
@@ -4730,8 +4757,10 @@ function drawTop() {
     const pg = tel.page < panel.pages ? tel.page : -1;
     setPill('pagePill', pg < 0 ? '' : `<span class="sw" style="background:${pageInk(panel.colors[pg]).fill}"></span><b>${pg + 1}</b> ${esc(pageName(pg))}`);
   } else setPill('pagePill', '');
+  const vt = tel.resonate ? voiceTuning(reso) : null;
   setPill('pitchPill', `${esc(MVL.noteName(tel.f0))} <b>${tel.f0.toFixed(1)}</b> Hz`
-    + (tel.resonate ? ` · ${lock ? 'locked' : 'free'} · ${poly} voice${poly > 1 ? 's' : ''}` : ` · nyq ${tel.kcut}/${tel.k}`));
+    + (tel.resonate ? ` · ${lock ? 'locked' : 'free'} · ${poly} voice${poly > 1 ? 's' : ''}` : ` · nyq ${tel.kcut}/${tel.k}`)
+    + (vt && Math.abs(vt.cents) >= 3 ? ` · <span title="the voice's own pitch, from its modes (0x6F), against the note it was built for: a world point out of tune shows here" style="color:${Math.abs(vt.cents) > 15 ? 'var(--warn)' : 'inherit'}">voice ${vt.cents > 0 ? '+' : ''}${vt.cents.toFixed(0)}¢</span>` : ''));
   if (stats && stats.cyclesBudget) {
     const a = Math.min(100, 100 * stats.cyclesAvg / stats.cyclesBudget), x = Math.min(100, 100 * stats.cyclesMax / stats.cyclesBudget);
     $('cpuAvg').style.width = a.toFixed(0) + '%'; $('cpuMax').style.left = Math.min(98, x).toFixed(0) + '%';

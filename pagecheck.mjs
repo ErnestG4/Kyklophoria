@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say, voiceTuning };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -1998,6 +1998,24 @@ for (const [name, t, r] of CASES) {
   }
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the audit's small things: connecting, the arrow keys, Bongs' worlds tab, messages that expire${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The voice's own tuning, from its modes: a G4 built 38 cents sharp says so;
+   one in tune says nothing worth showing; a bell with no partial near a
+   harmonic says nothing at all */
+{
+  const fails = [];
+  const g4 = 440 * Math.pow(2, (67 - 69) / 12), sharp = Math.pow(2, 38 / 1200);
+  const mk = (ratio, parts) => ({ kind: 0, param: 67, modes: parts.map(([n, g]) => ({ hz: n * g4 * ratio, zeta: 0.001, gain: g })) });
+  const a = P.voiceTuning(mk(sharp, [[1, 0.5], [2, 0.3], [3, 0.2]]));
+  if (!a || Math.abs(a.cents - 38) > 0.5) fails.push(`a G4 built 38 cents sharp reads ${a && a.cents.toFixed(1)}`);
+  const b = P.voiceTuning(mk(1, [[1, 0.5], [2, 0.3]]));
+  if (!b || Math.abs(b.cents) > 0.5) fails.push(`one in tune reads ${b && b.cents.toFixed(1)}`);
+  const bell = P.voiceTuning({ kind: 0, param: 67, modes: [{ hz: g4 * 1.31, zeta: 0.001, gain: 0.5 }, { hz: g4 * 2.71, zeta: 0.001, gain: 0.4 }] });
+  if (bell) fails.push(`an inharmonic voice read ${bell.cents.toFixed(1)} cents`);
+  if (P.voiceTuning({ kind: 1, param: 3, modes: [{ hz: 400, zeta: 0.001, gain: 1 }] })) fails.push('an index world read a tuning');
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the voice's own tuning, from its modes${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* The ring: a voice's modes struck by an impulse, sampled at the module's
