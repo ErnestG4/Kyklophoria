@@ -97,6 +97,21 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   /* The desktop shell has no pager, so it must say so rather than claim six
      knobs are at zero — which is what a bare six bytes would have said. */
   check(tk && tk.knobs === null, 'and reports no knob values, having no pager to ask');
+  /* The live output scope, through link.js's own parser: asked for because
+     the descriptor says it is served, absent until the module has a window
+     (null, not zeros), then the window with the motion block intact after
+     it. No script is running, so this is whatever the boot cell plays. */
+  {
+    check((KYK.telServed(desc) & KYK.TEL.scope) !== 0, 'the descriptor serves the scope (telflags ' + KYK.telServed(desc) + ')');
+    const req = () => link.request(KYK.CMD.telemetry, KYK.telemetryReq(15)).then(KYK.parseTelemetry);
+    let ts = await req();
+    check(ts && ts.scope === null && !(ts.flags & KYK.TEL.scope) && ts.bytes === tk.bytes, 'no window yet: the bit comes back clear and the scope is null');
+    for (let i = 0; i < 200 && !(ts && ts.scope); i++) { await new Promise(r => setTimeout(r, 10)); ts = await req(); }
+    check(ts && ts.scope && ts.scope.npts === 192 && ts.scope.spp === 5 && Math.abs(ts.scope.ms - 20) < 1e-9, 'a 20 ms window of 192 points');
+    check(ts && ts.scope && ts.scope.l.every(Number.isFinite) && ts.scope.l.some(v => v !== 0), 'and it has a sound in it');
+    check(ts && ts.world === tk.world && ts.kind === tk.kind && ts.bodies === tk.bodies, 'and the motion block reads the same after it');
+    if (ts && ts.scope) console.log(`  scope: ${ts.scope.triggered ? 'triggered' : 'free-run'}, ${ts.scope.mono ? 'mono' : 'stereo'}, ×${ts.scope.gain}, ${ts.bytes} B a frame`);
+  }
   check(t && t.mags && t.mags.length === 64 && t.frame && t.frame.length === 256, 'spectrum + frame present');
   check(t && t.kcut >= 1 && t.kcut <= 64, 'kcut range');
   const finite = a => Array.from(a).every(Number.isFinite);

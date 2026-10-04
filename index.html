@@ -397,7 +397,7 @@
     </div>
   </section>
   <aside class="side">
-    <div class="sound"><h3 class="hd">MODES · RING</h3><div class="display"><canvas id="mmodes"></canvas></div></div>
+    <div class="sound"><h3 class="hd">OUT · RING · MODES</h3><div class="display"><canvas id="mmodes"></canvas></div></div>
     <div class="panelslot" id="panelSlotModel"></div>
   </aside>
   <div class="sheetslot" id="sheetSlotModel" hidden></div>
@@ -1969,7 +1969,13 @@ $('cardLoad').onclick = async () => {
    its page asks for the motion block alone: K + 256 bytes a frame fewer,
    about 19 KB/s at 60 frames a second (the 2026-10-01 review, design W6),
    and the modal encoder never builds a frame it has no reader for */
-const telFlags = () => fwMode === 'modal' ? MVL.TEL.motion : MVL.TEL.spectrum | MVL.TEL.frame | MVL.TEL.motion;
+/* And the live output scope, on both, where the module says it serves one
+   (the descriptor's telflags): an older firmware echoes an unknown flag back
+   without serving it, which would shift every motion field after it. 198
+   bytes a frame mono and 390 stereo, 12 to 23 KB/s at 60 frames. */
+const scopeOn = () => (MVL.telServed(desc) & MVL.TEL.scope) !== 0;
+const telFlags = () => (fwMode === 'modal' ? MVL.TEL.motion : MVL.TEL.spectrum | MVL.TEL.frame | MVL.TEL.motion)
+                       | (scopeOn() ? MVL.TEL.scope : 0);
 async function pollTelemetry() {
   const own = link;
   while (polling && link === own) {
@@ -4520,6 +4526,42 @@ function stereoWidth(t) {
   }
   return { geo, tim, onScreen };
 }
+/* The live output: the last 20 ms the module put on J9/J10, after the level
+   and the limiter (core/kyk_scope.h). The frame and the ring are what the
+   engine means to play; this is what it played. The window starts on a
+   rising zero crossing of L when there is one, so a held note stands still,
+   and says when there was not — a free-running trace wanders, and that is
+   the sound telling the truth about itself, not the page being broken. Drawn
+   at the module's own gain (a power of two, so a quiet passage is a shape
+   and not a line), which the label states with the true peak. L in the
+   frame's glow, R under it in the right ear's colour when the two differ. */
+function drawScope(g, x, top, w, h, sc) {
+  const mid = top + h / 2, amp = Math.max(4, h / 2 - 3);
+  g.font = '11px ui-monospace, monospace';
+  g.strokeStyle = '#141b23'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(x, mid); g.lineTo(x + w, mid); g.stroke();
+  g.fillStyle = '#6b819d';
+  const head = sc ? `out · live · ${sc.ms.toFixed(0)} ms` : 'out · live';
+  g.fillText(head, x, top - 8);
+  if (!sc) { g.fillText('waiting for the module', x, mid - 6); return; }
+  if (!sc.mono) {   /* which ear is which, beside the caption */
+    const lx = x + g.measureText(head + '  ').width;
+    g.fillStyle = '#62d5ff'; g.fillText('L', lx, top - 8);
+    g.fillStyle = '#ff4fa0'; g.fillText('R', lx + g.measureText('L ').width, top - 8);
+  }
+  const n = sc.npts, gain = sc.gain, dx = w / Math.max(1, n - 1);
+  let pk = 0;
+  for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(sc.l[i]), Math.abs(sc.r[i]));
+  const db = pk > 0 ? (20 * Math.log10(pk)).toFixed(0) + ' dBFS' : 'silent';
+  const info = `${sc.triggered ? 'trig ↑0' : 'free-run'} · ×${gain} · ${db}`;
+  g.fillStyle = sc.triggered ? '#6b819d' : '#ff8a2a';
+  g.fillText(info, x + w - g.measureText(info).width, top - 8);
+  const y = v => mid - Math.max(-1, Math.min(1, v * gain)) * amp;
+  const trace = a => { g.beginPath(); for (let i = 0; i < n; i++) { const px = x + dx * i, py = y(a[i]); i ? g.lineTo(px, py) : g.moveTo(px, py); } };
+  if (!sc.mono) { g.lineWidth = 1.2; g.strokeStyle = 'rgba(255,79,160,0.75)'; trace(sc.r); g.stroke(); }
+  g.lineWidth = 5; g.strokeStyle = 'rgba(60,200,245,0.18)'; trace(sc.l); g.stroke();
+  g.lineWidth = 1.8; g.strokeStyle = '#62d5ff'; trace(sc.l); g.stroke(); g.lineWidth = 1;
+}
 /* a resonator's modes — the ones the voice was built from, on a log
    frequency axis, height the level under the loudest (60 dB), brightness
    the ring (T60, 20 ms dim to 4 s bright) — and its burst. Drawn on the
@@ -4550,12 +4592,12 @@ function drawModes(g, x, top, w, bot) {
 }
 /* The voice's ring, drawn from what the module says it built.
  *
- * A real-time waveform of the output needs the module to send its samples,
- * which it does not. What it does send, eight times a second, is every mode
- * of the voice that is playing (0x6F: frequency, damping, level), and a bank
- * of modes struck by an impulse is exactly the sum of their decaying sines.
- * So this is the ring itself — the shape of the instrument's body — without
- * the exciter that drives it or the pickup after it, and it says so. Worked
+ * The output itself is drawn above it now (drawScope), from the module's own
+ * samples. This is the other half: every mode of the voice that is playing
+ * (0x6F: frequency, damping, level), eight times a second, and a bank of modes
+ * struck by an impulse is exactly the sum of their decaying sines. So this is
+ * the ring itself — the shape of the instrument's body — without the exciter
+ * that drives it or the pickup after it, and it says so. Worked
  * out at 48 kHz, so the upper modes are drawn as the bank rings them rather
  * than aliased by a coarse grid, and only when the modes change: a new note,
  * a new member, a turned axis. Drawn a pixel column at a time as the span of
@@ -4602,9 +4644,14 @@ function drawRing(g, x, top, w, h) {
 function drawModel() {
   { const { w: W, h: H } = boxOf(ma); fit(ma); drawResonateSpace(W, H, max); }
   { const { w: W, h: H } = boxOf(mm); fit(mm);
-    const rh = Math.max(48, Math.round(H * 0.34));
-    drawRing(mmx, 30, 18, W - 60, rh);
-    drawModes(mmx, 30, 18 + rh + 30, W - 60, H - 26); }
+    /* the live output on top, where the module serves it; the ring and the
+       modes keep their places below, a little shorter */
+    const sh = scopeOn() ? Math.max(40, Math.round(H * 0.22)) : 0;
+    if (sh) drawScope(mmx, 30, 22, W - 60, sh, tel && tel.scope);
+    const top = sh ? 22 + sh + 14 : 18;
+    const rh = Math.max(48, Math.round(H * (sh ? 0.26 : 0.34)));
+    drawRing(mmx, 30, top, W - 60, rh);
+    drawModes(mmx, 30, top + rh + 30, W - 60, H - 26); }
   setText('pitchNote', pitchNoteText());
   /* the axes under the module's pots: a slider the page does not own is a
      readout, and follows the telemetry every frame. This waited on the
@@ -4628,21 +4675,29 @@ function drawSound() {
   const panelH = panel && !potCtl ? Math.min(170, Math.max(110, H * 0.32)) : 0;
   /* the frame is the cycle the engine rendered this block, live at the
      telemetry rate: with the panel off this canvas it gets the room */
-  const frameTop = 26, frameH = Math.max(40, H * (panelH ? 0.30 : 0.40)), mid = frameTop + frameH / 2;
+  /* with the live output above it, the rendered frame gives it a little
+     under half of its room: the two are the same kind of trace and say
+     different things — what the engine rendered for one cycle, and what
+     actually left the module */
+  const outH = scopeOn() ? Math.max(36, H * (panelH ? 0.15 : 0.20)) : 0;
+  const frameTop = outH ? 26 + outH + 22 : 26;
+  const frameH = outH ? Math.max(36, H * (panelH ? 0.15 : 0.20)) : Math.max(40, H * (panelH ? 0.30 : 0.40)), mid = frameTop + frameH / 2;
   const stripY = frameTop + frameH + 10;                       /* payload lanes row */
   const specCap = stripY + 34;                                  /* "spectrum" caption baseline */
   const specTop = specCap + 8, base = H - m - 12 - panelH, h = Math.max(20, base - specTop);
   cnx.font = font;
   if (tel && tel.resonate) {
-    /* a resonator: its modes, not a frame. The panel mirror keeps its
-       place below. */
-    drawModes(cnx, m, 26, W - 2 * m, base - 4);
+    /* a resonator: its modes, not a frame, under the live output. The panel
+       mirror keeps its place below. */
+    if (outH) drawScope(cnx, m, 26, W - 2 * m, outH, tel.scope);
+    drawModes(cnx, m, outH ? frameTop : 26, W - 2 * m, base - 4);
     if (panelH) drawPanel(m, H - m - panelH + 6, W - 2 * m, panelH - 6);
     return;
   }
   cnx.strokeStyle = '#141b23'; cnx.beginPath(); cnx.moveTo(m, mid); cnx.lineTo(W - m, mid); cnx.stroke();
   cnx.fillStyle = '#6b819d';
-  cnx.fillText('frame', m, 18); cnx.fillText('spectrum', m, specCap);
+  cnx.fillText(outH ? 'frame · one cycle as rendered' : 'frame', m, frameTop - 8); cnx.fillText('spectrum', m, specCap);
+  if (outH) drawScope(cnx, m, 26, W - 2 * m, outH, tel && tel.scope);
   if (!tel) return;
   /* Untinted on purpose. The frame, the lanes and the spectrum bars all took
      the same hue as the dot, which spent the page's one colour channel saying
