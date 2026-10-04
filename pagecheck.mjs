@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'fwName fwMode panelRows pageLinks pageSwitch morphCap tourRow axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote ringPlane voicePlane exciterPlane modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState'.split(' ');
+const IDS = 'fwName fwMode panelRows pageLinks pageSwitch morphCap tourRow axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote ringPlane voicePlane exciterPlane modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState livePill pagePill pitchPill cpuPill cpuAvg cpuMax cpuText stageChip panel panelTabs panelNote panelAll panelSlotPlay panelSlotModel sheetSlotPlay sheetSlotModel'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; } };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; } };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -224,9 +224,18 @@ const DESC = { components: [
                      ['Gravity','Eccentricity','Orbit plane','Softening','Damping','Radius'],
                      ['Coupling','Reach','Rate','Bodies','Company', null],
                      ['Position 4','Position 5','Tour division','Tour glide','Tour free-run', null]];
+      /* the idents the firmware gives them (shell/alchemy/main.cpp), which is
+         what the page's rules about a pot key on */
+      const ids = [['pitch.coarse','pitch.fine','pos.0','pos.1','pos.2','pos.3'],
+                   ['rot.01','rot.02','rot.03','rot.12','rot.13','rot.23'],
+                   ['st.spread','st.plane','morph.sharp','eng.rdiv','out.level','lane.cva'],
+                   ['orb.01','orb.02','orb.03','orb.12','orb.13','orb.23'],
+                   ['kep.g','kep.ecc','kep.plane','kep.soft','kep.damp','kep.r'],
+                   ['orb.couple','orb.reach','orb.ratex','kep.bodies','kep.mass', null],
+                   ['pos.4','pos.5','tour.div','tour.glide','tour.rate', null]];
       const out = [];
       for (let p = 0; p < 7; p++) for (let q = 0; q < 6; q++)
-        if (names[p][q]) out.push({ id: `f${p}.${q}`, name: names[p][q], page: p, pot: q,
+        if (names[p][q]) out.push({ id: ids[p][q], name: names[p][q], page: p, pot: q,
                                     off: (p*6+q)*4, type: 'f32', def: 0.5, disp: { kind: 'norm' } });
       return out;
     })() },
@@ -1286,7 +1295,7 @@ const parsed = P.parsePanel(DESC);
     if (els.strikeChips.children.filter(c => c.tagName === 'button').length !== 4) f.push('the pads went');
     if (els.strikeChips.children.filter(c => c.tagName === 'input').length !== 1) f.push('trigger vel or dig in still drawn beside the pad velocity');
     if (els.bodyChips.children.length !== 3) f.push(`the body is ${els.bodyChips.children.length} things, not the three members without the morph`);
-    if (!/rows below/.test(els.modelHint.textContent)) f.push('the hint does not point at the rows');
+    if (!/panel beside/.test(els.modelHint.textContent)) f.push('the hint does not point at the panel');
     /* and the page for both keeps every plane */
     P.setFwMode('both'); P.renderPanelRows(); P.renderModelChips();
     if (els.ringPlane.hidden || els.voicePlane.hidden || els.exciterPlane.hidden) f.push('a plane stayed hidden off Bongs');
@@ -1688,6 +1697,102 @@ for (const [name, t, r] of CASES) {
   P.setPanel(null); P.setLink(null);
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} Bongs' panel on the page: a row a page, menus and sliders, sent and held${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The panel on the page, laid out as the module is (Combust, 1 October: "3
+   rows of 2 columns, numbered left to right, top to bottom"), on both
+   firmwares' pages and not on the page for both, which keeps the canvas
+   mirror. Then what it shows beyond the stored values: the page B1 is on,
+   where the hand is when a pot has not caught, where the sound is on an
+   axis, and the pots the instrument is designed to leave doing nothing. */
+{
+  const fails = [];
+  const grid = p => els.panelRows.children[p].children[1];
+  const cellText = c => (c.className === 'bmark') ? c.textContent : (c.children[0] && c.children[0].children[0] ? c.children[0].children[0].textContent : '?');
+  P.setLink(null);
+  P.setPanel(parsed); P.setFwMode('wavetable'); P.renderPanelRows();
+  const ctl = P.getPotCtl();
+  if (!ctl || ctl.length !== 7) fails.push(`the wavetable page has no panel of seven pages (${ctl && ctl.length})`);
+  else {
+    const order = grid(0).children.map(cellText).join(' ');
+    if (order !== 'P1 B1 P2 P3 B2 P4 P5 B3 P6') fails.push(`page 1 reads "${order}", not P1 B1 P2 / P3 B2 P4 / P5 B3 P6`);
+    /* every page the same shape, gaps included: Couple and World have none at P6 */
+    for (let p = 0; p < 7; p++) if (grid(p).children.length !== 9) fails.push(`page ${p + 1} has ${grid(p).children.length} cells, not nine`);
+    if (grid(5).children[8].className !== 'pot empty') fails.push(`Couple's missing P6 is "${grid(5).children[8].className}", not an empty place`);
+    /* the page B1 is on is the one shown; the others wait behind their tabs */
+    P.setTel(tel({ n: 4, page: 4, pots: [0, 0, 0, 0, 0, 0], knobs: [0, 0.4, 0.5, 0.25, 0, 0.33] }));
+    P.drawPanelLive(true);
+    if (els.panelRows.children[4].hidden || !els.panelRows.children[0].hidden) fails.push('the page B1 is on is not the one shown');
+    if (!/live/.test(els.panelTabs.children[4].className)) fails.push('its tab is not marked live');
+    /* Gravity at the bottom: the orbit's other knobs do nothing, and say so */
+    const kep = ctl[4];
+    if (!/inert/.test(kep[1].cell.className) || !/Gravity is off/.test(kep[1].sub.textContent)) fails.push(`with Gravity off, Eccentricity reads "${kep[1].cell.className}" "${kep[1].sub.textContent}"`);
+    if (/inert/.test(kep[0].cell.className)) fails.push('Gravity itself was marked as doing nothing');
+    P.setTel(tel({ n: 4, page: 4, pots: [0.6, 0.4, 0.5, 0.25, 0, 0.33], knobs: [0.6, 0.4, 0.5, 0.25, 0, 0.33] }));
+    P.drawPanelLive(false);
+    if (/inert/.test(kep[1].cell.className)) fails.push('Gravity up and Eccentricity still marked dead');
+    /* a pot that has not caught: the hand is marked where it is */
+    P.setTel(tel({ n: 4, page: 0, pots: [0.5, 0.5, 0.9, 0.5, 0.5, 0.5], knobs: [0.5, 0.5, 0.2, 0.5, 0.5, 0.5], posL: Float32Array.from([0.2, 0.5, 0.5, 0.5]) }));
+    P.drawPanelLive(false);
+    const p3 = ctl[0][2];
+    if (p3.hand.hidden || p3.hand.style.left !== '90.0%' || !/catch/.test(p3.sub.className)) fails.push(`P3 not caught: hand ${p3.hand.hidden ? 'hidden' : p3.hand.style.left}, "${p3.sub.textContent}"`);
+    if (!ctl[0][3].hand.hidden) fails.push('a caught pot showed a hand');
+    /* the sound: P4 is axis 1, stored at 0.5, heard at 0.8 after the rotation */
+    P.setTel(tel({ n: 4, page: 0, pots: [0.5, 0.5, 0.2, 0.5, 0.5, 0.5], knobs: [0.5, 0.5, 0.2, 0.5, 0.5, 0.5], posL: Float32Array.from([0.2, 0.8, 0.5, 0.5]) }));
+    P.drawPanelLive(false);
+    const p4 = ctl[0][3];
+    if (p4.sdot.hidden || p4.sdot.style.left !== '80.0%' || !/sound at 80%/.test(p4.sub.textContent)) fails.push(`P4 heard elsewhere: dot ${p4.sdot.hidden ? 'hidden' : p4.sdot.style.left}, "${p4.sub.textContent}"`);
+    /* the World page on a four-axis world, and World morph with no target */
+    P.setTel(tel({ n: 4, page: 6, morphWorld: 0xFF }));
+    P.drawPanelLive(false);
+    if (!/inert/.test(ctl[6][0].cell.className) || !/4-axis/.test(ctl[6][0].sub.textContent)) fails.push(`World P1 on a 4-axis world: "${ctl[6][0].sub.textContent}"`);
+    P.setTel(tel({ n: 6, page: 6, morphWorld: 0xFF }));
+    P.drawPanelLive(false);
+    if (/inert/.test(ctl[6][0].cell.className)) fails.push('World P1 marked dead on a six-axis world');
+    /* the canvas mirror is the page for both's, not drawn under the panel */
+    arcLog.length = 0;
+    P.setTel(tel({ pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+    P.drawSound();
+    if (arcLog.some(a => a.length >= 5 && Math.abs(a[3] - Math.PI * 0.75) < 1e-9)) fails.push('the canvas mirror was drawn beside the panel');
+  }
+  /* Bongs: the same panel; its Play P3–P6 named for the world's axes */
+  P.setPanel({ pages: 1, pots: 6, names: ['Play'], colors: ['#67e8f9'], grid: [[
+    { name: 'Coarse', id: 'pitch.coarse', disp: { kind: 'norm' } }, { name: 'Fine', id: 'pitch.fine', disp: { kind: 'norm' } },
+    { name: 'Position 0', id: 'pos.0', disp: { kind: 'norm' } }, { name: 'Position 1', id: 'pos.1', disp: { kind: 'norm' } },
+    { name: 'Position 2', id: 'pos.2', disp: { kind: 'norm' } }, { name: 'Position 3', id: 'pos.3', disp: { kind: 'norm' } }]] });
+  P.setFwMode('modal'); P.renderPanelRows();
+  P.setReso({ kind: 0, form: 1, lo: 36, hi: 96, param: 60, P: 11, points: [36, 96], modes: [], name: 'wurli' });
+  P.setTel(tel({ ...RES, page: 0 }));
+  P.drawPanelLive(true);
+  const names = P.getPotCtl()[0].slice(2).map(c => c.lab.textContent).join(',');
+  if (names !== 'Body,Velocity,Decay,Coil') fails.push(`a pickup world's Play P3–P6 read ${names}`);
+  P.setReso({ kind: 0, form: 0, lo: 36, hi: 96, param: 60, P: 11, points: [36, 96], modes: [], name: 'marimba' });
+  P.drawPanelLive(true);
+  const plain = P.getPotCtl()[0].slice(2).map(c => c.lab.textContent).join(',');
+  if (plain !== 'Position,Velocity,Decay,Brightness') fails.push(`a plain world's Play P3–P6 read ${plain}`);
+  /* and the page for both has none of it */
+  P.setFwMode('both'); P.renderPanelRows();
+  if (P.getPotCtl() || !els.panel.hidden) fails.push('a panel on the page for both');
+  P.setTel(null); P.setReso(null); P.setPanel(null);
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the panel on the page: laid out as the module, the hand, the sound, the pots that do nothing${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The ring: a voice's modes struck by an impulse, sampled at the module's
+   rate. One mode at 100 Hz is a decaying sine of eight periods (80 ms), from
+   zero, and nothing at all is drawn for a voice with no modes. */
+{
+  const fails = [];
+  const one = P.ringOf({ name: 'x', param: 1, modes: [{ hz: 100, zeta: 0.001, gain: 1 }] });
+  let crossings = 0;
+  for (let i = 1; i < one.y.length; i++) if ((one.y[i - 1] < 0) !== (one.y[i] < 0)) crossings++;
+  if (Math.abs(one.ms - 80) > 0.5) fails.push(`the span is ${one.ms} ms, not 80`);
+  if (Math.abs(one.y[0]) > 1e-9) fails.push(`it starts at ${one.y[0]}, not zero`);
+  if (Math.abs(crossings - 16) > 1) fails.push(`${crossings} zero crossings, not sixteen`);
+  const none = P.ringOf({ name: 'y', param: 1, modes: [{ hz: 0, zeta: 1, gain: 0 }] });
+  if (none.y) fails.push('a voice with no modes drew a ring');
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the ring is the modes struck once${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* The same plane, drawn. A missing guard here throws nothing and paints

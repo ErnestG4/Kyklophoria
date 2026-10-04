@@ -5,379 +5,470 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kyklophoria</title>
 <style>
-  /* Contrast, measured against --bg rather than eyeballed. Small text wants
-     4.5:1 to be readable and 7:1 to be comfortable, and most of this page's
-     text is 10 to 12 px. --dim was #5d6873, which is 3.51:1 — under the
-     readable floor — and it carries the world bar, the footer, the build row
-     and every state line on the page. The canvas had worse: captions 3.64,
-     the card fit text 2.76, the empty-state hints 2.11. All lifted in place,
-     hue and saturation kept, so the hierarchy still reads as a hierarchy. */
-  :root { --bg: #07090c; --ink: #cfd6dd; --dim: #8b9bab; --line: #1a2028; --hot: #ffcc55; --l: #62d5ff; --r: #ff7a9e; --ok: #6ee7a0; --bad: #ff5c5c;
-          --dim2: #77889e;   /* one step down: the fit on a card, 5.5:1 */
-          --hint: #6b819d; } /* quietest text that is still an instruction, 5.0:1 */
+  /* ── tokens ────────────────────────────────────────────────────────────
+     The look is a poster's (Combust, 1 October: "art and colors take
+     inspiration from KMFDM album covers"): flat primaries, black ink, hard
+     offset shadows, heavy condensed capitals, and the panel printed on cream
+     paper. The displays stay dark, because every halo, trail and terrain
+     palette on them is built for a dark field.
+
+     Contrast is measured, not eyeballed. Every text token clears 4.5:1 on
+     every ground it sits on: --ink-3 is 5.7:1 on --raised, the faintest of
+     the dark grounds; on the paper the faintest ink (--p-ink-3) is 6.4:1.
+     The older names (--dim, --hot, --l, --r, --ok, --bad) stay as aliases,
+     because the script writes them inline. */
+  :root {
+    color-scheme: dark;
+    --bg: #0e0c0b; --surface: #151210; --raised: #1f1a16; --well: #07090c;
+    --line: #2a231e; --edge: #7a6b5a;
+    --ink: #f1e6cc; --ink-2: #c9bb9e; --ink-3: #a1937b;
+    --paper: #efe4c8; --paper-hi: #fff8e6; --p-ink: #0e0c0b; --p-ink-2: #4a4033; --p-ink-3: #5a4e3e;
+    --red: #e2231a; --yellow: #ffd200; --cyan: #12b5e5; --black: #000;
+    --live: #3ee07a; --target: #ff4fa0; --voice: #3cc8f5; --warn: #ff8a2a; --danger: #ff4b3e;
+    --accent: var(--yellow); --on-accent: #0e0c0b;
+    --dim: var(--ink-3); --dim2: #958870; --hint: #8f826c;
+    --hot: var(--yellow); --l: var(--voice); --r: var(--target); --ok: var(--live); --bad: var(--danger);
+    --head: Impact, Haettenschweiler, "Arial Narrow Bold", "Franklin Gothic Heavy", "Arial Black", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --dots: radial-gradient(circle, rgba(255,255,255,.07) 1px, transparent 1.4px) 0 0 / 6px 6px;
+    --pdots: radial-gradient(circle, rgba(60,40,10,.10) 1px, transparent 1.5px) 0 0 / 5px 5px;   /* the paper's halftone */
+  }
   * { box-sizing: border-box; }
   /* `hidden` has to beat our own layout rules, and by default it does not.
      The browser's stylesheet says [hidden] { display: none }, which is an
-     attribute selector and loses to any rule with an id in it — and the three
-     things this page hides (#playMain, #buildMain, #worldbar) all set display
-     from an id. Without this the build view and the instrument render on top
-     of each other and the tabs do nothing, which no amount of testing against
-     a stub canvas would ever notice. */
+     attribute selector and loses to any rule with an id in it — and the
+     views this page hides all set display from an id. Without this the build
+     view and the instrument render on top of each other and the tabs do
+     nothing, which no amount of testing against a stub canvas would ever
+     notice. */
   [hidden] { display: none !important; }
-  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace; height: 100%; overflow: hidden; }
-  body { display: grid; grid-template-rows: auto auto 1fr auto auto; height: 100vh; }
-  header { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
-  header .name { font-weight: 600; letter-spacing: .08em; color: var(--hot); }
-  header .sp { flex: 1; }
-  /* Two jobs, two views. Playing is a readout of the module; building a world
-     is an editor for something the module is not holding yet. They were one
-     view, and the placement rings ended up sitting on top of a live position
-     readout, which is the picture telling you two unrelated things in the same
-     marks. */
-  .tab { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--dim);
-         font: inherit; letter-spacing: .1em; padding: 2px 6px 1px; cursor: pointer; }
-  .tab:hover { color: var(--ink); }
-  .tab.on { color: var(--hot); border-bottom-color: var(--hot); }
-  button { background: #0f141a; color: var(--ink); border: 1px solid #263039; border-radius: 3px; padding: 3px 9px; font: inherit; cursor: pointer; }
-  button:hover { border-color: #3a4855; } button.on { border-color: var(--hot); color: var(--hot); }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.35 var(--mono); height: 100%; overflow: hidden; }
+  /* Every row placed explicitly, so auto-placement has nothing to decide: a
+     view that hides leaves its row empty, and sparse auto-placement is
+     entitled to put the footer there instead. */
+  body { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; height: 100vh; }
+  #top { grid-row: 1; } #notice { grid-row: 2; }
+  #playMain, #modelMain, #buildMain, #libMain { grid-row: 3; }
+  #drawer { grid-row: 4; } footer { grid-row: 5; }
+  :focus-visible { outline: 2px solid var(--yellow); outline-offset: 1px; }
+
+  /* ── controls ──────────────────────────────────────────────────────── */
+  button, select, input { font: inherit; color: inherit; }
+  button { background: var(--raised); color: var(--ink); border: 1.5px solid var(--edge); border-radius: 2px; padding: 3px 9px; cursor: pointer; }
+  button:hover { border-color: var(--ink-2); }
+  button.on { border-color: var(--yellow); color: var(--yellow); }
   button:disabled { opacity: .4; cursor: default; }
-  /* world strip: which space the module is indexing, and how the terrain is shaded */
-  /* Two rows, not one wrapping row. With nine worlds the chips fitted beside
-     the description and it read fine; at eighteen they wrap, and a single flex
-     row wraps the description in among them — names and notes jumbled
-     together. The list only grows, so the chips get a line of their own. */
-  #worldbar { display: flex; flex-direction: column; gap: 3px; padding: 4px 12px;
-              border-bottom: 1px solid var(--line); font-size: 11px; color: var(--dim); }
-  #worldbar .wrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 20px; }
-  #worldbar .cap { letter-spacing: .1em; flex: none; }
-  #worldbar .sp { flex: 1; }
-  #worldChips, #shadeChips { display: flex; gap: 6px; flex-wrap: wrap; }
-  /* A row of its own, and allowed to wrap.
-     
-     It was one line, clipped with an ellipsis, sharing a row with the shade
-     and tail chips — which was right when a note was "one line, for the
-     page's list" and six words long. The notes now say what each of the four
-     axes does and give the formula where there is one, because a world is a
-     space you steer by hand and this is the only place that can tell you what
-     you are steering. Clipping that at forty characters would be keeping the
-     cost and throwing away the point. */
-  #worldNote { flex: 1 1 100%; min-width: 0; white-space: normal; line-height: 1.4;
-               font-style: italic; }
-  #worldNote.peek { color: var(--ink); font-style: normal; }
-  .chip { background: #0f141a; color: var(--dim); border: 1px solid #263039; border-radius: 3px;
-          padding: 1px 8px; font: inherit; cursor: pointer; white-space: nowrap; }
-  .chip:hover { border-color: #3a4855; color: var(--ink); }
-  .chip.on { border-color: var(--hot); color: var(--hot); }
+  button.primary { background: var(--yellow); color: var(--on-accent); border-color: #000; box-shadow: 2px 2px 0 var(--red); font-weight: 700; }
+  select, input[type=text] { background: var(--raised); color: var(--ink); border: 1.5px solid var(--edge); border-radius: 2px; padding: 2px 4px; max-width: 100%; }
+  input[type=text]:focus { outline: none; border-color: var(--yellow); }
+  input[type=text]::placeholder { color: var(--ink-3); }
+  input[type=range] { accent-color: var(--yellow); }
+  .chip { background: var(--raised); color: var(--ink-2); border: 1.5px solid var(--edge); border-radius: 2px;
+          padding: 1px 8px; cursor: pointer; white-space: nowrap; }
+  .chip:hover { border-color: var(--ink-2); color: var(--ink); }
+  .chip.on { background: var(--yellow); border-color: #000; color: var(--on-accent); }
   .chip.analytic::after { content: " ƒ"; opacity: .75; }   /* has a formula */
   .chip:disabled { opacity: .45; cursor: default; }
-  /* A select rather than a chip row: twenty-two worlds and an open-ended list
-     of files are both too many to lay out flat, and a dropdown is the honest
-     control for a long list. */
-  #worldbar select { background: #0f141a; color: var(--ink); border: 1px solid #263039;
-                     border-radius: 3px; padding: 1px 4px; font: inherit; max-width: 180px; }
-  #worldbar input[type=text] { background: #0f141a; color: var(--ink); border: 1px solid #263039;
-                     border-radius: 3px; padding: 1px 4px; font: inherit; width: 9em; }
-  #worldbar input[type=text]:focus { outline: none; border-color: var(--hot); }
-  #worldbar input[type=text]::placeholder { color: var(--dim); opacity: .7; }
-  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 34%); gap: 0; min-height: 0; }
-  /* Both views occupy the same row; whichever is not hidden fills it. */
-  /* Every row placed explicitly, so auto-placement has nothing to decide.
-     The play view fills row 2 with the world bar, but the build and worlds tabs
-     hide it — and with row 2 free, sparse auto-placement is entitled to put the
-     footer there, between the header and the pane. Pinning all of them costs
-     two declarations and removes the question. */
-  header { grid-row: 1; }
-  nav#worldbar { grid-row: 2; }
-  main, #buildMain, #libMain, #modelMain { grid-row: 3; }
-  #drawer { grid-row: 4; }
-  footer { grid-row: 5; }
-  #libMain { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; }
-  /* The loop's stops, in the order the clock walks them. A chip rather than a
-     tile: this is a sequence and reads left to right, where the grid below is a
-     library and reads as a field. */
-  #tourStops { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
-  #tourStops .ts { border: 1px solid #263039; border-radius: 3px; background: #0f141a;
-                   padding: 1px 5px; font-size: 10px; color: var(--dim); white-space: nowrap; }
-  #tourStops .ts.live { border-color: var(--ok); color: var(--ok); }
-  #tourStops .ts.next { border-color: var(--l); color: var(--ink); }
-  #tourStops .ar { color: #3a4855; font-size: 10px; }
-  /* The slots. A grid rather than a list because thirty-two of them is a shape
-     you scan, not a thing you read top to bottom. */
-  #slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-           gap: 6px; padding: 8px 10px; overflow: auto; align-content: start; }
-  .slot { border: 1px solid #263039; border-radius: 3px; background: #0f141a;
-          padding: 4px 6px 5px; cursor: pointer; min-width: 0; }
-  .slot:hover { border-color: #3a4855; }
-  .slot.on { border-color: var(--hot); }
-  /* Dashed for empty, because an empty slot is a place to put something rather
-     than a thing — and it is also a drop target, which dashed already says. */
-  .slot.empty { border-style: dashed; color: var(--dim); }
-  .slot.drop { border-color: var(--l); border-style: solid; }
-  .slot .sn { font-size: 9px; color: var(--dim); letter-spacing: .08em; }
-  .slot .snm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .slot.on .snm { color: var(--hot); }
-  .slot .sb { font-size: 9px; letter-spacing: .06em; min-height: 11px; }
-  .slot .sb .live { color: var(--ok); }
-  .slot .sb .tgt { color: var(--r); }
-  /* The ones that ship read as a different class of thing from the ones you
-     made — same tile, quieter ground, and they cannot be forgotten. */
-  .slot.builtin { background: #0c1116; border-color: #1f2832; }
-  .slot.builtin .sn { color: #4f5b68; }
-  #slots .libhead { grid-column: 1 / -1; font-size: 10px; letter-spacing: .1em;
-                    color: var(--dim); padding: 6px 2px 0; }
-  /* Five children, five rows. This said three — a bar, the panes, the
-     strip — and the build tab has three bars, so the panes fell into an
-     implicit auto row and took the height of their own canvases, which is
-     whatever the last resize left in the attribute: the tab opened with the
-     panes collapsed or overgrown until the window was resized. Combust:
-     "some parts require resizing on the build page". */
-  /* Bongs' panel, a row a page: every pot the module has, named as the
-     module names it, and moved from here as a hand moves it there */
-  #panelRows { padding: 4px 12px 8px; font-size: 11px; color: var(--dim); }
-  #panelRows .prow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 3px 0; border-bottom: 1px solid var(--line); }
-  #panelRows .pname { width: 72px; flex: none; letter-spacing: .1em; font-size: 10px; }
-  #panelRows .pot { display: flex; flex-direction: column; gap: 1px; width: 118px; }
-  #panelRows .pot .pl { display: flex; justify-content: space-between; gap: 4px; }
-  #panelRows .pot .pv { color: var(--fg, #cfd6dd); }
-  #panelRows .pot input[type=range] { width: 100%; margin: 0; }
-  #panelRows .pot select { width: 100%; background: #0f141a; color: inherit; border: 1px solid #263039; }
-  #buildMain { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; min-height: 0; }
-  #buildMain .brow, #modelMain .brow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-                     padding: 5px 12px; border-bottom: 1px solid var(--line);
-                     font-size: 11px; color: var(--dim); }
-  #buildMain .brow .cap, #modelMain .brow .cap { letter-spacing: .1em; flex: none; }
-  #buildMain .brow .sp, #modelMain .brow .sp { flex: 1; }
-  /* The model tab: a resonate world's own view. The instrument bar, then the
-     axis you play on and the modes it rings with, and beside them the
-     planes — pitch, strike, body, ring, voices, exciter — each a row, after
-     the way Rings and Elements lay a resonator out: one plane per row, not
-     six pots that mean something else on the next world. Three rows placed
-     explicitly for the reason the build tab's are. */
-  #modelMain { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
-  #modelMain .mmid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 36%);
-                     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; }
-  #modelMain .mmid .pane { border-bottom: 1px solid var(--line); }
-  #modelMain .mmid .pane.axis { grid-column: 1; grid-row: 1; cursor: crosshair; }
-  #modelMain .mmid .pane.modes { grid-column: 1; grid-row: 2; border-bottom: 0; }
-  #planes { grid-column: 2; grid-row: 1 / 3; overflow: auto; min-height: 0; padding: 4px 0; }
-  .plane { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 7px 12px;
-           border-bottom: 1px solid var(--line); font-size: 11px; color: var(--dim); }
-  .plane .cap { letter-spacing: .1em; flex: 0 0 62px; }
-  .plane .note { flex: 1 1 100%; font-style: italic; line-height: 1.4; }
-  .plane input[type=range] { width: 88px; vertical-align: middle; accent-color: var(--hot); height: 14px; margin: 0; }
-  .plane .pad { padding: 6px 14px; }
-  #modelMain select { background: #0f141a; color: var(--ink); border: 1px solid #263039;
-                      border-radius: 3px; padding: 1px 4px; font: inherit; max-width: 200px; }
-  #buildMain .bmid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 32%); min-height: 0; }
-  #buildMain input[type=text] { background: #0f141a; color: var(--ink); border: 1px solid #263039;
-                     border-radius: 3px; padding: 1px 4px; font: inherit; width: 9em; }
-  #buildMain input[type=text]:focus { outline: none; border-color: var(--hot); }
-  /* The strip is the answer to "what did I just import": one card per wave,
-     drawn, named and graded, rather than a count and the worst fit. */
-  #strip { display: flex; gap: 6px; align-items: flex-start; padding: 6px 10px;
-           border-top: 1px solid var(--line); overflow-x: auto; min-height: 72px; }
-  #strip .empty { color: var(--dim); font-size: 11px; padding: 18px 4px; }
-  .card { flex: 0 0 auto; width: 106px; background: #0f141a; border: 1px solid #263039;
-          border-radius: 3px; padding: 3px; cursor: pointer; }
-  .card:hover { border-color: #3a4855; }
-  .card.on { border-color: var(--hot); }
+  .prose { font: 12px/1.45 var(--sans); color: var(--ink-2); }
+  .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .sp { flex: 1; }
+
+  /* The headers, which have to stand out (Combust: "the main headers (play,
+     world, et al) need to stand out"): a printed banner, slanted, with a hard
+     shadow, the way a poster sets a title against the art. */
+  .hd { display: inline-block; margin: 0; font: 400 15px/1 var(--head); letter-spacing: .07em; text-transform: uppercase;
+        color: var(--on-accent); background: var(--yellow); padding: 4px 10px 3px; border: 2px solid #000;
+        box-shadow: 3px 3px 0 var(--red); transform: skewX(-8deg); white-space: nowrap; flex: none; }
+  .hd.sm { font-size: 12px; padding: 3px 7px 2px; box-shadow: 2px 2px 0 var(--red); }
+  .hd.cream { background: var(--paper); }
+  .hd .n { opacity: .7; margin-left: 6px; font-size: .8em; }
+
+  /* ── the top bar: what is always true, on every tab ────────────────── */
+  #top { position: relative; display: flex; align-items: center; gap: 14px; padding: 7px 14px 8px; overflow: hidden;
+         background: var(--dots), var(--bg); border-bottom: 4px solid var(--yellow); box-shadow: 0 3px 0 var(--red); white-space: nowrap; z-index: 1; }
+  .brand { position: relative; display: flex; align-items: baseline; gap: 8px; padding: 0 12px 0 4px; }
+  /* the sunburst behind the name: rays, masked to fade out from the centre */
+  .brand::before { content: ""; position: absolute; left: -34px; top: 50%; width: 130px; height: 130px; transform: translateY(-50%);
+                   background: repeating-conic-gradient(var(--red) 0 9deg, transparent 9deg 18deg);
+                   -webkit-mask: radial-gradient(circle, #000 0 22%, transparent 68%); mask: radial-gradient(circle, #000 0 22%, transparent 68%);
+                   pointer-events: none; }
+  .brand .name { position: relative; font: 400 31px/1 var(--head); letter-spacing: .05em; text-transform: uppercase; color: var(--yellow);
+                 -webkit-text-stroke: 1.5px #000; text-shadow: 3px 3px 0 #000, 5px 5px 0 var(--red); }
+  #fwMode { position: relative; color: var(--ink-3); }
+  .tabs { display: flex; gap: 6px; }
+  .tab { font: 400 18px/1 var(--head); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); background: none;
+         border: 2px solid transparent; border-radius: 0; padding: 6px 12px 4px; cursor: pointer; transform: skewX(-8deg); }
+  .tab:hover { color: var(--ink); border-color: var(--edge); }
+  .tab.on { background: var(--red); color: var(--paper); border-color: #000; box-shadow: 3px 3px 0 var(--yellow); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1.5px solid var(--edge); border-radius: 999px; background: var(--raised); color: var(--ink-2); }
+  .pill b { color: var(--ink); font-weight: 600; }
+  .pill .tgt { color: var(--target); }
+  .pill .sw { width: 12px; height: 12px; border: 1.5px solid #000; display: inline-block; }
+  .pill.off { visibility: hidden; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); display: inline-block; flex: none; }
+  .cpu { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+  .meter { width: 70px; height: 9px; border: 1.5px solid var(--edge); position: relative; overflow: hidden; background: var(--well); }
+  .meter i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink-2); }
+  .meter u { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--warn); }
+  .cpu.warn #cpuText { color: var(--warn); }
+  #modinfo { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+  /* the notice line: one fixed slot for what the page has to say, so a
+     message never moves the instrument */
+  #notice { display: flex; align-items: center; gap: 10px; height: 26px; padding: 0 14px; border-bottom: 1px solid var(--line);
+            font: 12px var(--sans); color: var(--ink-2); white-space: nowrap; overflow: hidden; }
+  #msg { overflow: hidden; text-overflow: ellipsis; }
+  #pageSwitch { color: var(--on-accent); background: var(--yellow); padding: 1px 8px; font-weight: 700; text-decoration: none; border: 1.5px solid #000; }
+
+  /* ── the play views: rail, stage, side ─────────────────────────────── */
+  .play { display: grid; grid-template-columns: 210px minmax(0, 1fr) minmax(340px, 31%); grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+  .play > .rail { grid-column: 1; grid-row: 1 / 3; }
+  .play > .stage { grid-column: 2; grid-row: 1; }
+  .play > .side { grid-column: 3; grid-row: 1; }
+  .play > .sheetslot { grid-column: 2 / 4; grid-row: 2; max-height: 56vh; overflow: auto; border-top: 4px solid var(--yellow); }
+  .rail { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; background: var(--surface); border-right: 2px solid #000; }
+  .rail > .hd { margin: 12px 12px 8px; justify-self: start; }
+  .wlist { overflow: auto; padding: 0 6px 8px; display: flex; flex-direction: column; gap: 1px; align-content: start; }
+  /* the worlds and the instruments as a list down the rail: a long list read
+     top to bottom, and the live one marked like a cursor */
+  .wlist .chip { display: block; width: 100%; text-align: left; background: none; border: 0; border-left: 3px solid transparent;
+                 border-radius: 0; padding: 3px 8px; color: var(--ink-2); }
+  .wlist .chip:hover { background: var(--raised); color: var(--ink); }
+  .wlist .chip.on { background: var(--raised); color: var(--ink); border-left-color: var(--yellow); font-weight: 700; }
+  .rail-foot { border-top: 2px solid #000; padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  #worldNote { height: 7.3em; overflow: hidden; font: 12px/1.45 var(--sans); color: var(--ink-2); font-style: italic; }
+  #worldNote.peek { color: var(--ink); font-style: normal; }
+  .stage { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
+  .stagebar { display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+  .stagebar button { padding: 1px 7px; font-size: 12px; }
+  #axes, #planeAxes, #shadeChips, #trailChips, #muteChips { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  .display { position: relative; background: var(--well); margin: 0 12px; border: 2px solid #000; box-shadow: inset 0 3px 0 var(--red); min-height: 0; overflow: hidden; }
+  .display canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .motionbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+  .side { display: grid; grid-template-rows: minmax(150px, 1fr) auto; min-height: 0; overflow: auto; background: var(--surface); border-left: 2px solid #000; }
+  .side .sound { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; padding-bottom: 10px; }
+  .side .sound > .hd { margin: 12px 12px 8px; justify-self: start; }
+  .panelslot { min-height: 0; overflow: auto; }
+
+  /* ── the panel, printed ─────────────────────────────────────────────
+     Every page laid out as it is on the module (Combust: "3 rows of 2
+     columns, numbered left to right, top to bottom"):
+
+        [P1] B1 [P2]
+        [P3] B2 [P4]
+        [P5] B3 [P6]
+
+     on cream paper with black ink, each page under a banner in its own
+     colour — the module's LED colour, saturated, so the hue the page teaches
+     is the hue the rings show. */
+  #panel { background: var(--pdots), var(--paper); color: var(--p-ink); padding: 10px 12px 12px; border-top: 4px solid #000; }
+  #panel.all { border-top: 0; }
+  .panelhead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .panelhead .hd { background: var(--p-ink); color: var(--paper); box-shadow: 3px 3px 0 var(--red); }
+  #panelNote { font: 12px var(--sans); color: var(--p-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  #panel button { background: var(--paper-hi); color: var(--p-ink); border: 2px solid #000; box-shadow: 2px 2px 0 #000; }
+  #panelTabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  #panelTabs button.ptab { font: 400 13px/1 var(--head); letter-spacing: .06em; text-transform: uppercase; padding: 4px 8px 3px;
+                           background: var(--paper-hi); color: var(--p-ink); border: 2px solid #000; box-shadow: 2px 2px 0 #000; transform: skewX(-8deg); }
+  #panelTabs button.ptab.live { background: var(--pc); color: var(--pc-ink); }
+  #panelTabs button.ptab.view { outline: 2px solid #000; outline-offset: 2px; }
+  #panelTabs .b1 { font: 700 9px var(--mono); margin-left: 5px; background: #000; color: var(--yellow); padding: 1px 3px; }
+  #panelRows { display: flex; flex-direction: column; gap: 14px; }
+  #panel.all #panelRows { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px 18px; }
+  .pblock { min-width: 0; }
+  .pbanner { display: flex; align-items: center; gap: 10px; margin: 0 4px 10px 2px; padding: 6px 12px 5px;
+             font: 400 22px/1 var(--head); letter-spacing: .06em; text-transform: uppercase;
+             background: var(--pc); color: var(--pc-ink); border: 2.5px solid #000; box-shadow: 4px 4px 0 #000; transform: skewX(-6deg); }
+  .pbanner .num { background: #000; color: var(--pc); padding: 2px 8px 1px; font-size: 19px; }
+  .pbanner .live { margin-left: auto; font: 700 10px var(--mono); letter-spacing: .04em; background: #000; color: var(--yellow); padding: 2px 6px; }
+  .ppage { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr); gap: 8px 6px; align-items: center; }
+  .bmark { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #000; background: var(--p-ink); color: var(--paper);
+           font: 700 9px/1 var(--mono); display: grid; place-items: center; justify-self: center; }
+  .pot { position: relative; background: var(--paper-hi); border: 2px solid #000; box-shadow: 2px 2px 0 #000; padding: 4px 7px 5px; min-width: 0; }
+  .pot .ph { display: flex; align-items: baseline; gap: 6px; }
+  .pot .pn { font: 700 10px/1.3 var(--mono); background: #000; color: var(--paper); padding: 0 4px; flex: none; }
+  .pot .pl { flex: 1; min-width: 0; font: 600 12px/1.3 var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pot .pv { font: 700 12px/1.3 var(--mono); white-space: nowrap; }
+  .pot .tr { position: relative; height: 18px; }
+  .pot input[type=range] { width: 100%; margin: 2px 0 0; accent-color: var(--pc-deep); }
+  .pot select { width: 100%; margin-top: 3px; background: var(--paper); color: var(--p-ink); border: 1.5px solid #000; }
+  .pot .ps { font: 11px/1.3 var(--sans); color: var(--p-ink-3); min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pot .ps.catch { color: #b3261e; }
+  .pot .ps.snd { color: #0b6a99; }
+  .pot .ps.why { font-style: italic; }
+  /* where the hand is (a pot that has not caught) and where the sound is
+     (an axis after the CVs, the rotation and the motions) */
+  .pot .hand { position: absolute; top: 13px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent;
+               border-bottom: 7px solid #b3261e; transform: translateX(-5px); pointer-events: none; }
+  .pot .sdot { position: absolute; top: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--voice); border: 2px solid #000;
+               transform: translateX(-4.5px); pointer-events: none; }
+  .pot.inert { background: transparent; border-style: dashed; box-shadow: none; opacity: .6; }
+  .pot.empty { background: transparent; border: 2px dashed var(--p-ink-3); box-shadow: none; opacity: .5; min-height: 52px; }
+  #panel.all .pot { padding: 3px 6px 4px; }
+
+  /* ── Bongs: the strike, the pads ───────────────────────────────────── */
+  .display.axis { cursor: crosshair; }
+  #planes { display: flex; flex-wrap: wrap; gap: 4px 22px; padding: 10px 12px 4px; font-size: 12px; color: var(--ink-2); }
+  .plane { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 3px 0; min-width: 0; }
+  .plane > .hd { margin-right: 4px; }
+  .plane .note { font-style: italic; line-height: 1.4; color: var(--ink-2); }
+  .plane input[type=range] { width: 96px; vertical-align: middle; height: 14px; margin: 0; }
+  /* the strike pads are the instrument's front face on the page, so they are
+     big, and printed like the panel */
+  #strikeChips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #strikeChips button.pad { min-width: 78px; min-height: 46px; font: 400 17px/1 var(--head); letter-spacing: .06em; text-transform: uppercase;
+                            background: var(--paper); color: var(--p-ink); border: 2.5px solid #000; box-shadow: 3px 3px 0 var(--red); }
+  #strikeChips button.pad:active { background: var(--red); color: var(--paper); box-shadow: 1px 1px 0 #000; transform: translate(2px, 2px); }
+  #modelHint { display: block; padding: 6px 12px 10px; font: 12px/1.4 var(--sans); color: var(--ink-3); }
+
+  /* ── build ──────────────────────────────────────────────────────────── */
+  #buildMain { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  .actbar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 2px solid #000; background: var(--surface); flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+  #wavName { width: 12em; }
+  .bmid { display: grid; grid-template-columns: 252px minmax(0, 1fr) minmax(300px, 30%); min-height: 0; }
+  .set { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; background: var(--surface); border-right: 2px solid #000; }
+  .set > .hd { margin: 12px 12px 8px; justify-self: start; }
+  .set .row { padding: 0 12px 8px; }
+  /* the strip is the answer to "what did I just import": one card per wave,
+     drawn, named and graded, rather than a count and the worst fit */
+  #strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(106px, 1fr)); gap: 6px; padding: 4px 12px 12px; overflow: auto; align-content: start; }
+  #strip .empty { grid-column: 1 / -1; color: var(--ink-3); font: 12px/1.45 var(--sans); padding: 8px 0; }
+  .card { position: relative; background: var(--raised); border: 1.5px solid var(--edge); padding: 3px; cursor: pointer; min-width: 0; }
+  .card:hover { border-color: var(--ink-2); }
+  .card.on { border-color: var(--yellow); box-shadow: 2px 2px 0 var(--red); }
   .card canvas { display: block; width: 98px; height: 32px; }
-  .card .cn { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden;
-              text-overflow: ellipsis; }
-  .card.on .cn { color: var(--hot); }
+  .card .cn { font-size: 10px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card.on .cn { color: var(--yellow); }
   .card .cf { font-size: 9px; color: var(--dim2); }
-  .card .cf.poor { color: #ff9a5c; }
-  .card { position: relative; }
+  .card .cf.poor { color: var(--warn); }
   /* On hover only: a row of two dozen cards each wearing a delete button is a
      row that looks like it is asking to be dismantled. */
-  .card .cx { position: absolute; top: 1px; right: 1px; padding: 0 3px; line-height: 1.1;
-              background: #0f141a; border: 1px solid #263039; border-radius: 2px;
-              color: var(--dim); font: inherit; font-size: 10px; cursor: pointer;
-              opacity: 0; transition: opacity .1s; }
+  .card .cx { position: absolute; top: 1px; right: 1px; padding: 0 3px; line-height: 1.1; background: var(--raised); border: 1px solid var(--edge);
+              color: var(--ink-3); font-size: 10px; cursor: pointer; opacity: 0; transition: opacity .1s; }
   .card:hover .cx, .card.on .cx { opacity: 1; }
-  .card .cx:hover { color: var(--bad); border-color: var(--bad); }
-  .pane { position: relative; min-width: 0; min-height: 0; border-right: 1px solid var(--line); }
-  .pane:last-child { border-right: 0; }
-  canvas { display: block; width: 100%; height: 100%; }
-  .overlay { position: absolute; left: 10px; top: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
-  .overlay button { padding: 1px 6px; font-size: 11px; color: var(--dim); }
-  .overlay button.on { color: var(--hot); }
-  .label { position: absolute; right: 10px; top: 8px; color: var(--dim); font-size: 11px; letter-spacing: .1em; }
-  footer { display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 5px 12px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; }
-  footer b { color: var(--ink); font-weight: 500; }
-  footer .warn b { color: var(--bad); }
-  #drawer { border-top: 1px solid var(--line); padding: 6px 12px; display: none; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px 18px; font-size: 11px; color: var(--dim); max-height: 34vh; overflow: auto; }
+  .card .cx:hover { color: var(--danger); border-color: var(--danger); }
+  .inspect { display: grid; grid-template-rows: minmax(200px, 1fr) auto auto; min-height: 0; background: var(--surface); border-left: 2px solid #000; }
+  .inspect .display { margin: 12px 12px 0; }
+  .sect { padding: 10px 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--ink-2); }
+  .sect .hd { align-self: flex-start; }
+
+  /* ── worlds ─────────────────────────────────────────────────────────── */
+  #libMain { display: grid; grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+  #libMain > .lib { grid-column: 1; grid-row: 1; overflow: auto; min-height: 0; }
+  #libMain > .insp { grid-column: 2; grid-row: 1 / 3; background: var(--surface); border-left: 2px solid #000; overflow: auto; }
+  #libMain > .loop { grid-column: 1; grid-row: 2; }
+  #libState { font: 12px/1.45 var(--sans); color: var(--ink-2); }
+  /* The slots. A grid rather than a list because thirty-two of them is a
+     shape you scan, not a thing you read top to bottom. */
+  #slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 6px; padding: 10px 14px; align-content: start; }
+  #slots .libhead { grid-column: 1 / -1; justify-self: start; margin: 10px 0 4px; display: inline-block;
+                    font: 400 14px/1 var(--head); letter-spacing: .07em; text-transform: uppercase; color: var(--on-accent);
+                    background: var(--yellow); padding: 4px 10px 3px; border: 2px solid #000; box-shadow: 3px 3px 0 var(--red); transform: skewX(-8deg); }
+  .slot { border: 1.5px solid var(--edge); background: var(--raised); padding: 5px 8px 6px; cursor: pointer; min-width: 0; }
+  .slot:hover { border-color: var(--ink-2); }
+  .slot.on { border-color: var(--yellow); box-shadow: 3px 3px 0 var(--red); }
+  /* Dashed for empty, because an empty slot is a place to put something
+     rather than a thing — and it is also a drop target, which dashed already
+     says. */
+  .slot.empty { border-style: dashed; color: var(--ink-3); background: transparent; }
+  .slot.drop { border-color: var(--voice); border-style: solid; }
+  .slot .sn { font-size: 9px; color: var(--ink-3); letter-spacing: .08em; }
+  .slot .snm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slot.on .snm { color: var(--yellow); }
+  .slot .sb { font-size: 9px; letter-spacing: .06em; min-height: 11px; }
+  .slot .sb .live { color: var(--live); }
+  .slot .sb .tgt { color: var(--target); }
+  /* The ones that ship read as a different class of thing from the ones you
+     made — same tile, quieter ground, and they cannot be forgotten. */
+  .slot.builtin { background: var(--surface); border-color: #3a3129; }
+  .slot.builtin .sn { color: var(--dim2); }
+  /* The loop's stops, in the order the clock walks them. A chip rather than a
+     tile: this is a sequence and reads left to right, where the grid above is
+     a library and reads as a field. */
+  #tourRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; border-top: 2px solid #000; background: var(--surface); font-size: 12px; color: var(--ink-2); }
+  #tourStops { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  #tourStops .ts { border: 1.5px solid var(--edge); background: var(--raised); padding: 1px 6px; font-size: 11px; color: var(--ink-2); white-space: nowrap; }
+  #tourStops .ts.live { border-color: var(--live); color: var(--live); }
+  #tourStops .ts.next { border-color: var(--voice); color: var(--ink); }
+  #tourStops .ar { color: var(--ink-3); font-size: 11px; }
+  #tourState { font: 12px var(--sans); }
+
+  /* ── the drawer (bridge only) and the footer ────────────────────────── */
+  #drawer { border-top: 1px solid var(--line); padding: 6px 12px; display: none; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px 18px; font-size: 11px; color: var(--ink-3); max-height: 34vh; overflow: auto; }
   #drawer.show { display: grid; }
   #drawer label { display: flex; align-items: center; gap: 8px; min-width: 0; }
   #drawer label span { flex: 0 0 72px; white-space: nowrap; overflow: hidden; }
   #drawer label output { flex: 0 0 68px; text-align: right; color: var(--ink); white-space: nowrap; }
-  #drawer input[type=range] { flex: 1 1 60px; min-width: 60px; accent-color: var(--hot); height: 14px; margin: 0; }
-  #drawer h4 { grid-column: 1 / -1; margin: 4px 0 0; font-weight: 500; color: var(--dim); font-size: 11px; letter-spacing: .1em; }
-  #msg { color: var(--dim); }
+  #drawer input[type=range] { flex: 1 1 60px; min-width: 60px; height: 14px; margin: 0; }
+  #drawer h4 { grid-column: 1 / -1; margin: 4px 0 0; font-weight: 500; color: var(--ink-3); font-size: 11px; letter-spacing: .1em; }
+  footer { display: flex; flex-wrap: wrap; gap: 3px 18px; padding: 5px 14px; border-top: 2px solid #000; background: var(--surface); color: var(--ink-3); font-size: 11.5px; }
+  footer b { color: var(--ink-2); font-weight: 500; }
+  footer .warn b, footer .warn { color: var(--danger); }
+  #pageLinks a { color: var(--ink-3); margin-left: 8px; }
+  #stageChip.warn { color: var(--warn); border: 1.5px solid var(--warn); padding: 0 6px; }
 </style>
 </head>
 <body>
-<header>
-  <span class="name" id="fwName">Kyklophoria</span><span id="fwMode" style="color:var(--dim)"></span>
-  <span id="pageLinks" style="color:var(--dim)"></span>
-  <a id="pageSwitch" hidden style="color:#ffb454"></a>
-  <button class="tab on" id="tabPlay">play</button>
-  <button class="tab" id="tabModel">model</button>
-  <button class="tab" id="tabBuild">build</button>
-  <button class="tab" id="tabLib">worlds</button>
-  <span id="modinfo" style="color:var(--dim)">not connected</span>
+<header id="top">
+  <div class="brand"><span class="name" id="fwName">Kyklophoria</span><span id="fwMode"></span></div>
+  <nav class="tabs" aria-label="views">
+    <button class="tab on" id="tabPlay">play</button>
+    <button class="tab" id="tabModel">model</button>
+    <button class="tab" id="tabBuild">build</button>
+    <button class="tab" id="tabLib">worlds</button>
+  </nav>
+  <span class="pill off" id="livePill" title="what the module is playing, from its own telemetry"></span>
+  <span class="pill off" id="pagePill" title="the panel page B1 is on, from telemetry"></span>
+  <span class="pill off" id="pitchPill" title="the pitch the module is playing"></span>
   <span class="sp"></span>
-  <span id="msg"></span>
-  <button id="btnSerial">Serial</button>
+  <span class="cpu" id="cpuPill" title="the module's CPU, once a second: the bar is the average, the tick the maximum"><span>CPU</span><span class="meter"><i id="cpuAvg"></i><u id="cpuMax"></u></span><span id="cpuText">—</span></span>
+  <span id="modinfo">not connected</span>
+  <button id="btnSerial" class="primary">Connect</button>
   <button id="btnBridge">Bridge</button>
   <button id="btnDrawer" hidden>Controls</button>
   <button id="btnClose" hidden>Disconnect</button>
 </header>
-<nav id="worldbar">
-  <div class="wrow">
-    <span class="cap" id="worldCap">WORLD</span>
-    <span id="worldChips"></span>
-  </div>
-  <div class="wrow">
-    <span class="cap">SHADE</span>
-    <span id="shadeChips"></span>
-    <span class="sp"></span>
-    <span class="cap">TAIL</span>
-    <span id="trailChips"></span>
-  </div>
-  <div class="wrow">
-    <span id="worldNote"></span>
-  </div>
-  <div class="wrow">
-    <span class="cap" id="morphCap">MORPH</span>
-    <select id="morphSel"><option value="255">off</option></select>
-    <button class="chip" id="morphDirect">direct</button>
-    <button class="chip" id="morphAim">aimed</button>
-    <span id="morphState" style="color: var(--dim)"></span>
-    <span class="sp"></span>
-    <span class="cap">CARD</span>
-    <select id="cardSel"></select>
-    <button class="chip" id="cardLoad">load</button>
-    <button class="chip" id="cardScan">rescan</button>
-    <span id="cardState" style="color: var(--dim)"></span>
-  </div>
-  <div class="wrow">
-    <span class="cap">MOTION</span>
-    <span id="muteChips"></span>
-    <span id="motionNote" style="color: var(--dim)"></span>
-  </div>
-</nav>
-<main id="playMain">
-  <div class="pane">
-    <canvas id="space"></canvas>
-    <div class="overlay" id="axes"></div>
-    <div class="label">SPACE</div>
-  </div>
-  <div class="pane">
-    <canvas id="sound"></canvas>
-    <div class="label">SOUND</div>
-  </div>
-</main>
-<section id="modelMain" hidden>
-  <div class="brow">
-    <span class="cap">INSTRUMENT</span>
-    <span id="instChips"></span>
-    <span class="sp"></span>
-    <span class="cap">CARD</span>
-    <select id="modelCardSel"></select>
-    <button class="chip" id="modelCardLoad">load</button>
-    <span id="modelCardState"></span>
-  </div>
-  <div class="mmid">
-    <div class="pane axis"><canvas id="maxis"></canvas><div class="label">AXIS · press to strike</div></div>
-    <div class="pane modes"><canvas id="mmodes"></canvas><div class="label">MODES</div></div>
-    <div id="planes">
-      <div class="plane"><span class="cap">PITCH</span><span id="lockChips"></span><span id="pitchNote" class="note"></span></div>
-      <div class="plane"><span class="cap">STRIKE</span><span id="strikeChips"></span></div>
-      <div class="plane"><span class="cap">BODY</span><span id="bodyChips"></span></div>
-      <div class="plane" id="ringPlane"><span class="cap">RING</span><span id="ringChips"></span></div>
-      <div class="plane" id="voicePlane"><span class="cap">VOICES</span><span id="voiceChips"></span></div>
-      <div class="plane" id="exciterPlane"><span class="cap">EXCITER</span><span id="exciterNote" class="note"></span></div>
+<div id="notice"><span id="msg"></span><a id="pageSwitch" hidden></a></div>
+
+<!-- ═════ Buzzes: play ═════ -->
+<main id="playMain" class="play">
+  <aside class="rail" id="worldbar">
+    <h3 class="hd" id="worldCap">WORLD</h3>
+    <div class="wlist" id="worldChips"></div>
+    <div class="rail-foot">
+      <div id="worldNote"></div>
+      <span class="hd sm" id="morphCap">MORPH</span>
+      <div class="row"><select id="morphSel"><option value="255">off</option></select></div>
+      <div class="row"><button class="chip" id="morphDirect">direct</button><button class="chip" id="morphAim">aimed</button></div>
+      <div id="morphState" class="prose"></div>
+      <span class="hd sm">CARD</span>
+      <div class="row"><select id="cardSel"></select></div>
+      <div class="row"><button class="chip" id="cardLoad">load</button><button class="chip" id="cardScan">rescan</button><span id="cardState" class="prose"></span></div>
     </div>
-  </div>
-  <div class="brow"><span id="modelHint"></span></div>
-<div id="panelRows" hidden></div>
+  </aside>
+  <section class="stage">
+    <div class="stagebar">
+      <span class="hd sm">PLANE</span><span id="axes"></span>
+      <span class="sp"></span>
+      <span class="hd sm">SHADE</span><span id="shadeChips"></span>
+      <span class="hd sm">TAIL</span><span id="trailChips"></span>
+    </div>
+    <div class="display"><canvas id="space"></canvas></div>
+    <div class="motionbar"><span class="hd sm">MOTION</span><span id="muteChips"></span><span id="motionNote" class="prose"></span></div>
+  </section>
+  <aside class="side">
+    <div class="sound"><h3 class="hd">SOUND</h3><div class="display"><canvas id="sound"></canvas></div></div>
+    <div class="panelslot" id="panelSlotPlay"></div>
+  </aside>
+  <div class="sheetslot" id="sheetSlotPlay" hidden></div>
+</main>
+
+<!-- ═════ Bongs: play (the model tab) ═════ -->
+<section id="modelMain" class="play" hidden>
+  <aside class="rail">
+    <h3 class="hd">INSTRUMENTS</h3>
+    <div class="wlist" id="instChips"></div>
+    <div class="rail-foot">
+      <span class="hd sm">CARD</span>
+      <div class="row"><select id="modelCardSel"></select></div>
+      <div class="row"><button class="chip" id="modelCardLoad">load</button><span id="modelCardState" class="prose"></span></div>
+    </div>
+  </aside>
+  <section class="stage">
+    <div class="stagebar"><span class="hd sm">STRIKE</span><span class="prose">press the axis: higher is harder · hold it, or a pad: a gate for the bow, the reed, the lips</span></div>
+    <div class="display axis"><canvas id="maxis"></canvas></div>
+    <div>
+      <div id="planes">
+        <div class="plane"><span class="hd sm">PITCH</span><span id="lockChips"></span><span id="pitchNote" class="note"></span></div>
+        <div class="plane"><span class="hd sm">STRIKE</span><span id="strikeChips"></span></div>
+        <div class="plane"><span class="hd sm">BODY</span><span id="bodyChips"></span></div>
+        <div class="plane" id="ringPlane"><span class="hd sm">RING</span><span id="ringChips"></span></div>
+        <div class="plane" id="voicePlane"><span class="hd sm">VOICES</span><span id="voiceChips"></span></div>
+        <div class="plane" id="exciterPlane"><span class="hd sm">EXCITER</span><span id="exciterNote" class="note"></span></div>
+      </div>
+      <span id="modelHint"></span>
+    </div>
+  </section>
+  <aside class="side">
+    <div class="sound"><h3 class="hd">MODES · RING</h3><div class="display"><canvas id="mmodes"></canvas></div></div>
+    <div class="panelslot" id="panelSlotModel"></div>
+  </aside>
+  <div class="sheetslot" id="sheetSlotModel" hidden></div>
 </section>
+
+<!-- the panel: one component, both firmwares, moved into whichever view is showing -->
+<div id="panel" hidden>
+  <div class="panelhead"><span class="hd sm">PANEL</span><span id="panelNote"></span><span class="sp"></span><button id="panelAll">all pages</button></div>
+  <div id="panelTabs"></div>
+  <div id="panelRows"></div>
+</div>
+
+<!-- ═════ build ═════ -->
 <section id="buildMain" hidden>
-  <div class="brow">
-    <span class="cap">WAVES</span>
-    <input type="file" id="wavIn" accept=".wav,audio/wav" multiple hidden>
-    <button class="chip" id="wavPick">add wavs…</button>
-    <button class="chip" id="wavMode">shape</button>
-    <button class="chip" id="wavClear">clear</button>
-    <button class="chip" id="wavNew">new from Lock</button>
-    <span class="sp"></span>
-    <span class="cap">WORLD</span>
+  <div class="actbar">
+    <span class="hd sm">WORLD</span>
     <input type="text" id="wavName" maxlength="16" placeholder="name" spellcheck="false">
-    <button class="chip" id="wavPlace">re-place</button>
-    <button class="chip" id="wavKeep">add to worlds</button>
-    <button class="chip" id="wavSend">play it now</button>
-    <button class="chip" id="wavSave">save…</button>
-    <span id="wavState" style="color: var(--dim)"></span>
-  </div>
-  <div class="brow">
-    <span class="cap">EFFECTS</span>
-    <span style="color: var(--dim)">axis 4</span>
-    <select id="fxA"></select>
-    <span style="color: var(--dim)">axis 5</span>
-    <select id="fxB"></select>
-    <span id="fxState" style="color: var(--dim)"></span>
-  </div>
-  <div class="brow">
-    <span class="cap">HEAR</span>
-    <button class="chip" id="audPlay">audition</button>
-    <button class="chip" id="audA">as imported</button>
-    <button class="chip" id="audB">band-limited</button>
-    <button class="chip" id="audC">as rendered</button>
-    <span id="audState" style="color: var(--dim)"></span>
+    <span id="wavState"></span>
+    <span class="sp"></span>
+    <button class="primary" id="wavSend">play it now</button>
+    <button id="wavKeep">add to worlds</button>
+    <button id="wavSave">save…</button>
   </div>
   <div class="bmid">
-    <div class="pane">
-      <canvas id="plane"></canvas>
-      <div class="overlay" id="planeAxes"></div>
-      <div class="label">PLACE</div>
-    </div>
-    <div class="pane">
-      <canvas id="inspect"></canvas>
-      <div class="label">WAVE</div>
-    </div>
+    <aside class="set">
+      <h3 class="hd">WAVES</h3>
+      <div class="row">
+        <input type="file" id="wavIn" accept=".wav,audio/wav" multiple hidden>
+        <button class="chip" id="wavPick">add wavs…</button>
+        <button class="chip" id="wavNew">new from Lock</button>
+        <button class="chip" id="wavMode">shape</button>
+        <button class="chip" id="wavPlace">re-place</button>
+        <button class="chip" id="wavClear">clear</button>
+      </div>
+      <div id="strip"></div>
+    </aside>
+    <section class="stage">
+      <div class="stagebar"><span class="hd sm">PLACE</span><span id="planeAxes"></span><span class="sp"></span><span class="prose">drag a ring · the inset is the other two axes</span></div>
+      <div class="display"><canvas id="plane"></canvas></div>
+      <div></div>
+    </section>
+    <aside class="inspect">
+      <div class="display"><canvas id="inspect"></canvas></div>
+      <div class="sect"><span class="hd sm">HEAR</span>
+        <div class="row"><button class="chip" id="audPlay">audition</button><button class="chip" id="audA">as imported</button><button class="chip" id="audB">band-limited</button><button class="chip" id="audC">as rendered</button></div>
+        <span id="audState" class="prose"></span>
+      </div>
+      <div class="sect"><span class="hd sm">EFFECTS</span>
+        <div class="row"><span>axis 4</span><select id="fxA"></select><span>axis 5</span><select id="fxB"></select></div>
+        <span id="fxState" class="prose"></span>
+      </div>
+    </aside>
   </div>
-  <div id="strip"></div>
 </section>
+
+<!-- ═════ worlds ═════ -->
 <section id="libMain" hidden>
-  <div class="brow">
-    <span class="cap">WORLDS</span>
-    <button class="chip" id="libPlay">play</button>
-    <button class="chip" id="libTarget">morph towards</button>
-    <button class="chip" id="libNoTarget">no target</button>
-    <button class="chip" id="libEdit">open to edit</button>
-    <button class="chip" id="libFree">forget</button>
-    <span class="sp"></span>
-    <span class="cap">CARD</span>
-    <button class="chip" id="libSave">save to card</button>
-    <select id="libCardSel"></select>
-    <button class="chip" id="libLoad">into the slot</button>
-    <button class="chip" id="libRescan">rescan</button>
-    <span id="libState" style="color: var(--dim)"></span>
-  </div>
-  <div class="brow" id="tourRow">
-    <span class="cap">LOOP</span>
+  <div class="lib"><div id="slots"></div></div>
+  <aside class="insp">
+    <div class="sect"><span class="hd sm">SELECTED</span><span id="libState"></span>
+      <div class="row"><button class="primary" id="libPlay">play</button><button id="libTarget">morph towards</button><button id="libNoTarget">no target</button><button id="libEdit">open to edit</button><button id="libFree">forget</button></div>
+    </div>
+    <div class="sect"><span class="hd sm">CARD</span>
+      <div class="row"><button id="libSave">save to card</button></div>
+      <div class="row"><select id="libCardSel"></select><button id="libLoad">into the slot</button><button id="libRescan">rescan</button></div>
+    </div>
+  </aside>
+  <div class="loop" id="tourRow">
+    <span class="hd sm">LOOP</span>
     <button class="chip" id="tourAdd">add stop</button>
     <button class="chip" id="tourDrop">drop last</button>
     <button class="chip" id="tourClear">clear</button>
-    <span class="cap">EVERY</span>
-    <select id="tourDiv"></select>
-    <span class="cap">CLOCKS ON J2</span>
+    <span>every</span><select id="tourDiv"></select><span>clocks on J2</span>
     <div id="tourStops"></div>
     <span class="sp"></span>
-    <span id="tourState" style="color: var(--dim)"></span>
+    <span id="tourState"></span>
   </div>
-  <div id="slots"></div>
 </section>
 <div id="drawer"></div>
 <footer>
@@ -388,7 +479,10 @@
   <span>spread <b id="sSpread">—</b></span>
   <span>link <b id="sLink">—</b></span>
   <span id="sCpuWrap">cpu <b id="sCpu">—</b></span>
+  <span id="stageChip"></span>
   <span>space <b id="sSpace">—</b></span>
+  <span class="sp"></span>
+  <span id="pageLinks"></span>
   <span title="the commit this page was published from (web/publish-pages.sh stamps it); local when opened from the repo">page <!--page-build--><b>local</b></span>
 </footer>
 <script src="link.js"></script>
@@ -623,7 +717,7 @@ async function disconnect() {
   if (l) { try { await l.close(); } catch {} }
   $('modinfo').textContent = 'not connected';
   clearReadouts();
-  $('btnClose').hidden = true; $('btnSerial').hidden = false; $('btnBridge').hidden = false; $('btnDrawer').hidden = true;
+  $('btnClose').hidden = true; $('btnSerial').hidden = false; $('btnBridge').hidden = !BRIDGE_OK; $('btnDrawer').hidden = true;
   $('drawer').classList.remove('show');
 }
 /* the status line and the morph line are readouts of the module, and they
@@ -632,10 +726,17 @@ async function disconnect() {
    review); drawStatus draws nothing without telemetry, so nothing replaced
    them */
 function clearReadouts() {
-  for (const id of ['sMod', 'sBlock', 'sF0', 'sKcut', 'sSpread', 'sLink', 'sCpu', 'sSpace']) setText(id, '—');
-  setText('morphState', '');
+  for (const id of ['sMod', 'sBlock', 'sF0', 'sKcut', 'sSpread', 'sLink', 'sCpu', 'sSpace', 'cpuText']) setText(id, '—');
+  setText('morphState', ''); setText('stageChip', '');
+  for (const id of ['livePill', 'pagePill', 'pitchPill']) setPill(id, '');
+  $('cpuAvg').style.width = '0%'; $('cpuMax').style.left = '0%';
   for (const id of ['morphSel', 'cardSel', 'cardLoad', 'morphAim', 'morphDirect']) $(id).disabled = true;
 }
+/* The bridge is a development transport, served by tools/bridge on this
+   machine; on the published page the button was a dead end (the 2026-10-01
+   review), so it shows only where a bridge could be. */
+const BRIDGE_OK = /^(localhost|127\.0\.0\.1)$/.test(location.hostname || '');
+$('btnBridge').hidden = !BRIDGE_OK;
 $('btnClose').onclick = () => disconnect();
 $('btnSerial').onclick = async () => {
   if (!navigator.serial) { say('Web Serial needs Chrome/Edge on desktop', true); return; }
@@ -1506,7 +1607,7 @@ function renderModelChips() {
      action the pot never hears of, so the pot and the page disagreed until
      it was next turned. What stays is what no pot has: the pads, the pad
      velocity, and which instrument of a family is sounding */
-  const bongs = !!potCtl;
+  const bongs = !!potCtl && fwMode === 'modal';
   for (const a in axisSliders) delete axisSliders[a];
   for (const id of ['ringPlane', 'voicePlane', 'exciterPlane']) $(id).hidden = bongs;
   /* what the module says, when it says something new: a pot on the module
@@ -1641,7 +1742,7 @@ function renderModelChips() {
     : 'on the module: J1 in, the Stereo page\'s sixth pot';
   $('modelHint').textContent = !link ? 'connect to a module or the bridge'
     : !live ? 'no resonator is playing — pick one above, or load a .kykm from the card'
-    : bongs ? 'the rows below are the panel, page by page: a slider moves the pot, a pot turned on the module moves its slider  ·  J4 trigger, B2 taps a strike or holds a gate, B3 flips the lock'
+    : bongs ? 'the panel beside is the module\'s, page by page as the hardware lays them out: a slider moves the pot, a pot turned on the module moves its slider  ·  J4 trigger, B2 taps a strike or holds a gate, B3 flips the lock'
     : moduleOwns() ? 'Play P3–P6 plus J5–J8 are body · velocity · decay · coil, straight: the Rotate page leaves a resonator alone, an orbit or Kepler you run moves them  ·  J4 trigger, B2 taps a strike, B3 flips the lock  ·  World P3 voices · Stereo P6 exciter'
     : 'over the bridge the pitch is the drawer\'s f0 or a press on the axis; the axes are the drawer\'s too';
 }
@@ -1862,14 +1963,36 @@ async function pollResonate() {
     await new Promise(r => setTimeout(r, 125));
   }
 }
-/* Bongs' panel on the page (docs/bongs-controls.md): a row a page, a
-   control a pot, built from the descriptor — a selector's labels as a menu,
-   anything else a slider with its value in its own units — and the module's
-   stored values read four times a second. Moving one here stores it there
-   (0x70), where the pot under a hand catches it as it would after a page
-   change. A control the hand here moved in the last second is not
-   overwritten by what the module says meanwhile */
+/* The panel on the page, both firmwares (docs/bongs-controls.md; the
+   2026-10-01 review): every page as the module lays it out, a control a
+   pot, built from the descriptor — a selector's labels as a menu, anything
+   else a slider with its value in its own units — and the module's stored
+   values read four times a second (0x70), the live page's every frame from
+   telemetry. Moving one here stores it there, where the pot under a hand
+   catches it as it would after a page change. A control the hand here moved
+   in the last second is not overwritten by what the module says meanwhile.
+
+   Laid out as the hardware is, not as a table (Combust, 1 October: "3 rows of
+   2 columns, numbered left to right, top to bottom"):
+
+        [P1] B1 [P2]
+        [P3] B2 [P4]
+        [P5] B3 [P6]
+
+   It mirrors the panel's place and leads only through its values: the page
+   cannot move B1 and does not try, so the page B1 is on is the one shown
+   unless a tab is picked, and the tab row says which that is. Everything it
+   shows beyond the stored values — where the hand is, where the sound is, a
+   pot that does nothing right now — comes off the wire. The page for both
+   (the desktop bridge, firmware from before the split) keeps the canvas
+   mirror in the sound pane instead. */
 let potCtl = null, potTouched = {}, potSending = {}, potQueued = {};
+let potVals = null;            /* pages × pots, as the module last said or the hand here last set */
+let potLive = -1;              /* the page 0x70 said B1 is on, for firmware whose telemetry does not */
+let panelView = -1;            /* a page picked on the tabs, or -1: follow B1 */
+let panelAll = false;          /* every page at once */
+let panelSig = '', panelTabs = [], panelBlocks = [], panelBanners = [];
+const panelOn = () => !!(panel && (fwMode === 'modal' || fwMode === 'wavetable'));
 function potText(disp, v) {
   if (!disp || disp.kind === 'norm' || disp.kind == null) return Math.round(100 * v) + '%';
   if (disp.kind === 'snap') { const L = disp.labels || []; return L.length ? L[Math.min(L.length - 1, Math.floor(v * L.length))] : ''; }
@@ -1879,26 +2002,80 @@ function potText(disp, v) {
   const a = Math.abs(x);
   return (a >= 100 ? x.toFixed(0) : a >= 10 ? x.toFixed(1) : x.toFixed(2)) + u;
 }
+/* A page's colour, printed. The module's own LED colour for that page is a
+   pastel, which is right for a ring seen alone in a dark rack and reads as
+   washed out as a banner; the hue is kept and the saturation pushed, so the
+   page teaches the hue the rings show. The ink is whichever of black and
+   cream reads on it, and the deep shade is for a slider on paper. */
+function pageInk(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return { fill: '#ffd200', ink: '#0e0c0b', deep: '#5a4e3e' };
+  const n = parseInt(m[1], 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d > 0) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (h * 60 + 360) % 360;
+  const rgb = (S, L) => {
+    const c = (1 - Math.abs(2 * L - 1)) * S, x = c * (1 - Math.abs((h / 60) % 2 - 1)), o = L - c / 2;
+    const [a1, a2, a3] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+    return [a1 + o, a2 + o, a3 + o];
+  };
+  const hex2 = v => Math.round(255 * Math.max(0, Math.min(1, v))).toString(16).padStart(2, '0');
+  const css = a => '#' + a.map(hex2).join('');
+  const fill = rgb(0.9, 0.55);
+  const lin = c => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const lum = 0.2126 * lin(fill[0]) + 0.7152 * lin(fill[1]) + 0.0722 * lin(fill[2]);
+  /* black on the fill against cream on it, whichever has the higher contrast */
+  const ink = (lum + 0.05) / 0.05 >= 1.05 / (lum + 0.05) ? '#0e0c0b' : '#fff8e6';
+  return { fill: css(fill), ink, deep: css(rgb(0.85, 0.32)) };
+}
+const pageVars = p => { const c = pageInk(panel && panel.colors[p]); return `--pc:${c.fill};--pc-ink:${c.ink};--pc-deep:${c.deep}`; };
+const pageName = p => (panel && panel.names[p]) || ('page ' + (p + 1));
+/* the page B1 is on: telemetry's, else what the last 0x70 read said */
+const livePage = () => !panel ? 0 : tel && tel.page < panel.pages ? tel.page : potLive >= 0 && potLive < panel.pages ? potLive : 0;
 function renderPanelRows() {
-  const box = $('panelRows');
-  box.innerHTML = ''; potCtl = null;
-  if (!panel || fwMode !== 'modal') { box.hidden = true; return; }
-  box.hidden = false;
-  potCtl = [];
+  const box = $('panelRows'), tabs = $('panelTabs');
+  box.innerHTML = ''; tabs.innerHTML = '';
+  potCtl = null; potVals = null; panelSig = ''; panelTabs = []; panelBlocks = []; panelBanners = [];
+  if (!panelOn()) { box.hidden = true; $('panel').hidden = true; placePanel(); return; }
+  box.hidden = false; $('panel').hidden = false;
+  potCtl = []; potVals = [];
+  const rows = Math.ceil(panel.pots / 2);
   for (let p = 0; p < panel.pages; p++) {
-    potCtl.push([]);
-    const row = document.createElement('div'); row.className = 'prow';
-    const nm = document.createElement('span'); nm.className = 'pname'; nm.textContent = (panel.names[p] || 'page ' + (p + 1)).toUpperCase();
-    if (panel.colors[p]) nm.style.color = panel.colors[p];
-    row.appendChild(nm);
+    potCtl.push([]); potVals.push(new Array(panel.pots).fill(null));
+    /* the tab: number first, then the name, in the page's colour once live */
+    const tab = document.createElement('button');
+    tab.className = 'ptab'; tab.style.cssText = pageVars(p);
+    tab.textContent = `${p + 1} ${pageName(p)}`;
+    tab.title = `page ${p + 1}, ${pageName(p)}`;
+    tab.onclick = () => { panelView = p === livePage() || p === panelView ? -1 : p; if (panelAll) { panelAll = false; placePanel(); } drawPanelLive(true); };
+    tabs.appendChild(tab); panelTabs.push(tab);
+    /* the page: its banner, then its six pots where the hardware has them */
+    const blk = document.createElement('div');
+    blk.className = 'pblock'; blk.style.cssText = pageVars(p);
+    const ban = document.createElement('div'); ban.className = 'pbanner';
+    const num = document.createElement('span'); num.className = 'num'; num.textContent = String(p + 1);
+    const nm = document.createElement('span'); nm.textContent = pageName(p);
+    const lv = document.createElement('span'); lv.className = 'live'; lv.textContent = 'B1 · on the panel'; lv.hidden = true;
+    ban.appendChild(num); ban.appendChild(nm); ban.appendChild(lv);
+    blk.appendChild(ban); panelBanners.push(lv);
+    const grid = document.createElement('div'); grid.className = 'ppage';
+    const cells = [];
     for (let k = 0; k < panel.pots; k++) {
       const f = panel.grid[p][k];
-      if (!f) { potCtl[p].push(null); continue; }
-      const cell = document.createElement('div'); cell.className = 'pot';
-      const head = document.createElement('div'); head.className = 'pl';
-      const lab = document.createElement('span'); lab.textContent = f.name;
+      const cell = document.createElement('div');
+      const head = document.createElement('div'); head.className = 'ph';
+      const pn = document.createElement('span'); pn.className = 'pn'; pn.textContent = 'P' + (k + 1);
+      const lab = document.createElement('span'); lab.className = 'pl';
       const val = document.createElement('span'); val.className = 'pv';
-      head.appendChild(lab); head.appendChild(val); cell.appendChild(head);
+      head.appendChild(pn); head.appendChild(lab); head.appendChild(val); cell.appendChild(head);
+      if (!f) {
+        cell.className = 'pot empty'; lab.textContent = '—';
+        potCtl[p].push(null); cells.push(cell); continue;
+      }
+      cell.className = 'pot';
+      lab.textContent = f.name; lab.title = f.name;
+      const tr = document.createElement('div'); tr.className = 'tr';
       let el;
       const snap = f.disp && f.disp.kind === 'snap' && Array.isArray(f.disp.labels) && f.disp.labels.length;
       if (snap) {
@@ -1909,14 +2086,41 @@ function renderPanelRows() {
         el = document.createElement('input'); el.type = 'range'; el.min = '0'; el.max = '1'; el.step = '0.001';
         el.oninput = () => potMove(p, k, Number(el.value));
       }
-      cell.appendChild(el); row.appendChild(cell);
-      potCtl[p].push({ el, val, disp: f.disp, snap: !!snap });
+      const hand = document.createElement('span'); hand.className = 'hand'; hand.hidden = true; hand.title = 'the pot under your hand is here: turn it through the value to catch it';
+      const sdot = document.createElement('span'); sdot.className = 'sdot'; sdot.hidden = true; sdot.title = 'where the sound is on this axis, after the CVs, the rotation and the motions';
+      tr.appendChild(el); tr.appendChild(hand); tr.appendChild(sdot); cell.appendChild(tr);
+      const sub = document.createElement('div'); sub.className = 'ps'; cell.appendChild(sub);
+      potCtl[p].push({ el, val, disp: f.disp, snap: !!snap, cell, lab, hand, sdot, sub, id: f.id || '', name: f.name, p, k, lastV: null, markKey: '', labKey: '' });
+      cells.push(cell);
     }
-    box.appendChild(row);
+    const bmark = i => { const b = document.createElement('div'); b.className = 'bmark'; b.textContent = 'B' + i; return b; };
+    for (let r = 0; r < rows; r++) {
+      grid.appendChild(cells[2 * r]);
+      grid.appendChild(bmark(r + 1));
+      grid.appendChild(cells[2 * r + 1] || (() => { const e = document.createElement('div'); e.className = 'pot empty'; return e; })());
+    }
+    blk.appendChild(grid);
+    box.appendChild(blk); panelBlocks.push(blk);
   }
+  placePanel();
+  drawPanelLive(true);
 }
+/* where the panel sits: under the sound in the view that is showing, or —
+   every page at once — across the bottom of it */
+let panelPlaced = '';
+function placePanel() {
+  const model = viewMode === 'model', on = !!potCtl;
+  const id = panelAll ? (model ? 'sheetSlotModel' : 'sheetSlotPlay') : (model ? 'panelSlotModel' : 'panelSlotPlay');
+  if (panelPlaced !== id) { $(id).appendChild($('panel')); panelPlaced = id; }
+  $('sheetSlotPlay').hidden = !(on && panelAll && !model);
+  $('sheetSlotModel').hidden = !(on && panelAll && model);
+  $('panel').className = panelAll ? 'all' : '';
+  $('panelAll').textContent = panelAll ? 'this page' : 'all pages';   /* not setText: this runs at load, before its cache exists */
+}
+$('panelAll').onclick = () => { panelAll = !panelAll; panelView = -1; placePanel(); drawPanelLive(true); resize(); for (const c of CANVASES) measure(c); };
 function showPot(c, v) {
-  if (!c) return;
+  if (!c || c.lastV === v) return;
+  c.lastV = v;
   if (c.snap) { const n = c.disp.labels.length; c.el.value = String(Math.min(n - 1, Math.floor(v * n))); }
   else c.el.value = String(v);
   c.val.textContent = potText(c.disp, v);
@@ -1927,7 +2131,8 @@ function showPot(c, v) {
 async function potMove(p, k, v) {
   const key = p + ':' + k;
   potTouched[key] = performance.now();
-  if (potCtl && potCtl[p]) { const c = potCtl[p][k]; if (c) c.val.textContent = potText(c.disp, v); }
+  if (potVals && potVals[p]) potVals[p][k] = v;
+  if (potCtl && potCtl[p]) { const c = potCtl[p][k]; if (c) { c.lastV = v; c.val.textContent = potText(c.disp, v); } }
   if (!link) return;
   if (potSending[key]) { potQueued[key] = v; return; }
   potSending[key] = true;
@@ -1935,19 +2140,121 @@ async function potMove(p, k, v) {
   potSending[key] = false;
   if (potQueued[key] != null) { const q = potQueued[key]; potQueued[key] = null; potMove(p, k, q); }
 }
+const potHeld = (p, k, now) => now - (potTouched[p + ':' + k] || -1e9) < 1000;
 function applyPots(r) {
   if (!r || !potCtl) return;
+  if (r.live != null) potLive = r.live;
   const now = performance.now();
   for (let p = 0; p < Math.min(r.pages, potCtl.length); p++)
     for (let k = 0; k < Math.min(r.pots, potCtl[p].length); k++) {
-      if (now - (potTouched[p + ':' + k] || -1e9) < 1000) continue;
+      if (potHeld(p, k, now)) continue;
+      potVals[p][k] = r.vals[p][k];
       showPot(potCtl[p][k], r.vals[p][k]);
     }
+}
+const potValById = id => {
+  if (!potCtl) return null;
+  for (let p = 0; p < potCtl.length; p++) for (const c of potCtl[p]) if (c && c.id === id) return potVals[p][c.k];
+  return null;
+};
+/* A pot that does nothing right now, and why — only where the instrument is
+   designed that way. Gravity at the bottom of its travel is off and takes the
+   orbit's other knobs with it (shell/alchemy/main.cpp, the 0.02 threshold);
+   a fifth and sixth axis on a four-axis world move nothing; World morph with
+   no target has nothing to blend towards; Family is a family's; a pickup
+   world plays in mono, so Space has nothing to spread. A pot that is dead
+   because of a defect is not listed here: that gets fixed, not explained. */
+function inertWhy(c) {
+  if (!tel || !c.id) return '';
+  const id = c.id;
+  const pa = /^pos\.([45])$/.exec(id);
+  if (pa && !tel.resonate && +pa[1] >= tel.n) return `nothing on a ${tel.n}-axis world`;
+  if (id === 'world.morph' && tel.morphWorld === 0xFF) return 'no morph target: pick one on the worlds tab';
+  if (/^kep\.(ecc|plane|soft|damp|r|bodies|mass)$/.test(id)) {
+    const g = potValById('kep.g');
+    if (g != null && g <= 0.02 && !(tel.kepler && tel.kepler.running)) return 'Gravity is off';
+  }
+  if (tel.resonate && reso) {
+    if (id === 'res.family' && !(reso.members && reso.members.length > 1)) return 'not a family';
+    if (/^st\.(spread|listen|plane)$/.test(id) && reso.form != null && reso.form !== 0) return 'a pickup world plays in mono';
+  }
+  return '';
+}
+const pct = v => Math.round(100 * v) + '%';
+/* Play P3–P6 on a resonator are its four axes, and the page knows what this
+   world calls them; the module's descriptor says Position 0–3 */
+function potLabel(c) {
+  const a = /^pos\.([0-3])$/.exec(c.id);
+  if (a && tel && tel.resonate) { const n = axisName(+a[1]); return n.charAt(0).toUpperCase() + n.slice(1); }
+  return c.name;
+}
+function potMarks(c, live) {
+  const v = potVals[c.p][c.k];
+  const why = inertWhy(c);
+  let hand = null, snd = null, text = '', cls = 'ps';
+  if (why) { text = why; cls = 'ps why'; }
+  else {
+    /* the hand: on the live page, the pot when it has not caught the value */
+    if (c.p === live && tel && tel.pots && tel.knobs && v != null && tel.pots[c.k] != null
+        && Math.abs(tel.pots[c.k] - v) > 0.02) { hand = clamp01(tel.pots[c.k]); text = `pot at ${pct(hand)} · turn to catch`; cls = 'ps catch'; }
+    /* the sound: a position axis, after everything that moves it */
+    const a = /^pos\.([0-5])$/.exec(c.id);
+    if (a && tel && tel.posL && +a[1] < tel.posL.length) {
+      snd = clamp01(tel.posL[+a[1]]);
+      if (!text && v != null && Math.abs(snd - v) > 0.02) { text = `sound at ${pct(snd)}`; cls = 'ps snd'; }
+    }
+    const lab = potLabel(c);
+    if (!text && lab !== c.name) text = c.name;
+  }
+  const key = `${cls}|${text}|${hand == null ? '' : hand.toFixed(3)}|${snd == null ? '' : snd.toFixed(3)}`;
+  if (key === c.markKey) return;
+  c.markKey = key;
+  c.sub.className = cls; c.sub.textContent = text;
+  c.cell.className = 'pot' + (why ? ' inert' : '');
+  c.hand.hidden = hand == null || c.snap; if (hand != null) c.hand.style.left = (100 * hand).toFixed(1) + '%';
+  c.sdot.hidden = snd == null || c.snap; if (snd != null) c.sdot.style.left = (100 * snd).toFixed(1) + '%';
+}
+/* Every frame, and cheap: the DOM is written only where something changed. */
+function drawPanelLive(force) {
+  if (!potCtl || !panel) return;
+  const live = livePage();
+  const show = panelAll ? -2 : panelView >= 0 ? panelView : live;
+  const sig = `${live}|${show}`;
+  if (force || sig !== panelSig) {
+    panelSig = sig;
+    for (let p = 0; p < panelBlocks.length; p++) {
+      panelBlocks[p].hidden = !(panelAll || p === show);
+      panelBanners[p].hidden = p !== live;
+      panelTabs[p].className = 'ptab' + (p === live ? ' live' : '') + (p === show ? ' view' : '');
+      panelTabs[p].textContent = `${p + 1} ${pageName(p)}${p === live ? ' · B1' : ''}`;
+    }
+    setText('panelNote', panelAll ? 'every page, laid out as the module has them'
+      : show === live ? `page ${live + 1}, the one B1 is on · a slider moves the stored value, the pot catches it`
+      : `showing ${show + 1} ${pageName(show)} · the panel is on ${live + 1} ${pageName(live)}`);
+  }
+  /* the live page's values come in every telemetry frame, so it moves with
+     the hand at frame rate rather than at the 0x70 poll's four a second */
+  const now = performance.now();
+  if (tel && tel.knobs && potCtl[live])
+    for (let k = 0; k < potCtl[live].length && k < tel.knobs.length; k++) {
+      const c = potCtl[live][k];
+      if (!c || tel.knobs[k] == null || potHeld(live, k, now)) continue;
+      potVals[live][k] = tel.knobs[k];
+      showPot(c, tel.knobs[k]);
+    }
+  for (let p = 0; p < potCtl.length; p++) {
+    if (!panelAll && p !== show) continue;
+    for (const c of potCtl[p]) if (c) {
+      const lab = potLabel(c);
+      if (lab !== c.labKey) { c.labKey = lab; c.lab.textContent = lab; c.lab.title = lab === c.name ? c.name : `${lab} · ${c.name} on the module`; }
+      potMarks(c, live);
+    }
+  }
 }
 async function pollPots() {
   const own = link;
   while (polling && link === own) {
-    if (potCtl && fwMode === 'modal' && viewMode === 'model') {
+    if (potCtl && (viewMode === 'model' || viewMode === 'play')) {
       try { applyPots(await MVL.getPots(link)); } catch {}
     }
     await new Promise(r => setTimeout(r, 250));
@@ -3631,6 +3938,8 @@ function setView(m) {
   /* The world bar is all play-side — which world, how it is shaded, what is
      muted — and none of it applies to a world that is not loaded yet. */
   $('worldbar').hidden = m !== 'play';
+  /* the panel is one component and goes with the view that is showing */
+  placePanel(); drawPanelLive(true);
   /* A canvas that was display:none has no box, so it comes back sized zero
      until something measures it again. */
   resize();
@@ -3974,10 +4283,63 @@ function drawModes(g, x, top, w, bot) {
   const t = `${nlive} modes · burst ${r.burst ? Math.round(1000 * r.burst / 48000) + ' ms' : 'none'}`;
   g.fillText(t, x + w - g.measureText(t).width, top - 8);
 }
-/* the model tab's two canvases: the axis, which is also a pad, and the modes */
+/* The voice's ring, drawn from what the module says it built.
+ *
+ * A real-time waveform of the output needs the module to send its samples,
+ * which it does not. What it does send, eight times a second, is every mode
+ * of the voice that is playing (0x6F: frequency, damping, level), and a bank
+ * of modes struck by an impulse is exactly the sum of their decaying sines.
+ * So this is the ring itself — the shape of the instrument's body — without
+ * the exciter that drives it or the pickup after it, and it says so. Worked
+ * out at 48 kHz, so the upper modes are drawn as the bank rings them rather
+ * than aliased by a coarse grid, and only when the modes change: a new note,
+ * a new member, a turned axis. Drawn a pixel column at a time as the span of
+ * the samples in it, which is how a sample editor draws a waveform. */
+const ring = { sig: '', y: null, ms: 0, peak: 1 };
+function ringOf(r) {
+  const modes = (r.modes || []).filter(q => q.hz > 0 && q.hz < 24000 && Math.abs(q.gain) > 0 && q.zeta >= 0);
+  const sig = `${r.name}|${r.param}|` + modes.map(q => q.hz.toFixed(1) + ':' + q.zeta.toFixed(5) + ':' + q.gain.toFixed(4)).join(',');
+  if (sig === ring.sig) return ring;
+  ring.sig = sig; ring.y = null;
+  if (!modes.length) return ring;
+  let f1 = Infinity; for (const q of modes) if (q.hz < f1) f1 = q.hz;
+  /* eight periods of the lowest mode, between 4 and 80 ms */
+  const T = Math.min(0.08, Math.max(0.004, 8 / f1)), N = Math.max(64, Math.round(T * 48000));
+  const y = new Float32Array(N);
+  for (const q of modes) {
+    const w = 2 * Math.PI * q.hz / 48000, s = q.zeta * w;
+    for (let i = 0; i < N; i++) y[i] += q.gain * Math.exp(-s * i) * Math.sin(w * i);
+  }
+  ring.y = y; ring.ms = 1000 * T; ring.peak = peakOf(y) || 1;
+  return ring;
+}
+function drawRing(g, x, top, w, h) {
+  g.font = '11px ui-monospace, monospace'; g.fillStyle = '#8f826c';
+  const r = reso;
+  if (!r || !r.modes) { g.fillText('ring — waiting for the module to say what it is playing', x, top + 10); return; }
+  const R = ringOf(r);
+  g.fillText(R.y ? `ring · its modes struck once, no exciter · ${R.ms.toFixed(0)} ms` : 'ring · no modes', x, top + 10);
+  const mid = top + 18 + (h - 18) / 2, amp = Math.max(4, (h - 18) / 2 - 2);
+  g.strokeStyle = '#1c242e'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, mid); g.lineTo(x + w, mid); g.stroke();
+  if (!R.y) return;
+  const N = R.y.length, cols = Math.max(1, Math.floor(w));
+  g.fillStyle = '#62d5ff';
+  for (let c = 0; c < cols; c++) {
+    const i0 = Math.floor(c * N / cols), i1 = Math.max(i0 + 1, Math.floor((c + 1) * N / cols));
+    let lo = Infinity, hi = -Infinity;
+    for (let i = i0; i < i1 && i < N; i++) { const v = R.y[i] / R.peak; if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!(hi >= lo)) continue;
+    g.fillRect(x + c, mid - hi * amp, 1, Math.max(1, (hi - lo) * amp));
+  }
+}
+/* the model tab's two canvases: the axis, which is also a pad, and the ring
+   over the modes */
 function drawModel() {
   { const { w: W, h: H } = boxOf(ma); fit(ma); drawResonateSpace(W, H, max); }
-  { const { w: W, h: H } = boxOf(mm); fit(mm); drawModes(mmx, 30, 26, W - 60, H - 26); }
+  { const { w: W, h: H } = boxOf(mm); fit(mm);
+    const rh = Math.max(48, Math.round(H * 0.34));
+    drawRing(mmx, 30, 18, W - 60, rh);
+    drawModes(mmx, 30, 18 + rh + 30, W - 60, H - 26); }
   setText('pitchNote', pitchNoteText());
   /* the axes under the module's pots: a slider the page does not own is a
      readout, and follows the telemetry every frame. This waited on the
@@ -3998,8 +4360,10 @@ function drawSound() {
   /* The spectrum used to take everything below the payload lanes, which was
      far more room than 64 bars need and left nowhere to say what the panel is
      doing. It keeps a fixed slice now and the panel mirror takes the rest. */
-  const panelH = panel ? Math.min(170, Math.max(110, H * 0.32)) : 0;
-  const frameTop = 26, frameH = Math.max(40, H * 0.30), mid = frameTop + frameH / 2;
+  const panelH = panel && !potCtl ? Math.min(170, Math.max(110, H * 0.32)) : 0;
+  /* the frame is the cycle the engine rendered this block, live at the
+     telemetry rate: with the panel off this canvas it gets the room */
+  const frameTop = 26, frameH = Math.max(40, H * (panelH ? 0.30 : 0.40)), mid = frameTop + frameH / 2;
   const stripY = frameTop + frameH + 10;                       /* payload lanes row */
   const specCap = stripY + 34;                                  /* "spectrum" caption baseline */
   const specTop = specCap + 8, base = H - m - 12 - panelH, h = Math.max(20, base - specTop);
@@ -4021,9 +4385,10 @@ function drawSound() {
      only in the space view. */
   /* frame: 256 points, i8/127, ×40 scale means ±3.2 full scale */
   if (tel.frame) {
-    cnx.strokeStyle = '#62d5ff'; cnx.lineWidth = 1.5; cnx.beginPath();
-    for (let i = 0; i < 256; i++) { const x = m + (W - 2 * m) * i / 255, y = mid - (tel.frame[i] / 127) * (frameH / 2 - 6); i ? cnx.lineTo(x, y) : cnx.moveTo(x, y); }
-    cnx.stroke(); cnx.lineWidth = 1;
+    /* drawn as a scope trace: a soft glow under a crisp line */
+    const trace = () => { cnx.beginPath(); for (let i = 0; i < 256; i++) { const x = m + (W - 2 * m) * i / 255, y = mid - (tel.frame[i] / 127) * (frameH / 2 - 6); i ? cnx.lineTo(x, y) : cnx.moveTo(x, y); } };
+    cnx.lineWidth = 5; cnx.strokeStyle = 'rgba(60,200,245,0.18)'; trace(); cnx.stroke();
+    cnx.lineWidth = 1.8; cnx.strokeStyle = '#62d5ff'; trace(); cnx.stroke(); cnx.lineWidth = 1;
   }
   /* payload lanes: one row of meters between frame and spectrum */
   const P = tel.p, mw = (W - 2 * m) / Math.max(1, P);
@@ -4204,8 +4569,57 @@ function setText(id, v) {
   lastText.set(id, v);
   $(id).textContent = v;
 }
+/* the top bar's pills: markup, written only on change, and off when empty */
+const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+function setPill(id, html) {
+  if (lastText.get(id) === html) return;
+  lastText.set(id, html);
+  const e = $(id); e.innerHTML = html; e.className = 'pill' + (html ? '' : ' off');
+}
+/* What the module is playing, by name. Ours has no index, so it is the slot
+   that is live, or the set this page sent; 0xFE is a target that is one of
+   yours, named from the slot list rather than read out as "world 254". */
+function liveName() {
+  if (tel && tel.resonate) return (reso && reso.name) || (slots && slots.live < slots.count && slots.names[slots.live]) || 'an instrument';
+  if (!worlds) return '';
+  if (worlds.current === 0xFF) return (slots && slots.live < slots.count && slots.names[slots.live]) || (held && held.name) || 'a world of yours';
+  const w = worlds.list.find(x => x.index === worlds.current);
+  return w ? w.name : '';
+}
+function targetName(mw) {
+  if (mw === 0xFF || mw == null) return null;
+  if (mw === MVL.MORPH_USER) return (slots && slots.target < slots.count && slots.names[slots.target]) || 'a world of yours';
+  return worlds && worlds.list[mw] ? worlds.list[mw].name : 'world ' + mw;
+}
+function drawTop() {
+  const nm = liveName();
+  const mw = tel.morphWorld, tn = !tel.resonate ? targetName(mw) : null;
+  setPill('livePill', nm ? `<span class="dot"></span><b>${esc(nm)}</b>` + (tn ? ` <span class="tgt">→ ${esc(tn)} ${Math.round(100 * (tel.morph || 0))}%</span>` : '') : '');
+  if (panel && panel.pages && tel.page != null) {
+    const pg = tel.page < panel.pages ? tel.page : -1;
+    setPill('pagePill', pg < 0 ? '' : `<span class="sw" style="background:${pageInk(panel.colors[pg]).fill}"></span><b>${pg + 1}</b> ${esc(pageName(pg))}`);
+  } else setPill('pagePill', '');
+  setPill('pitchPill', `${esc(MVL.noteName(tel.f0))} <b>${tel.f0.toFixed(1)}</b> Hz`
+    + (tel.resonate ? ` · ${lock ? 'locked' : 'free'} · ${poly} voice${poly > 1 ? 's' : ''}` : ` · nyq ${tel.kcut}/${tel.k}`));
+  if (stats && stats.cyclesBudget) {
+    const a = Math.min(100, 100 * stats.cyclesAvg / stats.cyclesBudget), x = Math.min(100, 100 * stats.cyclesMax / stats.cyclesBudget);
+    $('cpuAvg').style.width = a.toFixed(0) + '%'; $('cpuMax').style.left = Math.min(98, x).toFixed(0) + '%';
+    setText('cpuText', `${a.toFixed(0)}% avg · ${x.toFixed(0)}% max`);
+    $('cpuPill').className = 'cpu' + (stats.overruns > 0 || x > 70 ? ' warn' : '');
+    /* Staging, on a resonator: a strike's voice built on the control loop
+       rather than in the audio callback. Off at more than one voice is the
+       state a world switch left the voices in (the 2026-10-01 review), so it
+       is said where a glance finds it. */
+    if (tel.resonate && stats.stagedPerS != null) {
+      const off = poly > 1 && stats.atPerS > 0 && stats.stagedPerS === 0;
+      setText('stageChip', off ? `staging off at ${poly} voices` : `staged ${stats.stagedPerS}/s`);
+      $('stageChip').className = off ? 'warn' : '';
+    } else setText('stageChip', '');
+  }
+}
 function drawStatus() {
   if (!tel) return;
+  drawTop();
   setText('sBlock', String(tel.block));
   setText('sF0', tel.f0.toFixed(1) + ' Hz ' + MVL.noteName(tel.f0));
   setText('sKcut', tel.kcut + '/' + tel.k);
@@ -4219,9 +4633,8 @@ function drawStatus() {
      set — which is worth saying rather than leaving to be discovered. */
   {
     const mw = tel.morphWorld;
-    const named = mw !== 0xFF && worlds && worlds.list[mw] ? worlds.list[mw].name : null;
     setText('morphState', mw === 0xFF ? 'no target — the knob does nothing'
-            : `${(tel.morph * 100).toFixed(0)}% towards ${named || ('world ' + mw)}`
+            : `${(tel.morph * 100).toFixed(0)}% towards ${targetName(mw)}`
               + (tel.aimed ? ', read at its nearest match' : ''));
     const aimOn = !!tel.aimed;
     if (aimOn !== lastAimed) {
@@ -4264,6 +4677,7 @@ function frame() {
     if (viewMode === 'build') { drawPlane(); drawInspect(); }
     else if (viewMode === 'model') drawModel();
     else { drawSpace(); drawSound(); }
+    if (viewMode === 'play' || viewMode === 'model') drawPanelLive(false);
     drawStatus();
   }
   catch (e) {

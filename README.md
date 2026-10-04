@@ -2,9 +2,11 @@
 
 `index.html` is the instrument's readout: where the CV has put you in the
 space, what the voice is doing, and how hard the module is working. It is
-read-mostly (spec §8): everything a knob or CV does is *shown*, never
-duplicated as a control. The only writes are the dev drawer over the
-bridge, which stands in for the panel while there is no hardware.
+read-mostly (spec §8): everything a knob or CV does is *shown*. The writes
+are the panel's stored values (0x70, which the pot under a hand then
+catches, so the page and the panel are one store), the choices with no
+pot (a world, a morph target, a loop, a strike pad), and the dev drawer
+over the bridge, which stands in for the panel while there is no hardware.
 
 Three static files, no build step, no dependencies:
 
@@ -43,12 +45,39 @@ node web/selftest.mjs            # optional node twin; --no-bridge skips the Web
 
 ## Views
 
-- **World strip** (top): the worlds the module can be in, from
+The look is a poster's (Combust, 1 October 2026: "art and colors take
+inspiration from KMFDM album covers"): flat primaries, black ink, hard
+shadows, condensed capitals for every header, the panel printed on cream
+paper; the displays stay dark.
+
+- **Top bar** (every tab): the firmware's name, the tabs, then what is
+  always true — what the module is playing (and the morph target), the
+  panel page B1 is on, the pitch, and a CPU meter (the bar the average,
+  the tick the maximum). Under it, one fixed line for messages, so a
+  message never moves the instrument.
+- **Panel** (both firmwares' play views): every page laid out as the
+  module has them — `[P1] B1 [P2] / [P3] B2 [P4] / [P5] B3 [P6]` — each
+  under a banner in its LED colour, saturated. It shows the page B1 is on
+  (a tab shows another; *all pages* shows every one), the stored values
+  (0x70, four times a second, and the live page every telemetry frame),
+  where the hand is when a pot has not caught, where the sound is on a
+  position axis, and the pots the instrument is designed to leave doing
+  nothing (Gravity off, a fifth axis on a four-axis world, no morph target,
+  Family off a family, Space on a pickup world). A slider stores the value
+  on the module. The page for both keeps the canvas mirror in the Sound
+  view instead.
+- **World rail** (Buzzes, left): the worlds the module can be in, from
   `GET_WORLDS`, the live one marked; click to switch. A world marked `ƒ`
   is *analytic* — a formula, so switching to it is instant — and one
   without is *tabulated*, a lattice the module has to expand, which takes
-  a moment and shows as `expanding…`. The note beside the list describes
-  the current world. On the right, what the terrain is shaded by.
+  a moment and shows as `expanding…`. The note under the list describes
+  the current world; under it the morph target and the card. Above the
+  space, what the terrain is shaded by.
+- **Bongs' play view**: the instruments in the slots and the card's down
+  the rail; the strike axis and the pads; the voice's **ring** — its modes
+  struck once by an impulse, worked out at 48 kHz from the 0x6F readout,
+  so it is the shape of the body without the exciter or the pickup — over
+  the modes themselves.
 - **Space** (left, the hero): a 2-D projection of the N-D space on a
   selectable pair of axes (buttons top-left, or `[` / `]`).
 
