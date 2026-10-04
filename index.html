@@ -143,6 +143,8 @@
   .stagebar { display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
   .stagebar button { padding: 1px 7px; font-size: 12px; }
   #axes, #planeAxes, #shadeChips, #trailChips, #muteChips { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  /* a plane named by its axes keeps the module's numbers, small, beside it */
+  .pnum { opacity: .6; margin-left: 5px; font-size: 10px; }
   .display { position: relative; background: var(--well); margin: 0 12px; border: 2px solid #000; box-shadow: inset 0 3px 0 var(--red); min-height: 0; overflow: hidden; }
   .display canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .motionbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
@@ -395,7 +397,7 @@
     </div>
   </section>
   <aside class="side">
-    <div class="sound"><h3 class="hd">MODES · RING</h3><div class="display"><canvas id="mmodes"></canvas></div></div>
+    <div class="sound"><h3 class="hd">OUT · RING · MODES</h3><div class="display"><canvas id="mmodes"></canvas></div></div>
     <div class="panelslot" id="panelSlotModel"></div>
   </aside>
   <div class="sheetslot" id="sheetSlotModel" hidden></div>
@@ -1042,7 +1044,7 @@ const place = { sel: -1, drag: -1, box: null, sent: false };
  * invisible here until something refreshes the world list, because telemetry
  * does not carry the live world index. The world bar has always had the same
  * gap, so the rings are no more wrong than the name beside them. */
-let held = null;                 /* { name, nodes: [{ name, pos }] } */
+let held = null;                 /* { name, nodes: [{ name, pos }], fx: [{ axis, kind }] } */
 
 /* The play view draws this and nothing else. A function rather than a field so
    there is one answer to "what does the readout show", and it is the same
@@ -1051,7 +1053,9 @@ const playNodes = () => (held ? held.nodes : []);
 
 /* A send landed, so the module now holds exactly this. */
 function heldSent() {
-  held = { name: worldName(), nodes: imported.map(w => ({ name: w.name, pos: w.pos.slice() })) };
+  held = { name: worldName(), nodes: imported.map(w => ({ name: w.name, pos: w.pos.slice() })),
+           /* and its effects, which name axes 4 and 5 on the play view */
+           fx: fxSel().map(f => ({ axis: f.axis, kind: f.kind })) };
 }
 
 /* And the module is not holding it any more. One function, because there are
@@ -1525,13 +1529,14 @@ async function sendImported() {
 function renderMuteChips() {
   const box = $('muteChips'); box.innerHTML = '';
   const mask = tel ? (tel.mute | 0) : 0;
-  const n = tel ? tel.n : 4, planes = MVL.planeCount(n);
-  const add = (label, bit, title) => {
+  const n = tel ? tel.n : 4, planes = MVL.planeCount(n), names = axisNames();
+  const add = (label, bit, title, plane) => {
     const b = document.createElement('button');
     const off = (mask & bit) !== 0;
     b.className = 'chip' + (off ? '' : ' on');
-    b.textContent = label;
-    b.title = title + (off ? ' — muted' : ' — running');
+    /* a plane is named by its axes where the world names them */
+    const pn = plane ? planeLabel(b, names, plane[0], plane[1], label) : (b.textContent = label, null);
+    b.title = (pn ? `${title} — ${pn}` : title) + (off ? ' — muted' : ' — running');
     b.disabled = !link;
     b.onclick = async () => {
       if (!link) return;
@@ -1545,7 +1550,7 @@ function renderMuteChips() {
   };
   for (let p = 0; p < planes; p++) {
     const [i, j] = MVL.planeAxes(n, p);
-    add(`${i}${j}`, 1 << p, `rotation plane ${i},${j}`);
+    add(`${i}${j}`, 1 << p, `rotation plane ${i},${j}`, [i, j]);
   }
   const sep = document.createElement('span');
   sep.textContent = '·'; sep.style.color = 'var(--dim)'; sep.style.padding = '0 2px';
@@ -1999,7 +2004,13 @@ $('cardLoad').onclick = async () => {
    its page asks for the motion block alone: K + 256 bytes a frame fewer,
    about 19 KB/s at 60 frames a second (the 2026-10-01 review, design W6),
    and the modal encoder never builds a frame it has no reader for */
-const telFlags = () => fwMode === 'modal' ? MVL.TEL.motion : MVL.TEL.spectrum | MVL.TEL.frame | MVL.TEL.motion;
+/* And the live output scope, on both, where the module says it serves one
+   (the descriptor's telflags): an older firmware echoes an unknown flag back
+   without serving it, which would shift every motion field after it. 198
+   bytes a frame mono and 390 stereo, 12 to 23 KB/s at 60 frames. */
+const scopeOn = () => (MVL.telServed(desc) & MVL.TEL.scope) !== 0;
+const telFlags = () => (fwMode === 'modal' ? MVL.TEL.motion : MVL.TEL.spectrum | MVL.TEL.frame | MVL.TEL.motion)
+                       | (scopeOn() ? MVL.TEL.scope : 0);
 async function pollTelemetry() {
   const own = link;
   while (polling && link === own) {
@@ -2165,7 +2176,7 @@ function renderPanelRows() {
       const sdot = document.createElement('span'); sdot.className = 'sdot'; sdot.hidden = true; sdot.title = 'where the sound is on this axis, after the CVs, the rotation and the motions';
       tr.appendChild(el); tr.appendChild(hand); tr.appendChild(sdot); cell.appendChild(tr);
       const sub = document.createElement('div'); sub.className = 'ps'; cell.appendChild(sub);
-      potCtl[p].push({ el, val, disp: f.disp, snap: !!snap || isSel, sel: isSel, selKey: null, cell, lab, hand, sdot, sub, id: f.id || '', name: f.name, p, k, lastV: null, markKey: '', labKey: '' });
+      potCtl[p].push({ el, val, disp: f.disp, snap: !!snap || isSel, sel: isSel, selKey: null, cell, lab, hand, sdot, sub, id: f.id || '', name: f.name, p, k, lastV: null, markKey: '', labKey: '', optKey: '' });
       cells.push(cell);
     }
     const bmark = i => { const b = document.createElement('div'); b.className = 'bmark'; b.textContent = 'B' + i; return b; };
@@ -2199,7 +2210,7 @@ function showPot(c, v) {
   if (c.sel) { syncSel(c, v); return; }
   if (c.snap) { const n = c.disp.labels.length; c.el.value = String(Math.min(n - 1, Math.floor(v * n))); }
   else c.el.value = String(v);
-  c.val.textContent = potText(c.disp, v);
+  c.val.textContent = potValText(c, v);
 }
 /* a move sends at once, and one more with the latest value if moves came
    while it was in flight — a slider is sixty moves a second and the one
@@ -2208,7 +2219,7 @@ async function potMove(p, k, v) {
   const key = p + ':' + k;
   potTouched[key] = performance.now();
   if (potVals && potVals[p]) potVals[p][k] = v;
-  if (potCtl && potCtl[p]) { const c = potCtl[p][k]; if (c) { c.lastV = v; if (c.sel) syncSel(c, v); else c.val.textContent = potText(c.disp, v); } }
+  if (potCtl && potCtl[p]) { const c = potCtl[p][k]; if (c) { c.lastV = v; if (c.sel) syncSel(c, v); else c.val.textContent = potValText(c, v); } }
   syncTourDiv();
   if (!link) return;
   if (potSending[key]) { potQueued[key] = v; return; }
@@ -2361,14 +2372,34 @@ function inertWhy(c) {
   return '';
 }
 const pct = v => Math.round(100 * v) + '%';
-/* Play P3–P6 on a resonator are its four axes, and the page knows what this
-   world calls them; the module's descriptor says Position 0–3 */
-function potLabel(c) {
-  const a = /^pos\.([0-3])$/.exec(c.id);
-  if (a && tel && tel.resonate) { const n = axisName(+a[1]); return n.charAt(0).toUpperCase() + n.slice(1); }
+/* Play P3–P6 are the world's four axes, and the module's descriptor says
+   Position 0–3 because the descriptor is fixed and the world is not. Where
+   the world names an axis — a resonator always, a built-in when the module
+   sends names, a world you sent on its effect axes 4 and 5 — the pot says the
+   name and the descriptor's words go underneath. A pot named for a plane
+   ("Angle 0,1", "Orbit 0,1") takes the plane's names the same way. */
+function potLabel(c, names = axisNames()) {
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  const a = /^pos\.([0-5])$/.exec(c.id);
+  if (a && names[+a[1]]) return cap(names[+a[1]]);
+  const pl = /^(.*?)\s*(\d),(\d)$/.exec(c.name || '');
+  if (pl) { const pn = planeName(names, +pl[2], +pl[3]); if (pn) return pl[1] ? `${pl[1]} ${pn}` : cap(pn); }
   return c.name;
 }
-function potMarks(c, live) {
+/* A plane-choosing menu (Stereo plane, Kepler's Orbit plane) lists planes as
+   "0,1"; where the world names them, the names come first. */
+function snapLabel(c, i, names = axisNames()) {
+  const t = c.disp.labels[i];
+  const m = /^(\d),(\d)$/.exec(t);
+  const pn = m && planeName(names, +m[1], +m[2]);
+  return pn ? `${pn} (${t})` : t;
+}
+function potValText(c, v) {
+  if (!c.snap) return potText(c.disp, v);
+  const n = c.disp.labels.length;
+  return snapLabel(c, Math.min(n - 1, Math.max(0, Math.floor(v * n))));
+}
+function potMarks(c, live, names) {
   const v = potVals[c.p][c.k];
   const why = inertWhy(c);
   let hand = null, snd = null, text = '', cls = 'ps';
@@ -2383,7 +2414,7 @@ function potMarks(c, live) {
       snd = clamp01(tel.posL[+a[1]]);
       if (!text && v != null && Math.abs(snd - v) > 0.02) { text = `sound at ${pct(snd)}`; cls = 'ps snd'; }
     }
-    const lab = potLabel(c);
+    const lab = potLabel(c, names);
     if (!text && lab !== c.name) text = c.name;
   }
   const key = `${cls}|${text}|${hand == null ? '' : hand.toFixed(3)}|${snd == null ? '' : snd.toFixed(3)}`;
@@ -2422,13 +2453,26 @@ function drawPanelLive(force) {
       potVals[live][k] = tel.knobs[k];
       showPot(c, tel.knobs[k]);
     }
+  const names = axisNames();
   for (let p = 0; p < potCtl.length; p++) {
     if (!panelAll && p !== show) continue;
     for (const c of potCtl[p]) if (c) {
       if (c.sel) syncSel(c, null);
-      const lab = potLabel(c);
+      const lab = potLabel(c, names);
       if (lab !== c.labKey) { c.labKey = lab; c.lab.textContent = lab; c.lab.title = lab === c.name ? c.name : `${lab} · ${c.name} on the module`; }
-      potMarks(c, live);
+      /* a plane menu's options follow the world's names, and so does the
+         value shown beside it (not the world or instrument selector, whose
+         options are the module's list, kept by syncSel) */
+      if (c.snap && !c.sel && c.disp && Array.isArray(c.disp.labels)) {
+        const opts = c.disp.labels.map((_, i) => snapLabel(c, i, names)), key = opts.join('|');
+        if (key !== c.optKey) {
+          c.optKey = key;
+          const o = c.el.options || [];
+          for (let i = 0; i < o.length && i < opts.length; i++) o[i].textContent = opts[i];
+          if (c.lastV != null) c.val.textContent = potValText(c, c.lastV);
+        }
+      }
+      potMarks(c, live, names);
     }
   }
 }
@@ -2595,6 +2639,71 @@ function trailStep(t, n) {
   return { step: Math.max(1, Math.round(want)), fast };
 }
 
+/* ── axis names ─────────────────────────────────────────────────────── */
+/* What the module calls each axis of the world it is playing, null where it
+ * is a number.
+ *
+ * A built-in's names come in the module's own world list (GET_WORLDS), from
+ * core/kyk_worlds.h, where each is checked against the evaluator that makes
+ * it true — not from a table here keyed by world name, which could not name a
+ * world of yours and would go on naming a world after it was retuned. Firmware
+ * from before them sends none, and every label keeps the number it had.
+ *
+ * A world of yours has none from the module. But a world the page *sent* is
+ * one whose effects the page knows, so axes 4 and 5 are named by them — from
+ * `held`, the record of what was sent, never from the draft on the build tab,
+ * because this is a readout of the module. A resonator's four are fixed.
+ *
+ * Which world is "playing" is telemetry's index where the firmware sends it,
+ * the list's otherwise, for the same reason the world bar does it that way. */
+function axisNames() {
+  const n = tel ? tel.n : (space ? space.n : 4), out = new Array(Math.max(0, n | 0)).fill(null);
+  if (tel && tel.resonate) {
+    const r = (reso && reso.form === 0 && reso.kind === 0) ? RESO_AXES_PLAIN : RESO_AXES;
+    for (let a = 0; a < out.length && a < r.length; a++) out[a] = r[a];
+    return out;
+  }
+  const live = tel && tel.world != null ? tel.world : worlds ? worlds.current : null;
+  if (live === 0xFF) {
+    for (const f of (held && held.fx) || []) if (f.axis < out.length) out[f.axis] = MVL.SHAPER_NAME[f.kind] || null;
+    return out;
+  }
+  const w = live != null && worlds ? worlds.list[live] : null;
+  if (w && w.axes) w.axes.forEach((s, a) => { if (a < out.length && s) out[a] = s; });
+  return out;
+}
+/* The build tab's set is a draft and not on the module, so its plane buttons
+   name what the draft says: nothing on axes 0–3, its effects on 4 and 5. */
+function draftAxisNames(n) {
+  const out = new Array(Math.max(0, n | 0)).fill(null);
+  for (const f of fxSel()) if (f.axis < out.length) out[f.axis] = MVL.SHAPER_NAME[f.kind] || null;
+  return out;
+}
+/* A plane by its axes, "index · ratio"; an unnamed axis among named ones is
+   its number. Null when neither is named, so every caller keeps the spelling
+   it had — and wherever a name is shown, the numbers the module's own screen
+   uses ("0,1") are shown beside it, so the page and the panel still agree. */
+function planeName(names, i, j) {
+  if (!names || !(names[i] || names[j])) return null;
+  return `${names[i] || i} · ${names[j] || j}`;
+}
+/* A plane button or chip: the names first and the numbers small, or the
+   numbers alone as they always were. */
+function planeLabel(el, names, i, j, bare) {
+  const pn = planeName(names, i, j);
+  if (!pn) { el.textContent = bare; return null; }
+  const m = document.createElement('span'); m.textContent = pn;
+  const s = document.createElement('small'); s.className = 'pnum'; s.textContent = `${i},${j}`;
+  el.appendChild(m); el.appendChild(s);
+  return pn;
+}
+/* when the names change, so must everything that was built from them */
+let lastAxisKey = '';
+function axisKey() {
+  const n = tel ? tel.n : 4;
+  return axisNames().join('|') + '/' + draftAxisNames(n).join('|');
+}
+
 /* ── axis selector ──────────────────────────────────────────────────── */
 /* One projection, chosen once, drawn in both views. Which plane you are
    looking at is a fact about where you are in the space, not about which tab
@@ -2603,10 +2712,14 @@ function trailStep(t, n) {
 function buildAxisButtons() {
   const n = tel ? tel.n : (space ? space.n : 4);
   for (const id of ['axes', 'planeAxes']) {
+    /* the play view's buttons name the world that is playing; the build
+       tab's name the draft, which is a different world until it is sent */
+    const names = id === 'axes' ? axisNames() : draftAxisNames(n);
     const box = $(id); box.innerHTML = '';
     for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
-      const btn = document.createElement('button'); btn.textContent = a + '×' + b;
-      if (tel && tel.resonate) btn.title = axisName(a) + ' × ' + axisName(b);
+      const btn = document.createElement('button');
+      const pn = planeLabel(btn, names, a, b, a + '×' + b);
+      if (pn) btn.title = `${pn} — axes ${a},${b}`;
       btn.classList.toggle('on', axes[0] === a && axes[1] === b);
       btn.onclick = () => { axes = [a, b]; trail.n = 0; trail.head = 0; trail.at = -1; buildAxisButtons(); };
       box.appendChild(btn);
@@ -2981,10 +3094,10 @@ function drawResonateSpace(W, H, cx) {   /* cx: the pane it draws on, the play t
   cx.lineWidth = 1;
 }
 
-/* what an axis is called: a resonator's four have names, a wavetable's are
-   numbered (its own world decides what they mean) */
+/* what an axis is called: a resonator's four have names, and so does a
+   built-in world's where the module sends them (axisNames, below) */
 const RESO_AXES = ['body', 'velocity', 'decay', 'coil'], RESO_AXES_PLAIN = ['position', 'velocity', 'decay', 'brightness'];
-const axisName = a => (tel && tel.resonate) ? ((reso && reso.form === 0 && reso.kind === 0) ? RESO_AXES_PLAIN[a] : RESO_AXES[a]) || ('axis ' + a) : 'axis ' + a;
+const axisName = a => axisNames()[a] || ('axis ' + a);
 function drawSpace() {
   const { w: W, h: H } = boxOf(cs);
   fit(cs);
@@ -3026,14 +3139,23 @@ function drawSpace() {
   /* axis labels sit over the terrain, so give them a dark backing rather than
    * letting them vanish into the bright corner */
   cx.font = '11px ui-monospace, monospace';
-  const axLabel = (text, x, y, rot) => {
+  const axLabel = (text, x, y, rot, sub) => {
     cx.save(); cx.translate(x, y); if (rot) cx.rotate(-Math.PI / 2);
     cx.lineWidth = 3; cx.strokeStyle = 'rgba(7,9,12,0.75)'; cx.strokeText(text, 0, 0);
     cx.fillStyle = basis ? '#8b98a6' : '#6b819d'; cx.fillText(text, 0, 0);
+    /* a named axis keeps its number beside the name, dimmer: it is what the
+       module's own screen calls it */
+    if (sub) { const w = cx.measureText(text + ' ').width; cx.strokeText(sub, w, 0); cx.fillStyle = '#4f6075'; cx.fillText(sub, w, 0); }
     cx.lineWidth = 1; cx.restore();
   };
-  axLabel(axisName(ax), ox + S - 44, oy + S - 6, false);
-  axLabel(axisName(ay), ox + 13, oy + 52, true);
+  /* Placed by their width, since a name is longer than "axis 0": the
+     horizontal one ends at the right edge and the vertical one starts at the
+     top, wherever the text stops. */
+  {
+    const names = axisNames(), wOf = a => cx.measureText(names[a] ? `${names[a]} ${a}` : 'axis ' + a).width;
+    axLabel(names[ax] || 'axis ' + ax, ox + S - wOf(ax) - 6, oy + S - 6, false, names[ax] ? String(ax) : '');
+    axLabel(names[ay] || 'axis ' + ay, ox + 13, oy + 10 + wOf(ay), true, names[ay] ? String(ay) : '');
+  }
   /* Now that the ramp is absolute, a slice with nothing in it paints one
      colour — which is correct, and indistinguishable from a slice that failed
      to build. So name it. */
@@ -3665,7 +3787,7 @@ $('audC').onclick = () => auditionPick(2);
  */
 let slots = null, slotDrag = -1;
 let libSel = null;                 /* { kind: 'builtin' | 'slot', i } */
-const slotNodes = {};              /* slot -> [{ name, pos }], only what we sent */
+const slotNodes = {};              /* slot -> [{ name, pos }] with .fx, only what we sent */
 const slotKind  = {};              /* slot -> 'resonator', only what we loaded from the card */
 
 const libIsSel = (kind, i) => !!libSel && libSel.kind === kind && libSel.i === i;
@@ -3772,6 +3894,9 @@ async function storeFile(slot, file) {
     if (!w) { say(`${file.name} is not a .kykw world`, true); return; }
     await MVL.putSlot(link, slot, bytes, (d, a) => say(`storing ${(100 * d / a).toFixed(0)}%`));
     slotNodes[slot] = w.nodes.map((nd, i) => ({ name: w.name ? `${w.name} ${i}` : String(i), pos: nd.pos.slice() }));
+    /* the effects ride on the same record, so a swap of two slots carries
+       them and a forgotten slot forgets them, with no second map to keep */
+    slotNodes[slot].fx = (w.fx || []).map(f => ({ axis: f.axis, kind: f.kind }));
     delete slotKind[slot];
     say(`${w.name || file.name} in slot ${slot} — ${w.count} node${w.count > 1 ? 's' : ''}`);
     await refreshSlots();
@@ -3797,6 +3922,7 @@ async function keepBuildSet() {
     const blob = importedBlob();
     await MVL.putSlot(link, slot, blob, (d, a) => say(`keeping ${(100 * d / a).toFixed(0)}%`));
     slotNodes[slot] = imported.map(w => ({ name: w.name, pos: w.pos.slice() }));
+    slotNodes[slot].fx = fxSel().map(f => ({ axis: f.axis, kind: f.kind }));
     delete slotKind[slot];
     say(`${worldName()} is now in your worlds, slot ${slot}`);
     await refreshSlots();
@@ -3861,7 +3987,8 @@ async function slotAction(op, slot) {
     await requestUntilFree(MVL.actionReq(op, [slot & 0xff]));
     if (op === MVL.ACT.slotLive) {
       const known = slotNodes[slot];
-      if (known) held = { name: (slots && slots.names[slot]) || 'slot ' + slot, nodes: known.map(k => ({ name: k.name, pos: k.pos.slice() })) };
+      if (known) held = { name: (slots && slots.names[slot]) || 'slot ' + slot, nodes: known.map(k => ({ name: k.name, pos: k.pos.slice() })),
+                          fx: (known.fx || []).map(f => ({ axis: f.axis, kind: f.kind })) };
       else heldLost();
       place.sent = false;
       renderImport();
@@ -4452,6 +4579,7 @@ function drawKepler(t, n, ox, oy, S, px, py) {
  * is doing nothing look like what it is. */
 function drawArcs(n, planes, t, x0, y0, S) {
   const gap = Math.min(52, S / planes), rmax = Math.min(9, gap * 0.32);
+  const names = axisNames();
   for (let p = 0; p < planes; p++) {
     const [a, b] = MVL.planeAxes(n, p), cxp = x0 + gap * (p + 0.5), cyp = y0 + 10;
     const isSpread = t && t.stereo && t.spreadPlane === p;
@@ -4468,7 +4596,20 @@ function drawArcs(n, planes, t, x0, y0, S) {
     cx.strokeStyle = isSpread ? '#ffcc55' : '#62d5ff'; cx.lineWidth = 1.6;
     cx.beginPath(); cx.moveTo(cxp, cyp); cx.lineTo(cxp + Math.cos(th) * r, cyp + Math.sin(th) * r); cx.stroke();
     if (isSpread) { cx.fillStyle = '#ffcc55'; cx.beginPath(); cx.arc(cxp, cyp, 2, 0, 7); cx.fill(); }
-    cx.lineWidth = 1; cx.fillStyle = '#74889e'; cx.font = '10px ui-monospace, monospace'; cx.fillText(a + '' + b, cxp - 6, cyp + rmax + 11);
+    cx.lineWidth = 1; cx.fillStyle = '#74889e'; cx.font = '10px ui-monospace, monospace';
+    if (names[a] || names[b]) {
+      /* Named, the two axes stack under the dial, one a line. A dial is at
+         most 52 px wide, so the type shrinks to fit rather than the word
+         being cut: half a name is a different word. */
+      const top = names[a] || String(a), bot = names[b] || String(b);
+      let px = 9;
+      for (; px > 6; px--) {
+        cx.font = `${px}px ui-monospace, monospace`;
+        if (Math.max(cx.measureText(top).width, cx.measureText(bot).width) <= gap - 2) break;
+      }
+      cx.fillText(top, cxp - cx.measureText(top).width / 2, cyp + rmax + 10);
+      cx.fillText(bot, cxp - cx.measureText(bot).width / 2, cyp + rmax + 10 + px + 1);
+    } else cx.fillText(a + '' + b, cxp - 6, cyp + rmax + 11);
   }
   /* Coupling, to the right of the gauges. The bar is how closed the figure
    * is: near zero the six planes are drifting independently and the path
@@ -4536,6 +4677,42 @@ function stereoWidth(t) {
   }
   return { geo, tim, onScreen };
 }
+/* The live output: the last 20 ms the module put on J9/J10, after the level
+   and the limiter (core/kyk_scope.h). The frame and the ring are what the
+   engine means to play; this is what it played. The window starts on a
+   rising zero crossing of L when there is one, so a held note stands still,
+   and says when there was not — a free-running trace wanders, and that is
+   the sound telling the truth about itself, not the page being broken. Drawn
+   at the module's own gain (a power of two, so a quiet passage is a shape
+   and not a line), which the label states with the true peak. L in the
+   frame's glow, R under it in the right ear's colour when the two differ. */
+function drawScope(g, x, top, w, h, sc) {
+  const mid = top + h / 2, amp = Math.max(4, h / 2 - 3);
+  g.font = '11px ui-monospace, monospace';
+  g.strokeStyle = '#141b23'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(x, mid); g.lineTo(x + w, mid); g.stroke();
+  g.fillStyle = '#6b819d';
+  const head = sc ? `out · live · ${sc.ms.toFixed(0)} ms` : 'out · live';
+  g.fillText(head, x, top - 8);
+  if (!sc) { g.fillText('waiting for the module', x, mid - 6); return; }
+  if (!sc.mono) {   /* which ear is which, beside the caption */
+    const lx = x + g.measureText(head + '  ').width;
+    g.fillStyle = '#62d5ff'; g.fillText('L', lx, top - 8);
+    g.fillStyle = '#ff4fa0'; g.fillText('R', lx + g.measureText('L ').width, top - 8);
+  }
+  const n = sc.npts, gain = sc.gain, dx = w / Math.max(1, n - 1);
+  let pk = 0;
+  for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(sc.l[i]), Math.abs(sc.r[i]));
+  const db = pk > 0 ? (20 * Math.log10(pk)).toFixed(0) + ' dBFS' : 'silent';
+  const info = `${sc.triggered ? 'trig ↑0' : 'free-run'} · ×${gain} · ${db}`;
+  g.fillStyle = sc.triggered ? '#6b819d' : '#ff8a2a';
+  g.fillText(info, x + w - g.measureText(info).width, top - 8);
+  const y = v => mid - Math.max(-1, Math.min(1, v * gain)) * amp;
+  const trace = a => { g.beginPath(); for (let i = 0; i < n; i++) { const px = x + dx * i, py = y(a[i]); i ? g.lineTo(px, py) : g.moveTo(px, py); } };
+  if (!sc.mono) { g.lineWidth = 1.2; g.strokeStyle = 'rgba(255,79,160,0.75)'; trace(sc.r); g.stroke(); }
+  g.lineWidth = 5; g.strokeStyle = 'rgba(60,200,245,0.18)'; trace(sc.l); g.stroke();
+  g.lineWidth = 1.8; g.strokeStyle = '#62d5ff'; trace(sc.l); g.stroke(); g.lineWidth = 1;
+}
 /* a resonator's modes — the ones the voice was built from, on a log
    frequency axis, height the level under the loudest (60 dB), brightness
    the ring (T60, 20 ms dim to 4 s bright) — and its burst. Drawn on the
@@ -4566,12 +4743,12 @@ function drawModes(g, x, top, w, bot) {
 }
 /* The voice's ring, drawn from what the module says it built.
  *
- * A real-time waveform of the output needs the module to send its samples,
- * which it does not. What it does send, eight times a second, is every mode
- * of the voice that is playing (0x6F: frequency, damping, level), and a bank
- * of modes struck by an impulse is exactly the sum of their decaying sines.
- * So this is the ring itself — the shape of the instrument's body — without
- * the exciter that drives it or the pickup after it, and it says so. Worked
+ * The output itself is drawn above it now (drawScope), from the module's own
+ * samples. This is the other half: every mode of the voice that is playing
+ * (0x6F: frequency, damping, level), eight times a second, and a bank of modes
+ * struck by an impulse is exactly the sum of their decaying sines. So this is
+ * the ring itself — the shape of the instrument's body — without the exciter
+ * that drives it or the pickup after it, and it says so. Worked
  * out at 48 kHz, so the upper modes are drawn as the bank rings them rather
  * than aliased by a coarse grid, and only when the modes change: a new note,
  * a new member, a turned axis. Drawn a pixel column at a time as the span of
@@ -4618,9 +4795,14 @@ function drawRing(g, x, top, w, h) {
 function drawModel() {
   { const { w: W, h: H } = boxOf(ma); fit(ma); drawResonateSpace(W, H, max); }
   { const { w: W, h: H } = boxOf(mm); fit(mm);
-    const rh = Math.max(48, Math.round(H * 0.34));
-    drawRing(mmx, 30, 18, W - 60, rh);
-    drawModes(mmx, 30, 18 + rh + 30, W - 60, H - 26); }
+    /* the live output on top, where the module serves it; the ring and the
+       modes keep their places below, a little shorter */
+    const sh = scopeOn() ? Math.max(40, Math.round(H * 0.22)) : 0;
+    if (sh) drawScope(mmx, 30, 22, W - 60, sh, tel && tel.scope);
+    const top = sh ? 22 + sh + 14 : 18;
+    const rh = Math.max(48, Math.round(H * (sh ? 0.26 : 0.34)));
+    drawRing(mmx, 30, top, W - 60, rh);
+    drawModes(mmx, 30, top + rh + 30, W - 60, H - 26); }
   setText('pitchNote', pitchNoteText());
   /* the axes under the module's pots: a slider the page does not own is a
      readout, and follows the telemetry every frame. This waited on the
@@ -4644,21 +4826,29 @@ function drawSound() {
   const panelH = panel && !potCtl ? Math.min(170, Math.max(110, H * 0.32)) : 0;
   /* the frame is the cycle the engine rendered this block, live at the
      telemetry rate: with the panel off this canvas it gets the room */
-  const frameTop = 26, frameH = Math.max(40, H * (panelH ? 0.30 : 0.40)), mid = frameTop + frameH / 2;
+  /* with the live output above it, the rendered frame gives it a little
+     under half of its room: the two are the same kind of trace and say
+     different things — what the engine rendered for one cycle, and what
+     actually left the module */
+  const outH = scopeOn() ? Math.max(36, H * (panelH ? 0.15 : 0.20)) : 0;
+  const frameTop = outH ? 26 + outH + 22 : 26;
+  const frameH = outH ? Math.max(36, H * (panelH ? 0.15 : 0.20)) : Math.max(40, H * (panelH ? 0.30 : 0.40)), mid = frameTop + frameH / 2;
   const stripY = frameTop + frameH + 10;                       /* payload lanes row */
   const specCap = stripY + 34;                                  /* "spectrum" caption baseline */
   const specTop = specCap + 8, base = H - m - 12 - panelH, h = Math.max(20, base - specTop);
   cnx.font = font;
   if (tel && tel.resonate) {
-    /* a resonator: its modes, not a frame. The panel mirror keeps its
-       place below. */
-    drawModes(cnx, m, 26, W - 2 * m, base - 4);
+    /* a resonator: its modes, not a frame, under the live output. The panel
+       mirror keeps its place below. */
+    if (outH) drawScope(cnx, m, 26, W - 2 * m, outH, tel.scope);
+    drawModes(cnx, m, outH ? frameTop : 26, W - 2 * m, base - 4);
     if (panelH) drawPanel(m, H - m - panelH + 6, W - 2 * m, panelH - 6);
     return;
   }
   cnx.strokeStyle = '#141b23'; cnx.beginPath(); cnx.moveTo(m, mid); cnx.lineTo(W - m, mid); cnx.stroke();
   cnx.fillStyle = '#6b819d';
-  cnx.fillText('frame', m, 18); cnx.fillText('spectrum', m, specCap);
+  cnx.fillText(outH ? 'frame · one cycle as rendered' : 'frame', m, frameTop - 8); cnx.fillText('spectrum', m, specCap);
+  if (outH) drawScope(cnx, m, 26, W - 2 * m, outH, tel && tel.scope);
   if (!tel) return;
   /* Untinted on purpose. The frame, the lanes and the spectrum bars all took
      the same hue as the dot, which spent the page's one colour channel saying
@@ -4934,6 +5124,9 @@ function drawStatus() {
   setText('sF0', tel.f0.toFixed(1) + ' Hz ' + MVL.noteName(tel.f0));
   setText('sKcut', tel.kcut + '/' + tel.k);
   if (tel.mute !== lastMute) { lastMute = tel.mute; renderMuteChips(); }
+  /* the names belong to the world, so a world change — from here, from the
+     panel, from a tour — relabels every plane that was built from them */
+  { const k = axisKey(); if (k !== lastAxisKey) { lastAxisKey = k; renderMuteChips(); buildAxisButtons(); } }
   {
     const key = (tel.resonate ? 1000 : 0) + tel.n;
     if (key !== lastStrikeN) { lastStrikeN = key; renderModelChips(); buildAxisButtons(); setText('motionNote', tel.resonate ? 'a resonator: body · velocity · decay · coil are its axes, struck from the model tab or J4' : ''); }

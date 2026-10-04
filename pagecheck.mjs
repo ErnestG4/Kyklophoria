@@ -39,6 +39,9 @@ const calls = [];
  * whose only symptom is something quietly missing from the picture. */
 const nanDraws = [];
 const arcLog = [], segLog = [];
+/* and the words, so a check can ask what a label says rather than only that
+   something was drawn */
+const textLog = [];
 const GEOM = new Set(['arc', 'moveTo', 'lineTo', 'fillRect', 'strokeRect', 'rect', 'drawImage',
                       'fillText', 'strokeText', 'arcTo', 'quadraticCurveTo', 'bezierCurveTo']);
 const ctx2d = new Proxy({}, {
@@ -51,6 +54,7 @@ const ctx2d = new Proxy({}, {
          knobs are arcs from a fixed start angle, so what they are showing is
          recoverable from the end angle. */
       if (k === 'arc') arcLog.push(a);
+      if (k === 'fillText') textLog.push(String(a[0]));
       /* and the straight segments, which is how a pointer or a tick is drawn */
       if (k === 'moveTo' || k === 'lineTo') segLog.push([a[0], a[1]]);
       if (a.some(v => typeof v === 'number' && !Number.isFinite(v))) {
@@ -131,7 +135,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say, voiceTuning, selectWorld, renderWorldBar, chooseInstrument, selEntries, selLayout, getSwitching: () => switching };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say, voiceTuning, buildAxisButtons, renderMuteChips, setHeld: v => { held = v; }, axisNames, setDesc: v => { desc = v; }, scopeOn, selectWorld, renderWorldBar, chooseInstrument, selEntries, selLayout, getSwitching: () => switching };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -1949,6 +1953,102 @@ for (const [name, t, r] of CASES) {
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} each page asks the module for what it draws${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
+/* The live output scope (telemetry flag 8, core/kyk_scope.h).
+ *
+ * Asked for only where the module says it serves it: firmware before the scope
+ * echoes an unknown flag back without serving it, so a page that asked would
+ * read the motion block from the wrong offset. Parsed only when the echoed
+ * flags still carry the bit — the module clears it when it has no window — so
+ * absent is null, never a window of zeros. And drawn, on both panes: a check
+ * that only asked whether drawing threw would pass with nothing on screen. */
+{
+  const fails = [], K = globalThis.KYK;
+  /* a telemetry reply as the module builds it: status, the fixed part for a
+     2-axis world with no payload, then the scope if given, then the motion
+     block ending in the live world (7) and its kind (1) */
+  const body = (flags, scope) => {
+    const out = [0];
+    const u32 = v => out.push(v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255);
+    const f32 = v => { const d = new DataView(new ArrayBuffer(4)); d.setFloat32(0, v, true); out.push(...new Uint8Array(d.buffer)); };
+    u32(1234); f32(110); out.push(2, 64, 64, 0, 1, flags, 0, 0); f32(0);
+    for (let i = 0; i < 4 * 2 + 1; i++) f32(0.5);
+    if (scope) {
+      out.push((scope.trig ? 1 : 0) | (scope.r ? 0 : 2), scope.shift, scope.l.length, 5, 9, 0);
+      for (const v of scope.l) out.push(v & 255);
+      if (scope.r) for (const v of scope.r) out.push(v & 255);
+    }
+    if (flags & 4) {
+      out.push(0, 0); for (let i = 0; i < 5; i++) f32(0); out.push(0);   /* kepler, couple, lock, sharp */
+      /* bodies, page, morph, morph_world, mute, aimed, pots[6], vals_valid +
+         vals[6], world, tour[3], kind — exactly as EncodeTelemetry writes it */
+      out.push(1, 0, 0, 0xFF, 0, 0, 0, 1, 2, 3, 4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 1);
+    }
+    return Uint8Array.from(out);
+  };
+  const L = [0, 64, 127, -127], R = [-64, -32, 0, 32];
+  /* every motion field, not only the last ones: the tail is read to the
+     length it has, so a parse from the wrong offset can land on the right
+     world byte by luck — it did, the first time this was written */
+  const motionOk = t => t.bodies === 1 && t.page === 0 && t.morphWorld === 0xFF && !t.aimed && t.knobs === null &&
+    t.pots && t.pots.map(v => Math.round(v * 255)).join() === '1,2,3,4,5,6' && t.world === 7 && t.kind === 1 && t.tour && t.tour.len === 0;
+  const t1 = K.parseTelemetry(body(4 | 8, { trig: true, shift: 3, l: L }));
+  if (!t1.scope) fails.push('a served scope did not parse');
+  else {
+    if (Math.abs(t1.scope.l[1] - 64 / 1024) > 1e-9 || Math.abs(t1.scope.l[2] - 127 / 1024) > 1e-9 || t1.scope.l[3] >= 0) fails.push(`decoded ${Array.from(t1.scope.l).join(',')}`);
+    if (!t1.scope.triggered || !t1.scope.mono || t1.scope.gain !== 8 || t1.scope.seq !== 9) fails.push('the header fields');
+    if (t1.scope.r !== t1.scope.l) fails.push('mono R is not L');
+    if (Math.abs(t1.scope.ms - 1000 * 4 * 5 / 48000) > 1e-9) fails.push(`window ${t1.scope.ms} ms`);
+  }
+  if (!motionOk(t1)) fails.push(`the motion block after the scope read wrong: world ${t1.world}, kind ${t1.kind}, pots ${t1.pots}`);
+  const t2 = K.parseTelemetry(body(4 | 8, { trig: false, shift: 0, l: L, r: R }));
+  if (!t2.scope || t2.scope.mono || Math.abs(t2.scope.r[0] + 0.5) > 1e-9 || t2.scope.triggered) fails.push('a stereo, free-running window');
+  if (!motionOk(t2)) fails.push('the motion block after a stereo scope');
+  /* the module had no window: bit 3 cleared, no block. Null, and the motion
+     block read from where it really starts */
+  const t3 = K.parseTelemetry(body(4));
+  if (t3.scope !== null) fails.push(`no window parsed as ${t3.scope}`);
+  if (!motionOk(t3)) fails.push(`the motion block without a scope: pots ${t3.pots}, page ${t3.page}`);
+  /* who asks */
+  P.setDesc(null);
+  P.setFwMode('modal'); if (P.telFlags() !== 4) fails.push(`Bongs on an older module asks for ${P.telFlags()}`);
+  P.setFwMode('wavetable'); if (P.telFlags() !== 7) fails.push(`Buzzes on an older module asks for ${P.telFlags()}`);
+  P.setDesc({ kyk: { ext: 6 } });
+  if (P.telFlags() !== 7) fails.push(`a descriptor without telflags gets ${P.telFlags()}`);
+  P.setDesc({ kyk: { ext: 6, telflags: 15 } });
+  P.setFwMode('modal'); if (P.telFlags() !== 12) fails.push(`Bongs on a module with the scope asks for ${P.telFlags()}, not 12`);
+  P.setFwMode('wavetable'); if (P.telFlags() !== 15) fails.push(`Buzzes on a module with the scope asks for ${P.telFlags()}, not 15`);
+
+  /* drawn: the trace is 2 × npts segments (the glow and the line), R another
+     npts when the ears differ, on Buzzes' sound pane and Bongs' */
+  const sine = (n, a) => Float32Array.from({ length: n }, (_, i) => a * Math.sin(2 * Math.PI * 4.4 * i / n));
+  const sc = (over = {}) => { const l = sine(192, 0.1); return Object.assign({ triggered: true, mono: true, shift: 3, gain: 8, npts: 192, spp: 5, seq: 1, ms: 20, l, r: l }, over); };
+  const segs = (draw, t) => { P.setTel(t); segLog.length = 0; draw(); return segLog.length; };
+  P.setPanel(null); P.setView('play');
+  for (const [name, s] of [['mono, triggered', sc()],
+                           ['stereo, free-running', sc({ mono: false, triggered: false, r: sine(192, -0.05) })],
+                           ['quiet, ×128', sc({ shift: 7, gain: 128, l: sine(192, 0.004), r: null })],
+                           ['coarse: 48 points', sc({ npts: 48, spp: 20, l: sine(48, 0.3), r: sine(48, 0.3) })],
+                           ['one point', sc({ npts: 1, l: Float32Array.of(0.2), r: Float32Array.of(0.2) })],
+                           ['silence', sc({ shift: 0, gain: 1, l: new Float32Array(192), r: new Float32Array(192) })]]) {
+    if (!s.r) s.r = s.l;
+    const want = s.npts * (s.mono ? 2 : 3);
+    const without = segs(P.drawSound, tel({ scope: null })), withs = segs(P.drawSound, tel({ scope: s }));
+    if (withs - without < want) fails.push(`Buzzes, ${name}: ${withs - without} segments for the trace, want ${want}`);
+    const r0 = segs(P.drawSound, tel({ ...RES, scope: null })), r1 = segs(P.drawSound, tel({ ...RES, scope: s }));
+    if (r1 - r0 < want) fails.push(`a resonator on the sound pane, ${name}: ${r1 - r0} segments`);
+    P.setView('model');
+    const m0 = segs(P.drawModel, tel({ ...RES, scope: null })), m1 = segs(P.drawModel, tel({ ...RES, scope: s }));
+    if (m1 - m0 < want) fails.push(`Bongs' pane, ${name}: ${m1 - m0} segments`);
+    P.setView('play');
+  }
+  /* and a module that does not serve it gets the pane it always had */
+  P.setDesc(null);
+  if (segs(P.drawSound, tel({ scope: sc() })) !== segs(P.drawSound, tel({ scope: null }))) fails.push('a module without the scope drew one');
+  P.setFwMode('both'); P.setTel(null);
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the live output scope: asked for where it is served, parsed where it is sent, drawn on both panes${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
 /* The small things from the review's audit: a connect in flight says so and
    cannot be pressed twice (A1); a focused menu keeps the arrow keys (A37);
    Bongs' worlds tab has no Buzzes verbs and no "the 0 that ship" (A17); a
@@ -2135,6 +2235,89 @@ for (const [name, t, r] of CASES) {
   P.setView('play'); P.setFwMode('both'); P.setPanel(null); P.renderPanelRows(); P.setLink(null); P.setSlots(null); P.setTel(null);
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the world and instrument rails write the selector pot through 0x70${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The axes by name. A built-in's names come in the world list; where they
+   came, every label built from the axes uses them — plane buttons, mute
+   chips, the space's axis labels, the gauges, Play P3–P6, the Angle pots and
+   the plane menus — and where they did not (firmware from before them, a
+   world that names none), every one of those keeps its number exactly as
+   before. A world of yours names only the effect axes the page sent it with.
+   Each half fails without its part: with the parse or the lookup removed the
+   names never appear, and with a lookup that ignores absence the numbers go. */
+{
+  const fails = [];
+  const FM_AX = ['index', 'ratio', 'carrier', 'carrier2'];
+  const list = (axes) => ({ current: 9, count: 10, list: Array.from({ length: 10 }, (_, i) =>
+    ({ index: i, kind: i === 9 ? 4 : 1, analytic: i === 9, name: i === 9 ? 'FM' : 'w' + i, note: '', ...(i === 9 && axes ? { axes } : {}) })) });
+  const kids = el => el.children.map(c => c.children.length ? c.children.map(x => x.textContent).join('|') : c.textContent);
+  /* a panel with the pots that carry axes and planes, the menus as snaps */
+  const PL = ['0,1', '0,2', '0,3', '1,2', '1,3', '2,3'];
+  const panelFor = () => ({ pages: 3, pots: 6, names: ['Play', 'Rotate', 'Stereo'], colors: ['#67e8f9', '#fca5a5', '#a5b4fc'], grid: [
+    [{ name: 'Coarse', id: 'pitch.coarse', disp: { kind: 'norm' } }, { name: 'Fine', id: 'pitch.fine', disp: { kind: 'norm' } },
+     ...[0, 1, 2, 3].map(a => ({ name: 'Position ' + a, id: 'pos.' + a, disp: { kind: 'norm' } }))],
+    PL.map(p => ({ name: 'Angle ' + p, id: 'rot.' + p.replace(',', ''), disp: { kind: 'norm' } })),
+    [{ name: 'Spread', id: 'st.spread', disp: { kind: 'norm' } }, { name: 'Stereo plane', id: 'st.plane', disp: { kind: 'snap', labels: PL } },
+     { name: 'Position 4', id: 'pos.4', disp: { kind: 'norm' } }, { name: 'Position 5', id: 'pos.5', disp: { kind: 'norm' } }, null, null]] });
+  const look = (axes, t) => {
+    P.setWorlds(list(axes));
+    P.setTel(t);
+    P.setPanel(panelFor()); P.setFwMode('wavetable'); P.renderPanelRows();
+    P.setView('play'); P.setAxes([2, 3]);
+    textLog.length = 0;
+    P.drawStatus();           /* notices the names changed and rebuilds the chips and buttons */
+    P.drawSpace();
+    /* a page's labels are kept up while it is the one showing */
+    for (const page of [0, 1, 2]) { P.setTel({ ...t, page }); P.drawPanelLive(true); }
+    const c = P.getPotCtl();
+    return {
+      buttons: kids(els.axes), chips: kids(els.muteChips), text: textLog.slice(),
+      play: c[0].slice(2).map(x => x.lab.textContent), sub: c[0][2].sub.textContent,
+      angle: c[1][0].lab.textContent, menu: c[2][1].el.children.map(o => o.textContent), menuVal: c[2][1].val.textContent,
+      world: [c[2][2].lab.textContent, c[2][3].lab.textContent],
+    };
+  };
+  /* named */
+  const on = look(FM_AX, tel({ n: 4, world: 9, page: 2, knobs: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+  if (on.buttons[0] !== 'index · ratio|0,1') fails.push(`plane button 0,1 reads "${on.buttons[0]}"`);
+  if (on.buttons[5] !== 'carrier · carrier2|2,3') fails.push(`plane button 2,3 reads "${on.buttons[5]}"`);
+  if (on.chips[0] !== 'index · ratio|0,1') fails.push(`mute chip 01 reads "${on.chips[0]}"`);
+  if (!on.text.includes('carrier') || !on.text.includes('carrier2')) fails.push(`the space's axis labels on 2,3 are not carrier and carrier2 (${on.text.slice(0, 8).join(', ')})`);
+  if (!on.text.includes('index') || !on.text.includes('ratio')) fails.push('the gauges are not labelled by name');
+  if (on.text.includes('23') || on.text.includes('axis 2')) fails.push('a number label drawn where a name was sent');
+  if (on.play.join(',') !== 'Index,Ratio,Carrier,Carrier2') fails.push(`Play P3–P6 read ${on.play.join(',')}`);
+  if (on.sub !== 'Position 0') fails.push(`the descriptor's own words are not under P3 ("${on.sub}")`);
+  if (on.angle !== 'Angle index · ratio') fails.push(`Rotate P1 reads "${on.angle}"`);
+  if (on.menu[0] !== 'index · ratio (0,1)' || on.menu[5] !== 'carrier · carrier2 (2,3)') fails.push(`the stereo plane menu reads ${on.menu.join(' / ')}`);
+  /* the knob is at the middle, which is the fourth of six planes */
+  if (on.menuVal !== 'ratio · carrier (1,2)') fails.push(`the stereo plane's value reads "${on.menuVal}"`);
+  /* not sent: firmware from before the names */
+  const off = look(null, tel({ n: 4, world: 9, page: 2, knobs: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+  if (off.buttons[0] !== '0×1') fails.push(`with no names, plane button 0,1 reads "${off.buttons[0]}"`);
+  if (off.chips[0] !== '01') fails.push(`with no names, mute chip 01 reads "${off.chips[0]}"`);
+  if (!off.text.includes('axis 2') || !off.text.includes('23')) fails.push('with no names, the axis labels and gauges lost their numbers');
+  if (off.play.join(',') !== 'Position 0,Position 1,Position 2,Position 3') fails.push(`with no names, Play P3–P6 read ${off.play.join(',')}`);
+  if (off.angle !== 'Angle 0,1' || off.menu[0] !== '0,1' || off.menuVal !== '1,2') fails.push(`with no names, the plane pots read "${off.angle}", "${off.menu[0]}", "${off.menuVal}"`);
+  /* a gap among names is the number, not a shift */
+  const gap = look(['wave', null, 'fold', 'warp'], tel({ n: 4, world: 9, page: 2, knobs: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+  if (gap.buttons[0] !== 'wave · 1|0,1' || gap.play[1] !== 'Position 1') fails.push(`an unnamed axis among named ones reads "${gap.buttons[0]}", "${gap.play[1]}"`);
+  /* a world of yours: only the effects the page sent it with, and only while it holds */
+  P.setHeld({ name: 'mine', nodes: [], fx: [{ axis: 4, kind: 1 }] });
+  const mine = look(FM_AX, tel({ n: 6, world: 0xFF, page: 2, knobs: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+  if (mine.world.join(',') !== 'Fold,Position 5') fails.push(`World P1/P2 on a world sent with a fold on axis 4 read ${mine.world.join(',')}`);
+  if (mine.play.join(',') !== 'Position 0,Position 1,Position 2,Position 3') fails.push(`a world of yours borrowed a built-in's names: ${mine.play.join(',')}`);
+  P.setHeld(null);
+  /* and a draft with a fold on axis 4 is the build tab's to name, not the
+     play view's: the module is not holding it */
+  els.fxA.value = '1';
+  const lost = look(FM_AX, tel({ n: 6, world: 0xFF, page: 2, knobs: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], pots: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
+  if (lost.world.join(',') !== 'Position 4,Position 5') fails.push(`with nothing held, World P1/P2 read ${lost.world.join(',')}`);
+  const draftBtns = kids(els.planeAxes);
+  if (lost.buttons[14] !== '4×5' || draftBtns[14] !== 'fold · 5|4,5') fails.push(`plane 4,5 reads "${lost.buttons[14]}" on play and "${draftBtns[14]}" on build`);
+  els.fxA.value = '0';
+  P.setTel(null); P.setPanel(null); P.setWorlds(null); P.setAxes([0, 1]); P.buildAxisButtons(); P.renderMuteChips();
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} axes by name where the module sends them, by number where it does not${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* The same plane, drawn. A missing guard here throws nothing and paints

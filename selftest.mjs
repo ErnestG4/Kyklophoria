@@ -97,6 +97,21 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   /* The desktop shell has no pager, so it must say so rather than claim six
      knobs are at zero — which is what a bare six bytes would have said. */
   check(tk && tk.knobs === null, 'and reports no knob values, having no pager to ask');
+  /* The live output scope, through link.js's own parser: asked for because
+     the descriptor says it is served, absent until the module has a window
+     (null, not zeros), then the window with the motion block intact after
+     it. No script is running, so this is whatever the boot cell plays. */
+  {
+    check((KYK.telServed(desc) & KYK.TEL.scope) !== 0, 'the descriptor serves the scope (telflags ' + KYK.telServed(desc) + ')');
+    const req = () => link.request(KYK.CMD.telemetry, KYK.telemetryReq(15)).then(KYK.parseTelemetry);
+    let ts = await req();
+    check(ts && ts.scope === null && !(ts.flags & KYK.TEL.scope) && ts.bytes === tk.bytes, 'no window yet: the bit comes back clear and the scope is null');
+    for (let i = 0; i < 200 && !(ts && ts.scope); i++) { await new Promise(r => setTimeout(r, 10)); ts = await req(); }
+    check(ts && ts.scope && ts.scope.npts === 192 && ts.scope.spp === 5 && Math.abs(ts.scope.ms - 20) < 1e-9, 'a 20 ms window of 192 points');
+    check(ts && ts.scope && ts.scope.l.every(Number.isFinite) && ts.scope.l.some(v => v !== 0), 'and it has a sound in it');
+    check(ts && ts.world === tk.world && ts.kind === tk.kind && ts.bodies === tk.bodies, 'and the motion block reads the same after it');
+    if (ts && ts.scope) console.log(`  scope: ${ts.scope.triggered ? 'triggered' : 'free-run'}, ${ts.scope.mono ? 'mono' : 'stereo'}, ×${ts.scope.gain}, ${ts.bytes} B a frame`);
+  }
   check(t && t.mags && t.mags.length === 64 && t.frame && t.frame.length === 256, 'spectrum + frame present');
   check(t && t.kcut >= 1 && t.kcut <= 64, 'kcut range');
   const finite = a => Array.from(a).every(Number.isFinite);
@@ -125,6 +140,33 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
           + (ws ? ws.list.length + ' of ' + ws.count : '?') + ')');
     const fm = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.fm);
     const vw = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.formant);
+    /* The axis names, from the shell that the whole suite drives: a world
+       that names its axes sends them across every page of the list, and one
+       whose axes mean nothing alone sends an empty set rather than nothing. */
+    {
+      const named = ws ? ws.list.filter(w => w.axes && w.axes.some(Boolean)).length : 0;
+      check(fm && fm.axes && fm.axes.join(',') === 'index,ratio,carrier,carrier2',
+            `the desktop shell sends FM's axis names (${fm && fm.axes})`);
+      const sh = ws && ws.list.find(w => w.name === 'Shapes');
+      check(sh && sh.axes && sh.axes[0] === 'wave' && sh.axes[1] === null && sh.axes[2] === 'fold',
+            `an axis left numbered comes as a gap, not a shift (${sh && sh.axes})`);
+      const cell = ws && ws.list.find(w => w.name === '24-cell');
+      check(cell && Array.isArray(cell.axes) && cell.axes.length === 0, 'a world with no names sends an empty set');
+      check(named >= 14, `names arrive on worlds past the first page (${named} worlds name an axis)`);
+      /* And a reply without them — what firmware from before the names
+         sends — still parses, to the same worlds and no names at all. That
+         reply is this one cut at the end of its entries. */
+      const raw = await link.request(KYK.CMD.worlds, Uint8Array.of(0));
+      const full = KYK.parseWorlds(raw);
+      let at = 5;
+      for (let i = 0; i < raw[4]; i++) { at += 1; at += 1 + raw[at]; at += 1 + raw[at]; }
+      check(at < raw.length, 'the names follow the last entry');
+      const old = KYK.parseWorlds(raw.subarray(0, at));
+      check(old && full && old.sent === full.sent && old.list.length === full.list.length
+            && old.list.every((w, i) => w.name === full.list[i].name && w.note === full.list[i].note && w.kind === full.list[i].kind),
+            'a reply without names parses to the same worlds');
+      check(old && old.list.every(w => w.axes === undefined), 'and to no names, rather than to empty ones');
+    }
     check(!!fm, 'an FM world is registered');
     check(!!vw, 'a formant world is registered');
     const tb = ws && ws.list.find(w => w.kind === KYK.WORLD_KIND.table);
