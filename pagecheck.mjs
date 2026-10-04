@@ -1809,6 +1809,55 @@ for (const [name, t, r] of CASES) {
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} Bongs' panel on the page: a row a page, menus and sliders, sent and held${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
+/* The loop's EVERY menu is World P3, not a second copy of it.
+ *
+ * The division used to live in two places that never met: this menu went to
+ * the tour in the TOUR set command, and World P3 went nowhere (the 2026-10-01
+ * review). The module now reads the pot, so the menu mirrors it through 0x70:
+ * a read of the module's pots moves the menu, and the menu stores the pot —
+ * never a set command, which would start the loop over. A page whose module
+ * describes no panel falls back to the set command, which on current firmware
+ * writes the same pot.
+ */
+{
+  const fails = [];
+  const sent = [];
+  P.setLink({ request: async (cmd, body) => { sent.push([cmd, Array.from(body || [])]);
+                return cmd === KYK.CMD.tour ? Uint8Array.from([0, 3, (body && body[0] === 1) ? body[1] : 1, 0, 0, 13, 14, 15]) : new Uint8Array([0]); },
+              close: async () => {} });
+  /* the wavetable panel, World P3 a selector of the eight divisions as the
+     firmware describes it */
+  const pnl = { ...parsed, grid: parsed.grid.map(row => row.map(f => f && f.id === 'tour.div'
+    ? { ...f, disp: { kind: 'snap', labels: ['1', '2', '3', '4', '6', '8', '12', '16'] } } : f)) };
+  P.setPanel(pnl); P.setFwMode('wavetable'); P.renderPanelRows();
+  await P.readTour();
+  const vals = Array.from({ length: 7 }, () => new Array(6).fill(0.5));
+  vals[6][2] = 5.5 / 8;
+  P.applyPots({ pages: 7, pots: 6, live: 0, vals });
+  if (els.tourDiv.value !== '8') fails.push(`World P3 stored at 8 shows as every ${els.tourDiv.value}`);
+  sent.length = 0;
+  els.tourDiv.value = '4'; els.tourDiv.onchange();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  const q = Math.round((3.5 / 8) * 65535);
+  const pot = sent.find(x => x[0] === KYK.CMD.pots);
+  if (!pot || pot[1][0] !== 1 || pot[1][1] !== 6 || pot[1][2] !== 2 || pot[1][3] !== (q & 0xff) || pot[1][4] !== (q >> 8))
+    fails.push(`every 4 stored ${JSON.stringify(pot)}, not World P3 at 3.5/8`);
+  if (sent.some(x => x[0] === KYK.CMD.tour)) fails.push('and sent the loop again, which starts it over');
+  const row = P.getPotCtl()[6][2];
+  if (!row || row.el.value !== '3') fails.push(`the panel's own World P3 row reads ${row && row.el.value}`);
+  /* no panel described: the set command carries it */
+  P.setPanel(null); P.renderPanelRows();
+  sent.length = 0;
+  els.tourDiv.value = '2'; els.tourDiv.onchange();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  const set = sent.find(x => x[0] === KYK.CMD.tour);
+  if (!set || set[1][0] !== 1 || set[1][1] !== 2) fails.push(`with no panel, every 2 sent ${JSON.stringify(set)}`);
+  P.setLink(null);
+  await P.readTour();
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the loop's EVERY menu mirrors World P3 through 0x70${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
 /* The panel on the page, laid out as the module is (Combust, 1 October: "3
    rows of 2 columns, numbered left to right, top to bottom"), on both
    firmwares' pages and not on the page for both, which keeps the canvas

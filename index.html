@@ -2142,6 +2142,7 @@ async function potMove(p, k, v) {
   potTouched[key] = performance.now();
   if (potVals && potVals[p]) potVals[p][k] = v;
   if (potCtl && potCtl[p]) { const c = potCtl[p][k]; if (c) { c.lastV = v; c.val.textContent = potText(c.disp, v); } }
+  syncTourDiv();
   if (!link) return;
   if (potSending[key]) { potQueued[key] = v; return; }
   potSending[key] = true;
@@ -2160,6 +2161,7 @@ function applyPots(r) {
       potVals[p][k] = r.vals[p][k];
       showPot(potCtl[p][k], r.vals[p][k]);
     }
+  syncTourDiv();
 }
 const potValById = id => {
   if (!potCtl) return null;
@@ -2263,7 +2265,8 @@ function drawPanelLive(force) {
 async function pollPots() {
   const own = link;
   while (polling && link === own) {
-    if (potCtl && (viewMode === 'model' || viewMode === 'play')) {
+    /* and on the worlds tab when the loop's menu mirrors a pot */
+    if (potCtl && (viewMode === 'model' || viewMode === 'play' || (viewMode === 'worlds' && tourDivPot()))) {
       try { applyPots(await MVL.getPots(link)); } catch {}
     }
     await new Promise(r => setTimeout(r, 250));
@@ -3749,6 +3752,37 @@ function tourName(code) {
   const w = worlds && worlds.list.find(x => x.index === code);
   return w ? w.name : ('world ' + code);
 }
+/* The division is World P3 on the module, and that pot is the only store.
+ *
+ * This menu used to be a second one: it went to the tour in the TOUR set
+ * command while the pot went nowhere at all (kDivValuesTour was never read;
+ * the 2026-10-01 review), so the panel's eight labelled zones were dead and
+ * what the page said was the only thing that counted. Now the module reads
+ * the pot every tick, and this menu is a mirror of it: it shows the pot's
+ * stored value (0x70, read four times a second like the panel's rows) and
+ * moving it stores the pot, exactly as the panel row for World P3 does — so a
+ * new division does not start the loop over, and the pot under a hand catches
+ * it. Found by its ident in the descriptor rather than by position. A module
+ * whose descriptor has no panel gets the old way: the division in the set
+ * command, which on current firmware is the pot's stored value too. */
+function tourDivPot() {
+  if (!potCtl) return null;
+  for (const row of potCtl) for (const c of row) if (c && c.id === 'tour.div') {
+    const labels = c.disp && Array.isArray(c.disp.labels) && c.disp.labels.length ? c.disp.labels.map(String) : TOUR_DIVS.map(String);
+    return { p: c.p, k: c.k, labels };
+  }
+  return null;
+}
+/* the menu, from the pot's stored value */
+function syncTourDiv() {
+  const pot = tourDivPot();
+  if (!pot || !potVals || potVals[pot.p][pot.k] == null) return;
+  const n = pot.labels.length, i = Math.max(0, Math.min(n - 1, Math.floor(potVals[pot.p][pot.k] * n)));
+  const d = Number(pot.labels[i]);
+  if (!TOUR_DIVS.includes(d)) return;
+  tourDiv = d;
+  $('tourDiv').value = String(d);
+}
 function buildTourDiv() {
   const sel = $('tourDiv');
   sel.innerHTML = '';
@@ -3758,7 +3792,15 @@ function buildTourDiv() {
     sel.appendChild(o);
   }
   sel.value = String(tourDiv);
-  sel.onchange = () => { tourDiv = Number(sel.value) || 1; if (tourStops.length >= 2) sendTour(tourStops); };
+  sel.onchange = () => {
+    tourDiv = Number(sel.value) || 1;
+    const pot = tourDivPot(), i = pot ? pot.labels.indexOf(String(tourDiv)) : -1;
+    if (i >= 0) {
+      const v = (i + 0.5) / pot.labels.length;
+      showPot(potCtl[pot.p][pot.k], v);      /* the panel's own row for World P3 moves with it */
+      potMove(pot.p, pot.k, v);
+    } else if (tourStops.length >= 2) sendTour(tourStops);
+  };
 }
 function renderTour() {
   const box = $('tourStops');
@@ -3801,6 +3843,7 @@ async function readTour() {
     const t = MVL.parseTour(await link.request(MVL.CMD.tour, MVL.tourReq(MVL.TOUR.get)));
     if (t) { tourStops = t.entries; tourDiv = t.div || tourDiv; $('tourDiv').value = String(tourDiv); }
   } catch { /* an older module has no tour; leave the row empty */ }
+  syncTourDiv();
   renderTour();
 }
 async function sendTour(stops) {
