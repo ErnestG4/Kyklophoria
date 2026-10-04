@@ -1043,6 +1043,100 @@ await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   await link.close();
 });
 
+/* ── import polarity, measured against the module's own Lock ─────────────
+ *
+ * The engine plays -sum m.sin(h.theta) and import used to keep whichever way up
+ * the file was, so a rising ramp came in as exactly -1 x Lock's saw (the
+ * 2026-10-01 review, representation B4). Alone that is inaudible; in a morph it
+ * cancels. The convention import now follows is the built-ins', and it is held
+ * here to a snapshot of Lock taken from the module rather than to a formula
+ * copied out of core/kyk_lock.h — the snapshot is what a world started from
+ * Lock is actually made of.
+ */
+console.log('\n== import polarity: the built-ins\' way up, against a snapshot of Lock');
+await withChild(['--serve', '--gen', '--seed', '1'], async link => {
+  const act = (op, ...a) => link.request(KYK.CMD.action, Uint8Array.of(op, ...a), { urgent: true });
+  const read = async () => KYK.parseTelemetry(await link.request(KYK.CMD.telemetry, KYK.telemetryReq(7)));
+  const same = (a, b) => !!a && !!b && a.length === b.length && [...a].every((v, i) => v === b[i]);
+  const settle = async () => {
+    for (let i = 0; i < 6; i++) await read();
+    let prev = (await read()).mags, agree = 0;
+    for (let i = 0; i < 60; i++) {
+      const m = (await read()).mags;
+      if (same(prev, m)) { if (++agree >= 3) return m; } else { agree = 0; prev = m; }
+    }
+    return prev;
+  };
+  /* the spectrum's level, from telemetry's dB bytes (core/kyk_telemetry.h:
+     255 is +6 dB, 102 dB of range, 0 is nothing) */
+  const levelDb = (m) => {
+    let e = 0;
+    for (const v of m) if (v) { const a = Math.pow(10, (v * 102 / 255 - 96) / 20); e += a * a; }
+    return 10 * Math.log10(e || 1e-30);
+  };
+  const N = 600;
+  const mk = (f) => { const x = new Float64Array(N); for (let i = 0; i < N; i++) x[i] = f(i / N); return x; };
+  /* a node played as the engine plays it, one cycle of N samples */
+  const play = (c) => {
+    const y = new Float64Array(N);
+    for (let h = 1; h <= c.length; h++) if (c[h - 1]) for (let i = 0; i < N; i++) y[i] -= c[h - 1] * Math.sin(2 * Math.PI * h * i / N);
+    return y;
+  };
+  const corr = (a, b) => {
+    let s = 0, ea = 0, eb = 0;
+    for (let i = 0; i < a.length; i++) { s += a[i] * b[i]; ea += a[i] * a[i]; eb += b[i] * b[i]; }
+    return s / Math.sqrt(ea * eb || 1);
+  };
+
+  check((await act(KYK.ACT.snapshot, 7, 13))[0] === 0, 'Lock snapshotted into a slot');
+  const lock = KYK.parseUserWorld(await KYK.fetchSlot(link, 7, 1024));
+  check(lock && lock.count === 24, `as ${lock && lock.count} nodes`);
+
+  /* Every node of Lock, played and imported back, is the node it came from —
+     not its negative and not its half-turn. Twenty-four waves across all six
+     families: pulses, saws, triangles, stacks and combs. */
+  let worst = 1, worstAt = -1, ups = 0;
+  const back = lock.nodes.map((nd, i) => {
+    const r = KYK.cycleToNode(play(nd.mags), 64, 'shape');
+    const c = corr(r.mags, nd.mags);
+    if (c < worst) { worst = c; worstAt = i; }
+    if (KYK.nodePolarity(nd.mags) > 0) ups++;
+    return { pos: nd.pos.slice(), mags: r.mags };
+  });
+  check(ups === 24, `every node of Lock is the built-ins' way up by nodePolarity's rule (${ups} of 24)`);
+  check(worst > 0.999, `every node of Lock, played and imported back, is the node it came from (worst corr ${worst.toFixed(4)}, node ${worstAt})`);
+
+  /* A ramp file, either way round, is Lock's saw: the node whose shape it
+     matches best, and matched the right way up. */
+  const rise = KYK.cycleToNode(mk(u => 2 * u - 1)), fall = KYK.cycleToNode(mk(u => 1 - 2 * u));
+  let sawAt = 0, sawAbs = 0;
+  lock.nodes.forEach((nd, i) => { const a = Math.abs(corr(rise.mags, nd.mags)); if (a > sawAbs) { sawAbs = a; sawAt = i; } });
+  const cr = corr(rise.mags, lock.nodes[sawAt].mags), cf = corr(fall.mags, lock.nodes[sawAt].mags);
+  check(cr > 0.9 && cf > 0.9,
+        `a rising ramp and a falling one both import as Lock's saw, node ${sawAt} (corr ${cr.toFixed(3)} and ${cf.toFixed(3)})`);
+
+  /* And the morph the review measured going silent: a world of those imports
+     played, Lock as the target, at the desktop shell's half-way blend, standing
+     on the saw's vertex. The blend is the sum of coefficients, so the right way
+     up holds its level and the wrong way up cancels. */
+  await KYK.putSlot(link, 8, KYK.buildUserWorld(back, { n: lock.n, k: lock.k, sigma: lock.sigma, name: 'lock again' }));
+  check((await act(KYK.ACT.slotLive, 8))[0] === 0, 'the re-imported Lock plays from a slot');
+  const p = lock.nodes[sawAt].pos;
+  await link.request(KYK.CMD.setControl, KYK.setControlReq(110, p.slice(0, 4), [0, 0, 0, 0, 0, 0], 0), { urgent: true });
+  for (let i = 0; i < 400; i++) {
+    const t = await read();
+    if (t.posL && p.slice(0, 4).every((v, a) => Math.abs(t.posL[a] - v) < 1e-3)) break;
+  }
+  const alone = levelDb(await settle());
+  check((await act(KYK.ACT.morphWorld, 13))[0] === 0, 'Lock made the morph target');
+  const blended = levelDb(await settle());
+  check(blended - alone > -3,
+        `half-way to Lock from Lock re-imported holds its level (${(blended - alone).toFixed(1)} dB; the wrong way up cancels)`);
+  console.log(`  re-imported Lock: worst corr ${worst.toFixed(4)}; ramps as node ${sawAt} at ${cr.toFixed(3)} / ${cf.toFixed(3)}; half-way morph ${(blended - alone).toFixed(1)} dB`);
+  await act(KYK.ACT.morphWorld, 0xFF);
+  await act(KYK.ACT.slotFree, 8); await act(KYK.ACT.slotFree, 7);
+});
+
 console.log('\n== a loop of worlds on a clock');
 await withChild(['--serve', '--gen', '--seed', '1'], async link => {
   /* The tour is arithmetic in core (tests/tour_check.cpp) and a ring of three

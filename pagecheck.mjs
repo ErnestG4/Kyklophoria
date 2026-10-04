@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 const ROOT = process.argv[2] || new URL('..', import.meta.url).pathname;
 
-const IDS = 'fwName fwMode panelRows pageLinks pageSwitch morphCap tourRow axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote ringPlane voicePlane exciterPlane modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState livePill pagePill pitchPill cpuPill cpuAvg cpuMax cpuText stageChip panel panelTabs panelNote panelAll panelSlotPlay panelSlotModel sheetSlotPlay sheetSlotModel'.split(' ');
+const IDS = 'fwName fwMode panelRows pageLinks pageSwitch morphCap tourRow axes planeAxes plane inspect strip tabPlay tabModel tabBuild tabLib playMain modelMain buildMain libMain maxis mmodes instChips modelCardSel modelCardLoad modelCardState lockChips pitchNote strikeChips bodyChips ringChips voiceChips exciterNote ringPlane voicePlane exciterPlane modelHint motionNote slots libPlay libTarget libNoTarget libEdit libFree libSave libCardSel libLoad libRescan libState worldbar btnBridge btnClose btnDrawer btnSerial drawer modinfo msg sBlock sCpu sCpuWrap sF0 sKcut sLink sMod sSpace sSpread shadeChips sound space trailChips worldCap worldChips worldNote morphSel cardSel cardLoad cardScan cardState morphState wavIn wavPick wavMode wavName wavSend wavSave wavPlace wavClear wavNew wavKeep wavState audPlay audA audB audC audState polState polFlip polNote muteChips morphAim morphDirect fxA fxB fxState tourAdd tourDrop tourClear tourDiv tourStops tourState livePill pagePill pitchPill cpuPill cpuAvg cpuMax cpuText stageChip panel panelTabs panelNote panelAll panelSlotPlay panelSlotModel sheetSlotPlay sheetSlotModel'.split(' ');
 const calls = [];
 /* Where the page asked for a mark at a coordinate that is not a number.
  *
@@ -131,7 +131,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -1344,16 +1344,32 @@ console.log('');
    *
    * A wave the projection keeps in full must look like what the engine makes
    * of it. That is the property; it is one line; nothing was asserting it. */
+  /* Both ways round, and through the page's own import (addWavs), because the
+     trace it keeps is the one the inspector draws and the audition plays —
+     and since import turns a wave the built-ins' way up, one of the two
+     ramps is negated on the way in and its trace has to be too. */
   {
-    const N = 600, cyc = new Float64Array(N);
-    for (let i = 0; i < N; i++) cyc[i] = 2 * (i / N) - 1;          /* a saw */
-    const nd = KYK.cycleToNode(cyc, 64, 'shape');
-    const thumb = P.rotatedCycle(cyc, nd.rotation || 0, 256);
-    const render = P.renderFromMags(nd.mags, 256);
-    let sa = 0, sb = 0, ab = 0;
-    for (let i = 0; i < 256; i++) { sa += thumb[i] * thumb[i]; sb += render[i] * render[i]; ab += thumb[i] * render[i]; }
-    const c = ab / Math.sqrt(sa * sb || 1);
-    T(c > 0.9, `imported and rendered are drawn the same way up (corr ${c.toFixed(4)}, fit ${(100 * nd.fit).toFixed(1)}%)`);
+    const n = 600, f = [];
+    for (const dir of [1, -1]) {
+      const wav = new Uint8Array(44 + n * 2), dv = new DataView(wav.buffer);
+      const put = (o, t) => { for (let i = 0; i < 4; i++) wav[o + i] = t.charCodeAt(i); };
+      put(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); put(8, 'WAVE');
+      put(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+      dv.setUint32(24, 48000, true); dv.setUint32(28, 96000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+      put(36, 'data'); dv.setUint32(40, n * 2, true);
+      for (let i = 0; i < n; i++) dv.setInt16(44 + i * 2, Math.round(32000 * dir * (2 * i / n - 1)), true);
+      f.push({ name: dir > 0 ? 'rise.wav' : 'fall.wav', arrayBuffer: async () => wav.buffer });
+    }
+    P.imported.length = 0;
+    await P.addWavs(f);
+    const cs = P.imported.map(w => {
+      let sa = 0, sb = 0, ab = 0;
+      for (let i = 0; i < w.thumb.length; i++) { sa += w.thumb[i] * w.thumb[i]; sb += w.render[i] * w.render[i]; ab += w.thumb[i] * w.render[i]; }
+      return ab / Math.sqrt(sa * sb || 1);
+    });
+    T(cs.length === 2 && cs.every(c => c > 0.9),
+      `imported and rendered are drawn the same way up, a ramp either way round (corr ${cs.map(c => c.toFixed(4)).join(', ')}, fit ${(100 * (P.imported[0] || {}).fit).toFixed(1)}%)`);
+    P.imported.length = 0;
   }
 
   /* and the band-limited trace, which is the middle term of the audition:
@@ -1367,6 +1383,100 @@ console.log('');
   T(d < 1e-4, `a band limit above every partial changes nothing (worst ${d.toExponential(1)})`);
   T(Math.abs(rms(cut) - rms(y) * Math.sqrt(1 / 1.25)) < 0.02,
     'and one below the second partial removes exactly that partial');
+}
+console.log('');
+
+/* One polarity for every import: the built-ins'.
+ *
+ * The engine plays -sum m.sin(h.theta) and a morph is the sum of two worlds'
+ * coefficients, so a node and its negative do not blend, they cancel. Import
+ * kept whichever way up the file was, and which of two equally good rotations
+ * rounding happened to find first, so an imported rising ramp was exactly -1 x
+ * Lock's saw and a 50/50 morph between them sat at -59.5 dB (the 2026-10-01
+ * review, representation B4). web/selftest.mjs holds the convention to a
+ * snapshot of Lock from the module; this holds it to itself — every way a ramp
+ * can arrive, one node — and to the saw the built-ins write (core/kyk_lock.h:
+ * every harmonic at 1/h, positive).
+ */
+{
+  const T = (ok, what) => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}`); };
+  const N = 600;
+  const ramp = (dir, off) => { const x = new Float64Array(N); for (let i = 0; i < N; i++) x[i] = dir * (2 * (((i + off) % N) / N) - 1); return x; };
+  const up = KYK.cycleToNode(ramp(1, 0)), down = KYK.cycleToNode(ramp(-1, 0));
+  T(up.mags.every((v, i) => v === down.mags[i]),
+    `a ramp imported both ways round lands on the same coefficients (h1 ${up.mags[0].toFixed(4)} and ${down.mags[0].toFixed(4)})`);
+  const saw = Float64Array.from({ length: 64 }, (_, i) => 1 / (i + 1));
+  let s = 0, e1 = 0, e2 = 0;
+  for (let i = 0; i < 64; i++) { s += up.mags[i] * saw[i]; e1 += up.mags[i] * up.mags[i]; e2 += saw[i] * saw[i]; }
+  T(s / Math.sqrt(e1 * e2) > 0.999, `and it is the built-in saw, the same way up (corr ${(s / Math.sqrt(e1 * e2)).toFixed(4)})`);
+  /* A file can start anywhere in its cycle, and every start has two rotations
+     that keep exactly as much — the one that is Lock's saw and the one turned
+     half a cycle, which is the saw with its even harmonics negated. Rounding
+     chose between them, about half the time each (84 of 172 starts). */
+  let moved = 0, tried = 0;
+  for (let off = 0; off < N; off += 7)
+    for (const dir of [1, -1]) {
+      const nd = KYK.cycleToNode(ramp(dir, off));
+      let d = 0;
+      for (let i = 0; i < 64; i++) d = Math.max(d, Math.abs(nd.mags[i] - up.mags[i]));
+      tried++; if (d > 1e-6) moved++;
+    }
+  T(moved === 0, `from wherever in its cycle the file starts, either way round, it is that node (${tried - moved} of ${tried})`);
+  /* the morph, as the engine blends: half of each set of coefficients */
+  const lvl = (a, b) => {
+    let em = 0, ea = 0;
+    for (let i = 0; i < 64; i++) { const m = 0.5 * (a[i] + b[i]); em += m * m; ea += 0.5 * (a[i] * a[i] + b[i] * b[i]); }
+    return 10 * Math.log10(em / ea);
+  };
+  const sq = (dir) => { const x = new Float64Array(N); for (let i = 0; i < N; i++) x[i] = dir * (i < N / 2 ? 1 : -1); return x; };
+  const sqU = KYK.cycleToNode(sq(1)), sqD = KYK.cycleToNode(sq(-1));
+  const l1 = lvl(up.mags, down.mags), l2 = lvl(sqU.mags, sqD.mags);
+  T(l1 > -0.01 && l2 > -0.01,
+    `a 50/50 morph between a wave and its upside-down twin, both imported, holds its level (ramp ${l1.toFixed(2)} dB, square ${l2.toFixed(2)} dB)`);
+  T(KYK.nodePolarity(up.mags) === 1 && KYK.nodePolarity(Float32Array.from(up.mags, v => -v)) === -1
+    && KYK.nodePolarity(new Float32Array(64)) === 0,
+    'nodePolarity says which way up a node is, and that silence is neither');
+
+  /* The inspector says so, and Flip turns one node over: every coefficient
+     negated, the imported trace with it, so the comparison above it still
+     reads the same way up; twice is where it started; and a set the module is
+     holding is re-sent, as a move is. */
+  const sends = [];
+  const realPut = globalThis.KYK.putWorld;
+  globalThis.KYK.putWorld = async () => { sends.push(1); return true; };
+  P.imported.length = 0;
+  for (const [nd, cyc] of [[up, ramp(1, 0)], [sqU, sq(1)]])
+    P.imported.push({ name: 'n', mags: nd.mags, fit: nd.fit, mode: 'shape', pos: [0.5, 0.5, 0.5, 0.5],
+                      render: P.renderFromMags(nd.mags), thumb: P.rotatedCycle(cyc, nd.rotation, undefined, nd.sign) });
+  P.place.sel = -1;
+  P.selectNode(0);
+  const f = [];
+  if (!/\+/.test(els.polState.textContent) || els.polState.className !== 'up') f.push(`an import reads "${els.polState.textContent}"`);
+  if (els.polFlip.disabled) f.push('Flip is not offered for a picked node');
+  const before = Float32Array.from(P.imported[0].mags), other = Float32Array.from(P.imported[1].mags);
+  P.flipNode(0);
+  const w = P.imported[0];
+  if (!w.mags.every((v, i) => v === -before[i])) f.push('the coefficients were not negated');
+  if (!P.imported[1].mags.every((v, i) => v === other[i])) f.push('another node moved');
+  if (!/−/.test(els.polState.textContent) || els.polState.className !== 'down') f.push(`flipped, it reads "${els.polState.textContent}"`);
+  let sa = 0, sb = 0, ab = 0;
+  for (let i = 0; i < w.thumb.length; i++) { sa += w.thumb[i] * w.thumb[i]; sb += w.render[i] * w.render[i]; ab += w.thumb[i] * w.render[i]; }
+  if (!(ab / Math.sqrt(sa * sb || 1) > 0.9)) f.push('the traces were left facing each other');
+  P.flipNode(0);
+  if (!P.imported[0].mags.every((v, i) => v === before[i])) f.push('twice is not where it started');
+  if (sends.length) f.push('a set nobody sent was sent');
+  P.place.sent = true;
+  P.setLink({ request: async () => Uint8Array.of(0) });
+  P.flipNode(0);
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  if (sends.length !== 1) f.push(`a held set was sent ${sends.length} times`);
+  P.place.sel = -1; P.renderImport();
+  if (!els.polFlip.disabled) f.push('Flip is offered with nothing picked');
+  T(!f.length, `the inspector says a node's polarity and Flip turns it over${f.length ? ' — ' + f.join('; ') : ''}`);
+  globalThis.KYK.putWorld = realPut;
+  P.setLink(null);
+  P.heldLost();
+  P.imported.length = 0;
 }
 console.log('');
 
@@ -1697,6 +1807,55 @@ for (const [name, t, r] of CASES) {
   P.setPanel(null); P.setLink(null);
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} Bongs' panel on the page: a row a page, menus and sliders, sent and held${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The loop's EVERY menu is World P3, not a second copy of it.
+ *
+ * The division used to live in two places that never met: this menu went to
+ * the tour in the TOUR set command, and World P3 went nowhere (the 2026-10-01
+ * review). The module now reads the pot, so the menu mirrors it through 0x70:
+ * a read of the module's pots moves the menu, and the menu stores the pot —
+ * never a set command, which would start the loop over. A page whose module
+ * describes no panel falls back to the set command, which on current firmware
+ * writes the same pot.
+ */
+{
+  const fails = [];
+  const sent = [];
+  P.setLink({ request: async (cmd, body) => { sent.push([cmd, Array.from(body || [])]);
+                return cmd === KYK.CMD.tour ? Uint8Array.from([0, 3, (body && body[0] === 1) ? body[1] : 1, 0, 0, 13, 14, 15]) : new Uint8Array([0]); },
+              close: async () => {} });
+  /* the wavetable panel, World P3 a selector of the eight divisions as the
+     firmware describes it */
+  const pnl = { ...parsed, grid: parsed.grid.map(row => row.map(f => f && f.id === 'tour.div'
+    ? { ...f, disp: { kind: 'snap', labels: ['1', '2', '3', '4', '6', '8', '12', '16'] } } : f)) };
+  P.setPanel(pnl); P.setFwMode('wavetable'); P.renderPanelRows();
+  await P.readTour();
+  const vals = Array.from({ length: 7 }, () => new Array(6).fill(0.5));
+  vals[6][2] = 5.5 / 8;
+  P.applyPots({ pages: 7, pots: 6, live: 0, vals });
+  if (els.tourDiv.value !== '8') fails.push(`World P3 stored at 8 shows as every ${els.tourDiv.value}`);
+  sent.length = 0;
+  els.tourDiv.value = '4'; els.tourDiv.onchange();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  const q = Math.round((3.5 / 8) * 65535);
+  const pot = sent.find(x => x[0] === KYK.CMD.pots);
+  if (!pot || pot[1][0] !== 1 || pot[1][1] !== 6 || pot[1][2] !== 2 || pot[1][3] !== (q & 0xff) || pot[1][4] !== (q >> 8))
+    fails.push(`every 4 stored ${JSON.stringify(pot)}, not World P3 at 3.5/8`);
+  if (sent.some(x => x[0] === KYK.CMD.tour)) fails.push('and sent the loop again, which starts it over');
+  const row = P.getPotCtl()[6][2];
+  if (!row || row.el.value !== '3') fails.push(`the panel's own World P3 row reads ${row && row.el.value}`);
+  /* no panel described: the set command carries it */
+  P.setPanel(null); P.renderPanelRows();
+  sent.length = 0;
+  els.tourDiv.value = '2'; els.tourDiv.onchange();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  const set = sent.find(x => x[0] === KYK.CMD.tour);
+  if (!set || set[1][0] !== 1 || set[1][1] !== 2) fails.push(`with no panel, every 2 sent ${JSON.stringify(set)}`);
+  P.setLink(null);
+  await P.readTour();
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the loop's EVERY menu mirrors World P3 through 0x70${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* The panel on the page, laid out as the module is (Combust, 1 October: "3
