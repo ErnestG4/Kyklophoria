@@ -4069,8 +4069,14 @@ function tourName(code) {
  * it. Found by its ident in the descriptor rather than by position. A module
  * whose descriptor has no panel gets the old way: the division in the set
  * command, which on current firmware is the pot's stored value too. */
+/* Only on firmware that reads the pot (ext 7, 4 October). Firmware from before
+   carries the same ident on World P3 but never read it — the pot sat at its
+   seed, a division of 6 — so the menu mirrored a dead pot and the next stop
+   added sent 6 to a running loop (the review of the night's work): there the
+   division stays in the set command, as it always was. */
+const extOf = () => (desc && desc.kyk && Number.isInteger(desc.kyk.ext)) ? desc.kyk.ext : 0;
 function tourDivPot() {
-  if (!potCtl) return null;
+  if (!potCtl || extOf() < 7) return null;
   for (const row of potCtl) for (const c of row) if (c && c.id === 'tour.div') {
     const labels = c.disp && Array.isArray(c.disp.labels) && c.disp.labels.length ? c.disp.labels.map(String) : TOUR_DIVS.map(String);
     return { p: c.p, k: c.k, labels };

@@ -1834,6 +1834,7 @@ for (const [name, t, r] of CASES) {
   const pnl = { ...parsed, grid: parsed.grid.map(row => row.map(f => f && f.id === 'tour.div'
     ? { ...f, disp: { kind: 'snap', labels: ['1', '2', '3', '4', '6', '8', '12', '16'] } } : f)) };
   P.setPanel(pnl); P.setFwMode('wavetable'); P.renderPanelRows();
+  P.setDesc({ kyk: { ext: 7 } });            /* firmware that reads World P3 (4 October on) */
   await P.readTour();
   const vals = Array.from({ length: 7 }, () => new Array(6).fill(0.5));
   vals[6][2] = 5.5 / 8;
@@ -1849,6 +1850,20 @@ for (const [name, t, r] of CASES) {
   if (sent.some(x => x[0] === KYK.CMD.tour)) fails.push('and sent the loop again, which starts it over');
   const row = P.getPotCtl()[6][2];
   if (!row || row.el.value !== '3') fails.push(`the panel's own World P3 row reads ${row && row.el.value}`);
+  /* firmware from before ext 7 has the same ident on World P3 and never read
+     it: the menu stays the loop's own and a change goes in the set command
+     (the review of the night's work: the menu showed the dead pot's 6 and
+     the next stop sent it to a running loop) */
+  P.setDesc({ kyk: { ext: 6 } });
+  P.applyPots({ pages: 7, pots: 6, live: 0, vals: Array.from({ length: 7 }, () => new Array(6).fill(0.5)) });
+  if (els.tourDiv.value === '6') fails.push('on ext 6 firmware the menu mirrored the dead pot (every 6)');
+  sent.length = 0;
+  els.tourDiv.value = '3'; els.tourDiv.onchange();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  if (sent.some(x => x[0] === KYK.CMD.pots)) fails.push('on ext 6 firmware a division was written to the dead pot');
+  const old = sent.find(x => x[0] === KYK.CMD.tour);
+  if (!old || old[1][1] !== 3) fails.push(`on ext 6 firmware every 3 sent ${JSON.stringify(old)}, not the set command`);
+  P.setDesc({ kyk: { ext: 7 } });
   /* no panel described: the set command carries it */
   P.setPanel(null); P.renderPanelRows();
   sent.length = 0;
@@ -1856,7 +1871,7 @@ for (const [name, t, r] of CASES) {
   for (let i = 0; i < 8; i++) await Promise.resolve();
   const set = sent.find(x => x[0] === KYK.CMD.tour);
   if (!set || set[1][0] !== 1 || set[1][1] !== 2) fails.push(`with no panel, every 2 sent ${JSON.stringify(set)}`);
-  P.setLink(null);
+  P.setLink(null); P.setDesc(null);
   await P.readTour();
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the loop's EVERY menu mirrors World P3 through 0x70${fails.length ? ' — ' + fails.join('; ') : ''}`);
