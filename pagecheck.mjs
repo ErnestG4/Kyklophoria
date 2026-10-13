@@ -135,7 +135,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say, voiceTuning, buildAxisButtons, renderMuteChips, setHeld: v => { held = v; }, axisNames, setDesc: v => { desc = v; }, scopeOn, selectWorld, renderWorldBar, chooseInstrument, selEntries, selLayout, getSwitching: () => switching };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say, voiceTuning, buildAxisButtons, renderMuteChips, setHeld: v => { held = v; }, axisNames, setDesc: v => { desc = v; }, scopeOn, selectWorld, renderWorldBar, chooseInstrument, selEntries, selLayout, getSwitching: () => switching, shownPitch };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -2131,6 +2131,34 @@ for (const [name, t, r] of CASES) {
   if (P.voiceTuning({ kind: 1, param: 3, modes: [{ hz: 400, zeta: 0.001, gain: 1 }] })) fails.push('an index world read a tuning');
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the voice's own tuning, from its modes${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The pitch pill holds still: a CV wandering 10 cents either way shows one
+   value; a slow glide still moves it; a new note is taken at once; locked on
+   a resonator it is the voice's own note, whatever the CV does (Combust:
+   "always jumping about 10C up and down and constantly vibrating the row") */
+{
+  const fails = [];
+  const c4 = 261.6256, at = c => c4 * Math.pow(2, c / 1200);
+  let st = { shown: null, avg: null }, seen = new Set();
+  let seed = 7; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  for (let i = 0; i < 300; i++) seen.add(P.shownPitch(st, at(20 * rnd() - 10), null).toFixed(1));
+  if (seen.size > 3) fails.push(`a CV wandering +/-10 c showed ${seen.size} different values`);
+  st = { shown: null, avg: null }; P.shownPitch(st, at(0), null);
+  let moved = 0, last = P.shownPitch(st, at(0), null);
+  for (let i = 1; i <= 100; i++) { const v = P.shownPitch(st, at(i), null); if (v !== last) moved++; last = v; }
+  for (let i = 0; i < 60; i++) last = P.shownPitch(st, at(100), null);   /* and where it comes to rest */
+  if (Math.abs(1200 * Math.log2(last / c4) - 100) > 8) fails.push(`a glide to +100 c comes to rest at ${(1200 * Math.log2(last / c4)).toFixed(1)} c`);
+  if (moved < 5) fails.push(`a glide moved the readout only ${moved} times`);
+  st = { shown: null, avg: null }; P.shownPitch(st, at(0), null);
+  const jump = P.shownPitch(st, at(700), null);
+  if (Math.abs(1200 * Math.log2(jump / c4) - 700) > 0.01) fails.push('a new note was not taken at once');
+  st = { shown: null, avg: null };
+  const locked = new Set();
+  for (let i = 0; i < 50; i++) locked.add(P.shownPitch(st, at(20 * rnd() - 10), 60).toFixed(3));
+  if (locked.size !== 1 || Math.abs(+[...locked][0] - c4) > 0.001) fails.push(`locked it showed ${[...locked].join(', ')}, not C4's ${c4.toFixed(3)}`);
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the pitch pill holds still under a wandering CV, follows a glide, takes a new note at once${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* The ring: a voice's modes struck by an impulse, sampled at the module's

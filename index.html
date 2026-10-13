@@ -106,6 +106,12 @@
   .pill .tgt { color: var(--target); }
   .pill .sw { width: 12px; height: 12px; border: 1.5px solid #000; display: inline-block; }
   .pill.off { visibility: hidden; }
+  /* the pitch pill's moving parts in fixed slots: digits all one width, the
+     note name and the Hz each a set width, so a changing number cannot move
+     the row */
+  #pitchPill { font-variant-numeric: tabular-nums; }
+  #pitchPill .pn { display: inline-block; min-width: 3ch; }
+  #pitchPill .hz { display: inline-block; min-width: 6ch; text-align: right; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); display: inline-block; flex: none; }
   .cpu { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
   .meter { width: 70px; height: 9px; border: 1.5px solid var(--edge); position: relative; overflow: hidden; background: var(--well); }
@@ -5095,6 +5101,30 @@ function voiceTuning(r) {
   }
   return found ? { cents: csum / wsum, partials: found } : null;
 }
+/* The pitch the pill shows, steadied. Telemetry's f0 is the J3 CV as read,
+   and an ADC's few counts are some cents: the number moved every frame,
+   10 cents either way, and the pill's width with it, so the whole top row
+   shook (Combust, 13 October). Locked on a resonator, what plays is the
+   note the voice was built for, so that is what it shows — exact, and still
+   between strikes. Free, the CV in cents through a short average, and the
+   shown value moves only when that average is 5 cents from it; a step of
+   60 cents or more (a new note) is taken at once. */
+const pitchState = { shown: null, avg: null };
+function shownPitch(st, f0, lockedParam) {
+  if (lockedParam != null && lockedParam < 1e8) {
+    const hz = 440 * Math.pow(2, (lockedParam - 69) / 12);
+    st.shown = st.avg = 1200 * Math.log2(hz / 440);
+    return hz;
+  }
+  if (!(f0 > 0)) return f0;
+  const c = 1200 * Math.log2(f0 / 440);
+  if (st.avg == null || Math.abs(c - st.avg) >= 60) st.avg = st.shown = c;
+  else {
+    st.avg += 0.08 * (c - st.avg);
+    if (Math.abs(st.avg - st.shown) >= 5) st.shown = st.avg;
+  }
+  return 440 * Math.pow(2, st.shown / 1200);
+}
 function drawTop() {
   const nm = liveName();
   const mw = tel.morphWorld, tn = !tel.resonate ? targetName(mw) : null;
@@ -5104,7 +5134,8 @@ function drawTop() {
     setPill('pagePill', pg < 0 ? '' : `<span class="sw" style="background:${pageInk(panel.colors[pg]).fill}"></span><b>${pg + 1}</b> ${esc(pageName(pg))}`);
   } else setPill('pagePill', '');
   const vt = tel.resonate ? voiceTuning(reso) : null;
-  setPill('pitchPill', `${esc(MVL.noteName(tel.f0))} <b>${tel.f0.toFixed(1)}</b> Hz`
+  const f0 = shownPitch(pitchState, tel.f0, tel.resonate && lock && reso && reso.kind === 0 ? reso.param : null);
+  setPill('pitchPill', `<span class="pn">${esc(MVL.noteName(f0))}</span> <b class="hz">${f0.toFixed(1)}</b> Hz`
     + (tel.resonate ? ` · ${lock ? 'locked' : 'free'} · ${poly} voice${poly > 1 ? 's' : ''}` : ` · nyq ${tel.kcut}/${tel.k}`)
     + (vt && Math.abs(vt.cents) >= 3 ? ` · <span title="the voice's own pitch, from its modes (0x6F), against the note it was built for: a world point out of tune shows here" style="color:${Math.abs(vt.cents) > 15 ? 'var(--warn)' : 'inherit'}">voice ${vt.cents > 0 ? '+' : ''}${vt.cents.toFixed(0)}¢</span>` : ''));
   if (stats && stats.cyclesBudget) {
