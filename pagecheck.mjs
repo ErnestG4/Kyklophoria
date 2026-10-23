@@ -135,7 +135,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say, voiceTuning, buildAxisButtons, renderMuteChips, setHeld: v => { held = v; }, axisNames, setDesc: v => { desc = v; }, scopeOn, selectWorld, renderWorldBar, chooseInstrument, selEntries, selLayout, getSwitching: () => switching, shownPitch };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say, voiceTuning, buildAxisButtons, renderMuteChips, setHeld: v => { held = v; }, axisNames, setDesc: v => { desc = v; }, scopeOn, selectWorld, renderWorldBar, chooseInstrument, selEntries, selLayout, getSwitching: () => switching, shownPitch, pollTelemetry };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -2159,6 +2159,41 @@ for (const [name, t, r] of CASES) {
   if (locked.size !== 1 || Math.abs(+[...locked][0] - c4) > 0.001) fails.push(`locked it showed ${[...locked].join(', ')}, not C4's ${c4.toFixed(3)}`);
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the pitch pill holds still under a wandering CV, follows a glide, takes a new note at once${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* And the two readouts beside it that read the CV raw: the PITCH note on the
+   model tab and the footer's f0 (Combust, 23 October: "the constant jitter
+   from the note polling on the STRIKE row as well as the debug row") */
+{
+  const fails = [];
+  const c4 = 261.6256, at = c => c4 * Math.pow(2, c / 1200);
+  let seed = 11; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const foot = new Set(), note = new Set();
+  for (let i = 0; i < 300; i++) {
+    const t = tel({ n: 4, world: 0 }); t.f0 = at(20 * rnd() - 10);
+    P.setTel(t); P.drawStatus(); foot.add(els.sF0.textContent);
+    P.setTel({ ...t, resonate: true }); P.setReso(null); note.add(P.pitchNoteText());
+  }
+  if (foot.size > 3) fails.push(`the footer's f0 showed ${foot.size} different values`);
+  if (note.size > 3) fails.push(`the pitch note showed ${note.size} different values`);
+  await P.disconnect();
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the pitch note and the footer's f0 hold still under a wandering CV${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* Telemetry refused with BAD_STATE is a module with nothing loaded (a card
+   with no worlds or bodies): the status line says so, not the status name */
+{
+  const fails = [];
+  let asked = 0;
+  P.setLink({ request: async () => { asked++; P.setPolling(false); throw new Error('BAD_STATE'); }, stats: {} });
+  P.setPolling(true); P.pollTelemetry();
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  if (!asked) fails.push('telemetry was never asked for');
+  if (!/no world loaded/.test(els.msg.textContent)) fails.push(`the status line read "${els.msg.textContent}"`);
+  P.setLink(null); P.say('');
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} telemetry refused for want of a world says "no world loaded"${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* The ring: a voice's modes struck by an impulse, sampled at the module's
