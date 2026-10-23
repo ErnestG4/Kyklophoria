@@ -135,7 +135,7 @@ new Function(fs.readFileSync(path.join(ROOT, 'web/link.js'), 'utf8'))();
 let src = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
 src = src.slice(src.indexOf('<script>\n(() => {') + 8);
 src = src.slice(0, src.indexOf('\n</script>'));
-const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say, voiceTuning, buildAxisButtons, renderMuteChips, setHeld: v => { held = v; }, axisNames, setDesc: v => { desc = v; }, scopeOn, selectWorld, renderWorldBar, chooseInstrument, selEntries, selLayout, getSwitching: () => switching, shownPitch, pollTelemetry };\n`;
+const hook = `\nglobalThis.__probe = { frame, drawSpace, drawSound, drawStatus, parsePanel, setTel: v => { tel = v; }, setBasis: b => { basis = b; }, setPanel: p => { panel = p; }, onTelemetry, imported, worldName, importedBlob, exportImported, place, pickNode, moveNodeTo, placeOnCell, view, setAxes: v => { axes = v; }, syncPlacement, setLink: v => { link = v; }, drawPlane, drawInspect, renderStrip, renderLibrary, renderLib, refreshSlots, slotAction, keepBuildSet, freeSlot, setLibSel: v => { libSel = v; }, getLibSel: () => libSel, slotNodes, setWorlds: v => { worlds = v; }, playNodes, heldName: () => held && held.name, heldLost, renderImport, sendImported, renderFromMags, rotatedCycle, bandLimit, removeNode, refreshWorlds, disconnect, setCardList: v => { cardList = v; }, setView, planeBoxes, boxAt, selectNode, renderFx, fxSel, setSlots: v => { slots = v; }, renderTour, readTour, sendTour, tourAdd, tourName, getTour: () => tourStops, setTourLive: v => { tourLive = v; }, setReso: v => { reso = v; }, drawModel, renderModelChips, pitchNoteText, pressAxis, getLock: () => lock, getPoly: () => poly, fwModeOf, applyFwMode, setFwMode: v => { fwMode = v; }, getView: () => viewMode, setPageMode: v => { pageMode = v; }, pageMismatch, renderPageLinks, renderPanelRows, applyPots, potMove, getPotCtl: () => potCtl, potText, pollPots, setPolling: v => { polling = v; }, auditionStart, getAudition: () => audition, drawStatus, getStats: v => { stats = v; }, drawPanelLive, ringOf, setPolyCount: v => { poly = v; }, telFlags, addWavs, flipNode, connectTo: connect, getAxes: () => axes, say, voiceTuning, buildAxisButtons, renderMuteChips, setHeld: v => { held = v; }, axisNames, setDesc: v => { desc = v; }, scopeOn, selectWorld, renderWorldBar, chooseInstrument, selEntries, selLayout, getSwitching: () => switching, shownPitch, pollTelemetry, drawRing };\n`;
 src = src.replace(/\}\)\(\);\s*$/, hook + '})();');
 new Function(src)();
 const P = globalThis.__probe;
@@ -2179,6 +2179,29 @@ for (const [name, t, r] of CASES) {
   await P.disconnect();
   if (fails.length) bad++;
   console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the pitch note and the footer's f0 hold still under a wandering CV${fails.length ? ' — ' + fails.join('; ') : ''}`);
+}
+
+/* The ring drawn a column per device pixel, each joined to the next: a C7's
+   ring is 192 samples across a 600-pixel pane, and drawn a sample per CSS
+   column at screen scale 1.5 it was dots and bars beating against the grid
+   (Combust, 23 October: "a bit of aliasing in the middle static ring graph") */
+{
+  const fails = [], rects = [];
+  const g = new Proxy({ getTransform: () => ({ a: 1.5 }), fillRect: (x, y, w, h) => rects.push({ x, y, w, h }) },
+                      { get: (o, k) => k in o ? o[k] : () => {}, set: () => true });
+  P.setReso({ name: 'x', param: 96, modes: [{ hz: 2093, zeta: 0.0005, gain: 1 }] });
+  P.drawRing(g, 0, 0, 600, 120);
+  if (rects.length !== 900) fails.push(`${rects.length} columns for 900 device pixels`);
+  if (rects.some(r => Math.abs(r.w - 600 / 900) > 1e-9)) fails.push('a column was not a device pixel wide');
+  let gaps = 0;
+  for (let i = 1; i < rects.length; i++) {
+    const a = rects[i - 1], b = rects[i];
+    if (a.y > b.y + b.h + 1e-6 || b.y > a.y + a.h + 1e-6) gaps++;
+  }
+  if (gaps) fails.push(`${gaps} columns not joined to the one before`);
+  P.setReso(null);
+  if (fails.length) bad++;
+  console.log(`  ${fails.length ? 'FAIL' : 'ok  '} the ring is drawn a column per device pixel, each joined to the next${fails.length ? ' — ' + fails.join('; ') : ''}`);
 }
 
 /* Telemetry refused with BAD_STATE is a module with nothing loaded (a card

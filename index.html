@@ -4803,14 +4803,22 @@ function drawRing(g, x, top, w, h) {
   const mid = top + 18 + (h - 18) / 2, amp = Math.max(4, (h - 18) / 2 - 2);
   g.strokeStyle = '#1c242e'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, mid); g.lineTo(x + w, mid); g.stroke();
   if (!R.y) return;
-  const N = R.y.length, cols = Math.max(1, Math.floor(w));
+  /* A column per device pixel, not per CSS pixel: at a screen scale of 1.5
+     a CSS column is a pixel and a half, and the bars beat against the
+     grid. Each column is the signal's span over its whole width — the
+     samples inside it and the line between the samples at its edges — so a
+     ring shorter than the pane is a joined line rather than dots, and a
+     long one is the envelope a sample editor draws (Combust, 23 October:
+     "a bit of aliasing in the middle static ring graph") */
+  const N = R.y.length, T = g.getTransform && g.getTransform(), dpr = (T && T.a) || 1;
+  const cols = Math.max(1, Math.round(w * dpr)), cw = w / cols;
+  const at = t => { const i = Math.min(N - 1, Math.floor(t)), f = t - i; return (i + 1 < N ? R.y[i] + f * (R.y[i + 1] - R.y[i]) : R.y[i]) / R.peak; };
   g.fillStyle = '#62d5ff';
   for (let c = 0; c < cols; c++) {
-    const i0 = Math.floor(c * N / cols), i1 = Math.max(i0 + 1, Math.floor((c + 1) * N / cols));
-    let lo = Infinity, hi = -Infinity;
-    for (let i = i0; i < i1 && i < N; i++) { const v = R.y[i] / R.peak; if (v < lo) lo = v; if (v > hi) hi = v; }
-    if (!(hi >= lo)) continue;
-    g.fillRect(x + c, mid - hi * amp, 1, Math.max(1, (hi - lo) * amp));
+    const t0 = c * (N - 1) / cols, t1 = (c + 1) * (N - 1) / cols;
+    let lo = Math.min(at(t0), at(t1)), hi = Math.max(at(t0), at(t1));
+    for (let i = Math.ceil(t0); i <= t1 && i < N; i++) { const v = R.y[i] / R.peak; if (v < lo) lo = v; if (v > hi) hi = v; }
+    g.fillRect(x + c * cw, mid - hi * amp, cw, Math.max(1 / dpr, (hi - lo) * amp));
   }
 }
 /* the model tab's two canvases: the axis, which is also a pad, and the ring
